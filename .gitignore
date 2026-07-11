@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# next build
+.next/
+
+# environment
+.env.local
+
+# logs
+*.log
+
+# macOS
+.DS_Store
