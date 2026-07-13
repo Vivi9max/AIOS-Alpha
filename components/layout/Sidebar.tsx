@@ -1,79 +1,60 @@
-import Link from "next/link";
+"use client";
+
+import { projects } from "@/lib/project/store";
 
 const menus = [
-  {
-    href: "/workspace",
-    label: "💬 Chat",
-  },
-  {
-    href: "/brain",
-    label: "🧠 Brain",
-  },
-  {
-    href: "/projects",
-    label: "📂 Projects",
-  },
-  {
-    href: "/memory",
-    label: "💾 Memory",
-  },
-  {
-    href: "/settings",
-    label: "⚙️ Settings",
-  },
+  "💬 Chat",
+  "🧠 Memory",
+  "✅ Tasks",
+  "⚙️ Settings",
 ];
 
 export default function Sidebar() {
   return (
-    <aside
-      style={{
-        width: 240,
-        background: "#0f172a",
-        color: "white",
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <h2
-        style={{
-          marginBottom: 32,
-          fontSize: 22,
-        }}
-      >
-        Workspace
-      </h2>
+    <aside className="w-72 border-r bg-white flex flex-col">
 
-      {menus.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          style={{
-            display: "block",
-            color: "white",
-            textDecoration: "none",
-            marginBottom: 20,
-            fontSize: 18,
-            padding: "10px 12px",
-            borderRadius: 10,
-            background: "transparent",
-          }}
-        >
-          {item.label}
-        </Link>
-      ))}
+      <div className="p-6 border-b">
 
-      <div
-        style={{
-          marginTop: "auto",
-          fontSize: 12,
-          color: "#94a3b8",
-          borderTop: "1px solid #334155",
-          paddingTop: 20,
-        }}
-      >
-        AIOS Alpha v0.1
+        <h1 className="text-2xl font-bold">
+          AIOS
+        </h1>
+
+        <p className="text-sm text-gray-500">
+          Alpha v0.2
+        </p>
+
       </div>
+
+      <div className="px-4 pt-4">
+
+        <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">
+          Projects
+        </h3>
+
+        {projects.map((project) => (
+          <button
+            key={project.id}
+            className="w-full text-left rounded-xl bg-black text-white px-4 py-3 mb-2"
+          >
+            {project.name}
+          </button>
+        ))}
+
+      </div>
+
+      <nav className="flex-1 p-4">
+
+        {menus.map((item) => (
+          <button
+            key={item}
+            className="w-full text-left rounded-xl px-4 py-3 hover:bg-gray-100 transition"
+          >
+            {item}
+          </button>
+        ))}
+
+      </nav>
+
     </aside>
   );
 }
