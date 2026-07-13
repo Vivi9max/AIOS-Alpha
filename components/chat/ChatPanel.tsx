@@ -1,38 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import Message from "./Message";
 import ChatInput from "./ChatInput";
+import MessageBubble from "./MessageBubble";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "👋 Welcome to AIOS.",
+      content: "👋 Hello! I'm AIOS Alpha.",
     },
   ]);
 
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function send() {
-    if (!input.trim() || loading) return;
+  async function handleSend(prompt: string) {
+    const userMessage: Message = {
+      role: "user",
+      content: prompt,
+    };
 
-    const prompt = input;
+    setMessages((prev) => [...prev, userMessage]);
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        content: prompt,
-      },
-    ]);
-
-    setInput("");
     setLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -42,7 +40,7 @@ export default function ChatPanel() {
         }),
       });
 
-      const data = await res.json();
+      const data = await response.json();
 
       setMessages((prev) => [
         ...prev,
@@ -50,17 +48,15 @@ export default function ChatPanel() {
           role: "assistant",
           content:
             data.content ??
-            "AI returned an empty response.",
+            "Sorry, something went wrong.",
         },
       ]);
-    } catch (error) {
-      console.error(error);
-
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "⚠️ Failed to connect to AI.",
+          content: "Network Error",
         },
       ]);
     } finally {
@@ -69,41 +65,29 @@ export default function ChatPanel() {
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-      }}
-    >
-      <div
-        style={{
-          flex: 1,
-          padding: 20,
-          overflowY: "auto",
-        }}
-      >
+    <div className="flex flex-col h-full">
+
+      <div className="flex-1 overflow-y-auto p-4">
+
         {messages.map((message, index) => (
-          <Message
+          <MessageBubble
             key={index}
-            role={message.role as "user" | "assistant"}
+            role={message.role}
             content={message.content}
           />
         ))}
 
-        {loading && (
-          <Message
-            role="assistant"
-            content="Thinking..."
-          />
-        )}
       </div>
 
-      <ChatInput
-        value={input}
-        onChange={setInput}
-        onSend={send}
-      />
+      <div className="border-t p-4">
+
+        <ChatInput
+          loading={loading}
+          onSend={handleSend}
+        />
+
+      </div>
+
     </div>
   );
 }

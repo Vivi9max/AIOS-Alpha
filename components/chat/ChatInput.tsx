@@ -1,51 +1,54 @@
 "use client";
 
-type ChatInputProps = {
-  value: string;
-  onChange: (value: string) => void;
-  onSend: () => void;
-};
+import { useState } from "react";
+
+interface Props {
+  loading: boolean;
+  onSend: (text: string) => void;
+}
 
 export default function ChatInput({
-  value,
-  onChange,
+  loading,
   onSend,
-}: ChatInputProps) {
+}: Props) {
+  const [value, setValue] = useState("");
+
+  function send() {
+    const text = value.trim();
+
+    if (!text || loading) return;
+
+    onSend(text);
+
+    setValue("");
+  }
+
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 12,
-        padding: 16,
-        borderTop: "1px solid #eee",
-      }}
-    >
-      <input
+    <div className="flex items-end gap-3">
+
+      <textarea
+        rows={2}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Ask AIOS..."
-        style={{
-          flex: 1,
-          padding: 12,
-          borderRadius: 8,
-          border: "1px solid #ddd",
-          fontSize: 16,
+        disabled={loading}
+        placeholder="Message AIOS..."
+        className="flex-1 rounded-2xl border border-gray-300 p-4 resize-none outline-none focus:border-black"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            send();
+          }
         }}
       />
 
       <button
-        onClick={onSend}
-        style={{
-          padding: "12px 18px",
-          borderRadius: 8,
-          border: "none",
-          background: "#111",
-          color: "#fff",
-          cursor: "pointer",
-        }}
+        disabled={loading}
+        onClick={send}
+        className="h-12 px-6 rounded-full bg-black text-white disabled:opacity-50"
       >
-        Send
+        {loading ? "..." : "➜"}
       </button>
+
     </div>
   );
 }

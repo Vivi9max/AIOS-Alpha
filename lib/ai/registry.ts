@@ -1,4 +1,4 @@
-import type { AIProviderAdapter, AIProvider } from "./types";
+import type { AIProvider, AIProviderAdapter } from "./types";
 
 import { mockProvider } from "./providers/mock";
 import { openaiProvider } from "./providers/openai";

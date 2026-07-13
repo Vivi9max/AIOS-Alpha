@@ -1,6 +1,8 @@
+import type { AIProvider, AIProviderAdapter } from "./types";
 import { providerRegistry } from "./registry";
-import type { AIProviderAdapter } from "./types";
+
+const DEFAULT_PROVIDER: AIProvider = "mock";
 
 export function getProvider(): AIProviderAdapter {
-  return providerRegistry.mock;
+  return providerRegistry[DEFAULT_PROVIDER];
 }

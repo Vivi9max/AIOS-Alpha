@@ -1,9 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { chat } from "@/lib/ai";
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { prompt } = await request.json();
+    const body = await req.json();
+    const prompt = body.prompt;
+
+    if (!prompt || typeof prompt !== "string") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Prompt is required",
+        },
+        { status: 400 }
+      );
+    }
 
     const result = await chat(prompt);
 
@@ -14,11 +25,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        content: "Internal Server Error",
+        error: "Internal Server Error",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
