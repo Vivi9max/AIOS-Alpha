@@ -1,21 +1,38 @@
 import { NextResponse } from "next/server";
+import { openai } from "@/lib/openai";
 
 export async function POST(request: Request) {
   try {
     const { prompt } = await request.json();
 
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are AIOS Alpha.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+
     return NextResponse.json({
       success: true,
-      content: `🧠 AIOS Runtime\n\n收到任务：\n${prompt}`,
+      content: response.choices[0].message.content,
     });
-  } catch {
+  } catch (error) {
+    console.error(error);
+
     return NextResponse.json(
       {
         success: false,
-        content: "Invalid Request",
+        content: "OpenAI Error",
       },
       {
-        status: 400,
+        status: 500,
       }
     );
   }

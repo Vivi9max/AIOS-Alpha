@@ -13,19 +13,59 @@ export default function ChatPanel() {
   ]);
 
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function send() {
-    if (!input.trim()) return;
+  async function send() {
+    if (!input.trim() || loading) return;
 
-    setMessages([
-      ...messages,
+    const prompt = input;
+
+    setMessages((prev) => [
+      ...prev,
       {
         role: "user",
-        content: input,
+        content: prompt,
       },
     ]);
 
     setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+        }),
+      });
+
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            data.content ??
+            "AI returned an empty response.",
+        },
+      ]);
+    } catch (error) {
+      console.error(error);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "⚠️ Failed to connect to AI.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -50,6 +90,13 @@ export default function ChatPanel() {
             content={message.content}
           />
         ))}
+
+        {loading && (
+          <Message
+            role="assistant"
+            content="Thinking..."
+          />
+        )}
       </div>
 
       <ChatInput
