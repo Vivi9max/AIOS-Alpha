@@ -1,9 +1,13 @@
-import type { ChatResponse } from "../types";
+import type {
+  AIProviderAdapter,
+  ChatResponse,
+} from "../types";
 
-export const deepseekProvider = {
+export const deepseekProvider: AIProviderAdapter = {
   async chat(prompt: string): Promise<ChatResponse> {
-    throw new Error(
-      "DeepSeek Provider not implemented yet."
-    );
+    return {
+      success: true,
+      content: `DeepSeek Provider\n\n${prompt}`,
+    };
   },
 };

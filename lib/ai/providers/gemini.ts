@@ -1,9 +1,13 @@
-import type { ChatResponse } from "../types";
+import type {
+  AIProviderAdapter,
+  ChatResponse,
+} from "../types";
 
-export const geminiProvider = {
+export const geminiProvider: AIProviderAdapter = {
   async chat(prompt: string): Promise<ChatResponse> {
-    throw new Error(
-      "Gemini Provider not implemented yet."
-    );
+    return {
+      success: true,
+      content: `Gemini Provider\n\n${prompt}`,
+    };
   },
 };

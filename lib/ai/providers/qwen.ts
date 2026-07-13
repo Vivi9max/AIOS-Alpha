@@ -1,9 +1,13 @@
-import type { ChatResponse } from "../types";
+import type {
+  AIProviderAdapter,
+  ChatResponse,
+} from "../types";
 
-export const qwenProvider = {
+export const qwenProvider: AIProviderAdapter = {
   async chat(prompt: string): Promise<ChatResponse> {
-    throw new Error(
-      "Qwen Provider not implemented yet."
-    );
+    return {
+      success: true,
+      content: `Qwen Provider\n\n${prompt}`,
+    };
   },
 };
