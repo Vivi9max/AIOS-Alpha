@@ -1,33 +1,66 @@
-import { NextRequest, NextResponse } from "next/server";
-import { chat } from "@/lib/ai";
+import { NextResponse } from "next/server";
+import { runBrain } from "@/lib/brain";
 
-export async function POST(req: NextRequest) {
+type RequestMessage = {
+  role?: string;
+  content?: string;
+};
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    const prompt = body.prompt;
+    const body = await request.json();
 
-    if (!prompt || typeof prompt !== "string") {
+    const messages: RequestMessage[] =
+      Array.isArray(body.messages)
+        ? body.messages
+        : [];
+
+    const latestMessage =
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "user" &&
+            typeof message.content === "string"
+        )
+        ?.content ?? "";
+
+    const prompt =
+      typeof body.prompt === "string"
+        ? body.prompt.trim()
+        : latestMessage.trim();
+
+    if (!prompt) {
       return NextResponse.json(
         {
           success: false,
-          error: "Prompt is required",
+          provider: "mock",
+          content: "请输入内容。",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    const result = await chat(prompt);
+    const result = await runBrain({
+      provider: "mock",
+      prompt,
+    });
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error(error);
+    console.error("[AIOS Chat API]", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: "Internal Server Error",
+        provider: "mock",
+        content: "AIOS Runtime Error",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
