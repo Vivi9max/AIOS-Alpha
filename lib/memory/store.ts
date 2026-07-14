@@ -19,6 +19,12 @@ export function addMemory(
   });
 }
 
+export function addAssistantMemory(
+  content: string
+) {
+  addMemory("assistant", content);
+}
+
 export function getMemory() {
   return memory;
 }
@@ -35,8 +41,21 @@ export function searchMemory(keyword: string) {
   );
 }
 
-export function getRecentMemory(limit = 10) {
+export function getRecentMemory(
+  limit = 10
+) {
   return memory.slice(-limit);
+}
+
+export function buildConversationContext(
+  limit = 10
+): string {
+  return getRecentMemory(limit)
+    .map(
+      (item) =>
+        `${item.role}: ${item.content}`
+    )
+    .join("\n");
 }
 
 export function clearMemory() {

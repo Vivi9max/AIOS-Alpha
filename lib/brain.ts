@@ -1,6 +1,8 @@
 import { chat } from "./ai";
 import {
   addMemory,
+  addAssistantMemory,
+  buildConversationContext,
   searchMemory,
 } from "./memory/store";
 
@@ -26,25 +28,35 @@ export interface BrainResponse {
 export async function runBrain(
   request: BrainRequest
 ): Promise<BrainResponse> {
-addMemory("user", request.prompt);
+  addMemory("user", request.prompt);
 
   const relatedMemory =
     searchMemory(request.prompt);
 
-  const finalPrompt =
-    relatedMemory.length > 0
-      ? [
-          "Memory:",
-          ...relatedMemory.map(
-            (item) => item.content
-          ),
-          "",
-          "User:",
-          request.prompt,
-        ].join("\n")
-      : request.prompt;
+  const context =
+    buildConversationContext();
 
-  const result = await chat(finalPrompt);
+  const finalPrompt =
+    [
+      context,
+      "",
+      relatedMemory.length
+        ? "Related Memory:\n" +
+          relatedMemory
+            .map((item) => item.content)
+            .join("\n")
+        : "",
+      "",
+      "User:",
+      request.prompt,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+  const result =
+    await chat(finalPrompt);
+
+  addAssistantMemory(result.content);
 
   return {
     success: result.success,
