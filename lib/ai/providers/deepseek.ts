@@ -3,14 +3,42 @@ import type {
   ChatResponse,
 } from "../types";
 
-export const deepseekProvider: AIProviderAdapter = {
-  enabled: false,
+import { AI_CONFIG } from "../config";
 
-  async chat(prompt: string): Promise<ChatResponse> {
+import { createChatCompletion } from "../client";
+
+export const deepseekProvider: AIProviderAdapter = {
+  enabled:
+    AI_CONFIG.providers.deepseek.enabled &&
+    AI_CONFIG.providers.deepseek.apiKey.length > 0,
+
+  async chat(
+    prompt: string
+  ): Promise<ChatResponse> {
+
+    const result =
+      await createChatCompletion({
+
+        apiKey:
+          AI_CONFIG.providers.deepseek.apiKey,
+
+        baseURL:
+          AI_CONFIG.providers.deepseek.baseURL,
+
+        model:
+          AI_CONFIG.providers.deepseek.model,
+
+        prompt,
+      });
+
     return {
-      success: false,
+      success: true,
+
       provider: "deepseek",
-      content: "DeepSeek Provider Disabled",
+
+      content:
+        result.choices?.[0]?.message?.content ??
+        "No Response",
     };
   },
 };

@@ -1,16 +1,35 @@
-import OpenAI from "openai";
-import type { AIProvider } from "./types";
-import { AI_CONFIG } from "./config";
+export interface ChatRequest {
+  apiKey: string;
+  baseURL: string;
+  model: string;
+  prompt: string;
+}
 
-export function createClient(provider: AIProvider) {
-  const config = AI_CONFIG[provider];
+export async function createChatCompletion(
+  request: ChatRequest
+) {
+  const response = await fetch(
+    `${request.baseURL}/chat/completions`,
+    {
+      method: "POST",
 
-  if (!config.apiKey) {
-    throw new Error(`${provider} API Key is missing.`);
-  }
+      headers: {
+        Authorization: `Bearer ${request.apiKey}`,
+        "Content-Type": "application/json",
+      },
 
-  return new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-  });
+      body: JSON.stringify({
+        model: request.model,
+
+        messages: [
+          {
+            role: "user",
+            content: request.prompt,
+          },
+        ],
+      }),
+    }
+  );
+
+  return response.json();
 }
