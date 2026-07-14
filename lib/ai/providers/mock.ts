@@ -21,17 +21,40 @@ function getCurrentMessage(
 function findRememberedName(
   prompt: string
 ): string | null {
-  const matches = [
-    ...prompt.matchAll(
-      /我叫\s*([A-Za-z0-9_\-\u4e00-\u9fff]+)/g
-    ),
-  ];
+  const names: string[] = [];
 
-  if (matches.length === 0) {
-    return null;
+  for (const rawLine of prompt.split("\n")) {
+    const line = rawLine
+      .replace(/^(user|assistant):\s*/i, "")
+      .trim();
+
+    const match = line.match(
+      /^我叫\s*(?!什么|啥|谁)([A-Za-z0-9_\-\u4e00-\u9fff]+)[。！!，,\s]*$/
+    );
+
+    if (match?.[1]) {
+      names.push(match[1]);
+    }
   }
 
-  return matches[matches.length - 1][1];
+  return names.length > 0
+    ? names[names.length - 1]
+    : null;
+}
+
+function isNameQuestion(
+  message: string
+): boolean {
+  const normalized = message
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalized.includes("我叫什么") ||
+    normalized.includes("我的名字") ||
+    normalized.includes("你记得我叫什么") ||
+    normalized.includes("what is my name")
+  );
 }
 
 export const mockProvider: AIProviderAdapter = {
@@ -46,14 +69,7 @@ export const mockProvider: AIProviderAdapter = {
     const rememberedName =
       findRememberedName(prompt);
 
-    const asksName =
-      currentMessage.includes("我叫什么") ||
-      currentMessage.includes("我的名字") ||
-      currentMessage
-        .toLowerCase()
-        .includes("what is my name");
-
-    if (asksName) {
+    if (isNameQuestion(currentMessage)) {
       return {
         success: true,
         provider: "mock",
