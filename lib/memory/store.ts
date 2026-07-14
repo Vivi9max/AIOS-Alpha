@@ -16,6 +16,18 @@ export function getMemory() {
   return memory;
 }
 
+export function searchMemory(keyword: string) {
+  const q = keyword.trim().toLowerCase();
+
+  if (!q) {
+    return [];
+  }
+
+  return memory.filter((item) =>
+    item.text.toLowerCase().includes(q)
+  );
+}
+
 export function clearMemory() {
   memory.length = 0;
 }

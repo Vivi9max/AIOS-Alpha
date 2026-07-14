@@ -1,15 +1,21 @@
 export type AIProvider =
   | "mock"
-  | "openai"
+  | "qwen"
   | "deepseek"
   | "claude"
   | "gemini"
-  | "qwen";
+  | "openai";
+
+export type AICapability =
+  | "chat"
+  | "reason"
+  | "vision"
+  | "embedding";
 
 export interface ChatResponse {
   success: boolean;
-  content: string;
   provider: AIProvider;
+  content: string;
 }
 
 export interface AIProviderAdapter {
