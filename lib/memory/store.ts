@@ -1,3 +1,8 @@
+import {
+  storageGet,
+  storageSet,
+} from "../storage";
+
 export interface MemoryRecord {
   id: number;
   role: "user" | "assistant";
@@ -5,7 +10,17 @@ export interface MemoryRecord {
   timestamp: number;
 }
 
-const memory: MemoryRecord[] = [];
+const STORAGE_KEY = "aios-memory";
+
+let memory: MemoryRecord[] =
+  storageGet<MemoryRecord[]>(
+    STORAGE_KEY,
+    []
+  );
+
+function save() {
+  storageSet(STORAGE_KEY, memory);
+}
 
 export function addMemory(
   role: "user" | "assistant",
@@ -17,6 +32,8 @@ export function addMemory(
     content,
     timestamp: Date.now(),
   });
+
+  save();
 }
 
 export function addAssistantMemory(
@@ -29,7 +46,9 @@ export function getMemory() {
   return memory;
 }
 
-export function searchMemory(keyword: string) {
+export function searchMemory(
+  keyword: string
+) {
   const q = keyword.trim().toLowerCase();
 
   if (!q) {
@@ -49,7 +68,7 @@ export function getRecentMemory(
 
 export function buildConversationContext(
   limit = 10
-): string {
+) {
   return getRecentMemory(limit)
     .map(
       (item) =>
@@ -59,5 +78,6 @@ export function buildConversationContext(
 }
 
 export function clearMemory() {
-  memory.length = 0;
+  memory = [];
+  save();
 }
