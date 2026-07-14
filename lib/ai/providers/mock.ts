@@ -3,16 +3,35 @@ import type {
   ChatResponse,
 } from "../types";
 
-function findName(prompt: string) {
+function getCurrentMessage(
+  prompt: string
+): string {
+  const marker = "CURRENT_USER_MESSAGE:";
+  const index = prompt.lastIndexOf(marker);
+
+  if (index === -1) {
+    return prompt.trim();
+  }
+
+  return prompt
+    .slice(index + marker.length)
+    .trim();
+}
+
+function findRememberedName(
+  prompt: string
+): string | null {
   const matches = [
     ...prompt.matchAll(
-      /我叫\s*([^\s，。！？\n]+)/g
+      /我叫\s*([A-Za-z0-9_\-\u4e00-\u9fff]+)/g
     ),
   ];
 
-  return matches.length > 0
-    ? matches[matches.length - 1][1]
-    : null;
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return matches[matches.length - 1][1];
 }
 
 export const mockProvider: AIProviderAdapter = {
@@ -21,12 +40,16 @@ export const mockProvider: AIProviderAdapter = {
   async chat(
     prompt: string
   ): Promise<ChatResponse> {
-    const name = findName(prompt);
+    const currentMessage =
+      getCurrentMessage(prompt);
+
+    const rememberedName =
+      findRememberedName(prompt);
 
     const asksName =
-      prompt.includes("我叫什么") ||
-      prompt.includes("我的名字") ||
-      prompt
+      currentMessage.includes("我叫什么") ||
+      currentMessage.includes("我的名字") ||
+      currentMessage
         .toLowerCase()
         .includes("what is my name");
 
@@ -34,24 +57,28 @@ export const mockProvider: AIProviderAdapter = {
       return {
         success: true,
         provider: "mock",
-        content: name
-          ? `你叫 ${name}。`
+        content: rememberedName
+          ? `你叫 ${rememberedName}。`
           : "我还不知道你的名字。",
       };
     }
 
-    if (name) {
+    const currentName =
+      findRememberedName(currentMessage);
+
+    if (currentName) {
       return {
         success: true,
         provider: "mock",
-        content: `记住了，你叫 ${name}。`,
+        content: `记住了，你叫 ${currentName}。`,
       };
     }
 
     return {
       success: true,
       provider: "mock",
-      content: `🤖 AIOS Mock Provider\n\n${prompt}`,
+      content:
+        `🤖 AIOS Mock Provider\n\n${currentMessage}`,
     };
   },
 };

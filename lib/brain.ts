@@ -28,33 +28,48 @@ export interface BrainResponse {
 export async function runBrain(
   request: BrainRequest
 ): Promise<BrainResponse> {
-  addMemory("user", request.prompt);
+  const prompt = request.prompt.trim();
+
+  if (!prompt) {
+    return {
+      success: false,
+      provider: "mock",
+      content: "请输入内容。",
+    };
+  }
+
+  // 先读取过去的记忆，避免当前问题被重复写入上下文。
+  const conversationContext =
+    buildConversationContext(20);
 
   const relatedMemory =
-    searchMemory(request.prompt);
+    searchMemory(prompt).slice(-5);
 
-  const context =
-    buildConversationContext();
+  // 再保存当前用户消息。
+  addMemory("user", prompt);
 
-  const finalPrompt =
-    [
-      context,
-      "",
-      relatedMemory.length
-        ? "Related Memory:\n" +
-          relatedMemory
-            .map((item) => item.content)
-            .join("\n")
-        : "",
-      "",
-      "User:",
-      request.prompt,
-    ]
-      .filter(Boolean)
-      .join("\n");
+  const finalPrompt = [
+    "You are the AIOS Alpha brain.",
+    "Use the supplied memory when it helps answer the current message.",
+    "",
+    "CONVERSATION_MEMORY:",
+    conversationContext || "(empty)",
+    "",
+    "RELATED_MEMORY:",
+    relatedMemory.length > 0
+      ? relatedMemory
+          .map(
+            (item) =>
+              `${item.role}: ${item.content}`
+          )
+          .join("\n")
+      : "(empty)",
+    "",
+    "CURRENT_USER_MESSAGE:",
+    prompt,
+  ].join("\n");
 
-  const result =
-    await chat(finalPrompt);
+  const result = await chat(finalPrompt);
 
   addAssistantMemory(result.content);
 
