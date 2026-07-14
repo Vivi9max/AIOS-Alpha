@@ -1,9 +1,16 @@
-import type { ChatResponse } from "../types";
+import type {
+  AIProviderAdapter,
+  ChatResponse,
+} from "../types";
 
-export const claudeProvider = {
+export const claudeProvider: AIProviderAdapter = {
+  enabled: false,
+
   async chat(prompt: string): Promise<ChatResponse> {
-    throw new Error(
-      "Claude Provider not implemented yet."
-    );
+    return {
+      success: false,
+      provider: "claude",
+      content: "Claude Provider Disabled",
+    };
   },
 };

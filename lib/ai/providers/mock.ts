@@ -1,11 +1,17 @@
-import type { ChatResponse } from "../types";
+import type {
+  AIProviderAdapter,
+  ChatResponse,
+} from "../types";
 
-export const mockProvider = {
+export const mockProvider: AIProviderAdapter = {
+  enabled: true,
+
   async chat(prompt: string): Promise<ChatResponse> {
     return {
       success: true,
-      content: `🤖 Mock Provider\n\n${prompt}`,
       provider: "mock",
+      content:
+        "🤖 AIOS Mock Provider\n\n" + prompt,
     };
   },
 };
