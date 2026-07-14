@@ -1,6 +1,16 @@
-import { runMock } from "./providers/mock";
+import { chat } from "./ai";
+import {
+  addMemory,
+  searchMemory,
+} from "./memory/store";
 
-export type AIProvider = "mock" | "openai";
+export type AIProvider =
+  | "mock"
+  | "qwen"
+  | "deepseek"
+  | "claude"
+  | "gemini"
+  | "openai";
 
 export interface BrainRequest {
   provider: AIProvider;
@@ -9,46 +19,36 @@ export interface BrainRequest {
 
 export interface BrainResponse {
   success: boolean;
+  provider: AIProvider;
   content: string;
 }
 
 export async function runBrain(
   request: BrainRequest
 ): Promise<BrainResponse> {
+addMemory("user", request.prompt);
 
-  if (typeof window !== "undefined") {
+  const relatedMemory =
+    searchMemory(request.prompt);
 
-    const history =
-      JSON.parse(
-        localStorage.getItem("aios-memory") ?? "[]"
-      );
+  const finalPrompt =
+    relatedMemory.length > 0
+      ? [
+          "Memory:",
+          ...relatedMemory.map(
+            (item) => item.content
+          ),
+          "",
+          "User:",
+          request.prompt,
+        ].join("\n")
+      : request.prompt;
 
-    history.push({
-      id: Date.now(),
-      text: request.prompt,
-    });
+  const result = await chat(finalPrompt);
 
-    localStorage.setItem(
-      "aios-memory",
-      JSON.stringify(history)
-    );
-  }
-
-  switch (request.provider) {
-
-    case "mock":
-      return await runMock(request.prompt);
-
-    case "openai":
-      return {
-        success: false,
-        content: "OpenAI Runtime Coming Soon",
-      };
-
-    default:
-      return {
-        success: false,
-        content: "Unknown Provider",
-      };
-  }
+  return {
+    success: result.success,
+    provider: result.provider,
+    content: result.content,
+  };
 }

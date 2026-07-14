@@ -1,14 +1,21 @@
-export interface MemoryItem {
+export interface MemoryRecord {
   id: number;
-  text: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
 }
 
-const memory: MemoryItem[] = [];
+const memory: MemoryRecord[] = [];
 
-export function addMemory(text: string) {
+export function addMemory(
+  role: "user" | "assistant",
+  content: string
+) {
   memory.push({
     id: Date.now(),
-    text,
+    role,
+    content,
+    timestamp: Date.now(),
   });
 }
 
@@ -24,8 +31,12 @@ export function searchMemory(keyword: string) {
   }
 
   return memory.filter((item) =>
-    item.text.toLowerCase().includes(q)
+    item.content.toLowerCase().includes(q)
   );
+}
+
+export function getRecentMemory(limit = 10) {
+  return memory.slice(-limit);
 }
 
 export function clearMemory() {
