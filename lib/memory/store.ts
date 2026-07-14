@@ -1,8 +1,3 @@
-import {
-  storageGet,
-  storageSet,
-} from "../storage";
-
 export interface MemoryRecord {
   id: number;
   role: "user" | "assistant";
@@ -10,30 +5,36 @@ export interface MemoryRecord {
   timestamp: number;
 }
 
-const STORAGE_KEY = "aios-memory";
+type MemoryGlobal = typeof globalThis & {
+  __aiosMemory?: MemoryRecord[];
+};
 
-let memory: MemoryRecord[] =
-  storageGet<MemoryRecord[]>(
-    STORAGE_KEY,
-    []
-  );
+const globalMemory = globalThis as MemoryGlobal;
 
-function save() {
-  storageSet(STORAGE_KEY, memory);
-}
+const memory: MemoryRecord[] =
+  globalMemory.__aiosMemory ??
+  (globalMemory.__aiosMemory = []);
 
 export function addMemory(
   role: "user" | "assistant",
   content: string
 ) {
+  const value = content.trim();
+
+  if (!value) {
+    return;
+  }
+
   memory.push({
     id: Date.now(),
     role,
-    content,
+    content: value,
     timestamp: Date.now(),
   });
 
-  save();
+  if (memory.length > 100) {
+    memory.splice(0, memory.length - 100);
+  }
 }
 
 export function addAssistantMemory(
@@ -42,33 +43,37 @@ export function addAssistantMemory(
   addMemory("assistant", content);
 }
 
-export function getMemory() {
-  return memory;
+export function getMemory(): MemoryRecord[] {
+  return [...memory];
 }
 
 export function searchMemory(
   keyword: string
-) {
-  const q = keyword.trim().toLowerCase();
+): MemoryRecord[] {
+  const query = keyword
+    .trim()
+    .toLowerCase();
 
-  if (!q) {
+  if (!query) {
     return [];
   }
 
   return memory.filter((item) =>
-    item.content.toLowerCase().includes(q)
+    item.content
+      .toLowerCase()
+      .includes(query)
   );
 }
 
 export function getRecentMemory(
   limit = 10
-) {
+): MemoryRecord[] {
   return memory.slice(-limit);
 }
 
 export function buildConversationContext(
   limit = 10
-) {
+): string {
   return getRecentMemory(limit)
     .map(
       (item) =>
@@ -78,6 +83,5 @@ export function buildConversationContext(
 }
 
 export function clearMemory() {
-  memory = [];
-  save();
+  memory.length = 0;
 }
