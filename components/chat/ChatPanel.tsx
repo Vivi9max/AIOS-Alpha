@@ -5,17 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
 
-interface Message {
+type Message = {
   role: "user" | "assistant";
   content: string;
-}
+};
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content:
-        "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
+      content: "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
     },
   ]);
 
@@ -45,9 +44,7 @@ export default function ChatPanel() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          prompt,
-        }),
+        body: JSON.stringify({ prompt }),
       });
 
       const data = await response.json();
@@ -56,9 +53,7 @@ export default function ChatPanel() {
         ...prev,
         {
           role: "assistant",
-          content:
-            data.content ??
-            "Unknown Response",
+          content: data.content ?? "Unknown Response",
         },
       ]);
     } catch {
@@ -66,8 +61,7 @@ export default function ChatPanel() {
         ...prev,
         {
           role: "assistant",
-          content:
-            "Network Error",
+          content: "Network Error",
         },
       ]);
     } finally {
@@ -76,35 +70,9 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-3xl shadow-sm border">
+    <div className="h-full bg-white rounded-2xl shadow flex flex-col">
 
-      <div className="flex items-center justify-between px-6 py-5 border-b">
-
-        <div>
-
-          <h2 className="text-xl font-bold">
-            AIOS Alpha
-          </h2>
-
-          <p className="text-sm text-gray-500">
-            AI Engine
-          </p>
-
-        </div>
-
-        <div className="flex items-center gap-2">
-
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-
-          <span className="text-sm text-gray-500">
-            Connected
-          </span>
-
-        </div>
-
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-5">
 
         {messages.map((message, index) => (
           <MessageBubble
@@ -124,7 +92,7 @@ export default function ChatPanel() {
 
       </div>
 
-      <div className="border-t p-5">
+      <div className="border-t p-4">
 
         <ChatInput
           loading={loading}
