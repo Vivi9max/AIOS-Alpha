@@ -1,39 +1,31 @@
-import { providers } from "./registry";
 import type {
   AIProvider,
   ChatResponse,
 } from "./types";
 
-const order: AIProvider[] = [
-  "deepseek",
-  "openai",
-  "claude",
-  "gemini",
-  "qwen",
-  "mock",
-];
+import { providers } from "./registry";
+import { AI_CONFIG } from "./config";
 
 export async function chat(
   prompt: string
 ): Promise<ChatResponse> {
-  let lastError: unknown;
 
-  for (const name of order) {
-    const provider = providers[name];
+  const provider =
+    providers[AI_CONFIG.defaultProvider];
 
-    if (!provider?.enabled) continue;
-
+  if (provider.enabled) {
     try {
       return await provider.chat(prompt);
     } catch (error) {
-      console.warn(
-        `[AI Router] ${name} failed`,
-        error
-      );
-
-      lastError = error;
+      console.warn(error);
     }
   }
 
-  throw lastError ?? new Error("No AI Provider");
+  return providers[
+    AI_CONFIG.fallbackProvider
+  ].chat(prompt);
+}
+
+export function getProvider(): AIProvider {
+  return AI_CONFIG.defaultProvider;
 }
