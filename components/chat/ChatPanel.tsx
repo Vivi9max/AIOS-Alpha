@@ -3,15 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import ChatInput from "./ChatInput";
-import MessageBubble from "./MessageBubble";
-
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-};
+import MessageList, { type ChatMessage } from "./MessageList";
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content: "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
@@ -29,7 +24,7 @@ export default function ChatPanel() {
   }, [messages, loading]);
 
   async function handleSend(prompt: string) {
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       role: "user",
       content: prompt,
     };
@@ -71,16 +66,8 @@ export default function ChatPanel() {
 
   return (
     <div className="h-full bg-white rounded-2xl shadow flex flex-col">
-
       <div className="flex-1 overflow-y-auto p-5">
-
-        {messages.map((message, index) => (
-          <MessageBubble
-            key={index}
-            role={message.role}
-            content={message.content}
-          />
-        ))}
+        <MessageList messages={messages} />
 
         {loading && (
           <div className="text-sm text-gray-400">
@@ -89,18 +76,14 @@ export default function ChatPanel() {
         )}
 
         <div ref={bottomRef} />
-
       </div>
 
       <div className="border-t p-4">
-
         <ChatInput
           loading={loading}
           onSend={handleSend}
         />
-
       </div>
-
     </div>
   );
 }

@@ -1,20 +1,21 @@
 export type AIProvider =
+  | "mock"
   | "openai"
   | "deepseek"
-  | "qwen"
   | "claude"
   | "gemini"
-  | "mock";
-
-export interface ChatRequest {
-  prompt: string;
-}
+  | "qwen";
 
 export interface ChatResponse {
   success: boolean;
   content: string;
+  provider: AIProvider;
 }
 
 export interface AIProviderAdapter {
-  chat(prompt: string): Promise<ChatResponse>;
+  enabled: boolean;
+
+  chat(
+    prompt: string
+  ): Promise<ChatResponse>;
 }

@@ -1,13 +1,9 @@
-import type {
-  AIProviderAdapter,
-  ChatResponse,
-} from "../types";
+import type { ChatResponse } from "../types";
 
-export const openaiProvider: AIProviderAdapter = {
+export const openaiProvider = {
   async chat(prompt: string): Promise<ChatResponse> {
-    return {
-      success: true,
-      content: `OpenAI Provider\n\n${prompt}`,
-    };
+    throw new Error(
+      "OpenAI Provider not implemented yet."
+    );
   },
 };
