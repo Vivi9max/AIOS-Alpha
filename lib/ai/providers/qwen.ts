@@ -4,15 +4,20 @@ import type {
 } from "../types";
 
 import { AI_CONFIG } from "../config";
+import { createChatCompletion } from "../client";
+import { buildConversation } from "@/lib/conversation/builder";
 
 interface QwenResponse {
   choices?: Array<{
     message?: {
+      role?: string;
       content?: string;
     };
   }>;
   error?: {
     message?: string;
+    type?: string;
+    code?: string;
   };
 }
 
@@ -22,11 +27,13 @@ const config =
 export const qwenProvider: AIProviderAdapter = {
   enabled:
     config.enabled &&
-    config.apiKey.length > 0,
+    config.apiKey.trim().length > 0,
 
   async chat(
     prompt: string
   ): Promise<ChatResponse> {
+    const cleanPrompt = prompt.trim();
+
     if (!this.enabled) {
       return {
         success: false,
@@ -36,46 +43,38 @@ export const qwenProvider: AIProviderAdapter = {
       };
     }
 
-    const response = await fetch(
-      `${config.baseURL}/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            {
-              role: "system",
-              content:
-                "你是 AIOS Alpha 的核心助手。请使用清晰、准确、可执行的方式回答用户。",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          temperature: 0.7,
-        }),
-        cache: "no-store",
-      }
-    );
+    if (!cleanPrompt) {
+      return {
+        success: false,
+        provider: "qwen",
+        content: "请输入内容。",
+      };
+    }
 
-    const data =
-      (await response.json()) as QwenResponse;
+    const messages =
+      buildConversation(
+        cleanPrompt,
+        20
+      );
 
-    if (!response.ok) {
+    const result =
+      (await createChatCompletion({
+        apiKey: config.apiKey,
+        baseURL: config.baseURL,
+        model: config.model,
+        messages,
+        temperature: 0.7,
+        timeoutMs: 30000,
+      })) as QwenResponse;
+
+    if (result.error?.message) {
       throw new Error(
-        data.error?.message ??
-          `Qwen API Error: ${response.status}`
+        result.error.message
       );
     }
 
     const content =
-      data.choices?.[0]?.message?.content?.trim();
+      result.choices?.[0]?.message?.content?.trim();
 
     if (!content) {
       throw new Error(
