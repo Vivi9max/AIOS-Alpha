@@ -1,9 +1,11 @@
 import type { AIProvider } from "./types";
 
 export const AI_CONFIG = {
-  defaultProvider: "qwen" as AIProvider,
+  defaultProvider:
+    "deepseek" as AIProvider,
 
-  fallbackProvider: "mock" as AIProvider,
+  fallbackProvider:
+    "mock" as AIProvider,
 
   providers: {
     mock: {
@@ -13,23 +15,37 @@ export const AI_CONFIG = {
     qwen: {
       enabled: false,
       model: "qwen-plus",
-      apiKey: process.env.QWEN_API_KEY ?? "",
+      apiKey:
+        process.env.QWEN_API_KEY ??
+        "",
       baseURL:
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     },
 
     deepseek: {
-      enabled: false,
+      enabled:
+        Boolean(
+          process.env
+            .DEEPSEEK_API_KEY
+        ),
       model: "deepseek-chat",
-      apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-      baseURL: "https://api.deepseek.com/v1",
+      apiKey:
+        process.env
+          .DEEPSEEK_API_KEY ??
+        "",
+      baseURL:
+        "https://api.deepseek.com/v1",
     },
 
     openai: {
       enabled: false,
       model: "gpt-4.1",
-      apiKey: process.env.OPENAI_API_KEY ?? "",
-      baseURL: "https://api.openai.com/v1",
+      apiKey:
+        process.env
+          .OPENAI_API_KEY ??
+        "",
+      baseURL:
+        "https://api.openai.com/v1",
     },
 
     gemini: {
