@@ -18,8 +18,41 @@ export default function ChatInput({
   const [value, setValue] =
     useState("");
 
+  const [isTouchDevice, setIsTouchDevice] =
+    useState(false);
+
   const textareaRef =
     useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const detectInputMode = () => {
+      const hasCoarsePointer =
+        window.matchMedia(
+          "(pointer: coarse)"
+        ).matches;
+
+      const hasTouch =
+        navigator.maxTouchPoints > 0;
+
+      setIsTouchDevice(
+        hasCoarsePointer || hasTouch
+      );
+    };
+
+    detectInputMode();
+
+    window.addEventListener(
+      "resize",
+      detectInputMode
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        detectInputMode
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const textarea =
@@ -37,6 +70,17 @@ export default function ChatInput({
     )}px`;
   }, [value]);
 
+  function resetTextareaHeight() {
+    const textarea =
+      textareaRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "48px";
+  }
+
   function send() {
     const text = value.trim();
 
@@ -46,6 +90,10 @@ export default function ChatInput({
 
     onSend(text);
     setValue("");
+
+    window.requestAnimationFrame(
+      resetTextareaHeight
+    );
   }
 
   return (
@@ -62,11 +110,24 @@ export default function ChatInput({
         rows={1}
         value={value}
         disabled={loading}
-        placeholder="Message AIOS..."
+        enterKeyHint={
+          isTouchDevice
+            ? "enter"
+            : "send"
+        }
+        placeholder={
+          isTouchDevice
+            ? "输入消息，回车可换行…"
+            : "输入消息，Enter 发送…"
+        }
         onChange={(event) =>
           setValue(event.target.value)
         }
         onKeyDown={(event) => {
+          if (isTouchDevice) {
+            return;
+          }
+
           if (
             event.key === "Enter" &&
             !event.shiftKey
@@ -94,6 +155,7 @@ export default function ChatInput({
           resize: "none",
           outline: "none",
           overflowY: "auto",
+          WebkitAppearance: "none",
         }}
       />
 
@@ -128,6 +190,8 @@ export default function ChatInput({
             !value.trim()
               ? "not-allowed"
               : "pointer",
+          WebkitTapHighlightColor:
+            "transparent",
         }}
       >
         {loading ? "…" : "↑"}
