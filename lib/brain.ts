@@ -17,6 +17,10 @@ import {
   buildMemoryProfileText,
 } from "./memory/index";
 
+import {
+  hydrateManualProfile,
+} from "./memory/profile-store";
+
 export interface BrainRequest {
   prompt: string;
 }
@@ -45,19 +49,27 @@ export async function runBrain(
   }
 
   /*
-   * 在读取上下文之前，先从持久化层恢复 Memory。
-   * 未配置 Redis 时会自动使用服务器内存。
+   * 在读取上下文前恢复：
+   * 1. Conversation Memory
+   * 2. Manual Profile
    */
-  await hydrateMemory();
+  await Promise.all([
+    hydrateMemory(),
+    hydrateManualProfile(),
+  ]);
 
   const conversationContext =
-    buildConversationContext(20);
+    buildConversationContext(
+      20
+    );
 
   const profileContext =
     buildMemoryProfileText();
 
   const relatedMemory =
-    searchMemory(prompt).slice(-5);
+    searchMemory(
+      prompt
+    ).slice(-5);
 
   addMemory(
     "user",
@@ -71,10 +83,12 @@ export async function runBrain(
     "Do not treat questions as new personal facts.",
     "",
     "USER_PROFILE:",
-    profileContext || "(empty)",
+    profileContext ||
+      "(empty)",
     "",
     "CONVERSATION_MEMORY:",
-    conversationContext || "(empty)",
+    conversationContext ||
+      "(empty)",
     "",
     "RELATED_MEMORY:",
     relatedMemory.length > 0
@@ -92,7 +106,9 @@ export async function runBrain(
 
   try {
     const result =
-      await chat(finalPrompt);
+      await chat(
+        finalPrompt
+      );
 
     addAssistantMemory(
       result.content
@@ -101,19 +117,28 @@ export async function runBrain(
     await saveMemory();
 
     return {
-      success: result.success,
-      provider: result.provider,
+      success:
+        result.success,
+
+      provider:
+        result.provider,
+
       requestedProvider:
         result.requestedProvider,
+
       fallbackUsed:
         result.fallbackUsed,
-      error: result.error,
-      content: result.content,
+
+      error:
+        result.error,
+
+      content:
+        result.content,
     };
   } catch (error) {
     /*
-     * 即使 Provider 请求失败，
-     * 用户本轮输入也应被保存。
+     * Provider 失败时，
+     * 仍保存本轮用户消息。
      */
     await saveMemory();
 

@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
 import {
   buildMemoryProfile,
@@ -6,33 +8,54 @@ import {
 } from "@/lib/memory/index";
 
 import {
-  clearManualProfile,
-  updateManualProfile,
+  clearPersistentManualProfile,
+  hydrateManualProfile,
+  updateAndSaveManualProfile,
 } from "@/lib/memory/profile-store";
 
-export const dynamic = "force-dynamic";
+import {
+  hydrateMemory,
+} from "@/lib/memory/store";
+
+export const dynamic =
+  "force-dynamic";
 
 function createResponse() {
   const profile =
     buildMemoryProfile();
 
   const completedFields =
-    Object.values(profile).filter(
+    Object.values(
+      profile
+    ).filter(
       (value) =>
-        typeof value === "string" &&
-        value.trim().length > 0
+        typeof value ===
+          "string" &&
+        value.trim().length >
+          0
     ).length;
 
   return {
     success: true,
     profile,
     completedFields,
-    timestamp: Date.now(),
+    timestamp:
+      Date.now(),
   };
+}
+
+async function hydrateProfileData():
+  Promise<void> {
+  await Promise.all([
+    hydrateMemory(),
+    hydrateManualProfile(),
+  ]);
 }
 
 export async function GET() {
   try {
+    await hydrateProfileData();
+
     return NextResponse.json(
       createResponse()
     );
@@ -47,7 +70,12 @@ export async function GET() {
         success: false,
         profile: {},
         completedFields: 0,
-        timestamp: Date.now(),
+        error:
+          error instanceof Error
+            ? error.message
+            : "Memory Profile loading failed.",
+        timestamp:
+          Date.now(),
       },
       {
         status: 500,
@@ -63,7 +91,11 @@ export async function PUT(
     const body =
       (await request.json()) as Partial<MemoryProfile>;
 
-    updateManualProfile(body);
+    await hydrateMemory();
+
+    await updateAndSaveManualProfile(
+      body
+    );
 
     return NextResponse.json(
       createResponse()
@@ -77,8 +109,16 @@ export async function PUT(
     return NextResponse.json(
       {
         success: false,
+        profile: {},
+        completedFields: 0,
         message:
           "Memory Profile 保存失败。",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Memory Profile saving failed.",
+        timestamp:
+          Date.now(),
       },
       {
         status: 500,
@@ -89,8 +129,15 @@ export async function PUT(
 
 export async function DELETE() {
   try {
-    clearManualProfile();
+    await hydrateMemory();
 
+    await clearPersistentManualProfile();
+
+    /*
+     * 只重置手动资料。
+     * 从 Conversation Memory
+     * 自动提取出的资料仍会保留。
+     */
     return NextResponse.json(
       createResponse()
     );
@@ -103,8 +150,16 @@ export async function DELETE() {
     return NextResponse.json(
       {
         success: false,
+        profile: {},
+        completedFields: 0,
         message:
           "Memory Profile 重置失败。",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Memory Profile reset failed.",
+        timestamp:
+          Date.now(),
       },
       {
         status: 500,
