@@ -4,41 +4,78 @@ import type {
 } from "../types";
 
 import { AI_CONFIG } from "../config";
-
 import { createChatCompletion } from "../client";
+
+interface DeepSeekResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+  error?: {
+    message?: string;
+  };
+}
+
+const config =
+  AI_CONFIG.providers.deepseek;
 
 export const deepseekProvider: AIProviderAdapter = {
   enabled:
-    AI_CONFIG.providers.deepseek.enabled &&
-    AI_CONFIG.providers.deepseek.apiKey.length > 0,
+    config.enabled &&
+    config.apiKey.length > 0,
 
   async chat(
     prompt: string
   ): Promise<ChatResponse> {
+    const cleanPrompt = prompt.trim();
+
+    if (!this.enabled) {
+      return {
+        success: false,
+        provider: "deepseek",
+        content:
+          "DeepSeek Provider 未启用或缺少 API Key。",
+      };
+    }
+
+    if (!cleanPrompt) {
+      return {
+        success: false,
+        provider: "deepseek",
+        content: "请输入内容。",
+      };
+    }
 
     const result =
-      await createChatCompletion({
+      (await createChatCompletion({
+        apiKey: config.apiKey,
+        baseURL: config.baseURL,
+        model: config.model,
+        prompt: cleanPrompt,
+      })) as DeepSeekResponse;
 
-        apiKey:
-          AI_CONFIG.providers.deepseek.apiKey,
+    if (result.error?.message) {
+      throw new Error(
+        result.error.message
+      );
+    }
 
-        baseURL:
-          AI_CONFIG.providers.deepseek.baseURL,
+    const content =
+      result.choices?.[0]?.message?.content?.trim();
 
-        model:
-          AI_CONFIG.providers.deepseek.model,
-
-        prompt,
-      });
+    if (!content) {
+      throw new Error(
+        "DeepSeek 返回了空内容。"
+      );
+    }
 
     return {
       success: true,
-
       provider: "deepseek",
-
-      content:
-        result.choices?.[0]?.message?.content ??
-        "No Response",
+      content,
     };
   },
 };
+
+export default deepseekProvider;
