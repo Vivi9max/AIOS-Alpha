@@ -9,11 +9,14 @@ import { createChatCompletion } from "../client";
 interface DeepSeekResponse {
   choices?: Array<{
     message?: {
+      role?: string;
       content?: string;
     };
   }>;
   error?: {
     message?: string;
+    type?: string;
+    code?: string;
   };
 }
 
@@ -23,7 +26,7 @@ const config =
 export const deepseekProvider: AIProviderAdapter = {
   enabled:
     config.enabled &&
-    config.apiKey.length > 0,
+    config.apiKey.trim().length > 0,
 
   async chat(
     prompt: string
@@ -53,6 +56,10 @@ export const deepseekProvider: AIProviderAdapter = {
         baseURL: config.baseURL,
         model: config.model,
         prompt: cleanPrompt,
+        systemPrompt:
+          "你是 AIOS Alpha 的核心助手。请准确理解上下文，并提供清晰、可靠、可执行的回答。",
+        temperature: 0.7,
+        timeoutMs: 30000,
       })) as DeepSeekResponse;
 
     if (result.error?.message) {
