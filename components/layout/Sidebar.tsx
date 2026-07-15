@@ -30,9 +30,12 @@ export default function Sidebar() {
   return (
     <aside className="w-72 border-r bg-white flex flex-col">
       <div className="p-6 border-b">
-        <h1 className="text-2xl font-bold">
-          AIOS
-        </h1>
+        <Link
+  href="/dashboard"
+  className="text-2xl font-bold"
+>
+  AIOS
+</Link>
 
         <p className="text-sm text-gray-500">
           Alpha v0.2
@@ -47,7 +50,7 @@ export default function Sidebar() {
         {projects.map((project) => (
           <Link
             key={project.id}
-            href="/workspace"
+            href="/dashboard"
             className="block w-full text-left rounded-xl bg-black text-white px-4 py-3 mb-2"
           >
             {project.name}
