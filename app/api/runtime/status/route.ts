@@ -1,20 +1,47 @@
 import { NextResponse } from "next/server";
 
-import { getProvider } from "@/lib/ai/router";
-import { getMemory } from "@/lib/memory/store";
+import { getRuntimeStatus } from "@/lib/runtime/status";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const memory = getMemory();
+  try {
+    return NextResponse.json(
+      getRuntimeStatus()
+    );
+  } catch (error) {
+    console.error(
+      "[AIOS Runtime Status]",
+      error
+    );
 
-  return NextResponse.json({
-    success: true,
-    runtime: "aios-alpha",
-    version: "0.2",
-    status: "online",
-    provider: getProvider(),
-    memoryCount: memory.length,
-    timestamp: Date.now(),
-  });
+    return NextResponse.json(
+      {
+        success: false,
+        runtime: "aios-alpha",
+        version: "0.2",
+        status: "offline",
+        provider: "unknown",
+        memoryCount: 0,
+        modules: {
+          brain: {
+            enabled: false,
+            status: "disabled",
+          },
+          memory: {
+            enabled: false,
+            status: "disabled",
+          },
+          tasks: {
+            enabled: false,
+            status: "disabled",
+          },
+        },
+        timestamp: Date.now(),
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
