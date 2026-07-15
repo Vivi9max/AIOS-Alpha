@@ -1,50 +1,78 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
-type ProviderName =
-  | "mock"
-  | "qwen"
-  | "deepseek";
-
 const STORAGE_KEY = "aios-settings";
 
-interface AIOSSettings {
-  provider: ProviderName;
+interface LocalSettings {
   memoryEnabled: boolean;
   taskEnabled: boolean;
 }
 
-const defaultSettings: AIOSSettings = {
-  provider: "mock",
+interface RuntimeStatus {
+  success: boolean;
+  runtime: string;
+  version: string;
+  status: "online" | "offline";
+  provider: string;
+  memoryCount: number;
+  timestamp: number;
+}
+
+const defaultSettings: LocalSettings = {
   memoryEnabled: true,
   taskEnabled: true,
 };
 
+const initialRuntime: RuntimeStatus = {
+  success: false,
+  runtime: "aios-alpha",
+  version: "0.2",
+  status: "offline",
+  provider: "unknown",
+  memoryCount: 0,
+  timestamp: 0,
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] =
-    useState<AIOSSettings>(
+    useState<LocalSettings>(
       defaultSettings
     );
+
+  const [runtime, setRuntime] =
+    useState<RuntimeStatus>(
+      initialRuntime
+    );
+
+  const [runtimeLoading, setRuntimeLoading] =
+    useState(true);
+
+  const [runtimeError, setRuntimeError] =
+    useState("");
 
   const [saved, setSaved] =
     useState(false);
 
   useEffect(() => {
     try {
-      const value =
+      const stored =
         localStorage.getItem(
           STORAGE_KEY
         );
 
-      if (!value) {
+      if (!stored) {
         return;
       }
 
       const parsed =
-        JSON.parse(value);
+        JSON.parse(stored);
 
       setSettings({
         ...defaultSettings,
@@ -57,8 +85,50 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadRuntime = useCallback(
+    async () => {
+      setRuntimeLoading(true);
+      setRuntimeError("");
+
+      try {
+        const response = await fetch(
+          "/api/runtime/status",
+          {
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Runtime unavailable."
+          );
+        }
+
+        const data =
+          (await response.json()) as RuntimeStatus;
+
+        setRuntime(data);
+      } catch {
+        setRuntime(
+          initialRuntime
+        );
+
+        setRuntimeError(
+          "无法读取 Runtime 状态。"
+        );
+      } finally {
+        setRuntimeLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadRuntime();
+  }, [loadRuntime]);
+
   function updateSettings(
-    updates: Partial<AIOSSettings>
+    updates: Partial<LocalSettings>
   ) {
     setSaved(false);
 
@@ -82,6 +152,9 @@ export default function SettingsPage() {
       setSaved(false);
     }, 1800);
   }
+
+  const isOnline =
+    runtime.status === "online";
 
   return (
     <WorkspaceShell>
@@ -125,9 +198,25 @@ export default function SettingsPage() {
               lineHeight: 1.6,
             }}
           >
-            管理 AI Provider 和系统能力。
+            管理 Runtime 模块并查看真实系统状态。
           </p>
         </header>
+
+        {runtimeError && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "12px 14px",
+              border:
+                "1px solid #fecaca",
+              borderRadius: 12,
+              background: "#fff7f7",
+              color: "#b91c1c",
+            }}
+          >
+            {runtimeError}
+          </div>
+        )}
 
         <section
           style={{
@@ -139,71 +228,87 @@ export default function SettingsPage() {
             borderRadius: 16,
           }}
         >
-          <label
-            htmlFor="provider"
+          <div
             style={{
-              display: "block",
-              marginBottom: 9,
-              fontWeight: 700,
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: 12,
             }}
           >
-            AI Provider
-          </label>
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  color: "#6b7280",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                ACTIVE PROVIDER
+              </p>
 
-          <select
-            id="provider"
-            value={
-              settings.provider
-            }
-            onChange={(event) =>
-              updateSettings({
-                provider:
-                  event.target
-                    .value as ProviderName,
-              })
-            }
-            style={{
-              width: "100%",
-              boxSizing:
-                "border-box",
-              padding: "12px 13px",
-              border:
-                "1px solid #d1d5db",
-              borderRadius: 10,
-              background:
-                "#ffffff",
-              fontSize: 15,
-            }}
-          >
-            <option value="mock">
-              Mock
-            </option>
+              <strong
+                style={{
+                  display: "block",
+                  marginTop: 7,
+                  fontSize: 25,
+                  textTransform:
+                    "capitalize",
+                }}
+              >
+                {runtimeLoading
+                  ? "读取中…"
+                  : runtime.provider}
+              </strong>
+            </div>
 
-            <option
-              value="qwen"
-              disabled
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "8px 11px",
+                borderRadius: 999,
+                background: isOnline
+                  ? "#ecfdf5"
+                  : "#fef2f2",
+                color: isOnline
+                  ? "#047857"
+                  : "#b91c1c",
+                fontSize: 13,
+                fontWeight: 800,
+              }}
             >
-              Qwen（待接入）
-            </option>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: isOnline
+                    ? "#22c55e"
+                    : "#ef4444",
+                }}
+              />
 
-            <option
-              value="deepseek"
-              disabled
-            >
-              DeepSeek（待接入）
-            </option>
-          </select>
+              {isOnline
+                ? "Online"
+                : "Offline"}
+            </span>
+          </div>
 
           <p
             style={{
-              margin: "9px 0 0",
+              margin: "14px 0 0",
               color: "#6b7280",
               fontSize: 13,
-              lineHeight: 1.5,
+              lineHeight: 1.55,
             }}
           >
-            当前正式可用的是 Mock
-            Provider。真实模型接入后会在此开放。
+            Provider 由服务端 AI_CONFIG
+            和 Provider Router 控制。当前页面不再显示无法生效的本地模型切换。
           </p>
         </section>
 
@@ -219,8 +324,7 @@ export default function SettingsPage() {
         >
           <h2
             style={{
-              margin:
-                "0 0 14px",
+              margin: "0 0 14px",
               fontSize: 18,
             }}
           >
@@ -229,7 +333,7 @@ export default function SettingsPage() {
 
           <SettingSwitch
             label="Memory"
-            description="保存并调用对话记忆"
+            description="在当前设备中启用记忆相关界面设置"
             checked={
               settings.memoryEnabled
             }
@@ -243,7 +347,7 @@ export default function SettingsPage() {
 
           <SettingSwitch
             label="Tasks"
-            description="启用任务管理能力"
+            description="在当前设备中启用任务管理界面设置"
             checked={
               settings.taskEnabled
             }
@@ -254,6 +358,18 @@ export default function SettingsPage() {
               })
             }
           />
+
+          <p
+            style={{
+              margin: "13px 0 0",
+              color: "#9ca3af",
+              fontSize: 12,
+              lineHeight: 1.55,
+            }}
+          >
+            当前开关保存于本机浏览器，暂不改变服务端
+            Runtime。服务端模块控制将在后续接入。
+          </p>
         </section>
 
         <section
@@ -266,35 +382,84 @@ export default function SettingsPage() {
             borderRadius: 16,
           }}
         >
-          <h2
+          <div
             style={{
-              margin: "0 0 12px",
-              fontSize: 18,
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 12,
             }}
           >
-            System Status
-          </h2>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 18,
+              }}
+            >
+              System Status
+            </h2>
+
+            <button
+              type="button"
+              onClick={loadRuntime}
+              disabled={runtimeLoading}
+              style={{
+                padding: "8px 11px",
+                border:
+                  "1px solid #d1d5db",
+                borderRadius: 9,
+                background: "#ffffff",
+                color: "#111827",
+                fontWeight: 700,
+                opacity: runtimeLoading
+                  ? 0.6
+                  : 1,
+              }}
+            >
+              {runtimeLoading
+                ? "刷新中…"
+                : "刷新"}
+            </button>
+          </div>
 
           <StatusRow
             label="Runtime"
-            value="Online"
+            value={runtime.runtime}
+          />
+
+          <StatusRow
+            label="Status"
+            value={runtime.status}
           />
 
           <StatusRow
             label="Version"
-            value="Alpha v0.2"
+            value={`Alpha v${runtime.version}`}
           />
 
           <StatusRow
             label="Provider"
-            value={
-              settings.provider
-            }
+            value={runtime.provider}
           />
 
           <StatusRow
-            label="Storage"
-            value="Local"
+            label="Memory Records"
+            value={String(
+              runtime.memoryCount
+            )}
+          />
+
+          <StatusRow
+            label="Last Check"
+            value={
+              runtime.timestamp
+                ? new Date(
+                    runtime.timestamp
+                  ).toLocaleString()
+                : "—"
+            }
           />
         </section>
 
@@ -313,8 +478,8 @@ export default function SettingsPage() {
           }}
         >
           {saved
-            ? "已保存 ✓"
-            : "保存设置"}
+            ? "本机设置已保存 ✓"
+            : "保存本机设置"}
         </button>
       </div>
     </WorkspaceShell>
@@ -397,9 +562,10 @@ function StatusRow({
     <div
       style={{
         display: "flex",
+        flexWrap: "wrap",
         justifyContent:
           "space-between",
-        gap: 16,
+        gap: 10,
         padding: "10px 0",
         borderTop:
           "1px solid #f3f4f6",
@@ -415,8 +581,14 @@ function StatusRow({
 
       <strong
         style={{
+          maxWidth: "65%",
+          textAlign: "right",
+          overflowWrap: "anywhere",
           textTransform:
-            "capitalize",
+            label === "Provider" ||
+            label === "Status"
+              ? "capitalize"
+              : "none",
         }}
       >
         {value}
