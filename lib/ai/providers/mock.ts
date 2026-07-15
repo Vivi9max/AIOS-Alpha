@@ -3,11 +3,14 @@ import type {
   ChatResponse,
 } from "../types";
 
-function getCurrentMessage(
+function extractCurrentMessage(
   prompt: string
 ): string {
-  const marker = "CURRENT_USER_MESSAGE:";
-  const index = prompt.lastIndexOf(marker);
+  const marker =
+    "CURRENT_USER_MESSAGE:";
+
+  const index =
+    prompt.lastIndexOf(marker);
 
   if (index === -1) {
     return prompt.trim();
@@ -18,43 +21,71 @@ function getCurrentMessage(
     .trim();
 }
 
-function findRememberedName(
+function extractRememberedName(
   prompt: string
 ): string | null {
-  const names: string[] = [];
+  const patterns = [
+    /我叫\s*([A-Za-z\u4e00-\u9fa5]+)/i,
+    /我是\s*([A-Za-z\u4e00-\u9fa5]+)/i,
+    /你叫\s*([A-Za-z\u4e00-\u9fa5]+)/i,
+  ];
 
-  for (const rawLine of prompt.split("\n")) {
-    const line = rawLine
-      .replace(/^(user|assistant):\s*/i, "")
-      .trim();
-
-    const match = line.match(
-      /^我叫\s*(?!什么|啥|谁)([A-Za-z0-9_\-\u4e00-\u9fff]+)[。！!，,\s]*$/
-    );
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
 
     if (match?.[1]) {
-      names.push(match[1]);
+      return match[1]
+        .replace(/[。,.，！!？?]/g, "")
+        .trim();
     }
   }
 
-  return names.length > 0
-    ? names[names.length - 1]
-    : null;
+  return null;
 }
 
-function isNameQuestion(
-  message: string
-): boolean {
-  const normalized = message
-    .trim()
-    .toLowerCase();
+function createMockReply(
+  prompt: string
+): string {
+  const message =
+    extractCurrentMessage(prompt);
 
-  return (
-    normalized.includes("我叫什么") ||
-    normalized.includes("我的名字") ||
-    normalized.includes("你记得我叫什么") ||
-    normalized.includes("what is my name")
-  );
+  const rememberedName =
+    extractRememberedName(prompt);
+
+  if (
+    /我叫什[么麼]|我是谁|你记得我吗/i.test(
+      message
+    )
+  ) {
+    if (rememberedName) {
+      return `你叫 ${rememberedName}。`;
+    }
+
+    return "我还不知道你的名字。";
+  }
+
+  const nameMatch =
+    message.match(
+      /(?:我叫|我是)\s*([A-Za-z\u4e00-\u9fa5]+)/
+    );
+
+  if (nameMatch?.[1]) {
+    const name = nameMatch[1]
+      .replace(/[。,.，！!？?]/g, "")
+      .trim();
+
+    return `记住了，你叫 ${name}。`;
+  }
+
+  if (/你好|hello|hi/i.test(message)) {
+    return "你好，我是 AIOS Alpha。";
+  }
+
+  return [
+    "🤖 AIOS Mock Provider",
+    "",
+    `已收到：${message}`,
+  ].join("\n");
 }
 
 export const mockProvider: AIProviderAdapter = {
@@ -63,38 +94,13 @@ export const mockProvider: AIProviderAdapter = {
   async chat(
     prompt: string
   ): Promise<ChatResponse> {
-    const currentMessage =
-      getCurrentMessage(prompt);
-
-    const rememberedName =
-      findRememberedName(prompt);
-
-    if (isNameQuestion(currentMessage)) {
-      return {
-        success: true,
-        provider: "mock",
-        content: rememberedName
-          ? `你叫 ${rememberedName}。`
-          : "我还不知道你的名字。",
-      };
-    }
-
-    const currentName =
-      findRememberedName(currentMessage);
-
-    if (currentName) {
-      return {
-        success: true,
-        provider: "mock",
-        content: `记住了，你叫 ${currentName}。`,
-      };
-    }
-
     return {
       success: true,
       provider: "mock",
       content:
-        `🤖 AIOS Mock Provider\n\n${currentMessage}`,
+        createMockReply(prompt),
     };
   },
 };
+
+export default mockProvider;
