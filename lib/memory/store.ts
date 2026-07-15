@@ -7,13 +7,31 @@ export interface MemoryRecord {
 
 type MemoryGlobal = typeof globalThis & {
   __aiosMemory?: MemoryRecord[];
+  __aiosMemorySequence?: number;
 };
 
-const globalMemory = globalThis as MemoryGlobal;
+const globalMemory =
+  globalThis as MemoryGlobal;
 
 const memory: MemoryRecord[] =
   globalMemory.__aiosMemory ??
   (globalMemory.__aiosMemory = []);
+
+function createMemoryId(): number {
+  const nextSequence =
+    ((globalMemory.__aiosMemorySequence ??
+      0) +
+      1) %
+    1000;
+
+  globalMemory.__aiosMemorySequence =
+    nextSequence;
+
+  return (
+    Date.now() * 1000 +
+    nextSequence
+  );
+}
 
 export function addMemory(
   role: "user" | "assistant",
@@ -25,22 +43,30 @@ export function addMemory(
     return;
   }
 
+  const now = Date.now();
+
   memory.push({
-    id: Date.now(),
+    id: createMemoryId(),
     role,
     content: value,
-    timestamp: Date.now(),
+    timestamp: now,
   });
 
   if (memory.length > 100) {
-    memory.splice(0, memory.length - 100);
+    memory.splice(
+      0,
+      memory.length - 100
+    );
   }
 }
 
 export function addAssistantMemory(
   content: string
 ) {
-  addMemory("assistant", content);
+  addMemory(
+    "assistant",
+    content
+  );
 }
 
 export function getMemory(): MemoryRecord[] {
@@ -68,7 +94,14 @@ export function searchMemory(
 export function getRecentMemory(
   limit = 10
 ): MemoryRecord[] {
-  return memory.slice(-limit);
+  const safeLimit = Math.max(
+    0,
+    Math.floor(limit)
+  );
+
+  return memory.slice(
+    -safeLimit
+  );
 }
 
 export function buildConversationContext(
@@ -84,4 +117,7 @@ export function buildConversationContext(
 
 export function clearMemory() {
   memory.length = 0;
+
+  globalMemory.__aiosMemorySequence =
+    0;
 }
