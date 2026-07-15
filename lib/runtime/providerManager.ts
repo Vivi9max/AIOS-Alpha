@@ -1,4 +1,6 @@
-import type { AIProvider } from "@/lib/ai/types";
+import type {
+  AIProvider,
+} from "@/lib/ai/types";
 
 import { AI_CONFIG } from "@/lib/ai/config";
 import { getActiveProvider } from "@/lib/ai/router";
@@ -9,6 +11,25 @@ export interface RuntimeProvider {
   enabled: boolean;
   configured: boolean;
 }
+
+export interface ProviderRuntimeStatus {
+  provider: AIProvider;
+  requestedProvider: AIProvider;
+  fallbackUsed: boolean;
+  success: boolean;
+  error?: string;
+  latencyMs?: number;
+  lastRequestAt: number | null;
+}
+
+type ProviderManagerGlobal =
+  typeof globalThis & {
+    __aiosProviderRuntimeStatus?:
+      ProviderRuntimeStatus;
+  };
+
+const globalProviderManager =
+  globalThis as ProviderManagerGlobal;
 
 const providerNames: Record<
   AIProvider,
@@ -44,7 +65,23 @@ function hasApiKey(
   return provider === "mock";
 }
 
-export function getCurrentProvider(): RuntimeProvider {
+function createInitialRuntimeStatus():
+  ProviderRuntimeStatus {
+  const activeProvider =
+    getActiveProvider();
+
+  return {
+    provider: activeProvider,
+    requestedProvider:
+      activeProvider,
+    fallbackUsed: false,
+    success: true,
+    lastRequestAt: null,
+  };
+}
+
+export function getCurrentProvider():
+  RuntimeProvider {
   const current =
     getActiveProvider();
 
@@ -62,7 +99,8 @@ export function getCurrentProvider(): RuntimeProvider {
   };
 }
 
-export function listProviders(): RuntimeProvider[] {
+export function listProviders():
+  RuntimeProvider[] {
   return providerIds.map(
     (id) => {
       const config =
@@ -88,5 +126,60 @@ export function providerStatus() {
     current: current.id,
     currentProvider: current,
     providers: listProviders(),
+  };
+}
+
+export function updateProviderRuntimeStatus(
+  status: ProviderRuntimeStatus
+): ProviderRuntimeStatus {
+  const nextStatus = {
+    ...status,
+    error:
+      status.error?.trim() ||
+      undefined,
+  };
+
+  globalProviderManager
+    .__aiosProviderRuntimeStatus =
+    nextStatus;
+
+  return nextStatus;
+}
+
+export function getProviderRuntimeStatus():
+  ProviderRuntimeStatus {
+  const existing =
+    globalProviderManager
+      .__aiosProviderRuntimeStatus;
+
+  if (existing) {
+    return {
+      ...existing,
+    };
+  }
+
+  const initialStatus =
+    createInitialRuntimeStatus();
+
+  globalProviderManager
+    .__aiosProviderRuntimeStatus =
+    initialStatus;
+
+  return {
+    ...initialStatus,
+  };
+}
+
+export function resetProviderRuntimeStatus():
+  ProviderRuntimeStatus {
+  const status =
+    createInitialRuntimeStatus();
+
+  globalProviderManager
+    .__aiosProviderRuntimeStatus =
+    status;
+
+  return {
+    ...status,
   };
 }
