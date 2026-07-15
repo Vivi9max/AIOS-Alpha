@@ -8,6 +8,8 @@ import {
   addMemory,
   addAssistantMemory,
   buildConversationContext,
+  hydrateMemory,
+  saveMemory,
   searchMemory,
 } from "./memory/store";
 
@@ -41,6 +43,12 @@ export async function runBrain(
       content: "请输入内容。",
     };
   }
+
+  /*
+   * 在读取上下文之前，先从持久化层恢复 Memory。
+   * 未配置 Redis 时会自动使用服务器内存。
+   */
+  await hydrateMemory();
 
   const conversationContext =
     buildConversationContext(20);
@@ -82,21 +90,33 @@ export async function runBrain(
     prompt,
   ].join("\n");
 
-  const result =
-    await chat(finalPrompt);
+  try {
+    const result =
+      await chat(finalPrompt);
 
-  addAssistantMemory(
-    result.content
-  );
+    addAssistantMemory(
+      result.content
+    );
 
-  return {
-    success: result.success,
-    provider: result.provider,
-    requestedProvider:
-      result.requestedProvider,
-    fallbackUsed:
-      result.fallbackUsed,
-    error: result.error,
-    content: result.content,
-  };
+    await saveMemory();
+
+    return {
+      success: result.success,
+      provider: result.provider,
+      requestedProvider:
+        result.requestedProvider,
+      fallbackUsed:
+        result.fallbackUsed,
+      error: result.error,
+      content: result.content,
+    };
+  } catch (error) {
+    /*
+     * 即使 Provider 请求失败，
+     * 用户本轮输入也应被保存。
+     */
+    await saveMemory();
+
+    throw error;
+  }
 }
