@@ -5,6 +5,24 @@ import type {
 
 import { buildMemoryProfile } from "@/lib/memory/index";
 
+function extractCurrentMessage(
+  prompt: string
+): string {
+  const marker =
+    "CURRENT_USER_MESSAGE:";
+
+  const index =
+    prompt.lastIndexOf(marker);
+
+  if (index === -1) {
+    return prompt.trim();
+  }
+
+  return prompt
+    .slice(index + marker.length)
+    .trim();
+}
+
 function cleanValue(
   value: string
 ): string {
@@ -20,7 +38,7 @@ function extractName(
   message: string
 ): string | undefined {
   const match = message.match(
-    /(?:我叫|我的名字是|我是)\s*([A-Za-z0-9_\-\u3040-\u30ff\u3400-\u9fff]+)/
+    /^(?:我叫|我的名字是|我是)\s*([A-Za-z0-9_\-\u3040-\u30ff\u3400-\u9fff]+)[。！？，,.!?\s]*$/i
   );
 
   return match?.[1]
@@ -32,7 +50,7 @@ function extractLocation(
   message: string
 ): string | undefined {
   const match = message.match(
-    /(?:我来自|我住在|我现在在|我目前在)\s*([^，。！？\n]+)/
+    /^(?:我来自|我住在|我现在在|我目前在)\s*([^，。！？\n]+)[。！？，,.!?\s]*$/
   );
 
   return match?.[1]
@@ -44,7 +62,7 @@ function extractProject(
   message: string
 ): string | undefined {
   const match = message.match(
-    /(?:我的项目是|我正在开发|我正在做|当前项目是)\s*([^，。！？\n]+)/
+    /^(?:我的项目是|我正在开发|我正在做|当前项目是)\s*([^，。！？\n]+)[。！？，,.!?\s]*$/
   );
 
   return match?.[1]
@@ -56,7 +74,7 @@ function extractGoal(
   message: string
 ): string | undefined {
   const match = message.match(
-    /(?:我的目标是|我希望能够|我想要)\s*([^，。！？\n]+)/
+    /^(?:我的目标是|我希望能够|我想要)\s*([^，。！？\n]+)[。！？，,.!?\s]*$/
   );
 
   return match?.[1]
@@ -65,7 +83,8 @@ function extractGoal(
 }
 
 function buildIntroduction(): string {
-  const profile = buildMemoryProfile();
+  const profile =
+    buildMemoryProfile();
 
   const details = [
     profile.name
@@ -108,16 +127,11 @@ function buildIntroduction(): string {
 function createMockReply(
   prompt: string
 ): string {
-  const message = prompt.trim();
+  const message =
+    extractCurrentMessage(prompt);
 
   if (!message) {
     return "请输入内容。";
-  }
-
-  const name = extractName(message);
-
-  if (name) {
-    return `记住了，你叫 ${name}。`;
   }
 
   const location =
@@ -134,16 +148,25 @@ function createMockReply(
     return `记住了，你当前的项目是 ${project}。`;
   }
 
-  const goal = extractGoal(message);
+  const goal =
+    extractGoal(message);
 
   if (goal) {
     return `记住了，你的目标是 ${goal}。`;
   }
 
-  const profile = buildMemoryProfile();
+  const name =
+    extractName(message);
+
+  if (name) {
+    return `记住了，你叫 ${name}。`;
+  }
+
+  const profile =
+    buildMemoryProfile();
 
   if (
-    /介绍一下我|介绍我|总结一下我|你了解我吗/i.test(
+    /介绍一下我|介绍我|总结一下我/i.test(
       message
     )
   ) {
@@ -207,7 +230,11 @@ function createMockReply(
       : "我目前还没有保存足够的个人信息。";
   }
 
-  if (/你好|hello|hi/i.test(message)) {
+  if (
+    /你好|hello|hi/i.test(
+      message
+    )
+  ) {
     return profile.name
       ? `你好，${profile.name}。我是 AIOS Alpha。`
       : "你好，我是 AIOS Alpha。";
@@ -231,9 +258,8 @@ export const mockProvider: AIProviderAdapter = {
     return {
       success: true,
       provider: "mock",
-      content: createMockReply(
-        prompt
-      ),
+      content:
+        createMockReply(prompt),
     };
   },
 };
