@@ -11,34 +11,121 @@ import MessageList, {
   type ChatMessage,
 } from "./MessageList";
 
+interface MemoryRecord {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+const welcomeMessage: ChatMessage = {
+  role: "assistant",
+  content:
+    "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
+};
+
 export default function ChatPanel() {
   const [messages, setMessages] =
-    useState<ChatMessage[]>([
-      {
-        role: "assistant",
-        content:
-          "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
-      },
-    ]);
+    useState<ChatMessage[]>([]);
 
   const [loading, setLoading] =
     useState(false);
+
+  const [historyLoading, setHistoryLoading] =
+    useState(true);
 
   const bottomRef =
     useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadHistory() {
+      try {
+        const response = await fetch(
+          "/api/memory",
+          {
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Failed to load chat history."
+          );
+        }
+
+        const data =
+          await response.json();
+
+        const memory: MemoryRecord[] =
+          Array.isArray(data.items)
+            ? data.items
+            : [];
+
+        if (!active) {
+          return;
+        }
+
+        const restoredMessages =
+          memory
+            .filter(
+              (item) =>
+                item.role === "user" ||
+                item.role === "assistant"
+            )
+            .map((item) => ({
+              role: item.role,
+              content: item.content,
+            }));
+
+        setMessages(
+          restoredMessages.length > 0
+            ? restoredMessages
+            : [welcomeMessage]
+        );
+      } catch {
+        if (active) {
+          setMessages([
+            welcomeMessage,
+          ]);
+        }
+      } finally {
+        if (active) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
+      behavior: historyLoading
+        ? "auto"
+        : "smooth",
     });
-  }, [messages, loading]);
+  }, [
+    messages,
+    loading,
+    historyLoading,
+  ]);
 
   async function handleSend(
     prompt: string
   ) {
-    const cleanPrompt = prompt.trim();
+    const cleanPrompt =
+      prompt.trim();
 
-    if (!cleanPrompt || loading) {
+    if (
+      !cleanPrompt ||
+      loading
+    ) {
       return;
     }
 
@@ -155,9 +242,21 @@ export default function ChatPanel() {
           background: "#f8fafc",
         }}
       >
-        <MessageList
-          messages={messages}
-        />
+        {historyLoading ? (
+          <div
+            style={{
+              padding: 18,
+              color: "#6b7280",
+              textAlign: "center",
+            }}
+          >
+            正在恢复对话……
+          </div>
+        ) : (
+          <MessageList
+            messages={messages}
+          />
+        )}
 
         {loading && (
           <div
@@ -204,7 +303,10 @@ export default function ChatPanel() {
         }}
       >
         <ChatInput
-          loading={loading}
+          loading={
+            loading ||
+            historyLoading
+          }
           onSend={handleSend}
         />
       </div>
