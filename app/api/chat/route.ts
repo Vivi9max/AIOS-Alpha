@@ -1,34 +1,51 @@
 import { NextResponse } from "next/server";
-import { runBrain } from "@/lib/brain";
+
+import { executeRuntime } from "@/lib/runtime/engine";
 
 type RequestMessage = {
   role?: string;
   content?: string;
 };
 
-export async function POST(request: Request) {
+interface ChatRequestBody {
+  prompt?: unknown;
+  messages?: unknown;
+}
+
+function getPrompt(
+  body: ChatRequestBody
+): string {
+  if (typeof body.prompt === "string") {
+    return body.prompt.trim();
+  }
+
+  const messages: RequestMessage[] =
+    Array.isArray(body.messages)
+      ? body.messages
+      : [];
+
+  const latestUserMessage = [
+    ...messages,
+  ]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "user" &&
+        typeof message.content ===
+          "string"
+    );
+
+  return latestUserMessage?.content?.trim() ?? "";
+}
+
+export async function POST(
+  request: Request
+) {
   try {
-    const body = await request.json();
+    const body =
+      (await request.json()) as ChatRequestBody;
 
-    const messages: RequestMessage[] =
-      Array.isArray(body.messages)
-        ? body.messages
-        : [];
-
-    const latestMessage =
-      [...messages]
-        .reverse()
-        .find(
-          (message) =>
-            message.role === "user" &&
-            typeof message.content === "string"
-        )
-        ?.content ?? "";
-
-    const prompt =
-      typeof body.prompt === "string"
-        ? body.prompt.trim()
-        : latestMessage.trim();
+    const prompt = getPrompt(body);
 
     if (!prompt) {
       return NextResponse.json(
@@ -36,6 +53,8 @@ export async function POST(request: Request) {
           success: false,
           provider: "mock",
           content: "请输入内容。",
+          runtime: "aios-alpha",
+          timestamp: Date.now(),
         },
         {
           status: 400,
@@ -43,20 +62,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await runBrain({
-      provider: "mock",
-      prompt,
-    });
+    const result =
+      await executeRuntime({
+        prompt,
+      });
 
-    return NextResponse.json(result);
+    return NextResponse.json(
+      result,
+      {
+        status: result.success
+          ? 200
+          : 500,
+      }
+    );
   } catch (error) {
-    console.error("[AIOS Chat API]", error);
+    console.error(
+      "[AIOS Runtime API]",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
         provider: "mock",
-        content: "AIOS Runtime Error",
+        content:
+          "AIOS Runtime Error",
+        runtime: "aios-alpha",
+        timestamp: Date.now(),
       },
       {
         status: 500,
