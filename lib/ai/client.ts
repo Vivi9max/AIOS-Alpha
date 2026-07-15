@@ -1,8 +1,14 @@
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export interface ChatRequest {
   apiKey: string;
   baseURL: string;
   model: string;
-  prompt: string;
+  prompt?: string;
+  messages?: ChatMessage[];
   systemPrompt?: string;
   temperature?: number;
   timeoutMs?: number;
@@ -30,15 +36,70 @@ function normalizeBaseURL(
     .replace(/\/+$/, "");
 }
 
+function normalizeMessages(
+  messages: ChatMessage[]
+): ChatMessage[] {
+  return messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim(),
+    }))
+    .filter(
+      (message) =>
+        message.content.length > 0
+    );
+}
+
+function buildPayloadMessages(
+  request: ChatRequest
+): ChatMessage[] {
+  if (
+    Array.isArray(request.messages) &&
+    request.messages.length > 0
+  ) {
+    return normalizeMessages(
+      request.messages
+    );
+  }
+
+  const messages: ChatMessage[] = [];
+
+  const systemPrompt =
+    request.systemPrompt?.trim();
+
+  const prompt =
+    request.prompt?.trim();
+
+  if (systemPrompt) {
+    messages.push({
+      role: "system",
+      content: systemPrompt,
+    });
+  }
+
+  if (prompt) {
+    messages.push({
+      role: "user",
+      content: prompt,
+    });
+  }
+
+  return messages;
+}
+
 export async function createChatCompletion(
   request: ChatRequest
 ): Promise<ChatCompletionResponse> {
   const apiKey = request.apiKey.trim();
+
   const baseURL = normalizeBaseURL(
     request.baseURL
   );
+
   const model = request.model.trim();
-  const prompt = request.prompt.trim();
+
+  const messages =
+    buildPayloadMessages(request);
 
   if (!apiKey) {
     throw new Error(
@@ -58,41 +119,24 @@ export async function createChatCompletion(
     );
   }
 
-  if (!prompt) {
+  if (messages.length === 0) {
     throw new Error(
-      "Prompt 不能为空。"
+      "对话内容不能为空。"
     );
   }
 
   const controller =
     new AbortController();
 
-  const timeout = windowSafeTimeout(
+  const timeout = setTimeout(
     () => controller.abort(),
-    request.timeoutMs ?? 30000
+    Math.max(
+      1000,
+      request.timeoutMs ?? 30000
+    )
   );
 
   try {
-    const messages: Array<{
-      role: "system" | "user";
-      content: string;
-    }> = [];
-
-    if (
-      request.systemPrompt?.trim()
-    ) {
-      messages.push({
-        role: "system",
-        content:
-          request.systemPrompt.trim(),
-      });
-    }
-
-    messages.push({
-      role: "user",
-      content: prompt,
-    });
-
     const response = await fetch(
       `${baseURL}/chat/completions`,
       {
@@ -153,14 +197,4 @@ export async function createChatCompletion(
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function windowSafeTimeout(
-  callback: () => void,
-  delay: number
-): ReturnType<typeof setTimeout> {
-  return setTimeout(
-    callback,
-    Math.max(1000, delay)
-  );
 }

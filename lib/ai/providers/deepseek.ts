@@ -5,6 +5,7 @@ import type {
 
 import { AI_CONFIG } from "../config";
 import { createChatCompletion } from "../client";
+import { buildConversation } from "@/lib/conversation/builder";
 
 interface DeepSeekResponse {
   choices?: Array<{
@@ -50,14 +51,18 @@ export const deepseekProvider: AIProviderAdapter = {
       };
     }
 
+    const messages =
+      buildConversation(
+        cleanPrompt,
+        20
+      );
+
     const result =
       (await createChatCompletion({
         apiKey: config.apiKey,
         baseURL: config.baseURL,
         model: config.model,
-        prompt: cleanPrompt,
-        systemPrompt:
-          "你是 AIOS Alpha 的核心助手。请准确理解上下文，并提供清晰、可靠、可执行的回答。",
+        messages,
         temperature: 0.7,
         timeoutMs: 30000,
       })) as DeepSeekResponse;
