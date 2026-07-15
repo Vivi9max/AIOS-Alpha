@@ -1,4 +1,5 @@
 import { getMemory } from "./store";
+import { getManualProfile } from "./profile-store";
 
 export interface MemoryProfile {
   name?: string;
@@ -38,12 +39,9 @@ function isValidName(
 ): boolean {
   const name = value.trim();
 
-  if (!name || INVALID_NAMES.has(name)) {
-    return false;
-  }
-
   if (
-    /^(谁|什么|哪位|哪个)$/i.test(name)
+    !name ||
+    INVALID_NAMES.has(name)
   ) {
     return false;
   }
@@ -60,32 +58,23 @@ function extractName(
     .filter(Boolean);
 
   for (const line of lines) {
-    const explicitMatch = line.match(
-      /^(?:我叫|我的名字是)\s*([A-Za-z0-9_\-\u3040-\u30ff\u3400-\u9fff]+)[。！？，,.!?\s]*$/i
+    const match = line.match(
+      /^(?:我叫|我的名字是|我是)\s*([A-Za-z0-9_\-\u3040-\u30ff\u3400-\u9fff]+)[。！？，,.!?\s]*$/i
     );
 
-    if (explicitMatch?.[1]) {
-      const name = cleanValue(
-        explicitMatch[1]
-      );
-
-      if (name && isValidName(name)) {
-        return name;
-      }
+    if (!match?.[1]) {
+      continue;
     }
 
-    const identityMatch = line.match(
-      /^我是\s*([A-Za-z0-9_\-\u3040-\u30ff\u3400-\u9fff]+)[。！？，,.!?\s]*$/i
+    const name = cleanValue(
+      match[1]
     );
 
-    if (identityMatch?.[1]) {
-      const name = cleanValue(
-        identityMatch[1]
-      );
-
-      if (name && isValidName(name)) {
-        return name;
-      }
+    if (
+      name &&
+      isValidName(name)
+    ) {
+      return name;
     }
   }
 
@@ -100,40 +89,49 @@ function extractValue(
     const match = text.match(pattern);
 
     if (match?.[1]) {
-      return cleanValue(match[1]);
+      return cleanValue(
+        match[1]
+      );
     }
   }
 
   return undefined;
 }
 
-export function buildMemoryProfile(): MemoryProfile {
+function buildExtractedProfile(): MemoryProfile {
   const profile: MemoryProfile = {};
 
   const userMemory = getMemory().filter(
-    (item) => item.role === "user"
+    (item) =>
+      item.role === "user"
   );
 
   for (const item of userMemory) {
-    const text = item.content.trim();
+    const text =
+      item.content.trim();
 
-    const name = extractName(text);
+    const name =
+      extractName(text);
 
-    const location = extractValue(text, [
-      /(?:^|\n)(?:我来自|我住在|我现在在|我目前在)\s*([^，。！？\n]+)/,
-    ]);
+    const location =
+      extractValue(text, [
+        /(?:^|\n)(?:我来自|我住在|我现在在|我目前在)\s*([^，。！？\n]+)/,
+      ]);
 
-    const goal = extractValue(text, [
-      /(?:^|\n)(?:我的目标是|我的目标：|我希望能够|我想要)\s*([^。！？\n]+)/,
-    ]);
+    const goal =
+      extractValue(text, [
+        /(?:^|\n)(?:我的目标是|我的目标：|我希望能够|我想要)\s*([^。！？\n]+)/,
+      ]);
 
-    const project = extractValue(text, [
-      /(?:^|\n)(?:我的项目是|我正在开发|我正在做|当前项目是)\s*([^。！？\n]+)/,
-    ]);
+    const project =
+      extractValue(text, [
+        /(?:^|\n)(?:我的项目是|我正在开发|我正在做|当前项目是)\s*([^。！？\n]+)/,
+      ]);
 
-    const preference = extractValue(text, [
-      /(?:^|\n)(?:我喜欢|我偏好|我的偏好是)\s*([^。！？\n]+)/,
-    ]);
+    const preference =
+      extractValue(text, [
+        /(?:^|\n)(?:我喜欢|我偏好|我的偏好是)\s*([^。！？\n]+)/,
+      ]);
 
     if (name) {
       profile.name = name;
@@ -152,11 +150,25 @@ export function buildMemoryProfile(): MemoryProfile {
     }
 
     if (preference) {
-      profile.preference = preference;
+      profile.preference =
+        preference;
     }
   }
 
   return profile;
+}
+
+export function buildMemoryProfile(): MemoryProfile {
+  const extracted =
+    buildExtractedProfile();
+
+  const manual =
+    getManualProfile();
+
+  return {
+    ...extracted,
+    ...manual,
+  };
 }
 
 export function buildMemoryProfileText(): string {
