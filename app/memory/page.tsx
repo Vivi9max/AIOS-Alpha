@@ -6,8 +6,7 @@ import {
   useState,
 } from "react";
 
-import Header from "@/components/layout/Header";
-import Sidebar from "@/components/layout/Sidebar";
+import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
 interface MemoryRecord {
   id: number;
@@ -95,210 +94,194 @@ export default function MemoryPage() {
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: "100vh",
-        background: "#f6f7fb",
-      }}
-    >
-      <Header />
-
+    <WorkspaceShell>
       <div
         style={{
-          display: "flex",
-          flex: 1,
-          minHeight: 0,
+          width: "100%",
+          maxWidth: 760,
+          margin: "0 auto",
         }}
       >
-        <Sidebar />
-
-        <main
+        <header
           style={{
-            flex: 1,
-            padding: "32px 18px 48px",
-            overflowY: "auto",
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent:
+              "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            marginBottom: 22,
           }}
         >
           <div
             style={{
-              width: "100%",
-              maxWidth: 760,
-              margin: "0 auto",
+              minWidth: 0,
             }}
           >
-            <header
+            <h1
               style={{
-                display: "flex",
-                justifyContent:
-                  "space-between",
-                alignItems: "flex-start",
-                gap: 16,
-                marginBottom: 22,
+                margin: 0,
+                fontSize: 30,
               }}
             >
-              <div>
-                <h1
-                  style={{
-                    margin: 0,
-                    fontSize: 30,
-                  }}
-                >
-                  🧠 Memory
-                </h1>
+              🧠 Memory
+            </h1>
 
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    color: "#6b7280",
-                  }}
-                >
-                  AIOS 当前保存的对话记忆。
-                </p>
-              </div>
+            <p
+              style={{
+                margin: "8px 0 0",
+                color: "#6b7280",
+                lineHeight: 1.55,
+              }}
+            >
+              AIOS 当前保存的对话记忆。
+            </p>
+          </div>
 
-              <button
-                type="button"
-                onClick={handleClearMemory}
-                disabled={items.length === 0}
-                style={{
-                  padding: "10px 13px",
-                  border:
-                    "1px solid #fecaca",
-                  borderRadius: 9,
-                  background:
-                    items.length > 0
-                      ? "#fff7f7"
-                      : "#f3f4f6",
-                  color:
-                    items.length > 0
-                      ? "#b91c1c"
-                      : "#9ca3af",
-                  fontWeight: 700,
-                }}
-              >
-                清空记忆
-              </button>
-            </header>
+          <button
+            type="button"
+            onClick={handleClearMemory}
+            disabled={items.length === 0}
+            style={{
+              padding: "10px 13px",
+              border:
+                "1px solid #fecaca",
+              borderRadius: 9,
+              background:
+                items.length > 0
+                  ? "#fff7f7"
+                  : "#f3f4f6",
+              color:
+                items.length > 0
+                  ? "#b91c1c"
+                  : "#9ca3af",
+              fontWeight: 700,
+            }}
+          >
+            清空记忆
+          </button>
+        </header>
 
-            {loading && (
-              <div
-                style={{
-                  padding: 24,
-                  background: "#ffffff",
-                  borderRadius: 14,
-                }}
-              >
-                正在读取记忆……
-              </div>
-            )}
+        {loading && (
+          <div
+            style={{
+              padding: 24,
+              background: "#ffffff",
+              borderRadius: 14,
+            }}
+          >
+            正在读取记忆……
+          </div>
+        )}
 
-            {!loading && error && (
-              <div
-                style={{
-                  padding: 16,
-                  marginBottom: 16,
-                  border:
-                    "1px solid #fecaca",
-                  borderRadius: 12,
-                  background: "#fff7f7",
-                  color: "#b91c1c",
-                }}
-              >
-                {error}
-              </div>
-            )}
+        {!loading && error && (
+          <div
+            style={{
+              padding: 16,
+              marginBottom: 16,
+              border:
+                "1px solid #fecaca",
+              borderRadius: 12,
+              background: "#fff7f7",
+              color: "#b91c1c",
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-            {!loading &&
-              !error &&
-              items.length === 0 && (
-                <div
-                  style={{
-                    padding: "38px 18px",
-                    background: "#ffffff",
-                    border:
-                      "1px dashed #cbd5e1",
-                    borderRadius: 16,
-                    textAlign: "center",
-                    color: "#64748b",
-                  }}
-                >
-                  还没有记忆。先在 Chat
-                  中进行一轮对话。
-                </div>
-              )}
+        {!loading &&
+          !error &&
+          items.length === 0 && (
+            <div
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "38px 18px",
+                background: "#ffffff",
+                border:
+                  "1px dashed #cbd5e1",
+                borderRadius: 16,
+                textAlign: "center",
+                color: "#64748b",
+                lineHeight: 1.7,
+              }}
+            >
+              还没有记忆。先在 Chat
+              中进行一轮对话。
+            </div>
+          )}
 
-            {!loading &&
-              items.length > 0 && (
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 12,
-                  }}
-                >
-                  {[...items]
-                    .reverse()
-                    .map((item) => (
-                      <article
-                        key={item.id}
+        {!loading &&
+          items.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+              }}
+            >
+              {[...items]
+                .reverse()
+                .map((item) => (
+                  <article
+                    key={item.id}
+                    style={{
+                      minWidth: 0,
+                      padding: 16,
+                      background:
+                        "#ffffff",
+                      border:
+                        "1px solid #e5e7eb",
+                      borderRadius: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        justifyContent:
+                          "space-between",
+                        gap: 8,
+                        marginBottom: 9,
+                      }}
+                    >
+                      <strong>
+                        {item.role ===
+                        "user"
+                          ? "U · User"
+                          : "AI · Assistant"}
+                      </strong>
+
+                      <time
                         style={{
-                          padding: 16,
-                          background:
-                            "#ffffff",
-                          border:
-                            "1px solid #e5e7eb",
-                          borderRadius: 14,
+                          color:
+                            "#9ca3af",
+                          fontSize: 12,
                         }}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent:
-                              "space-between",
-                            gap: 12,
-                            marginBottom: 9,
-                          }}
-                        >
-                          <strong>
-                            {item.role ===
-                            "user"
-                              ? "U · User"
-                              : "AI · Assistant"}
-                          </strong>
+                        {new Date(
+                          item.timestamp
+                        ).toLocaleString()}
+                      </time>
+                    </div>
 
-                          <time
-                            style={{
-                              color:
-                                "#9ca3af",
-                              fontSize: 12,
-                            }}
-                          >
-                            {new Date(
-                              item.timestamp
-                            ).toLocaleString()}
-                          </time>
-                        </div>
-
-                        <p
-                          style={{
-                            margin: 0,
-                            lineHeight: 1.65,
-                            whiteSpace:
-                              "pre-wrap",
-                            overflowWrap:
-                              "anywhere",
-                          }}
-                        >
-                          {item.content}
-                        </p>
-                      </article>
-                    ))}
-                </div>
-              )}
-          </div>
-        </main>
+                    <p
+                      style={{
+                        margin: 0,
+                        lineHeight: 1.65,
+                        whiteSpace:
+                          "pre-wrap",
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {item.content}
+                    </p>
+                  </article>
+                ))}
+            </div>
+          )}
       </div>
-    </div>
+    </WorkspaceShell>
   );
 }

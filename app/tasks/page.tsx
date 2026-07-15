@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import WorkspaceShell from "@/components/layout/WorkspaceShell";
+
 import type {
   Task,
   TaskStatus,
@@ -16,8 +18,12 @@ import {
 } from "@/lib/task";
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [title, setTitle] = useState("");
+  const [tasks, setTasks] =
+    useState<Task[]>([]);
+
+  const [title, setTitle] =
+    useState("");
+
   const [description, setDescription] =
     useState("");
 
@@ -36,7 +42,10 @@ export default function TasksPage() {
       return;
     }
 
-    createTask(cleanTitle, description);
+    createTask(
+      cleanTitle,
+      description
+    );
 
     setTitle("");
     setDescription("");
@@ -44,40 +53,38 @@ export default function TasksPage() {
   }
 
   function handleStatusChange(
-    task: Task,
+    id: string,
     status: TaskStatus
   ) {
-    updateTask(task.id, {
+    updateTask(id, {
       status,
     });
 
     refreshTasks();
   }
 
-  function handleCompleteTask(id: string) {
+  function handleCompleteTask(
+    id: string
+  ) {
     completeTask(id);
     refreshTasks();
   }
 
-  function handleDeleteTask(id: string) {
+  function handleDeleteTask(
+    id: string
+  ) {
     deleteTask(id);
     refreshTasks();
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#f6f7fb",
-        padding: "24px 16px 48px",
-        color: "#111827",
-      }}
-    >
+    <WorkspaceShell>
       <div
         style={{
           width: "100%",
           maxWidth: 760,
           margin: "0 auto",
+          color: "#111827",
         }}
       >
         <header
@@ -100,7 +107,6 @@ export default function TasksPage() {
             style={{
               margin: "6px 0 0",
               fontSize: 30,
-              lineHeight: 1.2,
             }}
           >
             Tasks
@@ -122,38 +128,36 @@ export default function TasksPage() {
             padding: 18,
             marginBottom: 20,
             background: "#ffffff",
-            border: "1px solid #e5e7eb",
+            border:
+              "1px solid #e5e7eb",
             borderRadius: 16,
-            boxShadow:
-              "0 8px 24px rgba(15, 23, 42, 0.05)",
           }}
         >
           <input
             value={title}
             onChange={(event) =>
-              setTitle(event.target.value)
+              setTitle(
+                event.target.value
+              )
             }
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                handleCreateTask();
-              }
-            }}
             placeholder="任务标题"
             style={{
               width: "100%",
               boxSizing: "border-box",
               padding: "13px 14px",
-              border: "1px solid #d1d5db",
+              border:
+                "1px solid #d1d5db",
               borderRadius: 10,
               fontSize: 16,
-              outline: "none",
             }}
           />
 
           <textarea
             value={description}
             onChange={(event) =>
-              setDescription(event.target.value)
+              setDescription(
+                event.target.value
+              )
             }
             placeholder="任务说明（可选）"
             rows={3}
@@ -162,12 +166,11 @@ export default function TasksPage() {
               boxSizing: "border-box",
               marginTop: 12,
               padding: "13px 14px",
-              border: "1px solid #d1d5db",
+              border:
+                "1px solid #d1d5db",
               borderRadius: 10,
               fontSize: 15,
-              lineHeight: 1.5,
               resize: "vertical",
-              outline: "none",
             }}
           />
 
@@ -185,11 +188,7 @@ export default function TasksPage() {
                 ? "#111827"
                 : "#d1d5db",
               color: "#ffffff",
-              fontSize: 15,
               fontWeight: 700,
-              cursor: title.trim()
-                ? "pointer"
-                : "not-allowed",
             }}
           >
             创建任务
@@ -200,7 +199,8 @@ export default function TasksPage() {
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent:
+                "space-between",
               alignItems: "center",
               marginBottom: 12,
             }}
@@ -217,7 +217,6 @@ export default function TasksPage() {
             <span
               style={{
                 color: "#6b7280",
-                fontSize: 14,
               }}
             >
               {tasks.length} 项
@@ -227,9 +226,12 @@ export default function TasksPage() {
           {tasks.length === 0 ? (
             <div
               style={{
-                padding: "36px 18px",
-                background: "#ffffff",
-                border: "1px dashed #cbd5e1",
+                padding:
+                  "36px 18px",
+                background:
+                  "#ffffff",
+                border:
+                  "1px dashed #cbd5e1",
                 borderRadius: 16,
                 textAlign: "center",
                 color: "#64748b",
@@ -249,77 +251,40 @@ export default function TasksPage() {
                   key={task.id}
                   style={{
                     padding: 16,
-                    background: "#ffffff",
-                    border: "1px solid #e5e7eb",
+                    background:
+                      "#ffffff",
+                    border:
+                      "1px solid #e5e7eb",
                     borderRadius: 14,
-                    opacity:
-                      task.status === "done"
-                        ? 0.72
-                        : 1,
                   }}
                 >
-                  <div
+                  <h3
                     style={{
-                      display: "flex",
-                      gap: 12,
-                      justifyContent:
-                        "space-between",
-                      alignItems: "flex-start",
+                      margin: 0,
+                      textDecoration:
+                        task.status ===
+                        "done"
+                          ? "line-through"
+                          : "none",
                     }}
                   >
-                    <div
+                    {task.title}
+                  </h3>
+
+                  {task.description && (
+                    <p
                       style={{
-                        minWidth: 0,
-                        flex: 1,
+                        color:
+                          "#6b7280",
+                        whiteSpace:
+                          "pre-wrap",
                       }}
                     >
-                      <h3
-                        style={{
-                          margin: 0,
-                          fontSize: 17,
-                          lineHeight: 1.4,
-                          textDecoration:
-                            task.status === "done"
-                              ? "line-through"
-                              : "none",
-                        }}
-                      >
-                        {task.title}
-                      </h3>
-
-                      {task.description && (
-                        <p
-                          style={{
-                            margin: "8px 0 0",
-                            color: "#6b7280",
-                            lineHeight: 1.55,
-                            whiteSpace: "pre-wrap",
-                          }}
-                        >
-                          {task.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDeleteTask(task.id)
+                      {
+                        task.description
                       }
-                      aria-label="删除任务"
-                      style={{
-                        padding: "6px 9px",
-                        border:
-                          "1px solid #fecaca",
-                        borderRadius: 8,
-                        background: "#fff7f7",
-                        color: "#b91c1c",
-                        cursor: "pointer",
-                      }}
-                    >
-                      删除
-                    </button>
-                  </div>
+                    </p>
+                  )}
 
                   <div
                     style={{
@@ -333,18 +298,11 @@ export default function TasksPage() {
                       value={task.status}
                       onChange={(event) =>
                         handleStatusChange(
-                          task,
+                          task.id,
                           event.target
                             .value as TaskStatus
                         )
                       }
-                      style={{
-                        padding: "9px 10px",
-                        border:
-                          "1px solid #d1d5db",
-                        borderRadius: 8,
-                        background: "#ffffff",
-                      }}
                     >
                       <option value="todo">
                         待处理
@@ -359,7 +317,8 @@ export default function TasksPage() {
                       </option>
                     </select>
 
-                    {task.status !== "done" && (
+                    {task.status !==
+                      "done" && (
                       <button
                         type="button"
                         onClick={() =>
@@ -367,19 +326,21 @@ export default function TasksPage() {
                             task.id
                           )
                         }
-                        style={{
-                          padding: "9px 12px",
-                          border: 0,
-                          borderRadius: 8,
-                          background: "#dcfce7",
-                          color: "#166534",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
                       >
                         完成任务
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteTask(
+                          task.id
+                        )
+                      }
+                    >
+                      删除
+                    </button>
                   </div>
                 </article>
               ))}
@@ -387,6 +348,6 @@ export default function TasksPage() {
           )}
         </section>
       </div>
-    </main>
+    </WorkspaceShell>
   );
 }
