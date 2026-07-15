@@ -115,11 +115,8 @@ export default function ChatInput({
             ? "enter"
             : "send"
         }
-        placeholder={
-          isTouchDevice
-            ? "输入消息，回车可换行…"
-            : "输入消息，Enter 发送…"
-        }
+        placeholder="输入消息…"
+        aria-label="输入消息"
         onChange={(event) =>
           setValue(event.target.value)
         }
