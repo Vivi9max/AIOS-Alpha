@@ -1,4 +1,9 @@
 import { chat } from "./ai";
+
+import type {
+  AIProvider,
+} from "./ai/types";
+
 import {
   addMemory,
   addAssistantMemory,
@@ -6,29 +11,28 @@ import {
   searchMemory,
 } from "./memory/store";
 
-export type AIProvider =
-  | "mock"
-  | "qwen"
-  | "deepseek"
-  | "claude"
-  | "gemini"
-  | "openai";
+import {
+  buildMemoryProfileText,
+} from "./memory/index";
 
 export interface BrainRequest {
-  provider: AIProvider;
   prompt: string;
 }
 
 export interface BrainResponse {
   success: boolean;
   provider: AIProvider;
+  requestedProvider?: AIProvider;
+  fallbackUsed?: boolean;
+  error?: string;
   content: string;
 }
 
 export async function runBrain(
   request: BrainRequest
 ): Promise<BrainResponse> {
-  const prompt = request.prompt.trim();
+  const prompt =
+    request.prompt.trim();
 
   if (!prompt) {
     return {
@@ -38,19 +42,28 @@ export async function runBrain(
     };
   }
 
-  // 先读取过去的记忆，避免当前问题被重复写入上下文。
   const conversationContext =
     buildConversationContext(20);
+
+  const profileContext =
+    buildMemoryProfileText();
 
   const relatedMemory =
     searchMemory(prompt).slice(-5);
 
-  // 再保存当前用户消息。
-  addMemory("user", prompt);
+  addMemory(
+    "user",
+    prompt
+  );
 
   const finalPrompt = [
     "You are the AIOS Alpha brain.",
-    "Use the supplied memory when it helps answer the current message.",
+    "Answer the current user message directly.",
+    "Use memory and profile only when relevant.",
+    "Do not treat questions as new personal facts.",
+    "",
+    "USER_PROFILE:",
+    profileContext || "(empty)",
     "",
     "CONVERSATION_MEMORY:",
     conversationContext || "(empty)",
@@ -69,13 +82,21 @@ export async function runBrain(
     prompt,
   ].join("\n");
 
-  const result = await chat(finalPrompt);
+  const result =
+    await chat(finalPrompt);
 
-  addAssistantMemory(result.content);
+  addAssistantMemory(
+    result.content
+  );
 
   return {
     success: result.success,
     provider: result.provider,
+    requestedProvider:
+      result.requestedProvider,
+    fallbackUsed:
+      result.fallbackUsed,
+    error: result.error,
     content: result.content,
   };
 }

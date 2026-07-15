@@ -27,29 +27,56 @@ export async function chat(
     providers[activeProvider];
 
   try {
-    return await provider.chat(prompt);
+    const result =
+      await provider.chat(prompt);
+
+    return {
+      ...result,
+      requestedProvider:
+        activeProvider,
+      fallbackUsed: false,
+    };
   } catch (error) {
-    console.warn(
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "未知 Provider 错误";
+
+    console.error(
       `[AIOS Provider Error: ${activeProvider}]`,
       error
     );
 
-    const fallback =
-      providers[
-        AI_CONFIG.fallbackProvider
-      ];
+    const fallbackProvider =
+      AI_CONFIG.fallbackProvider;
 
     if (
       activeProvider !==
-      AI_CONFIG.fallbackProvider
+      fallbackProvider
     ) {
-      return fallback.chat(prompt);
+      const fallback =
+        providers[fallbackProvider];
+
+      const fallbackResult =
+        await fallback.chat(prompt);
+
+      return {
+        ...fallbackResult,
+        requestedProvider:
+          activeProvider,
+        fallbackUsed: true,
+        error: errorMessage,
+      };
     }
 
     return {
       success: false,
       provider:
-        AI_CONFIG.fallbackProvider,
+        fallbackProvider,
+      requestedProvider:
+        activeProvider,
+      fallbackUsed: false,
+      error: errorMessage,
       content:
         "AIOS Provider 暂时不可用。",
     };

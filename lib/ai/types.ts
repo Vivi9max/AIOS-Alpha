@@ -16,6 +16,9 @@ export interface ChatResponse {
   success: boolean;
   provider: AIProvider;
   content: string;
+  requestedProvider?: AIProvider;
+  fallbackUsed?: boolean;
+  error?: string;
 }
 
 export interface AIProviderAdapter {

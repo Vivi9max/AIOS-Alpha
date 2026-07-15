@@ -1,12 +1,10 @@
 import {
   runBrain,
-  type AIProvider,
   type BrainResponse,
 } from "../brain";
 
 export interface RuntimeRequest {
   prompt: string;
-  provider?: AIProvider;
 }
 
 export interface RuntimeResponse
@@ -18,7 +16,8 @@ export interface RuntimeResponse
 export async function executeRuntime(
   request: RuntimeRequest
 ): Promise<RuntimeResponse> {
-  const prompt = request.prompt.trim();
+  const prompt =
+    request.prompt.trim();
 
   if (!prompt) {
     return {
@@ -30,11 +29,10 @@ export async function executeRuntime(
     };
   }
 
-  const result = await runBrain({
-    provider:
-      request.provider ?? "mock",
-    prompt,
-  });
+  const result =
+    await runBrain({
+      prompt,
+    });
 
   return {
     ...result,
