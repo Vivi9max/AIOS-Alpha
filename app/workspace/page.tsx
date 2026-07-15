@@ -1,32 +1,19 @@
-import Header from "@/components/layout/Header";
-import Sidebar from "@/components/layout/Sidebar";
-import MainContent from "@/components/layout/MainContent";
 import ChatPanel from "@/components/chat/ChatPanel";
+import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
 export default function WorkspacePage() {
   return (
-    <main
-      style={{
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <Header />
-
+    <WorkspaceShell>
       <div
         style={{
-          flex: 1,
-          display: "flex",
-          overflow: "hidden",
+          width: "100%",
+          maxWidth: 960,
+          margin: "0 auto",
+          minHeight: "calc(100vh - 160px)",
         }}
       >
-        <Sidebar />
-
-        <MainContent>
-          <ChatPanel />
-        </MainContent>
+        <ChatPanel />
       </div>
-    </main>
+    </WorkspaceShell>
   );
 }
