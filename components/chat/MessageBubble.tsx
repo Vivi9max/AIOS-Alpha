@@ -11,33 +11,80 @@ export default function MessageBubble({
 
   return (
     <div
-      className={`flex w-full mb-6 ${
-        isUser ? "justify-end" : "justify-start"
-      }`}
+      style={{
+        width: "100%",
+        display: "flex",
+        justifyContent: isUser
+          ? "flex-end"
+          : "flex-start",
+        alignItems: "flex-start",
+        gap: 10,
+        marginBottom: 18,
+      }}
     >
       {!isUser && (
-        <div className="mr-3 flex-shrink-0">
-          <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center font-bold">
-            AI
-          </div>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "50%",
+            background: "#111827",
+            color: "#ffffff",
+            fontSize: 12,
+            fontWeight: 800,
+          }}
+        >
+          AI
         </div>
       )}
 
       <div
-        className={`rounded-3xl px-5 py-4 max-w-[80%] whitespace-pre-wrap break-words shadow-sm ${
-          isUser
-            ? "bg-black text-white"
-            : "bg-gray-100 text-black"
-        }`}
+        style={{
+          maxWidth: "78%",
+          padding: "12px 14px",
+          borderRadius: isUser
+            ? "16px 16px 4px 16px"
+            : "16px 16px 16px 4px",
+          background: isUser
+            ? "#111827"
+            : "#ffffff",
+          color: isUser
+            ? "#ffffff"
+            : "#111827",
+          border: isUser
+            ? "none"
+            : "1px solid #e5e7eb",
+          lineHeight: 1.6,
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+          boxShadow:
+            "0 4px 14px rgba(15, 23, 42, 0.05)",
+        }}
       >
         {content}
       </div>
 
       {isUser && (
-        <div className="ml-3 flex-shrink-0">
-          <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
-            U
-          </div>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "50%",
+            background: "#4f46e5",
+            color: "#ffffff",
+            fontSize: 13,
+            fontWeight: 800,
+          }}
+        >
+          V
         </div>
       )}
     </div>
