@@ -28,57 +28,135 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-72 border-r bg-white flex flex-col">
-      <div className="p-6 border-b">
+    <aside
+      style={{
+        width: 250,
+        minHeight: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        background: "#ffffff",
+        borderRight: "1px solid #e5e7eb",
+        color: "#111827",
+      }}
+    >
+      <div
+        style={{
+          padding: "22px 18px",
+          borderBottom: "1px solid #e5e7eb",
+        }}
+      >
         <Link
-  href="/dashboard"
-  className="text-2xl font-bold"
->
-  AIOS
-</Link>
+          href="/dashboard"
+          style={{
+            display: "inline-block",
+            color: "#111827",
+            textDecoration: "none",
+            fontSize: 25,
+            fontWeight: 800,
+          }}
+        >
+          AIOS
+        </Link>
 
-        <p className="text-sm text-gray-500">
+        <p
+          style={{
+            margin: "5px 0 0",
+            color: "#6b7280",
+            fontSize: 13,
+          }}
+        >
           Alpha v0.2
         </p>
       </div>
 
-      <div className="px-4 pt-4">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">
+      <div
+        style={{
+          padding: "18px 14px 8px",
+        }}
+      >
+        <p
+          style={{
+            margin: "0 4px 9px",
+            color: "#9ca3af",
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
           Projects
-        </h3>
+        </p>
 
         {projects.map((project) => (
           <Link
             key={project.id}
             href="/dashboard"
-            className="block w-full text-left rounded-xl bg-black text-white px-4 py-3 mb-2"
+            style={{
+              display: "block",
+              padding: "11px 12px",
+              borderRadius: 10,
+              background: "#111827",
+              color: "#ffffff",
+              textDecoration: "none",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
           >
             {project.name}
           </Link>
         ))}
       </div>
 
-      <nav className="flex-1 p-4">
+      <nav
+        style={{
+          display: "grid",
+          gap: 5,
+          padding: "10px 14px 18px",
+        }}
+      >
         {menus.map((item) => {
           const active =
-            pathname === item.href;
+            pathname === item.href ||
+            (item.href === "/workspace" &&
+              pathname === "/");
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={[
-                "block w-full text-left rounded-xl px-4 py-3 transition",
-                active
-                  ? "bg-gray-200 font-semibold"
-                  : "hover:bg-gray-100",
-              ].join(" ")}
+              style={{
+                display: "block",
+                padding: "11px 12px",
+                borderRadius: 10,
+                background: active
+                  ? "#eef2ff"
+                  : "transparent",
+                color: active
+                  ? "#3730a3"
+                  : "#374151",
+                textDecoration: "none",
+                fontSize: 14,
+                fontWeight: active ? 800 : 600,
+              }}
             >
               {item.label}
             </Link>
           );
         })}
       </nav>
+
+      <div
+        style={{
+          marginTop: "auto",
+          padding: 16,
+          borderTop: "1px solid #e5e7eb",
+          color: "#9ca3af",
+          fontSize: 12,
+        }}
+      >
+        AIOS Runtime Online
+      </div>
     </aside>
   );
 }
