@@ -30,33 +30,44 @@ interface ProfileResponse {
   timestamp: number;
 }
 
-const emptyProfile: MemoryProfile = {};
+const emptyProfile: MemoryProfile = {
+  name: "",
+  location: "",
+  goal: "",
+  project: "",
+  preference: "",
+};
 
 const profileFields = [
   {
     key: "name",
     label: "姓名",
     icon: "👤",
+    placeholder: "例如：Vivi",
   },
   {
     key: "location",
     label: "所在地",
     icon: "📍",
+    placeholder: "例如：中国、日本",
   },
   {
     key: "project",
     label: "当前项目",
     icon: "🚀",
+    placeholder: "例如：AIOS Alpha",
   },
   {
     key: "goal",
     label: "长期目标",
     icon: "🎯",
+    placeholder: "例如：让 AIOS Alpha 正式上线",
   },
   {
     key: "preference",
     label: "用户偏好",
     icon: "✨",
+    placeholder: "例如：少废话、直接交付",
   },
 ] as const;
 
@@ -69,19 +80,36 @@ export default function MemoryPage() {
       emptyProfile
     );
 
-  const [completedFields, setCompletedFields] =
-    useState(0);
+  const [draftProfile, setDraftProfile] =
+    useState<MemoryProfile>(
+      emptyProfile
+    );
+
+  const [
+    completedFields,
+    setCompletedFields,
+  ] = useState(0);
 
   const [loading, setLoading] =
     useState(true);
 
+  const [saving, setSaving] =
+    useState(false);
+
+  const [editing, setEditing] =
+    useState(false);
+
   const [error, setError] =
+    useState("");
+
+  const [notice, setNotice] =
     useState("");
 
   const loadMemory = useCallback(
     async () => {
       setLoading(true);
       setError("");
+      setNotice("");
 
       try {
         const [
@@ -117,6 +145,11 @@ export default function MemoryPage() {
         const profileData =
           (await profileResponse.json()) as ProfileResponse;
 
+        const nextProfile = {
+          ...emptyProfile,
+          ...(profileData.profile ?? {}),
+        };
+
         setItems(
           Array.isArray(
             memoryData.items
@@ -125,10 +158,8 @@ export default function MemoryPage() {
             : []
         );
 
-        setProfile(
-          profileData.profile ??
-            emptyProfile
-        );
+        setProfile(nextProfile);
+        setDraftProfile(nextProfile);
 
         setCompletedFields(
           Number.isFinite(
@@ -150,14 +181,170 @@ export default function MemoryPage() {
     loadMemory();
   }, [loadMemory]);
 
-  async function handleClearMemory() {
+  function updateDraft(
+    field: keyof MemoryProfile,
+    value: string
+  ) {
+    setNotice("");
+
+    setDraftProfile(
+      (current) => ({
+        ...current,
+        [field]: value,
+      })
+    );
+  }
+
+  function startEditing() {
+    setDraftProfile({
+      ...emptyProfile,
+      ...profile,
+    });
+
+    setEditing(true);
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditing() {
+    setDraftProfile({
+      ...emptyProfile,
+      ...profile,
+    });
+
+    setEditing(false);
+    setError("");
+    setNotice("");
+  }
+
+  async function saveProfile() {
+    setSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/memory/profile",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(
+            draftProfile
+          ),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Failed to save profile."
+        );
+      }
+
+      const data =
+        (await response.json()) as ProfileResponse;
+
+      const nextProfile = {
+        ...emptyProfile,
+        ...(data.profile ?? {}),
+      };
+
+      setProfile(nextProfile);
+      setDraftProfile(nextProfile);
+
+      setCompletedFields(
+        Number.isFinite(
+          data.completedFields
+        )
+          ? data.completedFields
+          : 0
+      );
+
+      setEditing(false);
+      setNotice(
+        "Memory Profile 已保存。"
+      );
+    } catch {
+      setError(
+        "Memory Profile 保存失败。"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetManualProfile() {
     const confirmed = window.confirm(
-      "确定清空全部对话记忆和结构化资料吗？"
+      "确定清除手动填写的资料吗？从对话中自动提取的资料仍会保留。"
     );
 
     if (!confirmed) {
       return;
     }
+
+    setSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/memory/profile",
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Failed to reset profile."
+        );
+      }
+
+      const data =
+        (await response.json()) as ProfileResponse;
+
+      const nextProfile = {
+        ...emptyProfile,
+        ...(data.profile ?? {}),
+      };
+
+      setProfile(nextProfile);
+      setDraftProfile(nextProfile);
+
+      setCompletedFields(
+        Number.isFinite(
+          data.completedFields
+        )
+          ? data.completedFields
+          : 0
+      );
+
+      setEditing(false);
+      setNotice(
+        "手动资料已重置。"
+      );
+    } catch {
+      setError(
+        "Memory Profile 重置失败。"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleClearMemory() {
+    const confirmed = window.confirm(
+      "确定清空全部对话记忆吗？手动填写的 Profile 将继续保留。"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
 
     try {
       const response = await fetch(
@@ -174,11 +361,43 @@ export default function MemoryPage() {
       }
 
       setItems([]);
-      setProfile(emptyProfile);
-      setCompletedFields(0);
-      setError("");
+
+      const profileResponse =
+        await fetch(
+          "/api/memory/profile",
+          {
+            cache: "no-store",
+          }
+        );
+
+      if (
+        profileResponse.ok
+      ) {
+        const data =
+          (await profileResponse.json()) as ProfileResponse;
+
+        const nextProfile = {
+          ...emptyProfile,
+          ...(data.profile ?? {}),
+        };
+
+        setProfile(nextProfile);
+        setDraftProfile(
+          nextProfile
+        );
+
+        setCompletedFields(
+          data.completedFields ?? 0
+        );
+      }
+
+      setNotice(
+        "对话记忆已清空。"
+      );
     } catch {
-      setError("清空记忆失败。");
+      setError(
+        "清空对话记忆失败。"
+      );
     }
   }
 
@@ -203,11 +422,7 @@ export default function MemoryPage() {
             marginBottom: 22,
           }}
         >
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
+          <div>
             <h1
               style={{
                 margin: 0,
@@ -224,13 +439,15 @@ export default function MemoryPage() {
                 lineHeight: 1.55,
               }}
             >
-              AIOS 保存的结构化资料和对话记忆。
+              管理结构化长期资料和对话记忆。
             </p>
           </div>
 
           <button
             type="button"
-            onClick={handleClearMemory}
+            onClick={
+              handleClearMemory
+            }
             disabled={
               items.length === 0
             }
@@ -248,35 +465,17 @@ export default function MemoryPage() {
                   ? "#b91c1c"
                   : "#9ca3af",
               fontWeight: 700,
-              cursor:
-                items.length > 0
-                  ? "pointer"
-                  : "not-allowed",
             }}
           >
-            清空记忆
+            清空对话
           </button>
         </header>
 
-        {loading && (
+        {error && (
           <div
             style={{
-              padding: 24,
-              background: "#ffffff",
-              border:
-                "1px solid #e5e7eb",
-              borderRadius: 16,
-            }}
-          >
-            正在读取记忆……
-          </div>
-        )}
-
-        {!loading && error && (
-          <div
-            style={{
-              padding: 16,
               marginBottom: 16,
+              padding: 14,
               border:
                 "1px solid #fecaca",
               borderRadius: 12,
@@ -288,7 +487,35 @@ export default function MemoryPage() {
           </div>
         )}
 
-        {!loading && !error && (
+        {notice && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 14,
+              border:
+                "1px solid #bbf7d0",
+              borderRadius: 12,
+              background: "#f0fdf4",
+              color: "#047857",
+            }}
+          >
+            {notice}
+          </div>
+        )}
+
+        {loading ? (
+          <div
+            style={{
+              padding: 24,
+              border:
+                "1px solid #e5e7eb",
+              borderRadius: 16,
+              background: "#ffffff",
+            }}
+          >
+            正在读取记忆……
+          </div>
+        ) : (
           <>
             <section
               style={{
@@ -298,8 +525,6 @@ export default function MemoryPage() {
                   "1px solid #e5e7eb",
                 borderRadius: 18,
                 background: "#ffffff",
-                boxShadow:
-                  "0 10px 28px rgba(15, 23, 42, 0.04)",
               }}
             >
               <div
@@ -332,7 +557,7 @@ export default function MemoryPage() {
                       fontSize: 13,
                     }}
                   >
-                    从用户对话中自动提取的长期资料。
+                    自动提取，也可以手动修正。
                   </p>
                 </div>
 
@@ -354,73 +579,274 @@ export default function MemoryPage() {
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(210px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                {profileFields.map(
-                  (field) => {
-                    const value =
-                      profile[
-                        field.key
-                      ];
-
-                    return (
-                      <article
+              {editing ? (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 13,
+                  }}
+                >
+                  {profileFields.map(
+                    (field) => (
+                      <label
                         key={
                           field.key
                         }
                         style={{
-                          minWidth: 0,
-                          padding: 14,
-                          border:
-                            "1px solid #e5e7eb",
-                          borderRadius: 14,
-                          background:
-                            value
-                              ? "#ffffff"
-                              : "#f8fafc",
+                          display:
+                            "grid",
+                          gap: 7,
                         }}
                       >
-                        <p
+                        <strong
                           style={{
-                            margin: 0,
-                            color:
-                              "#6b7280",
-                            fontSize: 12,
-                            fontWeight: 800,
+                            fontSize: 13,
                           }}
                         >
                           {field.icon}{" "}
                           {field.label}
-                        </p>
-
-                        <strong
-                          style={{
-                            display:
-                              "block",
-                            marginTop: 8,
-                            lineHeight:
-                              1.45,
-                            overflowWrap:
-                              "anywhere",
-                            color: value
-                              ? "#111827"
-                              : "#9ca3af",
-                          }}
-                        >
-                          {value ??
-                            "尚未记录"}
                         </strong>
-                      </article>
-                    );
-                  }
-                )}
-              </div>
+
+                        <textarea
+                          value={
+                            draftProfile[
+                              field.key
+                            ] ?? ""
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            updateDraft(
+                              field.key,
+                              event
+                                .target
+                                .value
+                            )
+                          }
+                          placeholder={
+                            field.placeholder
+                          }
+                          rows={
+                            field.key ===
+                              "goal" ||
+                            field.key ===
+                              "preference"
+                              ? 3
+                              : 2
+                          }
+                          style={{
+                            width:
+                              "100%",
+                            boxSizing:
+                              "border-box",
+                            resize:
+                              "vertical",
+                            padding:
+                              "12px 13px",
+                            border:
+                              "1px solid #d1d5db",
+                            borderRadius: 11,
+                            font:
+                              "inherit",
+                            lineHeight:
+                              1.5,
+                            color:
+                              "#111827",
+                            background:
+                              "#ffffff",
+                          }}
+                        />
+                      </label>
+                    )
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap:
+                        "wrap",
+                      gap: 10,
+                      marginTop: 4,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={
+                        saveProfile
+                      }
+                      disabled={saving}
+                      style={{
+                        flex: "1 1 150px",
+                        padding:
+                          "12px 15px",
+                        border: 0,
+                        borderRadius: 10,
+                        background:
+                          "#111827",
+                        color:
+                          "#ffffff",
+                        fontWeight: 800,
+                        opacity: saving
+                          ? 0.6
+                          : 1,
+                      }}
+                    >
+                      {saving
+                        ? "保存中…"
+                        : "保存资料"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEditing
+                      }
+                      disabled={saving}
+                      style={{
+                        flex: "1 1 110px",
+                        padding:
+                          "12px 15px",
+                        border:
+                          "1px solid #d1d5db",
+                        borderRadius: 10,
+                        background:
+                          "#ffffff",
+                        color:
+                          "#111827",
+                        fontWeight: 700,
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(210px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {profileFields.map(
+                      (field) => {
+                        const value =
+                          profile[
+                            field.key
+                          ];
+
+                        return (
+                          <article
+                            key={
+                              field.key
+                            }
+                            style={{
+                              minWidth: 0,
+                              padding: 14,
+                              border:
+                                "1px solid #e5e7eb",
+                              borderRadius: 14,
+                              background:
+                                value
+                                  ? "#ffffff"
+                                  : "#f8fafc",
+                            }}
+                          >
+                            <p
+                              style={{
+                                margin: 0,
+                                color:
+                                  "#6b7280",
+                                fontSize: 12,
+                                fontWeight: 800,
+                              }}
+                            >
+                              {field.icon}{" "}
+                              {field.label}
+                            </p>
+
+                            <strong
+                              style={{
+                                display:
+                                  "block",
+                                marginTop: 8,
+                                lineHeight:
+                                  1.45,
+                                whiteSpace:
+                                  "pre-wrap",
+                                overflowWrap:
+                                  "anywhere",
+                                color: value
+                                  ? "#111827"
+                                  : "#9ca3af",
+                              }}
+                            >
+                              {value ||
+                                "尚未记录"}
+                            </strong>
+                          </article>
+                        );
+                      }
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap:
+                        "wrap",
+                      gap: 10,
+                      marginTop: 16,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={
+                        startEditing
+                      }
+                      style={{
+                        flex: "1 1 150px",
+                        padding:
+                          "11px 14px",
+                        border: 0,
+                        borderRadius: 10,
+                        background:
+                          "#111827",
+                        color:
+                          "#ffffff",
+                        fontWeight: 800,
+                      }}
+                    >
+                      编辑 Profile
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={
+                        resetManualProfile
+                      }
+                      disabled={saving}
+                      style={{
+                        flex: "1 1 150px",
+                        padding:
+                          "11px 14px",
+                        border:
+                          "1px solid #d1d5db",
+                        borderRadius: 10,
+                        background:
+                          "#ffffff",
+                        color:
+                          "#4b5563",
+                        fontWeight: 700,
+                      }}
+                    >
+                      重置手动资料
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
 
             <section>
@@ -457,24 +883,20 @@ export default function MemoryPage() {
                   </p>
                 </div>
 
-                <span
+                <strong
                   style={{
                     color:
                       "#6b7280",
                     fontSize: 13,
-                    fontWeight: 700,
                   }}
                 >
                   {items.length} 条
-                </span>
+                </strong>
               </div>
 
               {items.length === 0 ? (
                 <div
                   style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
                     padding:
                       "38px 18px",
                     background:
@@ -489,8 +911,8 @@ export default function MemoryPage() {
                     lineHeight: 1.7,
                   }}
                 >
-                  还没有记忆。先在
-                  Chat 中进行一轮对话。
+                  还没有对话记忆。先在 Chat
+                  中进行一轮对话。
                 </div>
               ) : (
                 <div
@@ -501,73 +923,67 @@ export default function MemoryPage() {
                 >
                   {[...items]
                     .reverse()
-                    .map(
-                      (
-                        item
-                      ) => (
-                        <article
-                          key={
-                            item.id
-                          }
+                    .map((item) => (
+                      <article
+                        key={
+                          item.id
+                        }
+                        style={{
+                          minWidth: 0,
+                          padding: 16,
+                          background:
+                            "#ffffff",
+                          border:
+                            "1px solid #e5e7eb",
+                          borderRadius: 14,
+                        }}
+                      >
+                        <div
                           style={{
-                            minWidth: 0,
-                            padding: 16,
-                            background:
-                              "#ffffff",
-                            border:
-                              "1px solid #e5e7eb",
-                            borderRadius: 14,
+                            display:
+                              "flex",
+                            flexWrap:
+                              "wrap",
+                            justifyContent:
+                              "space-between",
+                            gap: 8,
+                            marginBottom: 9,
                           }}
                         >
-                          <div
+                          <strong>
+                            {item.role ===
+                            "user"
+                              ? "U · User"
+                              : "AI · Assistant"}
+                          </strong>
+
+                          <time
                             style={{
-                              display:
-                                "flex",
-                              flexWrap:
-                                "wrap",
-                              justifyContent:
-                                "space-between",
-                              gap: 8,
-                              marginBottom: 9,
+                              color:
+                                "#9ca3af",
+                              fontSize: 12,
                             }}
                           >
-                            <strong>
-                              {item.role ===
-                              "user"
-                                ? "U · User"
-                                : "AI · Assistant"}
-                            </strong>
+                            {new Date(
+                              item.timestamp
+                            ).toLocaleString()}
+                          </time>
+                        </div>
 
-                            <time
-                              style={{
-                                color:
-                                  "#9ca3af",
-                                fontSize: 12,
-                              }}
-                            >
-                              {new Date(
-                                item.timestamp
-                              ).toLocaleString()}
-                            </time>
-                          </div>
-
-                          <p
-                            style={{
-                              margin: 0,
-                              lineHeight: 1.65,
-                              whiteSpace:
-                                "pre-wrap",
-                              overflowWrap:
-                                "anywhere",
-                            }}
-                          >
-                            {
-                              item.content
-                            }
-                          </p>
-                        </article>
-                      )
-                    )}
+                        <p
+                          style={{
+                            margin: 0,
+                            lineHeight: 1.65,
+                            whiteSpace:
+                              "pre-wrap",
+                            overflowWrap:
+                              "anywhere",
+                          }}
+                        >
+                          {item.content}
+                        </p>
+                      </article>
+                    ))}
                 </div>
               )}
             </section>
