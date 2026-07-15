@@ -1,6 +1,16 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import {
+  useEffect,
+  useState,
+} from "react";
+
+interface RuntimeStatus {
+  status: "online" | "offline";
+  provider: string;
+  version: string;
+}
 
 const pageTitles: Record<string, string> = {
   "/": "Chat Workspace",
@@ -11,12 +21,93 @@ const pageTitles: Record<string, string> = {
   "/settings": "Settings",
 };
 
+const initialStatus: RuntimeStatus = {
+  status: "offline",
+  provider: "unknown",
+  version: "0.2",
+};
+
 export default function Header() {
   const pathname = usePathname();
+
+  const [runtime, setRuntime] =
+    useState<RuntimeStatus>(
+      initialStatus
+    );
 
   const pageTitle =
     pageTitles[pathname] ??
     "AIOS Workspace";
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRuntimeStatus() {
+      try {
+        const response = await fetch(
+          "/api/runtime/status",
+          {
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Runtime unavailable."
+          );
+        }
+
+        const data =
+          await response.json();
+
+        if (!active) {
+          return;
+        }
+
+        setRuntime({
+          status:
+            data.status === "online"
+              ? "online"
+              : "offline",
+          provider:
+            typeof data.provider ===
+            "string"
+              ? data.provider
+              : "unknown",
+          version:
+            typeof data.version ===
+            "string"
+              ? data.version
+              : "0.2",
+        });
+      } catch {
+        if (active) {
+          setRuntime(
+            initialStatus
+          );
+        }
+      }
+    }
+
+    loadRuntimeStatus();
+
+    const interval =
+      window.setInterval(
+        loadRuntimeStatus,
+        30000
+      );
+
+    return () => {
+      active = false;
+
+      window.clearInterval(
+        interval
+      );
+    };
+  }, []);
+
+  const isOnline =
+    runtime.status === "online";
 
   return (
     <header
@@ -26,10 +117,12 @@ export default function Header() {
         color: "#ffffff",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent:
+          "space-between",
         gap: 16,
         padding: "12px 20px",
-        borderBottom: "1px solid #1f2937",
+        borderBottom:
+          "1px solid #1f2937",
       }}
     >
       <div
@@ -71,20 +164,35 @@ export default function Header() {
                 width: 7,
                 height: 7,
                 borderRadius: "50%",
-                background: "#22c55e",
+                background: isOnline
+                  ? "#22c55e"
+                  : "#ef4444",
               }}
             />
 
-            Online
+            {isOnline
+              ? "Online"
+              : "Offline"}
           </span>
 
           <span>·</span>
 
-          <span>Provider: Mock</span>
+          <span
+            style={{
+              textTransform:
+                "capitalize",
+            }}
+          >
+            Provider:{" "}
+            {runtime.provider}
+          </span>
 
           <span>·</span>
 
-          <span>AIOS Alpha v0.2</span>
+          <span>
+            AIOS Alpha v
+            {runtime.version}
+          </span>
         </div>
       </div>
 
@@ -98,10 +206,12 @@ export default function Header() {
           background: "#374151",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent:
+            "center",
           fontWeight: 700,
           fontSize: 17,
-          border: "1px solid #4b5563",
+          border:
+            "1px solid #4b5563",
         }}
       >
         V
