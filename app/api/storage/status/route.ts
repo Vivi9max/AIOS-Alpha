@@ -3,8 +3,10 @@ import {
 } from "next/server";
 
 import {
+  getNamespacedStorageKey,
   getStorageHealth,
   getStorageMode,
+  getWorkspaceId,
 } from "@/lib/server-storage";
 
 export const dynamic =
@@ -13,6 +15,9 @@ export const dynamic =
 export async function GET() {
   const mode =
     getStorageMode();
+
+  const workspaceId =
+    getWorkspaceId();
 
   try {
     const health =
@@ -26,6 +31,26 @@ export async function GET() {
 
       persistent:
         mode === "redis",
+
+      workspace: {
+        id:
+          workspaceId,
+
+        conversationMemoryKey:
+          getNamespacedStorageKey(
+            "aios:default:conversation-memory"
+          ),
+
+        manualProfileKey:
+          getNamespacedStorageKey(
+            "aios:default:manual-profile"
+          ),
+
+        tasksKey:
+          getNamespacedStorageKey(
+            "aios:default:tasks"
+          ),
+      },
 
       error:
         health.error,
@@ -41,6 +66,11 @@ export async function GET() {
         mode,
 
         persistent: false,
+
+        workspace: {
+          id:
+            workspaceId,
+        },
 
         error:
           error instanceof Error
