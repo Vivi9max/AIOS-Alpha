@@ -1,41 +1,16 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
-import { executeRuntime } from "@/lib/runtime/engine";
+import {
+  executeRuntime,
+} from "@/lib/runtime/engine";
 
-type RequestMessage = {
-  role?: string;
-  content?: string;
-};
+export const dynamic =
+  "force-dynamic";
 
 interface ChatRequestBody {
   prompt?: unknown;
-  messages?: unknown;
-}
-
-function getPrompt(
-  body: ChatRequestBody
-): string {
-  if (typeof body.prompt === "string") {
-    return body.prompt.trim();
-  }
-
-  const messages: RequestMessage[] =
-    Array.isArray(body.messages)
-      ? body.messages
-      : [];
-
-  const latestUserMessage = [
-    ...messages,
-  ]
-    .reverse()
-    .find(
-      (message) =>
-        message.role === "user" &&
-        typeof message.content ===
-          "string"
-    );
-
-  return latestUserMessage?.content?.trim() ?? "";
 }
 
 export async function POST(
@@ -45,16 +20,27 @@ export async function POST(
     const body =
       (await request.json()) as ChatRequestBody;
 
-    const prompt = getPrompt(body);
+    const prompt =
+      typeof body.prompt ===
+      "string"
+        ? body.prompt.trim()
+        : "";
 
     if (!prompt) {
       return NextResponse.json(
         {
           success: false,
           provider: "mock",
-          content: "请输入内容。",
-          runtime: "aios-alpha",
-          timestamp: Date.now(),
+          requestedProvider:
+            "mock",
+          fallbackUsed: false,
+          actionHandled: false,
+          content:
+            "请输入内容。",
+          error:
+            "Prompt is required.",
+          timestamp:
+            Date.now(),
         },
         {
           status: 400,
@@ -67,17 +53,47 @@ export async function POST(
         prompt,
       });
 
-    return NextResponse.json(
-      result,
-      {
-        status: result.success
-          ? 200
-          : 500,
-      }
-    );
+    return NextResponse.json({
+      success:
+        result.success,
+
+      provider:
+        result.provider,
+
+      requestedProvider:
+        result.requestedProvider,
+
+      fallbackUsed:
+        result.fallbackUsed ??
+        false,
+
+      actionHandled:
+        result.actionHandled ??
+        false,
+
+      content:
+        result.content,
+
+      error:
+        result.error,
+
+      runtime:
+        result.runtime,
+
+      latencyMs:
+        result.latencyMs,
+
+      timestamp:
+        result.timestamp,
+    });
   } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "AIOS Chat API failed.";
+
     console.error(
-      "[AIOS Runtime API]",
+      "[AIOS Chat API]",
       error
     );
 
@@ -85,10 +101,16 @@ export async function POST(
       {
         success: false,
         provider: "mock",
+        requestedProvider:
+          "deepseek",
+        fallbackUsed: false,
+        actionHandled: false,
         content:
-          "AIOS Runtime Error",
-        runtime: "aios-alpha",
-        timestamp: Date.now(),
+          "AIOS Runtime 暂时不可用。",
+        error:
+          errorMessage,
+        timestamp:
+          Date.now(),
       },
       {
         status: 500,

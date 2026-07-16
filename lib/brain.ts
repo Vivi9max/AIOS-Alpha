@@ -5,8 +5,12 @@ import type {
 } from "./ai/types";
 
 import {
-  addMemory,
+  getActiveProvider,
+} from "./ai/router";
+
+import {
   addAssistantMemory,
+  addMemory,
   buildConversationContext,
   hydrateMemory,
   saveMemory,
@@ -21,6 +25,14 @@ import {
   hydrateManualProfile,
 } from "./memory/profile-store";
 
+import {
+  parseWorkspaceIntent,
+} from "./router/intentParser";
+
+import {
+  executeWorkspaceAction,
+} from "./router/actionRouter";
+
 export interface BrainRequest {
   prompt: string;
 }
@@ -32,6 +44,7 @@ export interface BrainResponse {
   fallbackUsed?: boolean;
   error?: string;
   content: string;
+  actionHandled?: boolean;
 }
 
 export async function runBrain(
@@ -44,19 +57,95 @@ export async function runBrain(
     return {
       success: false,
       provider: "mock",
+      requestedProvider:
+        "mock",
+      fallbackUsed: false,
       content: "请输入内容。",
+      actionHandled: false,
     };
   }
 
-  /*
-   * 在读取上下文前恢复：
-   * 1. Conversation Memory
-   * 2. Manual Profile
-   */
   await Promise.all([
     hydrateMemory(),
     hydrateManualProfile(),
   ]);
+
+  const action =
+    parseWorkspaceIntent(
+      prompt
+    );
+
+  if (
+    action.type !== "none"
+  ) {
+    addMemory(
+      "user",
+      prompt
+    );
+
+    try {
+      const execution =
+        await executeWorkspaceAction(
+          action
+        );
+
+      if (
+        execution.handled &&
+        execution.content
+      ) {
+        const activeProvider =
+          getActiveProvider();
+
+        addAssistantMemory(
+          execution.content
+        );
+
+        await saveMemory();
+
+        return {
+          success: true,
+          provider:
+            activeProvider,
+          requestedProvider:
+            activeProvider,
+          fallbackUsed: false,
+          content:
+            execution.content,
+          actionHandled: true,
+        };
+      }
+    } catch (error) {
+      const activeProvider =
+        getActiveProvider();
+
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Workspace action failed.";
+
+      const content =
+        `操作执行失败：${errorMessage}`;
+
+      addAssistantMemory(
+        content
+      );
+
+      await saveMemory();
+
+      return {
+        success: false,
+        provider:
+          activeProvider,
+        requestedProvider:
+          activeProvider,
+        fallbackUsed: false,
+        error: errorMessage,
+        content:
+          "操作执行失败，请稍后重试。",
+        actionHandled: true,
+      };
+    }
+  }
 
   const conversationContext =
     buildConversationContext(
@@ -79,8 +168,10 @@ export async function runBrain(
   const finalPrompt = [
     "You are the AIOS Alpha brain.",
     "Answer the current user message directly.",
-    "Use memory and profile only when relevant.",
+    "Use the saved profile and conversation memory only when relevant.",
+    "Do not claim that an action was completed unless the system actually executed it.",
     "Do not treat questions as new personal facts.",
+    "Respond in the same language as the user unless the user asks otherwise.",
     "",
     "USER_PROFILE:",
     profileContext ||
@@ -134,12 +225,10 @@ export async function runBrain(
 
       content:
         result.content,
+
+      actionHandled: false,
     };
   } catch (error) {
-    /*
-     * Provider 失败时，
-     * 仍保存本轮用户消息。
-     */
     await saveMemory();
 
     throw error;
