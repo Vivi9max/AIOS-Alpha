@@ -1,6 +1,7 @@
 import {
   createPersistentTask,
   deletePersistentTask,
+  findDuplicateActiveTask,
   listPersistentTasks,
   updatePersistentTask,
 } from "@/lib/task/server-store";
@@ -251,6 +252,23 @@ export async function executeWorkspaceAction(
 ): Promise<ActionExecutionResult> {
   switch (action.type) {
     case "task.create": {
+      const duplicate =
+        await findDuplicateActiveTask(
+          action.title
+        );
+
+      if (duplicate) {
+        return {
+          handled: true,
+          content: [
+            "检测到同名待完成任务，未重复创建。",
+            "",
+            `标题：${duplicate.title}`,
+            `状态：${taskStatusLabels[duplicate.status]}`,
+          ].join("\n"),
+        };
+      }
+
       const task =
         await createPersistentTask(
           action.title,
@@ -273,19 +291,15 @@ export async function executeWorkspaceAction(
         await listPersistentTasks();
 
       const filteredTasks =
-        action.filter ===
-        "completed"
+        action.filter === "completed"
           ? tasks.filter(
               (task) =>
-                task.status ===
-                "done"
+                task.status === "done"
             )
-          : action.filter ===
-            "active"
+          : action.filter === "active"
           ? tasks.filter(
               (task) =>
-                task.status !==
-                "done"
+                task.status !== "done"
             )
           : tasks;
 
@@ -293,8 +307,7 @@ export async function executeWorkspaceAction(
         filteredTasks.length === 0
       ) {
         if (
-          action.filter ===
-          "completed"
+          action.filter === "completed"
         ) {
           return {
             handled: true,
@@ -304,8 +317,7 @@ export async function executeWorkspaceAction(
         }
 
         if (
-          action.filter ===
-          "active"
+          action.filter === "active"
         ) {
           return {
             handled: true,
@@ -322,11 +334,9 @@ export async function executeWorkspaceAction(
       }
 
       const title =
-        action.filter ===
-        "completed"
+        action.filter === "completed"
           ? `你有 ${filteredTasks.length} 项已完成任务：`
-          : action.filter ===
-            "active"
+          : action.filter === "active"
           ? `你有 ${filteredTasks.length} 项待完成任务：`
           : `你目前有 ${filteredTasks.length} 项任务：`;
 
@@ -439,7 +449,33 @@ export async function executeWorkspaceAction(
       };
     }
 
-    case "task.delete": {
+    case "task.delete.request": {
+      const resolved =
+        await resolveSingleTask(
+          action.query
+        );
+
+      if (!resolved.task) {
+        return {
+          handled: true,
+          content:
+            resolved.failure,
+        };
+      }
+
+      return {
+        handled: true,
+        content: [
+          "删除任务需要再次确认。",
+          "",
+          `即将删除：${resolved.task.title}`,
+          "",
+          `请发送：确认删除任务：${resolved.task.title}`,
+        ].join("\n"),
+      };
+    }
+
+    case "task.delete.confirm": {
       const resolved =
         await resolveSingleTask(
           action.query

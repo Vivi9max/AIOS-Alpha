@@ -174,13 +174,15 @@ function parseTaskReopen(
 function parseTaskDelete(
   prompt: string
 ): WorkspaceAction | null {
-  const patterns = [
-    /^(?:请)?删除任务[：:\s]+(.+)$/i,
-    /^(?:请)?移除任务[：:\s]+(.+)$/i,
-    /^(?:请)?删除[「“"]?(.+?)[」”"]?这个任务[。]?$/i,
+  const confirmPatterns = [
+    /^(?:请)?确认删除任务[：:\s]+(.+)$/i,
+    /^(?:请)?确认删除[「“"]?(.+?)[」”"]?这个任务[。]?$/i,
   ];
 
-  for (const pattern of patterns) {
+  for (
+    const pattern
+    of confirmPatterns
+  ) {
     const match =
       prompt.match(pattern);
 
@@ -191,7 +193,33 @@ function parseTaskDelete(
 
     if (query) {
       return {
-        type: "task.delete",
+        type: "task.delete.confirm",
+        query,
+      };
+    }
+  }
+
+  const requestPatterns = [
+    /^(?:请)?删除任务[：:\s]+(.+)$/i,
+    /^(?:请)?移除任务[：:\s]+(.+)$/i,
+    /^(?:请)?删除[「“"]?(.+?)[」”"]?这个任务[。]?$/i,
+  ];
+
+  for (
+    const pattern
+    of requestPatterns
+  ) {
+    const match =
+      prompt.match(pattern);
+
+    const query =
+      match?.[1]
+        ? cleanValue(match[1])
+        : "";
+
+    if (query) {
+      return {
+        type: "task.delete.request",
         query,
       };
     }
@@ -418,10 +446,6 @@ export function parseWorkspaceIntent(
     return taskList;
   }
 
-  /*
-   * 查询必须放在更新前面，
-   * 避免“我的项目是什么”被误识别为资料更新。
-   */
   const profileRead =
     parseProfileRead(prompt);
 

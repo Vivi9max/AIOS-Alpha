@@ -21,7 +21,11 @@ export type WorkspaceAction =
       query: string;
     }
   | {
-      type: "task.delete";
+      type: "task.delete.request";
+      query: string;
+    }
+  | {
+      type: "task.delete.confirm";
       query: string;
     }
   | {

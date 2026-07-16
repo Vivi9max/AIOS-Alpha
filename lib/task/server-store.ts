@@ -49,6 +49,15 @@ function normalizeTasks(
     .slice(-MAX_TASKS);
 }
 
+function normalizeTitle(
+  value: string
+): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
 async function readTasks():
   Promise<Task[]> {
   const stored =
@@ -91,9 +100,36 @@ export async function listPersistentTasks():
   );
 }
 
+export async function findDuplicateActiveTask(
+  title: string
+): Promise<Task | null> {
+  const normalized =
+    normalizeTitle(title);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const tasks =
+    await readTasks();
+
+  return (
+    tasks.find(
+      (task) =>
+        task.status !== "done" &&
+        normalizeTitle(
+          task.title
+        ) === normalized
+    ) ?? null
+  );
+}
+
 export async function createPersistentTask(
   title: string,
-  description = ""
+  description = "",
+  options?: {
+    allowDuplicate?: boolean;
+  }
 ): Promise<Task> {
   const cleanTitle =
     title.trim();
@@ -106,6 +142,30 @@ export async function createPersistentTask(
 
   const tasks =
     await readTasks();
+
+  if (
+    !options?.allowDuplicate
+  ) {
+    const normalized =
+      normalizeTitle(
+        cleanTitle
+      );
+
+    const duplicate =
+      tasks.find(
+        (task) =>
+          task.status !== "done" &&
+          normalizeTitle(
+            task.title
+          ) === normalized
+      );
+
+    if (duplicate) {
+      throw new Error(
+        `DUPLICATE_TASK:${duplicate.id}`
+      );
+    }
+  }
 
   const now =
     Date.now();
