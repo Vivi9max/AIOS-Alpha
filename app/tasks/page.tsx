@@ -1,21 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
 import type {
   Task,
   TaskStatus,
-} from "@/lib/task";
+} from "@/lib/task/types";
 
-import {
-  completeTask,
-  createTask,
-  deleteTask,
-  listTasks,
-  updateTask,
-} from "@/lib/task";
+interface TasksResponse {
+  success: boolean;
+  tasks?: Task[];
+  error?: string;
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] =
@@ -24,57 +26,228 @@ export default function TasksPage() {
   const [title, setTitle] =
     useState("");
 
-  const [description, setDescription] =
+  const [
+    description,
+    setDescription,
+  ] = useState("");
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
     useState("");
 
-  function refreshTasks() {
-    setTasks(listTasks());
-  }
+  const loadTasks =
+    useCallback(
+      async () => {
+        setLoading(true);
+        setError("");
+
+        try {
+          const response =
+            await fetch(
+              "/api/tasks",
+              {
+                cache:
+                  "no-store",
+              }
+            );
+
+          const data =
+            (await response.json()) as TasksResponse;
+
+          if (
+            !response.ok ||
+            !data.success
+          ) {
+            throw new Error(
+              data.error ??
+                "Tasks loading failed."
+            );
+          }
+
+          setTasks(
+            Array.isArray(
+              data.tasks
+            )
+              ? data.tasks
+              : []
+          );
+        } catch {
+          setError(
+            "任务读取失败。"
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      []
+    );
 
   useEffect(() => {
-    refreshTasks();
-  }, []);
+    loadTasks();
+  }, [loadTasks]);
 
-  function handleCreateTask() {
-    const cleanTitle = title.trim();
+  async function handleCreateTask() {
+    const cleanTitle =
+      title.trim();
 
-    if (!cleanTitle) {
+    if (
+      !cleanTitle ||
+      saving
+    ) {
       return;
     }
 
-    createTask(
-      cleanTitle,
-      description
-    );
+    setSaving(true);
+    setError("");
 
-    setTitle("");
-    setDescription("");
-    refreshTasks();
+    try {
+      const response =
+        await fetch(
+          "/api/tasks",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              title:
+                cleanTitle,
+
+              description,
+            }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ??
+            "Task creation failed."
+        );
+      }
+
+      setTitle("");
+      setDescription("");
+
+      await loadTasks();
+    } catch {
+      setError(
+        "任务创建失败。"
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleStatusChange(
+  async function handleStatusChange(
     id: string,
     status: TaskStatus
   ) {
-    updateTask(id, {
-      status,
-    });
+    setSaving(true);
+    setError("");
 
-    refreshTasks();
+    try {
+      const response =
+        await fetch(
+          "/api/tasks",
+          {
+            method: "PATCH",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              id,
+              status,
+            }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ??
+            "Task update failed."
+        );
+      }
+
+      await loadTasks();
+    } catch {
+      setError(
+        "任务更新失败。"
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleCompleteTask(
+  async function handleDeleteTask(
     id: string
   ) {
-    completeTask(id);
-    refreshTasks();
-  }
+    const confirmed =
+      window.confirm(
+        "确定删除这项任务吗？"
+      );
 
-  function handleDeleteTask(
-    id: string
-  ) {
-    deleteTask(id);
-    refreshTasks();
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const response =
+        await fetch(
+          `/api/tasks?id=${encodeURIComponent(
+            id
+          )}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ??
+            "Task deletion failed."
+        );
+      }
+
+      await loadTasks();
+    } catch {
+      setError(
+        "任务删除失败。"
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -123,6 +296,23 @@ export default function TasksPage() {
           </p>
         </header>
 
+        {error && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 13,
+              border:
+                "1px solid #fecaca",
+              borderRadius: 10,
+              background:
+                "#fff7f7",
+              color: "#b91c1c",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
         <section
           style={{
             padding: 18,
@@ -135,6 +325,7 @@ export default function TasksPage() {
         >
           <input
             value={title}
+            disabled={saving}
             onChange={(event) =>
               setTitle(
                 event.target.value
@@ -143,7 +334,8 @@ export default function TasksPage() {
             placeholder="任务标题"
             style={{
               width: "100%",
-              boxSizing: "border-box",
+              boxSizing:
+                "border-box",
               padding: "13px 14px",
               border:
                 "1px solid #d1d5db",
@@ -154,6 +346,7 @@ export default function TasksPage() {
 
           <textarea
             value={description}
+            disabled={saving}
             onChange={(event) =>
               setDescription(
                 event.target.value
@@ -163,7 +356,8 @@ export default function TasksPage() {
             rows={3}
             style={{
               width: "100%",
-              boxSizing: "border-box",
+              boxSizing:
+                "border-box",
               marginTop: 12,
               padding: "13px 14px",
               border:
@@ -176,22 +370,31 @@ export default function TasksPage() {
 
           <button
             type="button"
-            onClick={handleCreateTask}
-            disabled={!title.trim()}
+            onClick={
+              handleCreateTask
+            }
+            disabled={
+              !title.trim() ||
+              saving
+            }
             style={{
               width: "100%",
               marginTop: 12,
               padding: "13px 16px",
               border: 0,
               borderRadius: 10,
-              background: title.trim()
-                ? "#111827"
-                : "#d1d5db",
+              background:
+                title.trim() &&
+                !saving
+                  ? "#111827"
+                  : "#d1d5db",
               color: "#ffffff",
               fontWeight: 700,
             }}
           >
-            创建任务
+            {saving
+              ? "处理中…"
+              : "创建任务"}
           </button>
         </section>
 
@@ -223,7 +426,18 @@ export default function TasksPage() {
             </span>
           </div>
 
-          {tasks.length === 0 ? (
+          {loading ? (
+            <div
+              style={{
+                padding: 30,
+                textAlign:
+                  "center",
+                color: "#64748b",
+              }}
+            >
+              正在读取任务……
+            </div>
+          ) : tasks.length === 0 ? (
             <div
               style={{
                 padding:
@@ -246,104 +460,120 @@ export default function TasksPage() {
                 gap: 12,
               }}
             >
-              {tasks.map((task) => (
-                <article
-                  key={task.id}
-                  style={{
-                    padding: 16,
-                    background:
-                      "#ffffff",
-                    border:
-                      "1px solid #e5e7eb",
-                    borderRadius: 14,
-                  }}
-                >
-                  <h3
+              {tasks.map(
+                (task) => (
+                  <article
+                    key={task.id}
                     style={{
-                      margin: 0,
-                      textDecoration:
-                        task.status ===
-                        "done"
-                          ? "line-through"
-                          : "none",
+                      padding: 16,
+                      background:
+                        "#ffffff",
+                      border:
+                        "1px solid #e5e7eb",
+                      borderRadius:
+                        14,
                     }}
                   >
-                    {task.title}
-                  </h3>
-
-                  {task.description && (
-                    <p
+                    <h3
                       style={{
-                        color:
-                          "#6b7280",
-                        whiteSpace:
-                          "pre-wrap",
+                        margin: 0,
+                        textDecoration:
+                          task.status ===
+                          "done"
+                            ? "line-through"
+                            : "none",
                       }}
                     >
-                      {
-                        task.description
-                      }
-                    </p>
-                  )}
+                      {task.title}
+                    </h3>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      marginTop: 14,
-                    }}
-                  >
-                    <select
-                      value={task.status}
-                      onChange={(event) =>
-                        handleStatusChange(
-                          task.id,
-                          event.target
-                            .value as TaskStatus
-                        )
-                      }
+                    {task.description && (
+                      <p
+                        style={{
+                          color:
+                            "#6b7280",
+                          whiteSpace:
+                            "pre-wrap",
+                        }}
+                      >
+                        {
+                          task.description
+                        }
+                      </p>
+                    )}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap:
+                          "wrap",
+                        gap: 8,
+                        marginTop: 14,
+                      }}
                     >
-                      <option value="todo">
-                        待处理
-                      </option>
+                      <select
+                        value={
+                          task.status
+                        }
+                        disabled={saving}
+                        onChange={(
+                          event
+                        ) =>
+                          handleStatusChange(
+                            task.id,
+                            event.target
+                              .value as TaskStatus
+                          )
+                        }
+                      >
+                        <option value="todo">
+                          待处理
+                        </option>
 
-                      <option value="doing">
-                        进行中
-                      </option>
+                        <option value="doing">
+                          进行中
+                        </option>
 
-                      <option value="done">
-                        已完成
-                      </option>
-                    </select>
+                        <option value="done">
+                          已完成
+                        </option>
+                      </select>
 
-                    {task.status !==
-                      "done" && (
+                      {task.status !==
+                        "done" && (
+                        <button
+                          type="button"
+                          disabled={
+                            saving
+                          }
+                          onClick={() =>
+                            handleStatusChange(
+                              task.id,
+                              "done"
+                            )
+                          }
+                        >
+                          完成任务
+                        </button>
+                      )}
+
                       <button
                         type="button"
+                        disabled={
+                          saving
+                        }
                         onClick={() =>
-                          handleCompleteTask(
+                          handleDeleteTask(
                             task.id
                           )
                         }
                       >
-                        完成任务
+                        删除
                       </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDeleteTask(
-                          task.id
-                        )
-                      }
-                    >
-                      删除
-                    </button>
-                  </div>
-                </article>
-              ))}
+                    </div>
+                  </article>
+                )
+              )}
             </div>
           )}
         </section>
