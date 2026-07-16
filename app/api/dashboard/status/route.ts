@@ -10,6 +10,10 @@ import {
   buildMemoryProfile,
 } from "@/lib/memory/index";
 
+import type {
+  MemoryProfile,
+} from "@/lib/memory/index";
+
 import {
   hydrateManualProfile,
 } from "@/lib/memory/profile-store";
@@ -31,19 +35,30 @@ import {
 export const dynamic =
   "force-dynamic";
 
+const profileFields: Array<
+  keyof MemoryProfile
+> = [
+  "name",
+  "location",
+  "project",
+  "goal",
+  "preference",
+];
+
 function countProfileFields(
-  profile: Record<
-    string,
-    unknown
-  >
+  profile: MemoryProfile
 ): number {
-  return Object.values(
-    profile
-  ).filter(
-    (value) =>
-      typeof value ===
-        "string" &&
-      value.trim().length > 0
+  return profileFields.filter(
+    (field) => {
+      const value =
+        profile[field];
+
+      return (
+        typeof value ===
+          "string" &&
+        value.trim().length > 0
+      );
+    }
   ).length;
 }
 
@@ -82,6 +97,9 @@ export async function GET() {
           task.status !== "done"
       ).length;
 
+    const storageMode =
+      getStorageMode();
+
     return NextResponse.json({
       success: true,
 
@@ -110,7 +128,8 @@ export async function GET() {
           providerRuntime.success,
 
         latencyMs:
-          providerRuntime.latencyMs ??
+          providerRuntime
+            .latencyMs ??
           null,
 
         error:
@@ -119,15 +138,16 @@ export async function GET() {
 
         lastRequestAt:
           providerRuntime
-            .lastRequestAt,
+            .lastRequestAt ??
+          null,
       },
 
       storage: {
         mode:
-          getStorageMode(),
+          storageMode,
 
         persistent:
-          getStorageMode() ===
+          storageMode ===
           "redis",
 
         healthy:
@@ -145,7 +165,8 @@ export async function GET() {
         userMessages:
           memory.filter(
             (item) =>
-              item.role === "user"
+              item.role ===
+              "user"
           ).length,
 
         assistantMessages:
@@ -203,20 +224,39 @@ export async function GET() {
         provider: {
           configured:
             "unknown",
-          active: "unknown",
-          requested: "unknown",
-          fallbackUsed: false,
-          success: false,
-          latencyMs: null,
+
+          active:
+            "unknown",
+
+          requested:
+            "unknown",
+
+          fallbackUsed:
+            false,
+
+          success:
+            false,
+
+          latencyMs:
+            null,
+
           error:
             errorMessage,
-          lastRequestAt: null,
+
+          lastRequestAt:
+            null,
         },
 
         storage: {
-          mode: "unknown",
-          persistent: false,
-          healthy: false,
+          mode:
+            "unknown",
+
+          persistent:
+            false,
+
+          healthy:
+            false,
+
           error:
             errorMessage,
         },

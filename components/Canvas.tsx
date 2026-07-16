@@ -1,152 +1,221 @@
 "use client";
 
-import { useState } from "react";
-import { runBrain } from "../lib/brain";
-import { getMemories } from "../lib/memory";
+import {
+  useState,
+} from "react";
+
+import {
+  runBrain,
+} from "@/lib/brain";
 
 export default function Canvas() {
-  const [intent, setIntent] = useState("");
-  const [state, setState] = useState("");
-  const [title, setTitle] = useState("");
-  const [result, setResult] = useState("");
-  const [history, setHistory] = useState(getMemories());
+  const [prompt, setPrompt] =
+    useState("");
 
-  function handleRun() {
-    const brain = runBrain(intent);
+  const [result, setResult] =
+    useState("");
 
-    setState(brain.state);
-    setTitle(brain.title);
-    setResult(brain.nextMove);
-    setHistory([...getMemories()]);
+  const [provider, setProvider] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  async function handleRun() {
+    const cleanPrompt =
+      prompt.trim();
+
+    if (
+      !cleanPrompt ||
+      loading
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const brain =
+        await runBrain({
+          prompt: cleanPrompt,
+        });
+
+      setResult(
+        brain.content
+      );
+
+      setProvider(
+        brain.provider
+      );
+    } catch (runError) {
+      const message =
+        runError instanceof Error
+          ? runError.message
+          : "AIOS Runtime 暂时不可用。";
+
+      setError(message);
+      setResult("");
+      setProvider("");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div
+    <section
       style={{
-        marginTop: 40,
-        width: 360
+        width: "100%",
+        maxWidth: 640,
+        margin: "40px auto",
       }}
     >
-      <input
-        value={intent}
-        onChange={(e) => setIntent(e.target.value)}
+      <textarea
+        value={prompt}
+        onChange={(event) =>
+          setPrompt(
+            event.target.value
+          )
+        }
         placeholder="今天，你想推进什么？"
+        rows={5}
+        disabled={loading}
         style={{
           width: "100%",
           padding: 16,
+          border:
+            "1px solid #d1d5db",
           borderRadius: 14,
-          border: "1px solid #ddd",
+          background:
+            "#ffffff",
+          color: "#111827",
           fontSize: 16,
-          outline: "none"
+          lineHeight: 1.6,
+          resize: "vertical",
+          outline: "none",
+          boxSizing:
+            "border-box",
+          opacity:
+            loading ? 0.7 : 1,
         }}
       />
 
       <button
+        type="button"
         onClick={handleRun}
+        disabled={
+          loading ||
+          !prompt.trim()
+        }
         style={{
           width: "100%",
           marginTop: 16,
           padding: 16,
-          borderRadius: 14,
           border: "none",
-          background: "#111",
-          color: "#fff",
-          fontSize: 16
+          borderRadius: 14,
+          background:
+            "#111827",
+          color: "#ffffff",
+          fontSize: 16,
+          fontWeight: 800,
+          cursor:
+            loading ||
+            !prompt.trim()
+              ? "not-allowed"
+              : "pointer",
+          opacity:
+            loading ||
+            !prompt.trim()
+              ? 0.55
+              : 1,
         }}
       >
-        ▶ Run AIOS
+        {loading
+          ? "AIOS 正在运行…"
+          : "▶ Run AIOS"}
       </button>
 
-      {result && (
+      {error && (
         <div
+          style={{
+            marginTop: 20,
+            padding: 16,
+            border:
+              "1px solid #fecaca",
+            borderRadius: 14,
+            background:
+              "#fff7f7",
+            color: "#b91c1c",
+            lineHeight: 1.6,
+            overflowWrap:
+              "anywhere",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <article
           style={{
             marginTop: 24,
             padding: 20,
+            border:
+              "1px solid #e5e7eb",
             borderRadius: 16,
-            background: "#f5f5f5"
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#888" }}>
-            Current State
-          </div>
-
-          <div style={{ fontWeight: 600, marginTop: 4 }}>
-            {state}
-          </div>
-
-          <div
-            style={{
-              marginTop: 18,
-              fontSize: 12,
-              color: "#888"
-            }}
-          >
-            Decision
-          </div>
-
-          <div style={{ fontWeight: 600, marginTop: 4 }}>
-            {title}
-          </div>
-
-          <div
-            style={{
-              marginTop: 18,
-              fontSize: 12,
-              color: "#888"
-            }}
-          >
-            Next Move
-          </div>
-
-          <div style={{ marginTop: 4 }}>
-            {result}
-          </div>
-        </div>
-      )}
-
-      {history.length > 0 && (
-        <div
-          style={{
-            marginTop: 32
+            background:
+              "#ffffff",
+            boxShadow:
+              "0 8px 24px rgba(15, 23, 42, 0.05)",
           }}
         >
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 600,
-              marginBottom: 12
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems:
+                "center",
+              gap: 12,
+              marginBottom: 14,
             }}
           >
-            Timeline
-          </div>
+            <strong>
+              AIOS Brain
+            </strong>
 
-          {history.map((item, index) => (
-            <div
-              key={index}
-              style={{
-                padding: 14,
-                border: "1px solid #eee",
-                borderRadius: 12,
-                marginBottom: 12
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>
-                {item.intent}
-              </div>
-
-              <div
+            {provider && (
+              <span
                 style={{
-                  fontSize: 13,
-                  color: "#666",
-                  marginTop: 6
+                  color:
+                    "#6b7280",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform:
+                    "capitalize",
                 }}
               >
-                {item.state}
-              </div>
-            </div>
-          ))}
-        </div>
+                {provider}
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              whiteSpace:
+                "pre-wrap",
+              lineHeight: 1.75,
+              overflowWrap:
+                "anywhere",
+            }}
+          >
+            {result}
+          </div>
+        </article>
       )}
-    </div>
+    </section>
   );
 }

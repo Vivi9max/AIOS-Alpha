@@ -1,41 +1,130 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useState,
+} from "react";
 
-import { runBrain } from "@/lib/brain";
+import {
+  runBrain,
+} from "@/lib/brain";
 
 import BrainInput from "@/components/brain/BrainInput";
 import BrainResult from "@/components/brain/BrainResult";
 
 export default function BrainPage() {
-  const [prompt, setPrompt] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [prompt, setPrompt] =
+    useState("");
+
+  const [answer, setAnswer] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   async function handleRun() {
-    if (!prompt.trim()) return;
+    const cleanPrompt =
+      prompt.trim();
+
+    if (
+      !cleanPrompt ||
+      loading
+    ) {
+      return;
+    }
 
     setLoading(true);
+    setError("");
 
-    const result = await runBrain({
-      provider: "mock",
-      prompt,
-    });
+    try {
+      const result =
+        await runBrain({
+          prompt: cleanPrompt,
+        });
 
-    setAnswer(result.content);
+      setAnswer(
+        result.content
+      );
+    } catch (runError) {
+      const message =
+        runError instanceof Error
+          ? runError.message
+          : "AIOS Runtime 暂时不可用。";
 
-    setLoading(false);
+      setError(message);
+      setAnswer("");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <main
       style={{
+        width: "100%",
         maxWidth: 900,
         margin: "40px auto",
         padding: 24,
+        boxSizing: "border-box",
       }}
     >
-      <h1>🧠 AIOS Runtime</h1>
+      <header
+        style={{
+          marginBottom: 24,
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            color: "#6b7280",
+            fontSize: 14,
+            fontWeight: 700,
+          }}
+        >
+          AIOS Alpha
+        </p>
+
+        <h1
+          style={{
+            margin: "7px 0 0",
+            fontSize: 34,
+          }}
+        >
+          🧠 AIOS Runtime
+        </h1>
+
+        <p
+          style={{
+            margin: "10px 0 0",
+            color: "#6b7280",
+            lineHeight: 1.6,
+          }}
+        >
+          通过当前 Runtime Provider
+          执行 AIOS Brain。
+        </p>
+      </header>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 14,
+            border:
+              "1px solid #fecaca",
+            borderRadius: 12,
+            background:
+              "#fff7f7",
+            color: "#b91c1c",
+            overflowWrap:
+              "anywhere",
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       <BrainInput
         value={prompt}
@@ -44,7 +133,9 @@ export default function BrainPage() {
         onRun={handleRun}
       />
 
-      <BrainResult answer={answer} />
+      <BrainResult
+        answer={answer}
+      />
     </main>
   );
 }
