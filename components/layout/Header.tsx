@@ -1,36 +1,63 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import {
   useEffect,
   useState,
 } from "react";
 
+import {
+  usePathname,
+} from "next/navigation";
+
 interface RuntimeStatus {
-  status: "online" | "offline";
+  status:
+    | "online"
+    | "offline";
+
   provider: string;
-  version: string;
 }
 
-const pageTitles: Record<string, string> = {
-  "/": "Chat Workspace",
-  "/workspace": "Chat Workspace",
-  "/dashboard": "Dashboard",
-  "/memory": "Memory",
-  "/tasks": "Tasks",
-  "/settings": "Settings",
-};
+const pageTitles:
+  Record<string, string> = {
+    "/":
+      "Chat Workspace",
 
-const initialStatus: RuntimeStatus = {
-  status: "offline",
-  provider: "unknown",
-  version: "0.2",
-};
+    "/workspace":
+      "Chat Workspace",
+
+    "/dashboard":
+      "Dashboard",
+
+    "/memory":
+      "Memory",
+
+    "/tasks":
+      "Tasks",
+
+    "/settings":
+      "Settings",
+
+    "/brain":
+      "AIOS Runtime",
+  };
+
+const initialStatus:
+  RuntimeStatus = {
+    status:
+      "offline",
+
+    provider:
+      "unknown",
+  };
 
 export default function Header() {
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
 
-  const [runtime, setRuntime] =
+  const [
+    runtime,
+    setRuntime,
+  ] =
     useState<RuntimeStatus>(
       initialStatus
     );
@@ -40,18 +67,23 @@ export default function Header() {
     "AIOS Workspace";
 
   useEffect(() => {
-    let active = true;
+    let active =
+      true;
 
     async function loadRuntimeStatus() {
       try {
-        const response = await fetch(
-          "/api/runtime/status",
-          {
-            cache: "no-store",
-          }
-        );
+        const response =
+          await fetch(
+            "/api/runtime/status",
+            {
+              cache:
+                "no-store",
+            }
+          );
 
-        if (!response.ok) {
+        if (
+          !response.ok
+        ) {
           throw new Error(
             "Runtime unavailable."
           );
@@ -66,19 +98,16 @@ export default function Header() {
 
         setRuntime({
           status:
-            data.status === "online"
+            data.status ===
+            "online"
               ? "online"
               : "offline",
+
           provider:
             typeof data.provider ===
             "string"
               ? data.provider
               : "unknown",
-          version:
-            typeof data.version ===
-            "string"
-              ? data.version
-              : "0.2",
         });
       } catch {
         if (active) {
@@ -98,7 +127,8 @@ export default function Header() {
       );
 
     return () => {
-      active = false;
+      active =
+        false;
 
       window.clearInterval(
         interval
@@ -107,75 +137,178 @@ export default function Header() {
   }, []);
 
   const isOnline =
-    runtime.status === "online";
+    runtime.status ===
+    "online";
 
   return (
     <header
       style={{
-        minHeight: 68,
-        background: "#111827",
-        color: "#ffffff",
-        display: "flex",
-        alignItems: "center",
+        minHeight:
+          78,
+
+        background:
+          "#111827",
+
+        color:
+          "#ffffff",
+
+        display:
+          "flex",
+
+        alignItems:
+          "center",
+
         justifyContent:
           "space-between",
-        gap: 16,
-        padding: "12px 20px",
+
+        gap:
+          16,
+
+        padding:
+          "14px 20px",
+
         borderBottom:
           "1px solid #1f2937",
       }}
     >
       <div
         style={{
-          minWidth: 0,
+          minWidth:
+            0,
         }}
       >
-        <h2
+        <div
           style={{
-            margin: 0,
-            fontSize: 20,
-            fontWeight: 700,
-            lineHeight: 1.25,
+            display:
+              "flex",
+
+            flexWrap:
+              "wrap",
+
+            alignItems:
+              "center",
+
+            gap:
+              10,
           }}
         >
-          {pageTitle}
-        </h2>
+          <h2
+            style={{
+              margin:
+                0,
+
+              fontSize:
+                21,
+
+              fontWeight:
+                800,
+
+              lineHeight:
+                1.25,
+            }}
+          >
+            {pageTitle}
+          </h2>
+
+          <span
+            style={{
+              display:
+                "inline-flex",
+
+              alignItems:
+                "center",
+
+              padding:
+                "4px 9px",
+
+              borderRadius:
+                999,
+
+              background:
+                "rgba(59, 130, 246, 0.16)",
+
+              border:
+                "1px solid rgba(147, 197, 253, 0.35)",
+
+              color:
+                "#bfdbfe",
+
+              fontSize:
+                11,
+
+              fontWeight:
+                800,
+
+              letterSpacing:
+                "0.04em",
+            }}
+          >
+            ALPHA v0.4
+          </span>
+        </div>
 
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 6,
-            color: "#cbd5e1",
-            fontSize: 12,
+            display:
+              "flex",
+
+            flexWrap:
+              "wrap",
+
+            alignItems:
+              "center",
+
+            gap:
+              8,
+
+            marginTop:
+              7,
+
+            color:
+              "#cbd5e1",
+
+            fontSize:
+              12,
           }}
         >
           <span
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
+              display:
+                "inline-flex",
+
+              alignItems:
+                "center",
+
+              gap:
+                5,
             }}
           >
             <span
               style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: isOnline
-                  ? "#22c55e"
-                  : "#ef4444",
+                width:
+                  7,
+
+                height:
+                  7,
+
+                borderRadius:
+                  "50%",
+
+                background:
+                  isOnline
+                    ? "#22c55e"
+                    : "#ef4444",
               }}
             />
 
             {isOnline
-              ? "Online"
-              : "Offline"}
+              ? "Runtime Online"
+              : "Runtime Offline"}
           </span>
 
-          <span>·</span>
+          <span>
+            ·
+          </span>
 
           <span
             style={{
@@ -187,29 +320,49 @@ export default function Header() {
             {runtime.provider}
           </span>
 
-          <span>·</span>
+          <span>
+            ·
+          </span>
 
           <span>
-            AIOS Alpha v
-            {runtime.version}
+            Private Alpha
           </span>
         </div>
       </div>
 
       <div
-        title="Vivi"
+        title="Alpha User"
         style={{
-          flexShrink: 0,
-          width: 42,
-          height: 42,
-          borderRadius: "50%",
-          background: "#374151",
-          display: "flex",
-          alignItems: "center",
+          flexShrink:
+            0,
+
+          width:
+            44,
+
+          height:
+            44,
+
+          borderRadius:
+            "50%",
+
+          background:
+            "#374151",
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
           justifyContent:
             "center",
-          fontWeight: 700,
-          fontSize: 17,
+
+          fontWeight:
+            800,
+
+          fontSize:
+            17,
+
           border:
             "1px solid #4b5563",
         }}

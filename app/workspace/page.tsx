@@ -1,25 +1,39 @@
 import ChatPanel from "@/components/chat/ChatPanel";
-
-import NewConversationButton from "@/components/chat/NewConversationButton";
-
+import InviteBanner from "@/components/alpha/InviteBanner";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
 export default function WorkspacePage() {
   return (
     <WorkspaceShell>
-      <div
+      <main
         style={{
-          width: "100%",
-          maxWidth: 960,
-          margin: "0 auto",
-          minHeight:
-            "calc(100vh - 160px)",
+          width:
+            "100%",
+
+          maxWidth:
+            960,
+
+          margin:
+            "0 auto",
+
+          padding:
+            "20px",
+
+          boxSizing:
+            "border-box",
         }}
       >
-        <NewConversationButton />
+        <div
+          style={{
+            marginBottom:
+              18,
+          }}
+        >
+          <InviteBanner />
+        </div>
 
         <ChatPanel />
-      </div>
+      </main>
     </WorkspaceShell>
   );
 }
