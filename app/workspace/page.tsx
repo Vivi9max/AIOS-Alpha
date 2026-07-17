@@ -1,5 +1,6 @@
 import ChatPanel from "@/components/chat/ChatPanel";
 import InviteBanner from "@/components/alpha/InviteBanner";
+import FeedbackButton from "@/components/alpha/FeedbackButton";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
 export default function WorkspacePage() {
@@ -33,6 +34,8 @@ export default function WorkspacePage() {
         </div>
 
         <ChatPanel />
+
+        <FeedbackButton />
       </main>
     </WorkspaceShell>
   );
