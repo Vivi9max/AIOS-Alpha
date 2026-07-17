@@ -3,7 +3,14 @@ import type {
 } from "@/lib/ai/types";
 
 import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
+import {
   buildRuntimePlan,
+  type PlannerIntent,
+  type RuntimeCapability,
+  type RuntimePlanType,
 } from "./planner";
 
 import {
@@ -15,41 +22,64 @@ import {
 } from "./providerManager";
 
 export interface RuntimeRequest {
-  prompt: string;
+  prompt:
+    string;
 }
 
 export interface RuntimeResponse {
-  success: boolean;
+  success:
+    boolean;
 
-  provider: AIProvider;
+  provider:
+    AIProvider;
 
-  requestedProvider?: AIProvider;
+  requestedProvider?:
+    AIProvider;
 
-  fallbackUsed?: boolean;
+  fallbackUsed?:
+    boolean;
 
-  error?: string;
+  error?:
+    string;
 
-  content: string;
+  content:
+    string;
 
-  actionHandled?: boolean;
+  actionHandled?:
+    boolean;
 
   runtime:
-    "aios-alpha";
+    string;
 
   runtimeVersion:
-    "0.3";
+    string;
 
-  planId?: string;
+  planId?:
+    string;
 
   planType?:
-    | "workspace-action"
-    | "conversation";
+    RuntimePlanType;
 
-  steps?: string[];
+  goal?:
+    string;
 
-  timestamp: number;
+  intent?:
+    PlannerIntent;
 
-  latencyMs: number;
+  confidence?:
+    number;
+
+  capabilities?:
+    RuntimeCapability[];
+
+  steps?:
+    string[];
+
+  timestamp:
+    number;
+
+  latencyMs:
+    number;
 }
 
 export async function executeRuntime(
@@ -114,10 +144,10 @@ export async function executeRuntime(
         false,
 
       runtime:
-        "aios-alpha",
+        APP_CONFIG.runtimeId,
 
       runtimeVersion:
-        "0.3",
+        APP_CONFIG.version,
 
       timestamp,
 
@@ -190,16 +220,28 @@ export async function executeRuntime(
         result.actionHandled,
 
       runtime:
-        "aios-alpha",
+        APP_CONFIG.runtimeId,
 
       runtimeVersion:
-        "0.3",
+        APP_CONFIG.version,
 
       planId:
         result.planId,
 
       planType:
         result.planType,
+
+      goal:
+        result.goal,
+
+      intent:
+        result.intent,
+
+      confidence:
+        result.confidence,
+
+      capabilities:
+        result.capabilities,
 
       steps:
         result.steps,
@@ -266,16 +308,28 @@ export async function executeRuntime(
         false,
 
       runtime:
-        "aios-alpha",
+        APP_CONFIG.runtimeId,
 
       runtimeVersion:
-        "0.3",
+        APP_CONFIG.version,
 
       planId:
         plan.id,
 
       planType:
         plan.type,
+
+      goal:
+        plan.goal,
+
+      intent:
+        plan.intent,
+
+      confidence:
+        plan.confidence,
+
+      capabilities:
+        plan.capabilities,
 
       steps:
         plan.steps,

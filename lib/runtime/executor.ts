@@ -22,27 +22,46 @@ import {
   executeWorkspaceAction,
 } from "@/lib/router/actionRouter";
 
-import type {
-  RuntimePlan,
+import {
+  buildPlannerContext,
+  type RuntimePlan,
 } from "./planner";
 
 export interface RuntimeExecutionResult
   extends BrainResponse {
-  planId: string;
+  planId:
+    string;
 
   planType:
     RuntimePlan["type"];
 
-  steps: string[];
+  goal:
+    string;
+
+  intent:
+    RuntimePlan["intent"];
+
+  confidence:
+    number;
+
+  capabilities:
+    RuntimePlan["capabilities"];
+
+  steps:
+    string[];
+}
+
+async function hydrateRuntimeContext() {
+  await Promise.all([
+    hydrateMemory(),
+    hydrateManualProfile(),
+  ]);
 }
 
 async function executeWorkspacePlan(
   plan: RuntimePlan
 ): Promise<RuntimeExecutionResult> {
-  await Promise.all([
-    hydrateMemory(),
-    hydrateManualProfile(),
-  ]);
+  await hydrateRuntimeContext();
 
   addMemory(
     "user",
@@ -74,7 +93,8 @@ async function executeWorkspacePlan(
     await saveMemory();
 
     return {
-      success: true,
+      success:
+        true,
 
       provider:
         activeProvider,
@@ -97,6 +117,18 @@ async function executeWorkspacePlan(
       planType:
         plan.type,
 
+      goal:
+        plan.goal,
+
+      intent:
+        plan.intent,
+
+      confidence:
+        plan.confidence,
+
+      capabilities:
+        plan.capabilities,
+
       steps:
         plan.steps,
     };
@@ -106,14 +138,18 @@ async function executeWorkspacePlan(
         ? error.message
         : "Workspace action failed.";
 
+    const failureContent =
+      `操作执行失败：${errorMessage}`;
+
     addAssistantMemory(
-      `操作执行失败：${errorMessage}`
+      failureContent
     );
 
     await saveMemory();
 
     return {
-      success: false,
+      success:
+        false,
 
       provider:
         activeProvider,
@@ -139,19 +175,38 @@ async function executeWorkspacePlan(
       planType:
         plan.type,
 
+      goal:
+        plan.goal,
+
+      intent:
+        plan.intent,
+
+      confidence:
+        plan.confidence,
+
+      capabilities:
+        plan.capabilities,
+
       steps:
         plan.steps,
     };
   }
 }
 
-async function executeConversationPlan(
+async function executeAIPlan(
   plan: RuntimePlan
 ): Promise<RuntimeExecutionResult> {
+  await hydrateRuntimeContext();
+
+  const plannerPrompt =
+    buildPlannerContext(
+      plan
+    );
+
   const result =
     await runBrain({
       prompt:
-        plan.prompt,
+        plannerPrompt,
     });
 
   return {
@@ -162,6 +217,18 @@ async function executeConversationPlan(
 
     planType:
       plan.type,
+
+    goal:
+      plan.goal,
+
+    intent:
+      plan.intent,
+
+    confidence:
+      plan.confidence,
+
+    capabilities:
+      plan.capabilities,
 
     steps:
       plan.steps,
@@ -180,7 +247,7 @@ export async function executeRuntimePlan(
     );
   }
 
-  return executeConversationPlan(
+  return executeAIPlan(
     plan
   );
 }
