@@ -1,6 +1,14 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
-import { getMemory } from "@/lib/memory/store";
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
+import {
+  getMemory,
+} from "@/lib/memory/store";
 
 import {
   getProviderRuntimeStatus,
@@ -9,6 +17,9 @@ import {
 
 export const dynamic =
   "force-dynamic";
+
+export const runtime =
+  "nodejs";
 
 export async function GET() {
   try {
@@ -21,54 +32,85 @@ export async function GET() {
     const diagnostics =
       getProviderRuntimeStatus();
 
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json(
+      {
+        success:
+          true,
 
-      runtime: "aios-alpha",
+        runtime:
+          APP_CONFIG.runtimeId,
 
-      version: "0.2",
+        stage:
+          APP_CONFIG.stage,
 
-      status: "online",
+        version:
+          APP_CONFIG.version,
 
-      provider:
-        provider.current,
+        versionLabel:
+          `${APP_CONFIG.stage} v${APP_CONFIG.version}`,
 
-      currentProvider:
-        provider.currentProvider,
+        status:
+          "online",
 
-      providers:
-        provider.providers,
+        provider:
+          provider.current,
 
-      providerRuntime:
-        diagnostics,
+        currentProvider:
+          provider.currentProvider,
 
-      memoryCount:
-        memory.length,
+        providers:
+          provider.providers,
 
-      modules: {
-        brain: {
-          enabled: true,
-          status: "ready",
+        providerRuntime:
+          diagnostics,
+
+        memoryCount:
+          memory.length,
+
+        modules: {
+          brain: {
+            enabled:
+              true,
+
+            status:
+              "ready",
+          },
+
+          memory: {
+            enabled:
+              true,
+
+            status:
+              "ready",
+          },
+
+          tasks: {
+            enabled:
+              true,
+
+            status:
+              "ready",
+          },
+
+          diagnostics: {
+            enabled:
+              true,
+
+            status:
+              "ready",
+          },
         },
 
-        memory: {
-          enabled: true,
-          status: "ready",
-        },
-
-        tasks: {
-          enabled: true,
-          status: "ready",
-        },
-
-        diagnostics: {
-          enabled: true,
-          status: "ready",
-        },
+        timestamp:
+          Date.now(),
       },
-
-      timestamp: Date.now(),
-    });
+      {
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      }
+    );
   } catch (error) {
     const errorMessage =
       error instanceof Error
@@ -82,60 +124,104 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
 
-        runtime: "aios-alpha",
+        runtime:
+          APP_CONFIG.runtimeId,
 
-        version: "0.2",
+        stage:
+          APP_CONFIG.stage,
 
-        status: "offline",
+        version:
+          APP_CONFIG.version,
 
-        provider: "unknown",
+        versionLabel:
+          `${APP_CONFIG.stage} v${APP_CONFIG.version}`,
 
-        currentProvider: null,
+        status:
+          "offline",
 
-        providers: [],
+        provider:
+          "unknown",
+
+        currentProvider:
+          null,
+
+        providers:
+          [],
 
         providerRuntime: {
-          provider: "mock",
+          provider:
+            "mock",
+
           requestedProvider:
             "mock",
-          fallbackUsed: false,
-          success: false,
-          error: errorMessage,
-          latencyMs: 0,
+
+          fallbackUsed:
+            false,
+
+          success:
+            false,
+
+          error:
+            errorMessage,
+
+          latencyMs:
+            0,
+
           lastRequestAt:
             Date.now(),
         },
 
-        memoryCount: 0,
+        memoryCount:
+          0,
 
         modules: {
           brain: {
-            enabled: false,
-            status: "error",
+            enabled:
+              false,
+
+            status:
+              "error",
           },
 
           memory: {
-            enabled: false,
-            status: "error",
+            enabled:
+              false,
+
+            status:
+              "error",
           },
 
           tasks: {
-            enabled: false,
-            status: "error",
+            enabled:
+              false,
+
+            status:
+              "error",
           },
 
           diagnostics: {
-            enabled: false,
-            status: "error",
+            enabled:
+              false,
+
+            status:
+              "error",
           },
         },
 
-        timestamp: Date.now(),
+        timestamp:
+          Date.now(),
       },
       {
-        status: 500,
+        status:
+          500,
+
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       }
     );
   }

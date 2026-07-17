@@ -9,6 +9,11 @@ import {
   usePathname,
 } from "next/navigation";
 
+import {
+  APP_BADGE,
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 interface RuntimeStatus {
   status:
     | "online"
@@ -34,11 +39,17 @@ const pageTitles:
     "/tasks":
       "Tasks",
 
+    "/projects":
+      "Projects",
+
     "/settings":
       "Settings",
 
     "/brain":
       "AIOS Runtime",
+
+    "/release":
+      "Release",
   };
 
 const initialStatus:
@@ -78,6 +89,9 @@ export default function Header() {
             {
               cache:
                 "no-store",
+
+              credentials:
+                "same-origin",
             }
           );
 
@@ -243,7 +257,7 @@ export default function Header() {
                 "0.04em",
             }}
           >
-            ALPHA v0.4
+            {APP_BADGE}
           </span>
         </div>
 
@@ -325,13 +339,13 @@ export default function Header() {
           </span>
 
           <span>
-            Private Alpha
+            {APP_CONFIG.codename}
           </span>
         </div>
       </div>
 
       <div
-        title="Alpha User"
+        title={`${APP_CONFIG.stage} User`}
         style={{
           flexShrink:
             0,

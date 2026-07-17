@@ -8,57 +8,132 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
-const STORAGE_KEY = "aios-settings";
+import {
+  APP_CONFIG,
+  APP_FULL_TITLE,
+  APP_VERSION_LABEL,
+} from "@/lib/config/app";
+
+const STORAGE_KEY =
+  "aios-settings";
 
 interface LocalSettings {
-  memoryEnabled: boolean;
-  taskEnabled: boolean;
+  memoryEnabled:
+    boolean;
+
+  taskEnabled:
+    boolean;
 }
 
 interface RuntimeStatus {
-  success: boolean;
-  runtime: string;
-  version: string;
-  status: "online" | "offline";
-  provider: string;
-  memoryCount: number;
-  timestamp: number;
+  success:
+    boolean;
+
+  runtime:
+    string;
+
+  stage?:
+    string;
+
+  version:
+    string;
+
+  versionLabel?:
+    string;
+
+  status:
+    | "online"
+    | "offline";
+
+  provider:
+    string;
+
+  memoryCount:
+    number;
+
+  timestamp:
+    number;
 }
 
-const defaultSettings: LocalSettings = {
-  memoryEnabled: true,
-  taskEnabled: true,
-};
+const defaultSettings:
+  LocalSettings = {
+    memoryEnabled:
+      true,
 
-const initialRuntime: RuntimeStatus = {
-  success: false,
-  runtime: "aios-alpha",
-  version: "0.2",
-  status: "offline",
-  provider: "unknown",
-  memoryCount: 0,
-  timestamp: 0,
-};
+    taskEnabled:
+      true,
+  };
+
+const initialRuntime:
+  RuntimeStatus = {
+    success:
+      false,
+
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    stage:
+      APP_CONFIG.stage,
+
+    version:
+      APP_CONFIG.version,
+
+    versionLabel:
+      APP_VERSION_LABEL,
+
+    status:
+      "offline",
+
+    provider:
+      "unknown",
+
+    memoryCount:
+      0,
+
+    timestamp:
+      0,
+  };
 
 export default function SettingsPage() {
-  const [settings, setSettings] =
+  const [
+    settings,
+    setSettings,
+  ] =
     useState<LocalSettings>(
       defaultSettings
     );
 
-  const [runtime, setRuntime] =
+  const [
+    runtime,
+    setRuntime,
+  ] =
     useState<RuntimeStatus>(
       initialRuntime
     );
 
-  const [runtimeLoading, setRuntimeLoading] =
-    useState(true);
+  const [
+    runtimeLoading,
+    setRuntimeLoading,
+  ] =
+    useState(
+      true
+    );
 
-  const [runtimeError, setRuntimeError] =
-    useState("");
+  const [
+    runtimeError,
+    setRuntimeError,
+  ] =
+    useState(
+      ""
+    );
 
-  const [saved, setSaved] =
-    useState(false);
+  const [
+    saved,
+    setSaved,
+  ] =
+    useState(
+      false
+    );
 
   useEffect(() => {
     try {
@@ -72,7 +147,9 @@ export default function SettingsPage() {
       }
 
       const parsed =
-        JSON.parse(stored);
+        JSON.parse(
+          stored
+        );
 
       setSettings({
         ...defaultSettings,
@@ -85,55 +162,77 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const loadRuntime = useCallback(
-    async () => {
-      setRuntimeLoading(true);
-      setRuntimeError("");
-
-      try {
-        const response = await fetch(
-          "/api/runtime/status",
-          {
-            cache: "no-store",
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            "Runtime unavailable."
-          );
-        }
-
-        const data =
-          (await response.json()) as RuntimeStatus;
-
-        setRuntime(data);
-      } catch {
-        setRuntime(
-          initialRuntime
+  const loadRuntime =
+    useCallback(
+      async () => {
+        setRuntimeLoading(
+          true
         );
 
         setRuntimeError(
-          "无法读取 Runtime 状态。"
+          ""
         );
-      } finally {
-        setRuntimeLoading(false);
-      }
-    },
-    []
-  );
+
+        try {
+          const response =
+            await fetch(
+              "/api/runtime/status",
+              {
+                cache:
+                  "no-store",
+
+                credentials:
+                  "same-origin",
+              }
+            );
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              "Runtime unavailable."
+            );
+          }
+
+          const data =
+            (await response.json()) as RuntimeStatus;
+
+          setRuntime(
+            data
+          );
+        } catch {
+          setRuntime(
+            initialRuntime
+          );
+
+          setRuntimeError(
+            "无法读取 Runtime 状态。"
+          );
+        } finally {
+          setRuntimeLoading(
+            false
+          );
+        }
+      },
+      []
+    );
 
   useEffect(() => {
     loadRuntime();
   }, [loadRuntime]);
 
   function updateSettings(
-    updates: Partial<LocalSettings>
+    updates:
+      Partial<LocalSettings>
   ) {
-    setSaved(false);
+    setSaved(
+      false
+    );
 
     setSettings(
-      (current) => ({
+      (
+        current
+      ) => ({
         ...current,
         ...updates,
       })
@@ -143,49 +242,81 @@ export default function SettingsPage() {
   function handleSave() {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify(settings)
+      JSON.stringify(
+        settings
+      )
     );
 
-    setSaved(true);
+    setSaved(
+      true
+    );
 
-    window.setTimeout(() => {
-      setSaved(false);
-    }, 1800);
+    window.setTimeout(
+      () => {
+        setSaved(
+          false
+        );
+      },
+      1800
+    );
   }
 
   const isOnline =
-    runtime.status === "online";
+    runtime.status ===
+    "online";
+
+  const versionLabel =
+    runtime.versionLabel ||
+    `${runtime.stage ?? APP_CONFIG.stage} v${runtime.version}`;
 
   return (
     <WorkspaceShell>
       <div
         style={{
-          width: "100%",
-          maxWidth: 760,
-          margin: "0 auto",
-          color: "#111827",
+          width:
+            "100%",
+
+          maxWidth:
+            760,
+
+          margin:
+            "0 auto",
+
+          color:
+            "#111827",
         }}
       >
         <header
           style={{
-            marginBottom: 24,
+            marginBottom:
+              24,
           }}
         >
           <p
             style={{
-              margin: 0,
-              color: "#6b7280",
-              fontSize: 14,
-              fontWeight: 700,
+              margin:
+                0,
+
+              color:
+                "#6b7280",
+
+              fontSize:
+                14,
+
+              fontWeight:
+                700,
             }}
           >
-            AIOS Alpha
+            {APP_FULL_TITLE}
           </p>
 
           <h1
             style={{
-              margin: "7px 0 0",
-              fontSize: 30,
+              margin:
+                "7px 0 0",
+
+              fontSize:
+                30,
             }}
           >
             ⚙️ Settings
@@ -193,9 +324,14 @@ export default function SettingsPage() {
 
           <p
             style={{
-              margin: "10px 0 0",
-              color: "#6b7280",
-              lineHeight: 1.6,
+              margin:
+                "10px 0 0",
+
+              color:
+                "#6b7280",
+
+              lineHeight:
+                1.6,
             }}
           >
             管理 Runtime 模块并查看真实系统状态。
@@ -205,13 +341,23 @@ export default function SettingsPage() {
         {runtimeError && (
           <div
             style={{
-              marginBottom: 16,
-              padding: "12px 14px",
+              marginBottom:
+                16,
+
+              padding:
+                "12px 14px",
+
               border:
                 "1px solid #fecaca",
-              borderRadius: 12,
-              background: "#fff7f7",
-              color: "#b91c1c",
+
+              borderRadius:
+                12,
+
+              background:
+                "#fff7f7",
+
+              color:
+                "#b91c1c",
             }}
           >
             {runtimeError}
@@ -220,31 +366,54 @@ export default function SettingsPage() {
 
         <section
           style={{
-            padding: 18,
-            marginBottom: 16,
-            background: "#ffffff",
+            padding:
+              18,
+
+            marginBottom:
+              16,
+
+            background:
+              "#ffffff",
+
             border:
               "1px solid #e5e7eb",
-            borderRadius: 16,
+
+            borderRadius:
+              16,
           }}
         >
           <div
             style={{
-              display: "flex",
-              flexWrap: "wrap",
+              display:
+                "flex",
+
+              flexWrap:
+                "wrap",
+
               justifyContent:
                 "space-between",
-              alignItems: "center",
-              gap: 12,
+
+              alignItems:
+                "center",
+
+              gap:
+                12,
             }}
           >
             <div>
               <p
                 style={{
-                  margin: 0,
-                  color: "#6b7280",
-                  fontSize: 13,
-                  fontWeight: 700,
+                  margin:
+                    0,
+
+                  color:
+                    "#6b7280",
+
+                  fontSize:
+                    13,
+
+                  fontWeight:
+                    700,
                 }}
               >
                 ACTIVE PROVIDER
@@ -252,9 +421,15 @@ export default function SettingsPage() {
 
               <strong
                 style={{
-                  display: "block",
-                  marginTop: 7,
-                  fontSize: 25,
+                  display:
+                    "block",
+
+                  marginTop:
+                    7,
+
+                  fontSize:
+                    25,
+
                   textTransform:
                     "capitalize",
                 }}
@@ -267,29 +442,53 @@ export default function SettingsPage() {
 
             <span
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                padding: "8px 11px",
-                borderRadius: 999,
-                background: isOnline
-                  ? "#ecfdf5"
-                  : "#fef2f2",
-                color: isOnline
-                  ? "#047857"
-                  : "#b91c1c",
-                fontSize: 13,
-                fontWeight: 800,
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  7,
+
+                padding:
+                  "8px 11px",
+
+                borderRadius:
+                  999,
+
+                background:
+                  isOnline
+                    ? "#ecfdf5"
+                    : "#fef2f2",
+
+                color:
+                  isOnline
+                    ? "#047857"
+                    : "#b91c1c",
+
+                fontSize:
+                  13,
+
+                fontWeight:
+                  800,
               }}
             >
               <span
                 style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: isOnline
-                    ? "#22c55e"
-                    : "#ef4444",
+                  width:
+                    8,
+
+                  height:
+                    8,
+
+                  borderRadius:
+                    "50%",
+
+                  background:
+                    isOnline
+                      ? "#22c55e"
+                      : "#ef4444",
                 }}
               />
 
@@ -301,31 +500,49 @@ export default function SettingsPage() {
 
           <p
             style={{
-              margin: "14px 0 0",
-              color: "#6b7280",
-              fontSize: 13,
-              lineHeight: 1.55,
+              margin:
+                "14px 0 0",
+
+              color:
+                "#6b7280",
+
+              fontSize:
+                13,
+
+              lineHeight:
+                1.55,
             }}
           >
-            Provider 由服务端 AI_CONFIG
-            和 Provider Router 控制。当前页面不再显示无法生效的本地模型切换。
+            Provider 由服务端 AI_CONFIG 和 Provider Router
+            控制。当前页面不再显示无法生效的本地模型切换。
           </p>
         </section>
 
         <section
           style={{
-            padding: 18,
-            marginBottom: 16,
-            background: "#ffffff",
+            padding:
+              18,
+
+            marginBottom:
+              16,
+
+            background:
+              "#ffffff",
+
             border:
               "1px solid #e5e7eb",
-            borderRadius: 16,
+
+            borderRadius:
+              16,
           }}
         >
           <h2
             style={{
-              margin: "0 0 14px",
-              fontSize: 18,
+              margin:
+                "0 0 14px",
+
+              fontSize:
+                18,
             }}
           >
             Runtime Modules
@@ -337,7 +554,9 @@ export default function SettingsPage() {
             checked={
               settings.memoryEnabled
             }
-            onChange={(checked) =>
+            onChange={(
+              checked
+            ) =>
               updateSettings({
                 memoryEnabled:
                   checked,
@@ -351,7 +570,9 @@ export default function SettingsPage() {
             checked={
               settings.taskEnabled
             }
-            onChange={(checked) =>
+            onChange={(
+              checked
+            ) =>
               updateSettings({
                 taskEnabled:
                   checked,
@@ -361,10 +582,17 @@ export default function SettingsPage() {
 
           <p
             style={{
-              margin: "13px 0 0",
-              color: "#9ca3af",
-              fontSize: 12,
-              lineHeight: 1.55,
+              margin:
+                "13px 0 0",
+
+              color:
+                "#9ca3af",
+
+              fontSize:
+                12,
+
+              lineHeight:
+                1.55,
             }}
           >
             当前开关保存于本机浏览器，暂不改变服务端
@@ -374,28 +602,47 @@ export default function SettingsPage() {
 
         <section
           style={{
-            padding: 18,
-            marginBottom: 18,
-            background: "#ffffff",
+            padding:
+              18,
+
+            marginBottom:
+              18,
+
+            background:
+              "#ffffff",
+
             border:
               "1px solid #e5e7eb",
-            borderRadius: 16,
+
+            borderRadius:
+              16,
           }}
         >
           <div
             style={{
-              display: "flex",
+              display:
+                "flex",
+
               justifyContent:
                 "space-between",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 12,
+
+              alignItems:
+                "center",
+
+              gap:
+                12,
+
+              marginBottom:
+                12,
             }}
           >
             <h2
               style={{
-                margin: 0,
-                fontSize: 18,
+                margin:
+                  0,
+
+                fontSize:
+                  18,
               }}
             >
               System Status
@@ -403,19 +650,35 @@ export default function SettingsPage() {
 
             <button
               type="button"
-              onClick={loadRuntime}
-              disabled={runtimeLoading}
+              onClick={
+                loadRuntime
+              }
+              disabled={
+                runtimeLoading
+              }
               style={{
-                padding: "8px 11px",
+                padding:
+                  "8px 11px",
+
                 border:
                   "1px solid #d1d5db",
-                borderRadius: 9,
-                background: "#ffffff",
-                color: "#111827",
-                fontWeight: 700,
-                opacity: runtimeLoading
-                  ? 0.6
-                  : 1,
+
+                borderRadius:
+                  9,
+
+                background:
+                  "#ffffff",
+
+                color:
+                  "#111827",
+
+                fontWeight:
+                  700,
+
+                opacity:
+                  runtimeLoading
+                    ? 0.6
+                    : 1,
               }}
             >
               {runtimeLoading
@@ -426,29 +689,39 @@ export default function SettingsPage() {
 
           <StatusRow
             label="Runtime"
-            value={runtime.runtime}
+            value={
+              runtime.runtime
+            }
           />
 
           <StatusRow
             label="Status"
-            value={runtime.status}
+            value={
+              runtime.status
+            }
           />
 
           <StatusRow
             label="Version"
-            value={`Alpha v${runtime.version}`}
+            value={
+              versionLabel
+            }
           />
 
           <StatusRow
             label="Provider"
-            value={runtime.provider}
+            value={
+              runtime.provider
+            }
           />
 
           <StatusRow
             label="Memory Records"
-            value={String(
-              runtime.memoryCount
-            )}
+            value={
+              String(
+                runtime.memoryCount
+              )
+            }
           />
 
           <StatusRow
@@ -465,16 +738,33 @@ export default function SettingsPage() {
 
         <button
           type="button"
-          onClick={handleSave}
+          onClick={
+            handleSave
+          }
           style={{
-            width: "100%",
-            padding: "13px 16px",
-            border: 0,
-            borderRadius: 10,
-            background: "#111827",
-            color: "#ffffff",
-            fontSize: 15,
-            fontWeight: 700,
+            width:
+              "100%",
+
+            padding:
+              "13px 16px",
+
+            border:
+              0,
+
+            borderRadius:
+              10,
+
+            background:
+              "#111827",
+
+            color:
+              "#ffffff",
+
+            fontSize:
+              15,
+
+            fontWeight:
+              700,
           }}
         >
           {saved
@@ -492,22 +782,39 @@ function SettingSwitch({
   checked,
   onChange,
 }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (
-    checked: boolean
-  ) => void;
+  label:
+    string;
+
+  description:
+    string;
+
+  checked:
+    boolean;
+
+  onChange:
+    (
+      checked:
+        boolean
+    ) => void;
 }) {
   return (
     <label
       style={{
-        display: "flex",
-        alignItems: "center",
+        display:
+          "flex",
+
+        alignItems:
+          "center",
+
         justifyContent:
           "space-between",
-        gap: 16,
-        padding: "13px 0",
+
+        gap:
+          16,
+
+        padding:
+          "13px 0",
+
         borderTop:
           "1px solid #f3f4f6",
       }}
@@ -515,7 +822,8 @@ function SettingSwitch({
       <span>
         <strong
           style={{
-            display: "block",
+            display:
+              "block",
           }}
         >
           {label}
@@ -523,10 +831,17 @@ function SettingSwitch({
 
         <span
           style={{
-            display: "block",
-            marginTop: 4,
-            color: "#6b7280",
-            fontSize: 13,
+            display:
+              "block",
+
+            marginTop:
+              4,
+
+            color:
+              "#6b7280",
+
+            fontSize:
+              13,
           }}
         >
           {description}
@@ -535,16 +850,28 @@ function SettingSwitch({
 
       <input
         type="checkbox"
-        checked={checked}
-        onChange={(event) =>
+        checked={
+          checked
+        }
+        onChange={(
+          event
+        ) =>
           onChange(
             event.target.checked
           )
         }
         style={{
-          width: 22,
-          height: 22,
-          flexShrink: 0,
+          width:
+            22,
+
+          height:
+            22,
+
+          flexShrink:
+            0,
+
+          accentColor:
+            "#2563eb",
         }}
       />
     </label>
@@ -555,25 +882,44 @@ function StatusRow({
   label,
   value,
 }: {
-  label: string;
-  value: string;
+  label:
+    string;
+
+  value:
+    string;
 }) {
   return (
     <div
       style={{
-        display: "flex",
-        flexWrap: "wrap",
+        display:
+          "flex",
+
         justifyContent:
           "space-between",
-        gap: 10,
-        padding: "10px 0",
+
+        alignItems:
+          "center",
+
+        gap:
+          18,
+
+        padding:
+          "11px 0",
+
         borderTop:
           "1px solid #f3f4f6",
       }}
     >
       <span
         style={{
-          color: "#6b7280",
+          color:
+            "#6b7280",
+
+          fontSize:
+            14,
+
+          fontWeight:
+            700,
         }}
       >
         {label}
@@ -581,14 +927,17 @@ function StatusRow({
 
       <strong
         style={{
-          maxWidth: "65%",
-          textAlign: "right",
-          overflowWrap: "anywhere",
-          textTransform:
-            label === "Provider" ||
-            label === "Status"
-              ? "capitalize"
-              : "none",
+          color:
+            "#111827",
+
+          fontSize:
+            14,
+
+          textAlign:
+            "right",
+
+          overflowWrap:
+            "anywhere",
         }}
       >
         {value}
