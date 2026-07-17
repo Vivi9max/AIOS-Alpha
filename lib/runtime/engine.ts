@@ -17,6 +17,10 @@ import {
   executeRuntimePlan,
 } from "./executor";
 
+import type {
+  CapabilityTrace,
+} from "./capability-router";
+
 import {
   updateProviderRuntimeStatus,
 } from "./providerManager";
@@ -74,6 +78,9 @@ export interface RuntimeResponse {
 
   steps?:
     string[];
+
+  capabilityTrace?:
+    CapabilityTrace[];
 
   timestamp:
     number;
@@ -246,6 +253,9 @@ export async function executeRuntime(
       steps:
         result.steps,
 
+      capabilityTrace:
+        result.capabilityTrace,
+
       timestamp,
 
       latencyMs,
@@ -333,6 +343,9 @@ export async function executeRuntime(
 
       steps:
         plan.steps,
+
+      capabilityTrace:
+        [],
 
       timestamp,
 

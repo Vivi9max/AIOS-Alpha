@@ -27,6 +27,12 @@ import {
   type RuntimePlan,
 } from "./planner";
 
+import {
+  buildRuntimeContext,
+  buildRuntimeContextText,
+  type CapabilityTrace,
+} from "./capability-router";
+
 export interface RuntimeExecutionResult
   extends BrainResponse {
   planId:
@@ -49,6 +55,9 @@ export interface RuntimeExecutionResult
 
   steps:
     string[];
+
+  capabilityTrace:
+    CapabilityTrace[];
 }
 
 async function hydrateRuntimeContext() {
@@ -70,6 +79,9 @@ async function executeWorkspacePlan(
 
   const activeProvider =
     getActiveProvider();
+
+  const startedAt =
+    Date.now();
 
   try {
     const execution =
@@ -131,6 +143,20 @@ async function executeWorkspacePlan(
 
       steps:
         plan.steps,
+
+      capabilityTrace: [
+        {
+          capability:
+            "workspace.action",
+
+          status:
+            "completed",
+
+          durationMs:
+            Date.now() -
+            startedAt,
+        },
+      ],
     };
   } catch (error) {
     const errorMessage =
@@ -189,6 +215,23 @@ async function executeWorkspacePlan(
 
       steps:
         plan.steps,
+
+      capabilityTrace: [
+        {
+          capability:
+            "workspace.action",
+
+          status:
+            "failed",
+
+          durationMs:
+            Date.now() -
+            startedAt,
+
+          detail:
+            errorMessage,
+        },
+      ],
     };
   }
 }
@@ -196,12 +239,22 @@ async function executeWorkspacePlan(
 async function executeAIPlan(
   plan: RuntimePlan
 ): Promise<RuntimeExecutionResult> {
-  await hydrateRuntimeContext();
-
-  const plannerPrompt =
-    buildPlannerContext(
+  const context =
+    await buildRuntimeContext(
       plan
     );
+
+  const plannerPrompt =
+    [
+      buildPlannerContext(
+        plan
+      ),
+
+      "",
+      buildRuntimeContextText(
+        context
+      ),
+    ].join("\n");
 
   const result =
     await runBrain({
@@ -232,6 +285,9 @@ async function executeAIPlan(
 
     steps:
       plan.steps,
+
+    capabilityTrace:
+      context.trace,
   };
 }
 
