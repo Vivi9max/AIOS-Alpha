@@ -1,7 +1,14 @@
+import type {
+  AIProvider,
+} from "@/lib/ai/types";
+
 import {
-  runBrain,
-  type BrainResponse,
-} from "../brain";
+  buildRuntimePlan,
+} from "./planner";
+
+import {
+  executeRuntimePlan,
+} from "./executor";
 
 import {
   updateProviderRuntimeStatus,
@@ -11,10 +18,37 @@ export interface RuntimeRequest {
   prompt: string;
 }
 
-export interface RuntimeResponse
-  extends BrainResponse {
-  runtime: "aios-alpha";
+export interface RuntimeResponse {
+  success: boolean;
+
+  provider: AIProvider;
+
+  requestedProvider?: AIProvider;
+
+  fallbackUsed?: boolean;
+
+  error?: string;
+
+  content: string;
+
+  actionHandled?: boolean;
+
+  runtime:
+    "aios-alpha";
+
+  runtimeVersion:
+    "0.3";
+
+  planId?: string;
+
+  planType?:
+    | "workspace-action"
+    | "conversation";
+
+  steps?: string[];
+
   timestamp: number;
+
   latencyMs: number;
 }
 
@@ -31,65 +65,147 @@ export async function executeRuntime(
     const timestamp =
       Date.now();
 
-    updateProviderRuntimeStatus({
-      provider: "mock",
-      requestedProvider: "mock",
-      fallbackUsed: false,
-      success: false,
-      error: "请输入内容。",
-      latencyMs:
-        timestamp - startedAt,
-      lastRequestAt: timestamp,
-    });
-
-    return {
-      success: false,
-      provider: "mock",
-      requestedProvider: "mock",
-      fallbackUsed: false,
-      error: "请输入内容。",
-      content: "请输入内容。",
-      runtime: "aios-alpha",
-      timestamp,
-      latencyMs:
-        timestamp - startedAt,
-    };
-  }
-
-  try {
-    const result =
-      await runBrain({
-        prompt,
-      });
-
-    const timestamp =
-      Date.now();
-
     const latencyMs =
-      timestamp - startedAt;
+      timestamp -
+      startedAt;
 
     updateProviderRuntimeStatus({
       provider:
-        result.provider,
+        "mock",
+
       requestedProvider:
-        result.requestedProvider ??
-        result.provider,
+        "mock",
+
       fallbackUsed:
-        result.fallbackUsed ??
         false,
+
       success:
-        result.success,
+        false,
+
       error:
-        result.error,
+        "请输入内容。",
+
       latencyMs,
+
       lastRequestAt:
         timestamp,
     });
 
     return {
-      ...result,
-      runtime: "aios-alpha",
+      success:
+        false,
+
+      provider:
+        "mock",
+
+      requestedProvider:
+        "mock",
+
+      fallbackUsed:
+        false,
+
+      error:
+        "请输入内容。",
+
+      content:
+        "请输入内容。",
+
+      actionHandled:
+        false,
+
+      runtime:
+        "aios-alpha",
+
+      runtimeVersion:
+        "0.3",
+
       timestamp,
+
+      latencyMs,
+    };
+  }
+
+  const plan =
+    buildRuntimePlan(
+      prompt
+    );
+
+  try {
+    const result =
+      await executeRuntimePlan(
+        plan
+      );
+
+    const timestamp =
+      Date.now();
+
+    const latencyMs =
+      timestamp -
+      startedAt;
+
+    updateProviderRuntimeStatus({
+      provider:
+        result.provider,
+
+      requestedProvider:
+        result.requestedProvider ??
+        result.provider,
+
+      fallbackUsed:
+        result.fallbackUsed ??
+        false,
+
+      success:
+        result.success,
+
+      error:
+        result.error,
+
+      latencyMs,
+
+      lastRequestAt:
+        timestamp,
+    });
+
+    return {
+      success:
+        result.success,
+
+      provider:
+        result.provider,
+
+      requestedProvider:
+        result.requestedProvider,
+
+      fallbackUsed:
+        result.fallbackUsed,
+
+      error:
+        result.error,
+
+      content:
+        result.content,
+
+      actionHandled:
+        result.actionHandled,
+
+      runtime:
+        "aios-alpha",
+
+      runtimeVersion:
+        "0.3",
+
+      planId:
+        result.planId,
+
+      planType:
+        result.planType,
+
+      steps:
+        result.steps,
+
+      timestamp,
+
       latencyMs,
     };
   } catch (error) {
@@ -97,7 +213,8 @@ export async function executeRuntime(
       Date.now();
 
     const latencyMs =
-      timestamp - startedAt;
+      timestamp -
+      startedAt;
 
     const errorMessage =
       error instanceof Error
@@ -105,28 +222,66 @@ export async function executeRuntime(
         : "AIOS Runtime 未知错误";
 
     updateProviderRuntimeStatus({
-      provider: "mock",
+      provider:
+        "mock",
+
       requestedProvider:
         "deepseek",
-      fallbackUsed: false,
-      success: false,
-      error: errorMessage,
+
+      fallbackUsed:
+        false,
+
+      success:
+        false,
+
+      error:
+        errorMessage,
+
       latencyMs,
+
       lastRequestAt:
         timestamp,
     });
 
     return {
-      success: false,
-      provider: "mock",
+      success:
+        false,
+
+      provider:
+        "mock",
+
       requestedProvider:
         "deepseek",
-      fallbackUsed: false,
-      error: errorMessage,
+
+      fallbackUsed:
+        false,
+
+      error:
+        errorMessage,
+
       content:
         "AIOS Runtime 暂时不可用。",
-      runtime: "aios-alpha",
+
+      actionHandled:
+        false,
+
+      runtime:
+        "aios-alpha",
+
+      runtimeVersion:
+        "0.3",
+
+      planId:
+        plan.id,
+
+      planType:
+        plan.type,
+
+      steps:
+        plan.steps,
+
       timestamp,
+
       latencyMs,
     };
   }
