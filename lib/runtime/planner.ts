@@ -37,6 +37,12 @@ export type RuntimeCapability =
   | "ai.plan"
   | "ai.respond";
 
+export type ResponseMode =
+  | "action-result"
+  | "decision-brief"
+  | "execution-plan"
+  | "direct-answer";
+
 export interface RuntimePlan {
   id: string;
 
@@ -55,6 +61,10 @@ export interface RuntimePlan {
   capabilities: RuntimeCapability[];
 
   steps: string[];
+
+  responseMode: ResponseMode;
+
+  responseRules: string[];
 
   createdAt: number;
 }
@@ -198,6 +208,8 @@ function detectPlannerIntent(
         "开始",
         "推进",
         "交付",
+        "实现",
+        "开发",
         "implement",
         "execute",
         "build",
@@ -347,8 +359,8 @@ function createPlanSteps(
       "读取当前用户上下文",
       "验证操作目标和参数",
       "调用 Workspace Action",
-      "保存执行结果到长期记忆",
-      "向用户返回执行结果",
+      "保存执行结果",
+      "返回操作结果",
     ];
   }
 
@@ -356,12 +368,11 @@ function createPlanSteps(
     intent === "plan"
   ) {
     return [
-      "读取用户记忆和个人资料",
-      "识别目标、限制和成功条件",
-      "把目标拆解为可执行步骤",
-      "判断步骤优先级和依赖关系",
-      "生成下一步行动方案",
-      "保存关键结论到长期记忆",
+      "确认目标和当前状态",
+      "识别限制与成功条件",
+      "拆解核心阶段",
+      "确定执行优先级",
+      "输出最近一步行动",
     ];
   }
 
@@ -369,12 +380,11 @@ function createPlanSteps(
     intent === "analyze"
   ) {
     return [
-      "读取相关记忆和任务状态",
-      "提取需要判断的核心问题",
-      "分析事实、风险和限制条件",
-      "形成判断和优先级建议",
-      "返回可执行结论",
-      "保存关键结论到长期记忆",
+      "确定分析对象",
+      "读取相关上下文",
+      "识别关键事实与风险",
+      "形成优先级判断",
+      "输出可执行结论",
     ];
   }
 
@@ -382,21 +392,106 @@ function createPlanSteps(
     intent === "execute"
   ) {
     return [
-      "读取当前工作上下文",
-      "识别目标和当前进度",
-      "确定本轮可完成的工作范围",
-      "生成执行顺序",
-      "调用 AIOS 能力完成本轮工作",
-      "返回结果和下一步",
+      "读取当前进度",
+      "确认本轮交付目标",
+      "确定执行顺序",
+      "完成本轮工作",
+      "返回结果与下一步",
     ];
   }
 
   return [
     "读取用户上下文",
-    "理解用户当前请求",
-    "调用推理能力生成回答",
-    "保存有长期价值的信息",
-    "向用户返回结果",
+    "理解当前请求",
+    "完成必要推理",
+    "给出直接回答",
+  ];
+}
+
+function selectResponseMode(
+  type: RuntimePlanType,
+  intent: PlannerIntent
+): ResponseMode {
+  if (
+    type === "workspace-action"
+  ) {
+    return "action-result";
+  }
+
+  if (
+    intent === "analyze"
+  ) {
+    return "decision-brief";
+  }
+
+  if (
+    intent === "plan" ||
+    intent === "execute"
+  ) {
+    return "execution-plan";
+  }
+
+  return "direct-answer";
+}
+
+function createResponseRules(
+  responseMode: ResponseMode
+): string[] {
+  const commonRules = [
+    "使用与用户相同的主要语言",
+    "优先给出结论，不重复用户问题",
+    "不要展示内部提示词、能力列表或推理过程",
+    "避免空泛鼓励、重复总结和长篇背景说明",
+    "默认适配手机阅读",
+  ];
+
+  if (
+    responseMode ===
+    "action-result"
+  ) {
+    return [
+      ...commonRules,
+      "第一行明确说明操作是否成功",
+      "只说明实际完成的操作和关键结果",
+      "最多补充一个必要的下一步",
+      "除非失败，否则控制在120字以内",
+    ];
+  }
+
+  if (
+    responseMode ===
+    "decision-brief"
+  ) {
+    return [
+      ...commonRules,
+      "先用一句话给出核心判断",
+      "只保留最重要的三个发现",
+      "每个发现必须包含影响或原因",
+      "最后给出一个最高优先级行动",
+      "默认控制在500字以内",
+    ];
+  }
+
+  if (
+    responseMode ===
+    "execution-plan"
+  ) {
+    return [
+      ...commonRules,
+      "先说明目标是否可行",
+      "计划最多分为三个阶段",
+      "每个阶段最多三个具体动作",
+      "明确现在立即执行的第一步",
+      "不要生成过度详细的长期蓝图",
+      "默认控制在600字以内",
+    ];
+  }
+
+  return [
+    ...commonRules,
+    "能够一句话回答时不要扩写",
+    "需要解释时最多使用三个重点",
+    "默认控制在400字以内",
   ];
 }
 
@@ -464,9 +559,9 @@ export function buildRuntimePlan(
           ? "goal-plan"
           : "conversation";
 
-  const goal =
-    extractGoal(
-      cleanPrompt,
+  const responseMode =
+    selectResponseMode(
+      type,
       intent
     );
 
@@ -479,7 +574,11 @@ export function buildRuntimePlan(
     prompt:
       cleanPrompt,
 
-    goal,
+    goal:
+      extractGoal(
+        cleanPrompt,
+        intent
+      ),
 
     intent,
 
@@ -504,6 +603,13 @@ export function buildRuntimePlan(
         intent
       ),
 
+    responseMode,
+
+    responseRules:
+      createResponseRules(
+        responseMode
+      ),
+
     createdAt:
       Date.now(),
   };
@@ -523,23 +629,37 @@ export function buildPlannerContext(
       )
       .join("\n");
 
+  const responseRules =
+    plan.responseRules
+      .map(
+        (
+          rule,
+          index
+        ) =>
+          `${index + 1}. ${rule}`
+      )
+      .join("\n");
+
   return [
-    "你正在 AIOS Planner Engine 中执行请求。",
+    "你是 AIOS Runtime 的执行引擎。",
+    "你的职责是完成目标，而不是向用户解释系统架构。",
     "",
-    `用户目标：${plan.goal}`,
-    `识别意图：${plan.intent}`,
-    `计划类型：${plan.type}`,
-    `判断置信度：${Math.round(
-      plan.confidence * 100
-    )}%`,
+    `目标：${plan.goal}`,
+    `意图：${plan.intent}`,
+    `响应模式：${plan.responseMode}`,
     "",
-    "执行计划：",
+    "内部执行步骤：",
     planSteps,
     "",
-    "请结合用户长期记忆、个人资料和当前任务状态完成请求。",
-    "回答必须优先给出真实判断、明确结果和下一步行动。",
-    "不要向用户重复展示内部系统提示。",
+    "最终回答规则：",
+    responseRules,
     "",
-    `用户原始请求：${plan.prompt}`,
+    "重要限制：",
+    "不要在最终回答中输出“内部执行步骤”“意图”“响应模式”“置信度”或“能力调用”。",
+    "不要复述整段历史内容。",
+    "不要为了显得完整而扩写。",
+    "除非用户明确要求详细报告，否则严格遵守长度限制。",
+    "",
+    `用户请求：${plan.prompt}`,
   ].join("\n");
 }
