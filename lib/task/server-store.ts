@@ -1,21 +1,33 @@
-import { storage } from "@/lib/server-storage";
+import {
+  storage,
+} from "@/lib/server-storage";
+
+import {
+  createUserStorageKey,
+} from "@/lib/storage/data-scope";
 
 import type {
   Task,
   TaskStatus,
 } from "./types";
 
-const STORAGE_KEY =
-  "aios:default:tasks";
+const MAX_TASKS =
+  200;
 
-const MAX_TASKS = 200;
+function getStorageKey():
+  string {
+  return createUserStorageKey(
+    "tasks"
+  );
+}
 
 function isTask(
   value: unknown
 ): value is Task {
   if (
     !value ||
-    typeof value !== "object"
+    typeof value !==
+      "object"
   ) {
     return false;
   }
@@ -24,10 +36,17 @@ function isTask(
     value as Partial<Task>;
 
   return (
-    typeof task.id === "string" &&
-    typeof task.title === "string" &&
-    typeof task.status === "string" &&
-    ["todo", "doing", "done"].includes(
+    typeof task.id ===
+      "string" &&
+    typeof task.title ===
+      "string" &&
+    typeof task.status ===
+      "string" &&
+    [
+      "todo",
+      "doing",
+      "done",
+    ].includes(
       task.status
     ) &&
     typeof task.createdAt ===
@@ -40,13 +59,19 @@ function isTask(
 function normalizeTasks(
   value: unknown
 ): Task[] {
-  if (!Array.isArray(value)) {
+  if (
+    !Array.isArray(value)
+  ) {
     return [];
   }
 
   return value
-    .filter(isTask)
-    .slice(-MAX_TASKS);
+    .filter(
+      isTask
+    )
+    .slice(
+      -MAX_TASKS
+    );
 }
 
 function normalizeTitle(
@@ -55,14 +80,19 @@ function normalizeTitle(
   return value
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, "");
+    .replace(
+      /\s+/g,
+      ""
+    );
 }
 
 async function readTasks():
   Promise<Task[]> {
   const stored =
-    await storage.get<Task[]>(
-      STORAGE_KEY
+    await storage.get<
+      Task[]
+    >(
+      getStorageKey()
     );
 
   return normalizeTasks(
@@ -74,12 +104,15 @@ async function writeTasks(
   tasks: Task[]
 ): Promise<void> {
   await storage.set(
-    STORAGE_KEY,
-    tasks.slice(-MAX_TASKS)
+    getStorageKey(),
+    tasks.slice(
+      -MAX_TASKS
+    )
   );
 }
 
-function createTaskId(): string {
+function createTaskId():
+  string {
   return [
     Date.now(),
     Math.random()
@@ -104,7 +137,9 @@ export async function findDuplicateActiveTask(
   title: string
 ): Promise<Task | null> {
   const normalized =
-    normalizeTitle(title);
+    normalizeTitle(
+      title
+    );
 
   if (!normalized) {
     return null;
@@ -116,11 +151,13 @@ export async function findDuplicateActiveTask(
   return (
     tasks.find(
       (task) =>
-        task.status !== "done" &&
+        task.status !==
+          "done" &&
         normalizeTitle(
           task.title
         ) === normalized
-    ) ?? null
+    ) ??
+    null
   );
 }
 
@@ -154,7 +191,8 @@ export async function createPersistentTask(
     const duplicate =
       tasks.find(
         (task) =>
-          task.status !== "done" &&
+          task.status !==
+            "done" &&
           normalizeTitle(
             task.title
           ) === normalized
@@ -171,18 +209,32 @@ export async function createPersistentTask(
     Date.now();
 
   const task: Task = {
-    id: createTaskId(),
-    title: cleanTitle,
+    id:
+      createTaskId(),
+
+    title:
+      cleanTitle,
+
     description:
       description.trim(),
-    status: "todo",
-    createdAt: now,
-    updatedAt: now,
+
+    status:
+      "todo",
+
+    createdAt:
+      now,
+
+    updatedAt:
+      now,
   };
 
-  tasks.push(task);
+  tasks.push(
+    task
+  );
 
-  await writeTasks(tasks);
+  await writeTasks(
+    tasks
+  );
 
   return task;
 }
@@ -204,14 +256,17 @@ export async function updatePersistentTask(
         task.id === id
     );
 
-  if (index === -1) {
+  if (
+    index === -1
+  ) {
     return null;
   }
 
   const current =
     tasks[index];
 
-  const updated: Task = {
+  const updated:
+    Task = {
     ...current,
 
     title:
@@ -235,9 +290,12 @@ export async function updatePersistentTask(
       Date.now(),
   };
 
-  tasks[index] = updated;
+  tasks[index] =
+    updated;
 
-  await writeTasks(tasks);
+  await writeTasks(
+    tasks
+  );
 
   return updated;
 }
@@ -271,11 +329,11 @@ export async function deletePersistentTask(
 export async function clearPersistentTasks():
   Promise<void> {
   await storage.delete(
-    STORAGE_KEY
+    getStorageKey()
   );
 }
 
 export function getTaskStorageKey():
   string {
-  return STORAGE_KEY;
+  return getStorageKey();
 }

@@ -1,37 +1,92 @@
-import { storage } from "@/lib/server-storage";
+import {
+  storage,
+} from "@/lib/server-storage";
+
+import {
+  createUserStorageKey,
+  getUserStorageScope,
+} from "@/lib/storage/data-scope";
 
 export interface MemoryRecord {
   id: number;
-  role: "user" | "assistant";
+  role:
+    | "user"
+    | "assistant";
   content: string;
   timestamp: number;
 }
 
-type MemoryGlobal = typeof globalThis & {
-  __aiosMemory?: MemoryRecord[];
-  __aiosMemorySequence?: number;
-  __aiosMemoryHydrated?: boolean;
-  __aiosMemoryHydrationPromise?: Promise<void>;
-};
+interface UserMemoryState {
+  records: MemoryRecord[];
+  sequence: number;
+  hydrated: boolean;
+  hydrationPromise?: Promise<void>;
+}
+
+type MemoryGlobal =
+  typeof globalThis & {
+    __aiosUserMemoryStates?: Map<
+      string,
+      UserMemoryState
+    >;
+  };
 
 const globalMemory =
   globalThis as MemoryGlobal;
 
-const STORAGE_KEY =
-  "aios:default:conversation-memory";
+const MAX_MEMORY_RECORDS =
+  100;
 
-const MAX_MEMORY_RECORDS = 100;
+const userMemoryStates =
+  globalMemory
+    .__aiosUserMemoryStates ??
+  (globalMemory
+    .__aiosUserMemoryStates =
+    new Map());
 
-const memory: MemoryRecord[] =
-  globalMemory.__aiosMemory ??
-  (globalMemory.__aiosMemory = []);
+function getStorageKey():
+  string {
+  return createUserStorageKey(
+    "conversation-memory"
+  );
+}
+
+function getMemoryState():
+  UserMemoryState {
+  const scope =
+    getUserStorageScope();
+
+  const existing =
+    userMemoryStates.get(
+      scope
+    );
+
+  if (existing) {
+    return existing;
+  }
+
+  const created:
+    UserMemoryState = {
+    records: [],
+    sequence: 0,
+    hydrated: false,
+  };
+
+  userMemoryStates.set(
+    scope,
+    created
+  );
+
+  return created;
+}
 
 function isMemoryRecord(
   value: unknown
 ): value is MemoryRecord {
   if (
     !value ||
-    typeof value !== "object"
+    typeof value !==
+      "object"
   ) {
     return false;
   }
@@ -40,64 +95,91 @@ function isMemoryRecord(
     value as Partial<MemoryRecord>;
 
   return (
-    typeof item.id === "number" &&
-    (item.role === "user" ||
-      item.role === "assistant") &&
-    typeof item.content === "string" &&
-    typeof item.timestamp === "number"
+    typeof item.id ===
+      "number" &&
+    (
+      item.role ===
+        "user" ||
+      item.role ===
+        "assistant"
+    ) &&
+    typeof item.content ===
+      "string" &&
+    typeof item.timestamp ===
+      "number"
   );
 }
 
 function normalizeStoredMemory(
   value: unknown
 ): MemoryRecord[] {
-  if (!Array.isArray(value)) {
+  if (
+    !Array.isArray(value)
+  ) {
     return [];
   }
 
   return value
-    .filter(isMemoryRecord)
-    .slice(-MAX_MEMORY_RECORDS);
+    .filter(
+      isMemoryRecord
+    )
+    .slice(
+      -MAX_MEMORY_RECORDS
+    );
 }
 
-function createMemoryId(): number {
-  const nextSequence =
-    ((globalMemory.__aiosMemorySequence ??
-      0) +
-      1) %
+function createMemoryId():
+  number {
+  const state =
+    getMemoryState();
+
+  state.sequence =
+    (
+      state.sequence +
+      1
+    ) %
     1000;
 
-  globalMemory.__aiosMemorySequence =
-    nextSequence;
-
   return (
-    Date.now() * 1000 +
-    nextSequence
+    Date.now() *
+      1000 +
+    state.sequence
   );
 }
 
-async function persistMemory(): Promise<void> {
+async function persistMemory():
+  Promise<void> {
+  const state =
+    getMemoryState();
+
   await storage.set(
-    STORAGE_KEY,
-    [...memory]
+    getStorageKey(),
+    [
+      ...state.records,
+    ]
   );
 }
 
 export async function hydrateMemory():
   Promise<void> {
+  const state =
+    getMemoryState();
+
   if (
-    globalMemory.__aiosMemoryHydrated
+    state.hydrated
   ) {
     return;
   }
 
   if (
-    globalMemory
-      .__aiosMemoryHydrationPromise
+    state.hydrationPromise
   ) {
-    return globalMemory
-      .__aiosMemoryHydrationPromise;
+    return state
+      .hydrationPromise;
   }
+
+  const storageKey =
+    getStorageKey();
 
   const hydrationPromise =
     (async () => {
@@ -105,37 +187,45 @@ export async function hydrateMemory():
         const stored =
           await storage.get<
             MemoryRecord[]
-          >(STORAGE_KEY);
+          >(
+            storageKey
+          );
 
         const restored =
           normalizeStoredMemory(
             stored
           );
 
-        memory.length = 0;
-        memory.push(...restored);
+        state.records.length =
+          0;
+
+        state.records.push(
+          ...restored
+        );
       } catch (error) {
         console.error(
           "[AIOS Memory Hydration]",
           error
         );
       } finally {
-        globalMemory.__aiosMemoryHydrated =
+        state.hydrated =
           true;
 
-        globalMemory.__aiosMemoryHydrationPromise =
+        state.hydrationPromise =
           undefined;
       }
     })();
 
-  globalMemory.__aiosMemoryHydrationPromise =
+  state.hydrationPromise =
     hydrationPromise;
 
   return hydrationPromise;
 }
 
 export function addMemory(
-  role: "user" | "assistant",
+  role:
+    | "user"
+    | "assistant",
   content: string
 ): MemoryRecord | null {
   const value =
@@ -145,22 +235,34 @@ export function addMemory(
     return null;
   }
 
-  const record: MemoryRecord = {
-    id: createMemoryId(),
+  const state =
+    getMemoryState();
+
+  const record:
+    MemoryRecord = {
+    id:
+      createMemoryId(),
+
     role,
-    content: value,
-    timestamp: Date.now(),
+
+    content:
+      value,
+
+    timestamp:
+      Date.now(),
   };
 
-  memory.push(record);
+  state.records.push(
+    record
+  );
 
   if (
-    memory.length >
+    state.records.length >
     MAX_MEMORY_RECORDS
   ) {
-    memory.splice(
+    state.records.splice(
       0,
-      memory.length -
+      state.records.length -
         MAX_MEMORY_RECORDS
     );
   }
@@ -192,13 +294,18 @@ export async function saveMemory():
 }
 
 export async function addAndSaveMemory(
-  role: "user" | "assistant",
+  role:
+    | "user"
+    | "assistant",
   content: string
 ): Promise<MemoryRecord | null> {
   await hydrateMemory();
 
   const record =
-    addMemory(role, content);
+    addMemory(
+      role,
+      content
+    );
 
   if (record) {
     await saveMemory();
@@ -218,7 +325,12 @@ export async function addAndSaveAssistantMemory(
 
 export function getMemory():
   MemoryRecord[] {
-  return [...memory];
+  const state =
+    getMemoryState();
+
+  return [
+    ...state.records,
+  ];
 }
 
 export async function getPersistentMemory():
@@ -231,34 +343,43 @@ export async function getPersistentMemory():
 export function searchMemory(
   keyword: string
 ): MemoryRecord[] {
-  const query = keyword
-    .trim()
-    .toLowerCase();
+  const query =
+    keyword
+      .trim()
+      .toLowerCase();
 
   if (!query) {
     return [];
   }
 
-  return memory.filter((item) =>
-    item.content
-      .toLowerCase()
-      .includes(query)
+  return getMemory().filter(
+    (item) =>
+      item.content
+        .toLowerCase()
+        .includes(
+          query
+        )
   );
 }
 
 export function getRecentMemory(
   limit = 10
 ): MemoryRecord[] {
-  const safeLimit = Math.max(
-    0,
-    Math.floor(limit)
-  );
+  const safeLimit =
+    Math.max(
+      0,
+      Math.floor(
+        limit
+      )
+    );
 
-  if (safeLimit === 0) {
+  if (
+    safeLimit === 0
+  ) {
     return [];
   }
 
-  return memory.slice(
+  return getMemory().slice(
     -safeLimit
   );
 }
@@ -266,7 +387,9 @@ export function getRecentMemory(
 export function buildConversationContext(
   limit = 10
 ): string {
-  return getRecentMemory(limit)
+  return getRecentMemory(
+    limit
+  )
     .map(
       (item) =>
         `${item.role}: ${item.content}`
@@ -274,26 +397,34 @@ export function buildConversationContext(
     .join("\n");
 }
 
-export function clearMemory() {
-  memory.length = 0;
+export function clearMemory():
+  void {
+  const state =
+    getMemoryState();
 
-  globalMemory.__aiosMemorySequence =
+  state.records.length =
+    0;
+
+  state.sequence =
     0;
 }
 
 export async function clearPersistentMemory():
   Promise<void> {
+  const state =
+    getMemoryState();
+
   clearMemory();
 
-  globalMemory.__aiosMemoryHydrated =
+  state.hydrated =
     true;
 
   await storage.delete(
-    STORAGE_KEY
+    getStorageKey()
   );
 }
 
 export function getMemoryStorageKey():
   string {
-  return STORAGE_KEY;
+  return getStorageKey();
 }

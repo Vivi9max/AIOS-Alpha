@@ -1,10 +1,20 @@
 import {
+  NextRequest,
   NextResponse,
 } from "next/server";
 
 import {
   executeRuntime,
 } from "@/lib/runtime/engine";
+
+import {
+  AIOS_USER_COOKIE,
+  resolveAlphaIdentity,
+} from "@/lib/auth/identity";
+
+import {
+  runWithUserContext,
+} from "@/lib/runtime/request-context";
 
 export const dynamic =
   "force-dynamic";
@@ -16,62 +26,105 @@ interface ChatRequestBody {
   prompt?: unknown;
 }
 
-export async function GET() {
-  return NextResponse.json(
+function applyIdentityCookie(
+  response: NextResponse,
+  userId: string
+): NextResponse {
+  response.cookies.set(
+    AIOS_USER_COOKIE,
+    userId,
     {
-      success: true,
-
-      service:
-        "AIOS Alpha Chat API",
-
-      status:
-        "online",
-
-      runtime:
-        "aios-alpha",
-
-      runtimeVersion:
-        "0.3",
-
-      methods: {
-        GET:
-          "Runtime status",
-        POST:
-          "Execute AIOS Runtime",
-      },
-
-      usage: {
-        method:
-          "POST",
-
-        contentType:
-          "application/json",
-
-        body: {
-          prompt:
-            "你好",
-        },
-      },
-
-      timestamp:
-        Date.now(),
-    },
-    {
-      status: 200,
-
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
+      httpOnly: true,
+      sameSite: "lax",
+      secure:
+        process.env
+          .NODE_ENV ===
+        "production",
+      path: "/",
+      maxAge:
+        60 *
+        60 *
+        24 *
+        365,
     }
+  );
+
+  return response;
+}
+
+export async function GET(
+  request: NextRequest
+) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
+  const response =
+    NextResponse.json(
+      {
+        success: true,
+
+        service:
+          "AIOS Alpha Chat API",
+
+        status:
+          "online",
+
+        runtime:
+          "aios-alpha",
+
+        runtimeVersion:
+          "0.4",
+
+        identity: {
+          userId:
+            identity.userId,
+
+          mode:
+            "anonymous-alpha",
+
+          isolated:
+            true,
+        },
+
+        methods: {
+          GET:
+            "Runtime and identity status",
+
+          POST:
+            "Execute isolated AIOS Runtime",
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      {
+        status: 200,
+
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      }
+    );
+
+  return applyIdentityCookie(
+    response,
+    identity.userId
   );
 }
 
 export async function POST(
-  request: Request
+  request: NextRequest
 ) {
   const startedAt =
     Date.now();
+
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
 
   try {
     const contentType =
@@ -84,49 +137,31 @@ export async function POST(
         "application/json"
       )
     ) {
-      return NextResponse.json(
-        {
-          success: false,
+      const response =
+        NextResponse.json(
+          {
+            success: false,
 
-          provider:
-            "mock",
+            content:
+              "请求格式错误。",
 
-          requestedProvider:
-            "mock",
+            error:
+              "Content-Type must be application/json.",
 
-          fallbackUsed:
-            false,
+            userId:
+              identity.userId,
 
-          actionHandled:
-            false,
-
-          content:
-            "请求格式错误。",
-
-          error:
-            "Content-Type must be application/json.",
-
-          runtime:
-            "aios-alpha",
-
-          runtimeVersion:
-            "0.3",
-
-          timestamp:
-            Date.now(),
-
-          latencyMs:
-            Date.now() -
-            startedAt,
-        },
-        {
-          status: 415,
-
-          headers: {
-            "Cache-Control":
-              "no-store",
+            timestamp:
+              Date.now(),
           },
-        }
+          {
+            status: 415,
+          }
+        );
+
+      return applyIdentityCookie(
+        response,
+        identity.userId
       );
     }
 
@@ -140,43 +175,62 @@ export async function POST(
         : "";
 
     if (!prompt) {
-      return NextResponse.json(
+      const response =
+        NextResponse.json(
+          {
+            success: false,
+
+            content:
+              "请输入内容。",
+
+            error:
+              "Prompt is required.",
+
+            userId:
+              identity.userId,
+
+            timestamp:
+              Date.now(),
+          },
+          {
+            status: 400,
+          }
+        );
+
+      return applyIdentityCookie(
+        response,
+        identity.userId
+      );
+    }
+
+    const result =
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          executeRuntime({
+            prompt,
+          })
+      );
+
+    const response =
+      NextResponse.json(
         {
-          success: false,
+          ...result,
 
-          provider:
-            "mock",
+          userId:
+            identity.userId,
 
-          requestedProvider:
-            "mock",
+          identityMode:
+            "anonymous-alpha",
 
-          fallbackUsed:
-            false,
-
-          actionHandled:
-            false,
-
-          content:
-            "请输入内容。",
-
-          error:
-            "Prompt is required.",
-
-          runtime:
-            "aios-alpha",
-
-          runtimeVersion:
-            "0.3",
-
-          timestamp:
-            Date.now(),
-
-          latencyMs:
-            Date.now() -
-            startedAt,
+          dataIsolated:
+            true,
         },
         {
-          status: 400,
+          status:
+            result.success
+              ? 200
+              : 500,
 
           headers: {
             "Cache-Control":
@@ -184,70 +238,10 @@ export async function POST(
           },
         }
       );
-    }
 
-    const result =
-      await executeRuntime({
-        prompt,
-      });
-
-    return NextResponse.json(
-      {
-        success:
-          result.success,
-
-        provider:
-          result.provider,
-
-        requestedProvider:
-          result.requestedProvider,
-
-        fallbackUsed:
-          result.fallbackUsed ??
-          false,
-
-        actionHandled:
-          result.actionHandled ??
-          false,
-
-        content:
-          result.content,
-
-        error:
-          result.error,
-
-        runtime:
-          result.runtime,
-
-        runtimeVersion:
-          result.runtimeVersion,
-
-        planId:
-          result.planId,
-
-        planType:
-          result.planType,
-
-        steps:
-          result.steps,
-
-        latencyMs:
-          result.latencyMs,
-
-        timestamp:
-          result.timestamp,
-      },
-      {
-        status:
-          result.success
-            ? 200
-            : 500,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      }
+    return applyIdentityCookie(
+      response,
+      identity.userId
     );
   } catch (error) {
     const errorMessage =
@@ -260,49 +254,46 @@ export async function POST(
       error
     );
 
-    return NextResponse.json(
-      {
-        success: false,
+    const response =
+      NextResponse.json(
+        {
+          success: false,
 
-        provider:
-          "mock",
+          content:
+            "AIOS Runtime 暂时不可用。",
 
-        requestedProvider:
-          "deepseek",
+          error:
+            errorMessage,
 
-        fallbackUsed:
-          false,
+          runtime:
+            "aios-alpha",
 
-        actionHandled:
-          false,
+          runtimeVersion:
+            "0.4",
 
-        content:
-          "AIOS Runtime 暂时不可用。",
+          userId:
+            identity.userId,
 
-        error:
-          errorMessage,
+          timestamp:
+            Date.now(),
 
-        runtime:
-          "aios-alpha",
-
-        runtimeVersion:
-          "0.3",
-
-        timestamp:
-          Date.now(),
-
-        latencyMs:
-          Date.now() -
-          startedAt,
-      },
-      {
-        status: 500,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
+          latencyMs:
+            Date.now() -
+            startedAt,
         },
-      }
+        {
+          status: 500,
+
+          headers: {
+            "Cache-Control":
+              "no-store",
+          },
+        }
+      );
+
+    return applyIdentityCookie(
+      response,
+      identity.userId
     );
   }
 }

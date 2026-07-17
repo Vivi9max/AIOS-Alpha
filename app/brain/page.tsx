@@ -4,12 +4,14 @@ import {
   useState,
 } from "react";
 
-import {
-  runBrain,
-} from "@/lib/brain";
-
 import BrainInput from "@/components/brain/BrainInput";
 import BrainResult from "@/components/brain/BrainResult";
+
+interface BrainApiResponse {
+  success?: boolean;
+  content?: string;
+  error?: string;
+}
 
 export default function BrainPage() {
   const [prompt, setPrompt] =
@@ -39,13 +41,45 @@ export default function BrainPage() {
     setError("");
 
     try {
+      const response =
+        await fetch(
+          "/api/chat",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            credentials:
+              "same-origin",
+
+            body:
+              JSON.stringify({
+                prompt:
+                  cleanPrompt,
+              }),
+          }
+        );
+
       const result =
-        await runBrain({
-          prompt: cleanPrompt,
-        });
+        (await response.json()) as BrainApiResponse;
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.error ||
+            result.content ||
+            "AIOS Runtime 暂时不可用。"
+        );
+      }
 
       setAnswer(
-        result.content
+        result.content ??
+          ""
       );
     } catch (runError) {
       const message =
@@ -53,7 +87,10 @@ export default function BrainPage() {
           ? runError.message
           : "AIOS Runtime 暂时不可用。";
 
-      setError(message);
+      setError(
+        message
+      );
+
       setAnswer("");
     } finally {
       setLoading(false);
@@ -67,7 +104,8 @@ export default function BrainPage() {
         maxWidth: 900,
         margin: "40px auto",
         padding: 24,
-        boxSizing: "border-box",
+        boxSizing:
+          "border-box",
       }}
     >
       <header
@@ -88,7 +126,8 @@ export default function BrainPage() {
 
         <h1
           style={{
-            margin: "7px 0 0",
+            margin:
+              "7px 0 0",
             fontSize: 34,
           }}
         >
@@ -97,12 +136,13 @@ export default function BrainPage() {
 
         <p
           style={{
-            margin: "10px 0 0",
+            margin:
+              "10px 0 0",
             color: "#6b7280",
             lineHeight: 1.6,
           }}
         >
-          通过当前 Runtime Provider
+          通过统一 Runtime
           执行 AIOS Brain。
         </p>
       </header>

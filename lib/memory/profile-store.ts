@@ -1,42 +1,92 @@
-import { storage } from "@/lib/server-storage";
+import {
+  storage,
+} from "@/lib/server-storage";
+
+import {
+  createUserStorageKey,
+  getUserStorageScope,
+} from "@/lib/storage/data-scope";
 
 import type {
   MemoryProfile,
 } from "./index";
 
+interface UserProfileState {
+  profile: MemoryProfile;
+  hydrated: boolean;
+  hydrationPromise?: Promise<void>;
+}
+
 type ProfileGlobal =
   typeof globalThis & {
-    __aiosManualProfile?: MemoryProfile;
-    __aiosManualProfileHydrated?: boolean;
-    __aiosManualProfileHydrationPromise?: Promise<void>;
+    __aiosUserProfileStates?: Map<
+      string,
+      UserProfileState
+    >;
   };
 
 const globalProfile =
   globalThis as ProfileGlobal;
 
-const STORAGE_KEY =
-  "aios:default:manual-profile";
+const userProfileStates =
+  globalProfile
+    .__aiosUserProfileStates ??
+  (globalProfile
+    .__aiosUserProfileStates =
+    new Map());
 
-const manualProfile:
-  MemoryProfile =
-  globalProfile.__aiosManualProfile ??
-  (globalProfile.__aiosManualProfile = {});
+const PROFILE_FIELDS:
+  Array<
+    keyof MemoryProfile
+  > = [
+    "name",
+    "location",
+    "project",
+    "goal",
+    "preference",
+  ];
 
-const PROFILE_FIELDS: Array<
-  keyof MemoryProfile
-> = [
-  "name",
-  "location",
-  "project",
-  "goal",
-  "preference",
-];
+function getStorageKey():
+  string {
+  return createUserStorageKey(
+    "manual-profile"
+  );
+}
+
+function getProfileState():
+  UserProfileState {
+  const scope =
+    getUserStorageScope();
+
+  const existing =
+    userProfileStates.get(
+      scope
+    );
+
+  if (existing) {
+    return existing;
+  }
+
+  const created:
+    UserProfileState = {
+    profile: {},
+    hydrated: false,
+  };
+
+  userProfileStates.set(
+    scope,
+    created
+  );
+
+  return created;
+}
 
 function cleanValue(
   value: unknown
 ): string | undefined {
   if (
-    typeof value !== "string"
+    typeof value !==
+    "string"
   ) {
     return undefined;
   }
@@ -59,7 +109,8 @@ function normalizeProfile(
 ): MemoryProfile {
   if (
     !value ||
-    typeof value !== "object"
+    typeof value !==
+      "object"
   ) {
     return {};
   }
@@ -90,30 +141,37 @@ function normalizeProfile(
 
 async function persistManualProfile():
   Promise<void> {
+  const state =
+    getProfileState();
+
   await storage.set(
-    STORAGE_KEY,
+    getStorageKey(),
     {
-      ...manualProfile,
+      ...state.profile,
     }
   );
 }
 
 export async function hydrateManualProfile():
   Promise<void> {
+  const state =
+    getProfileState();
+
   if (
-    globalProfile
-      .__aiosManualProfileHydrated
+    state.hydrated
   ) {
     return;
   }
 
   if (
-    globalProfile
-      .__aiosManualProfileHydrationPromise
+    state.hydrationPromise
   ) {
-    return globalProfile
-      .__aiosManualProfileHydrationPromise;
+    return state
+      .hydrationPromise;
   }
+
+  const storageKey =
+    getStorageKey();
 
   const hydrationPromise =
     (async () => {
@@ -121,44 +179,29 @@ export async function hydrateManualProfile():
         const stored =
           await storage.get<
             MemoryProfile
-          >(STORAGE_KEY);
+          >(
+            storageKey
+          );
 
-        const restored =
+        state.profile =
           normalizeProfile(
             stored
           );
-
-        for (
-          const field
-          of PROFILE_FIELDS
-        ) {
-          delete manualProfile[
-            field
-          ];
-        }
-
-        Object.assign(
-          manualProfile,
-          restored
-        );
       } catch (error) {
         console.error(
           "[AIOS Manual Profile Hydration]",
           error
         );
       } finally {
-        globalProfile
-          .__aiosManualProfileHydrated =
+        state.hydrated =
           true;
 
-        globalProfile
-          .__aiosManualProfileHydrationPromise =
+        state.hydrationPromise =
           undefined;
       }
     })();
 
-  globalProfile
-    .__aiosManualProfileHydrationPromise =
+  state.hydrationPromise =
     hydrationPromise;
 
   return hydrationPromise;
@@ -167,7 +210,8 @@ export async function hydrateManualProfile():
 export function getManualProfile():
   MemoryProfile {
   return {
-    ...manualProfile,
+    ...getProfileState()
+      .profile,
   };
 }
 
@@ -179,8 +223,12 @@ export async function getPersistentManualProfile():
 }
 
 export function updateManualProfile(
-  updates: Partial<MemoryProfile>
+  updates:
+    Partial<MemoryProfile>
 ): MemoryProfile {
+  const state =
+    getProfileState();
+
   for (
     const field
     of PROFILE_FIELDS
@@ -197,22 +245,22 @@ export function updateManualProfile(
       );
 
     if (value) {
-      manualProfile[field] =
+      state.profile[field] =
         value;
     } else {
-      delete manualProfile[
-        field
-      ];
+      delete state
+        .profile[field];
     }
   }
 
   return {
-    ...manualProfile,
+    ...state.profile,
   };
 }
 
 export async function updateAndSaveManualProfile(
-  updates: Partial<MemoryProfile>
+  updates:
+    Partial<MemoryProfile>
 ): Promise<MemoryProfile> {
   await hydrateManualProfile();
 
@@ -228,30 +276,34 @@ export async function updateAndSaveManualProfile(
 
 export function clearManualProfile():
   void {
+  const state =
+    getProfileState();
+
   for (
     const field
     of PROFILE_FIELDS
   ) {
-    delete manualProfile[
-      field
-    ];
+    delete state
+      .profile[field];
   }
 }
 
 export async function clearPersistentManualProfile():
   Promise<void> {
+  const state =
+    getProfileState();
+
   clearManualProfile();
 
-  globalProfile
-    .__aiosManualProfileHydrated =
+  state.hydrated =
     true;
 
   await storage.delete(
-    STORAGE_KEY
+    getStorageKey()
   );
 }
 
 export function getManualProfileStorageKey():
   string {
-  return STORAGE_KEY;
+  return getStorageKey();
 }
