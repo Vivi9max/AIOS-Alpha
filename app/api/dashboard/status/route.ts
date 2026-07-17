@@ -1,6 +1,15 @@
 import {
+  NextRequest,
   NextResponse,
 } from "next/server";
+
+import {
+  resolveAlphaIdentity,
+} from "@/lib/auth/identity";
+
+import {
+  runWithUserContext,
+} from "@/lib/runtime/request-context";
 
 import {
   getPersistentMemory,
@@ -23,6 +32,10 @@ import {
 } from "@/lib/task/server-store";
 
 import {
+  getFeedbackCount,
+} from "@/lib/feedback/store";
+
+import {
   getProviderRuntimeStatus,
   providerStatus,
 } from "@/lib/runtime/providerManager";
@@ -34,6 +47,9 @@ import {
 
 export const dynamic =
   "force-dynamic";
+
+export const runtime =
+  "nodejs";
 
 const profileFields: Array<
   keyof MemoryProfile
@@ -62,144 +78,197 @@ function countProfileFields(
   ).length;
 }
 
-export async function GET() {
+export async function GET(
+  request: NextRequest
+) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
   try {
-    await hydrateManualProfile();
+    const result =
+      await runWithUserContext(
+        identity.userId,
+        async () => {
+          await hydrateManualProfile();
 
-    const [
-      memory,
-      tasks,
-      storageHealth,
-    ] = await Promise.all([
-      getPersistentMemory(),
-      listPersistentTasks(),
-      getStorageHealth(),
-    ]);
+          const [
+            memory,
+            tasks,
+            feedbackCount,
+            storageHealth,
+          ] =
+            await Promise.all([
+              getPersistentMemory(),
 
-    const provider =
-      providerStatus();
+              listPersistentTasks(),
 
-    const providerRuntime =
-      getProviderRuntimeStatus();
+              getFeedbackCount(),
 
-    const profile =
-      buildMemoryProfile();
+              getStorageHealth(),
+            ]);
 
-    const completedTasks =
-      tasks.filter(
-        (task) =>
-          task.status === "done"
-      ).length;
+          const provider =
+            providerStatus();
 
-    const activeTasks =
-      tasks.filter(
-        (task) =>
-          task.status !== "done"
-      ).length;
+          const providerRuntime =
+            getProviderRuntimeStatus();
 
-    const storageMode =
-      getStorageMode();
+          const profile =
+            buildMemoryProfile();
 
-    return NextResponse.json({
-      success: true,
+          const completedTasks =
+            tasks.filter(
+              (task) =>
+                task.status ===
+                "done"
+            ).length;
 
-      runtime: {
-        id: "aios-alpha",
-        version: "0.2",
-        status: "online",
-      },
+          const activeTasks =
+            tasks.filter(
+              (task) =>
+                task.status !==
+                "done"
+            ).length;
 
-      provider: {
-        configured:
-          provider.current,
+          const storageMode =
+            getStorageMode();
 
-        active:
-          providerRuntime.provider,
+          return {
+            runtime: {
+              id:
+                "aios-alpha",
 
-        requested:
-          providerRuntime
-            .requestedProvider,
+              version:
+                "0.4",
 
-        fallbackUsed:
-          providerRuntime
-            .fallbackUsed,
+              status:
+                "online" as const,
+            },
 
+            provider: {
+              configured:
+                provider.current,
+
+              active:
+                providerRuntime.provider,
+
+              requested:
+                providerRuntime
+                  .requestedProvider,
+
+              fallbackUsed:
+                providerRuntime
+                  .fallbackUsed,
+
+              success:
+                providerRuntime.success,
+
+              latencyMs:
+                providerRuntime
+                  .latencyMs ??
+                null,
+
+              error:
+                providerRuntime.error ??
+                null,
+
+              lastRequestAt:
+                providerRuntime
+                  .lastRequestAt ??
+                null,
+            },
+
+            storage: {
+              mode:
+                storageMode,
+
+              persistent:
+                storageMode ===
+                "redis",
+
+              healthy:
+                storageHealth.success,
+
+              error:
+                storageHealth.error ??
+                null,
+            },
+
+            memory: {
+              count:
+                memory.length,
+
+              userMessages:
+                memory.filter(
+                  (item) =>
+                    item.role ===
+                    "user"
+                ).length,
+
+              assistantMessages:
+                memory.filter(
+                  (item) =>
+                    item.role ===
+                    "assistant"
+                ).length,
+            },
+
+            profile: {
+              completedFields:
+                countProfileFields(
+                  profile
+                ),
+
+              totalFields:
+                5,
+            },
+
+            tasks: {
+              count:
+                tasks.length,
+
+              active:
+                activeTasks,
+
+              completed:
+                completedTasks,
+            },
+
+            feedback: {
+              count:
+                feedbackCount,
+            },
+          };
+        }
+      );
+
+    return NextResponse.json(
+      {
         success:
-          providerRuntime.success,
+          true,
 
-        latencyMs:
-          providerRuntime
-            .latencyMs ??
-          null,
+        ...result,
 
-        error:
-          providerRuntime.error ??
-          null,
+        identity: {
+          userId:
+            identity.userId,
 
-        lastRequestAt:
-          providerRuntime
-            .lastRequestAt ??
-          null,
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
       },
-
-      storage: {
-        mode:
-          storageMode,
-
-        persistent:
-          storageMode ===
-          "redis",
-
-        healthy:
-          storageHealth.success,
-
-        error:
-          storageHealth.error ??
-          null,
-      },
-
-      memory: {
-        count:
-          memory.length,
-
-        userMessages:
-          memory.filter(
-            (item) =>
-              item.role ===
-              "user"
-          ).length,
-
-        assistantMessages:
-          memory.filter(
-            (item) =>
-              item.role ===
-              "assistant"
-          ).length,
-      },
-
-      profile: {
-        completedFields:
-          countProfileFields(
-            profile
-          ),
-
-        totalFields: 5,
-      },
-
-      tasks: {
-        count:
-          tasks.length,
-
-        active:
-          activeTasks,
-
-        completed:
-          completedTasks,
-      },
-
-      timestamp:
-        Date.now(),
-    });
+      {
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      }
+    );
   } catch (error) {
     const errorMessage =
       error instanceof Error
@@ -213,12 +282,18 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
 
         runtime: {
-          id: "aios-alpha",
-          version: "0.2",
-          status: "offline",
+          id:
+            "aios-alpha",
+
+          version:
+            "0.4",
+
+          status:
+            "offline",
         },
 
         provider: {
@@ -262,27 +337,62 @@ export async function GET() {
         },
 
         memory: {
-          count: 0,
-          userMessages: 0,
-          assistantMessages: 0,
+          count:
+            0,
+
+          userMessages:
+            0,
+
+          assistantMessages:
+            0,
         },
 
         profile: {
-          completedFields: 0,
-          totalFields: 5,
+          completedFields:
+            0,
+
+          totalFields:
+            5,
         },
 
         tasks: {
-          count: 0,
-          active: 0,
-          completed: 0,
+          count:
+            0,
+
+          active:
+            0,
+
+          completed:
+            0,
         },
+
+        feedback: {
+          count:
+            0,
+        },
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        error:
+          errorMessage,
 
         timestamp:
           Date.now(),
       },
       {
-        status: 500,
+        status:
+          500,
+
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       }
     );
   }
