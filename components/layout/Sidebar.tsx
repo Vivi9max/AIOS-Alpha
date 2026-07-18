@@ -17,53 +17,43 @@ import {
 
 const menus = [
   {
-    label:
-      "💬 Chat",
-
-    href:
-      "/workspace",
+    label: "💬 Chat",
+    href: "/workspace",
   },
-
   {
-    label:
-      "🧠 Memory",
-
-    href:
-      "/memory",
+    label: "🧠 Memory",
+    href: "/memory",
   },
-
   {
-    label:
-      "✅ Tasks",
-
-    href:
-      "/tasks",
+    label: "✅ Tasks",
+    href: "/tasks",
   },
-
   {
-    label:
-      "📂 Projects",
-
-    href:
-      "/projects",
+    label: "📂 Projects",
+    href: "/projects",
   },
-
   {
-    label:
-      "📊 Dashboard",
-
-    href:
-      "/dashboard",
+    label: "📊 Dashboard",
+    href: "/dashboard",
   },
-
   {
-    label:
-      "⚙️ Settings",
-
-    href:
-      "/settings",
+    label: "⚙️ Settings",
+    href: "/settings",
   },
 ];
+
+function isProjectActive(
+  pathname: string,
+  projectId: string
+): boolean {
+  return (
+    pathname ===
+      `/projects/${projectId}` ||
+    pathname.startsWith(
+      `/projects/${projectId}/`
+    )
+  );
+}
 
 export default function Sidebar() {
   const pathname =
@@ -72,36 +62,20 @@ export default function Sidebar() {
   return (
     <aside
       style={{
-        width:
-          250,
-
-        minHeight:
-          "100%",
-
-        boxSizing:
-          "border-box",
-
-        display:
-          "flex",
-
-        flexDirection:
-          "column",
-
-        background:
-          "#ffffff",
-
+        width: 250,
+        minHeight: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        background: "#ffffff",
         borderRight:
           "1px solid #e5e7eb",
-
-        color:
-          "#111827",
+        color: "#111827",
       }}
     >
       <div
         style={{
-          padding:
-            "22px 18px",
-
+          padding: "22px 18px",
           borderBottom:
             "1px solid #e5e7eb",
         }}
@@ -109,20 +83,11 @@ export default function Sidebar() {
         <Link
           href="/dashboard"
           style={{
-            display:
-              "inline-block",
-
-            color:
-              "#111827",
-
-            textDecoration:
-              "none",
-
-            fontSize:
-              25,
-
-            fontWeight:
-              800,
+            display: "inline-block",
+            color: "#111827",
+            textDecoration: "none",
+            fontSize: 25,
+            fontWeight: 800,
           }}
         >
           {APP_NAME}
@@ -130,14 +95,9 @@ export default function Sidebar() {
 
         <p
           style={{
-            margin:
-              "5px 0 0",
-
-            color:
-              "#6b7280",
-
-            fontSize:
-              13,
+            margin: "5px 0 0",
+            color: "#6b7280",
+            fontSize: 13,
           }}
         >
           {APP_VERSION_LABEL}
@@ -146,164 +106,196 @@ export default function Sidebar() {
 
       <div
         style={{
-          padding:
-            "18px 14px 8px",
+          padding: "18px 14px 8px",
         }}
       >
-        <p
+        <div
           style={{
-            margin:
-              "0 4px 9px",
-
-            color:
-              "#9ca3af",
-
-            fontSize:
-              11,
-
-            fontWeight:
-              800,
-
-            letterSpacing:
-              "0.08em",
-
-            textTransform:
-              "uppercase",
+            display: "flex",
+            alignItems: "center",
+            justifyContent:
+              "space-between",
+            margin: "0 4px 10px",
           }}
         >
-          Projects
-        </p>
+          <p
+            style={{
+              margin: 0,
+              color: "#9ca3af",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing:
+                "0.08em",
+              textTransform:
+                "uppercase",
+            }}
+          >
+            Projects
+          </p>
 
-        {projects.map(
-          (
-            project
-          ) => (
-            <Link
-              key={
-                project.id
-              }
-              href="/dashboard"
-              style={{
-                display:
-                  "block",
+          <Link
+            href="/projects"
+            style={{
+              color: "#64748b",
+              fontSize: 11,
+              fontWeight: 800,
+              textDecoration: "none",
+            }}
+          >
+            全部
+          </Link>
+        </div>
 
-                padding:
-                  "11px 12px",
+        <div
+          style={{
+            display: "grid",
+            gap: 7,
+          }}
+        >
+          {projects.map(
+            (project) => {
+              const active =
+                isProjectActive(
+                  pathname,
+                  project.id
+                );
 
-                borderRadius:
-                  10,
+              return (
+                <Link
+                  key={project.id}
+                  href={`/projects/${project.id}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent:
+                      "space-between",
+                    gap: 8,
+                    padding:
+                      "11px 12px",
+                    borderRadius: 11,
+                    background: active
+                      ? "#312e81"
+                      : "#111827",
+                    color: "#ffffff",
+                    textDecoration:
+                      "none",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    boxShadow: active
+                      ? "0 7px 18px rgba(49, 46, 129, 0.24)"
+                      : "none",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems:
+                        "center",
+                      gap: 8,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        fontSize: 15,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {project.icon}
+                    </span>
 
-                background:
-                  "#111827",
+                    <span
+                      style={{
+                        overflow:
+                          "hidden",
+                        textOverflow:
+                          "ellipsis",
+                        whiteSpace:
+                          "nowrap",
+                      }}
+                    >
+                      {project.name}
+                    </span>
+                  </span>
 
-                color:
-                  "#ffffff",
-
-                textDecoration:
-                  "none",
-
-                fontSize:
-                  14,
-
-                fontWeight:
-                  700,
-              }}
-            >
-              {project.name}
-            </Link>
-          )
-        )}
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      opacity: active
+                        ? 1
+                        : 0.55,
+                      fontSize: 12,
+                      flexShrink: 0,
+                    }}
+                  >
+                    →
+                  </span>
+                </Link>
+              );
+            }
+          )}
+        </div>
       </div>
 
       <nav
         style={{
-          display:
-            "grid",
-
-          gap:
-            5,
-
+          display: "grid",
+          gap: 5,
           padding:
             "10px 14px 18px",
         }}
       >
-        {menus.map(
-          (
-            item
-          ) => {
-            const active =
-              pathname ===
-                item.href ||
-              (
-                item.href ===
-                  "/workspace" &&
-                pathname ===
-                  "/"
-              );
-
-            return (
-              <Link
-                key={
-                  item.href
-                }
-                href={
-                  item.href
-                }
-                style={{
-                  display:
-                    "block",
-
-                  padding:
-                    "11px 12px",
-
-                  borderRadius:
-                    10,
-
-                  background:
-                    active
-                      ? "#eef2ff"
-                      : "transparent",
-
-                  color:
-                    active
-                      ? "#3730a3"
-                      : "#374151",
-
-                  textDecoration:
-                    "none",
-
-                  fontSize:
-                    14,
-
-                  fontWeight:
-                    active
-                      ? 800
-                      : 600,
-                }}
-              >
-                {item.label}
-              </Link>
+        {menus.map((item) => {
+          const active =
+            pathname ===
+              item.href ||
+            pathname.startsWith(
+              `${item.href}/`
+            ) ||
+            (
+              item.href ===
+                "/workspace" &&
+              pathname === "/"
             );
-          }
-        )}
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              style={{
+                display: "block",
+                padding:
+                  "11px 12px",
+                borderRadius: 10,
+                background: active
+                  ? "#eef2ff"
+                  : "transparent",
+                color: active
+                  ? "#3730a3"
+                  : "#374151",
+                textDecoration:
+                  "none",
+                fontSize: 14,
+                fontWeight: active
+                  ? 800
+                  : 600,
+              }}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
 
       <div
         style={{
-          marginTop:
-            "auto",
-
-          padding:
-            16,
-
+          marginTop: "auto",
+          padding: 16,
           borderTop:
             "1px solid #e5e7eb",
-
-          color:
-            "#9ca3af",
-
-          fontSize:
-            12,
+          color: "#9ca3af",
+          fontSize: 12,
         }}
       >
         {APP_NAME} Runtime Online
