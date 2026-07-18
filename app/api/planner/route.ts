@@ -15,6 +15,15 @@ import {
   buildRuntimePlan,
 } from "@/lib/runtime/planner";
 
+import {
+  createPersistentTask,
+  listPersistentTasks,
+} from "@/lib/task/server-store";
+
+import type {
+  Task,
+} from "@/lib/task/types";
+
 export const dynamic =
   "force-dynamic";
 
@@ -22,6 +31,7 @@ export const runtime =
   "nodejs";
 
 const MAX_GOAL_LENGTH = 1000;
+const MAX_MATERIALIZED_TASKS = 8;
 
 type PlannerMode =
   | "plan"
@@ -34,14 +44,23 @@ interface PlannerRequestBody {
 
 interface GoalQuality {
   score: number;
+
   level:
     | "basic"
     | "clear"
     | "strong";
+
   hasResult: boolean;
   hasDeadline: boolean;
   hasSuccessMetric: boolean;
   hasConstraint: boolean;
+}
+
+interface MaterializedTask {
+  id: string;
+  title: string;
+  status: Task["status"];
+  created: boolean;
 }
 
 export async function GET() {
@@ -51,8 +70,10 @@ export async function GET() {
     planner: {
       name:
         "AIOS Strategic Planner",
+
       version:
         APP_CONFIG.version,
+
       status: "online",
 
       modes: [
@@ -67,6 +88,7 @@ export async function GET() {
         "step-planning",
         "capability-routing",
         "runtime-execution",
+        "task-materialization",
         "execution-trace",
       ],
     },
@@ -74,6 +96,9 @@ export async function GET() {
     limits: {
       maxGoalLength:
         MAX_GOAL_LENGTH,
+
+      maxMaterializedTasks:
+        MAX_MATERIALIZED_TASKS,
     },
 
     timestamp: Date.now(),
@@ -108,8 +133,10 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
+
           error:
             validationError,
+
           code:
             "INVALID_GOAL",
         },
@@ -141,9 +168,11 @@ export async function POST(
         plan: {
           id: plan.id,
 
-          type: plan.type,
+          type:
+            plan.type,
 
-          goal: plan.goal,
+          goal:
+            plan.goal,
 
           intent:
             plan.intent,
@@ -184,6 +213,8 @@ export async function POST(
 
         execution: null,
 
+        workflow: null,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -196,12 +227,17 @@ export async function POST(
     const executionPrompt =
       buildExecutionPrompt({
         goal,
+
         plan: {
-          type: plan.type,
+          type:
+            plan.type,
+
           intent:
             plan.intent,
+
           capabilities:
             plan.capabilities,
+
           steps:
             plan.steps,
         },
@@ -239,8 +275,10 @@ export async function POST(
         plan.capabilities,
 
       steps:
-        result.steps ??
-        plan.steps,
+        normalizePlanSteps(
+          result.steps ??
+            plan.steps
+        ),
 
       responseMode:
         plan.responseMode,
@@ -248,6 +286,18 @@ export async function POST(
       createdAt:
         plan.createdAt,
     };
+
+    const workflow =
+      await materializePlanTasks({
+        planId:
+          finalPlan.id,
+
+        goal:
+          finalPlan.goal,
+
+        steps:
+          finalPlan.steps,
+      });
 
     return NextResponse.json({
       success:
@@ -268,6 +318,7 @@ export async function POST(
           calculateComplexity(
             finalPlan.steps
               .length,
+
             finalPlan
               .capabilities
               .length
@@ -309,6 +360,8 @@ export async function POST(
         latencyMs:
           result.latencyMs,
       },
+
+      workflow,
 
       latencyMs:
         Date.now() -
@@ -486,6 +539,216 @@ function calculateComplexity(
   return "low";
 }
 
+function normalizePlanSteps(
+  steps: string[]
+): string[] {
+  const seen =
+    new Set<string>();
+
+  return steps
+    .map((step) =>
+      step
+        .replace(
+          /^\s*(?:步骤|阶段|phase)?\s*\d+[.、:：\-\)\]]*\s*/i,
+          ""
+        )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim()
+    )
+    .filter((step) => {
+      if (!step) {
+        return false;
+      }
+
+      const key =
+        step.toLowerCase();
+
+      if (
+        seen.has(key)
+      ) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    })
+    .slice(
+      0,
+      MAX_MATERIALIZED_TASKS
+    );
+}
+
+async function materializePlanTasks({
+  planId,
+  goal,
+  steps,
+}: {
+  planId: string;
+  goal: string;
+  steps: string[];
+}): Promise<{
+  status: "ready";
+  createdCount: number;
+  reusedCount: number;
+  taskCount: number;
+  tasks: MaterializedTask[];
+}> {
+  const tasks:
+    MaterializedTask[] = [];
+
+  for (
+    let index = 0;
+    index < steps.length;
+    index += 1
+  ) {
+    const step =
+      steps[index];
+
+    const title =
+      buildTaskTitle(
+        step,
+        index
+      );
+
+    const description = [
+      `Planner Plan: ${planId}`,
+      `Final Goal: ${goal}`,
+      `Stage: ${index + 1}/${steps.length}`,
+      `Action: ${step}`,
+    ].join("\n");
+
+    try {
+      const task =
+        await createPersistentTask(
+          title,
+          description
+        );
+
+      tasks.push({
+        id:
+          task.id,
+
+        title:
+          task.title,
+
+        status:
+          task.status,
+
+        created: true,
+      });
+    } catch (error) {
+      const duplicateId =
+        extractDuplicateTaskId(
+          error
+        );
+
+      if (!duplicateId) {
+        throw error;
+      }
+
+      const existingTasks =
+        await listPersistentTasks();
+
+      const existing =
+        existingTasks.find(
+          (task) =>
+            task.id ===
+            duplicateId
+        );
+
+      if (existing) {
+        tasks.push({
+          id:
+            existing.id,
+
+          title:
+            existing.title,
+
+          status:
+            existing.status,
+
+          created: false,
+        });
+      }
+    }
+  }
+
+  return {
+    status: "ready",
+
+    createdCount:
+      tasks.filter(
+        (task) =>
+          task.created
+      ).length,
+
+    reusedCount:
+      tasks.filter(
+        (task) =>
+          !task.created
+      ).length,
+
+    taskCount:
+      tasks.length,
+
+    tasks,
+  };
+}
+
+function buildTaskTitle(
+  step: string,
+  index: number
+): string {
+  const cleanStep =
+    step
+      .replace(
+        /[。；;]+$/g,
+        ""
+      )
+      .trim();
+
+  const shortStep =
+    cleanStep.length > 72
+      ? `${cleanStep.slice(
+          0,
+          69
+        )}…`
+      : cleanStep;
+
+  return `P${index + 1} · ${shortStep}`;
+}
+
+function extractDuplicateTaskId(
+  error: unknown
+): string | null {
+  if (
+    !(error instanceof Error)
+  ) {
+    return null;
+  }
+
+  const prefix =
+    "DUPLICATE_TASK:";
+
+  if (
+    !error.message.startsWith(
+      prefix
+    )
+  ) {
+    return null;
+  }
+
+  return (
+    error.message.slice(
+      prefix.length
+    ) || null
+  );
+}
+
 function buildExecutionPrompt({
   goal,
   plan,
@@ -526,6 +789,7 @@ function buildExecutionPrompt({
     "5. 充分考虑用户已有资源、时间、成本和现实限制。",
     "6. 对暂时不能自动执行的事项，给出最短人工操作步骤。",
     "7. 最后输出下一步行动，不要只输出长期规划。",
+    "8. 返回的阶段必须可以直接转换成 Tasks。",
     "",
     "【输出结构】",
     "目标理解",
