@@ -1,56 +1,44 @@
-import Header from "@/components/layout/Header";
-import Sidebar from "@/components/layout/Sidebar";
+import Link from "next/link";
 
-const projects = [
-  {
-    name: "AIOS Alpha",
-    status: "Running",
-  },
-  {
-    name: "Content OS",
-    status: "Planning",
-  },
-  {
-    name: "Brain Engine",
-    status: "Building",
-  },
-  {
-    name: "Film Studio",
-    status: "Waiting",
-  },
-];
+import WorkspaceShell from "@/components/layout/WorkspaceShell";
+
+import {
+  getProjectStatusColor,
+  projects,
+} from "@/lib/project/store";
 
 export default function ProjectsPage() {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        background: "#f5f7fb",
-      }}
-    >
-      <Header />
-
+    <WorkspaceShell>
       <div
         style={{
-          display: "flex",
-          flex: 1,
+          width: "100%",
+          maxWidth: 820,
+          margin: "0 auto",
+          color: "#111827",
         }}
       >
-        <Sidebar />
-
-        <main
+        <header
           style={{
-            flex: 1,
-            padding: 40,
-            overflow: "auto",
+            marginBottom: 24,
           }}
         >
+          <p
+            style={{
+              margin: 0,
+              color: "#6b7280",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            AIOS Project Center
+          </p>
+
           <h1
             style={{
-              fontSize: 36,
-              marginBottom: 10,
+              margin: "8px 0 0",
+              fontSize: 38,
+              lineHeight: 1.1,
             }}
           >
             📂 Projects
@@ -58,44 +46,147 @@ export default function ProjectsPage() {
 
           <p
             style={{
-              color: "#666",
-              marginBottom: 30,
+              margin: "12px 0 0",
+              color: "#6b7280",
+              lineHeight: 1.6,
             }}
           >
-            AIOS Project Center
+            选择项目，进入对应工作空间和系统模块。
           </p>
+        </header>
 
-          {projects.map((item) => (
-            <div
-              key={item.name}
-              style={{
-                background: "#fff",
-                padding: 20,
-                borderRadius: 14,
-                marginBottom: 18,
-                boxShadow: "0 2px 10px rgba(0,0,0,.08)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <strong>{item.name}</strong>
+        <div
+          style={{
+            display: "grid",
+            gap: 16,
+          }}
+        >
+          {projects.map((project) => {
+            const statusColor =
+              getProjectStatusColor(
+                project.status
+              );
 
-              <span
+            return (
+              <Link
+                key={project.id}
+                href={`/projects/${project.id}`}
                 style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  background: "#e8f5e9",
-                  color: "#2e7d32",
-                  fontWeight: 600,
+                  display: "block",
+                  padding: 20,
+                  borderRadius: 18,
+                  border:
+                    "1px solid #e5e7eb",
+                  background: "#ffffff",
+                  color: "#111827",
+                  textDecoration: "none",
+                  boxShadow:
+                    "0 8px 24px rgba(15, 23, 42, 0.06)",
                 }}
               >
-                {item.status}
-              </span>
-            </div>
-          ))}
-        </main>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent:
+                      "space-between",
+                    gap: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 14,
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: 15,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent:
+                          "center",
+                        background: "#f3f4f6",
+                        fontSize: 25,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {project.icon}
+                    </div>
+
+                    <div>
+                      <h2
+                        style={{
+                          margin: 0,
+                          fontSize: 22,
+                        }}
+                      >
+                        {project.name}
+                      </h2>
+
+                      <p
+                        style={{
+                          margin:
+                            "7px 0 0",
+                          color: "#6b7280",
+                          lineHeight: 1.55,
+                          fontSize: 14,
+                        }}
+                      >
+                        {project.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      padding: "7px 11px",
+                      borderRadius: 999,
+                      background:
+                        statusColor.background,
+                      color:
+                        statusColor.color,
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {project.statusLabel}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems: "center",
+                    marginTop: 18,
+                    paddingTop: 15,
+                    borderTop:
+                      "1px solid #f3f4f6",
+                    color: "#475569",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>
+                    {project.modules.length} 个模块
+                  </span>
+
+                  <span>
+                    打开项目 →
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </WorkspaceShell>
   );
 }
