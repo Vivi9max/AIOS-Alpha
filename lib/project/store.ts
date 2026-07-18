@@ -10,7 +10,7 @@ export const projects: Project[] = [
     shortName: "AIOS",
     icon: "🚀",
     description:
-      "AIOS Alpha Runtime、Memory、Tasks、Planner 与工作空间。",
+      "AIOS Alpha Runtime、Memory、Tasks、Planner 与统一工作空间。",
     status: "running",
     statusLabel: "Running",
     primaryHref: "/workspace",
@@ -27,18 +27,27 @@ export const projects: Project[] = [
       },
       {
         id: "planner",
-        name: "Planner",
+        name: "Planner Engine",
         description:
-          "理解目标并生成可执行计划",
+          "把目标转化为可执行工作流",
         href: "/planner",
         status: "active",
       },
       {
-        id: "dashboard",
-        name: "Dashboard",
+        id: "runtime",
+        name:
+          "Runtime Control Center",
         description:
-          "查看 Runtime 与数据状态",
-        href: "/dashboard",
+          "查看系统、模型和模块运行状态",
+        href: "/runtime",
+        status: "ready",
+      },
+      {
+        id: "execution-trace",
+        name: "Execution Trace",
+        description:
+          "查看最近一次执行和能力调用过程",
+        href: "/runtime/trace",
         status: "ready",
       },
       {
@@ -53,16 +62,8 @@ export const projects: Project[] = [
         id: "tasks",
         name: "Tasks",
         description:
-          "查看和推进执行任务",
+          "管理计划产生的执行任务",
         href: "/tasks",
-        status: "ready",
-      },
-      {
-        id: "settings",
-        name: "Settings",
-        description:
-          "查看系统和 Provider 状态",
-        href: "/settings",
         status: "ready",
       },
     ],
@@ -95,7 +96,7 @@ export const projects: Project[] = [
         id: "content-tasks",
         name: "Content Tasks",
         description:
-          "查看内容相关任务",
+          "查看内容生产相关任务",
         href: "/tasks",
         status: "ready",
       },
@@ -118,32 +119,33 @@ export const projects: Project[] = [
         id: "planner",
         name: "Planner Engine",
         description:
-          "将目标拆解为可执行步骤",
+          "理解目标并生成执行工作流",
         href: "/planner",
         status: "active",
       },
       {
-        id: "brain",
-        name: "AIOS Brain",
+        id: "runtime",
+        name:
+          "Runtime Control Center",
         description:
-          "进入 Brain 推理工作区",
-        href: "/brain",
+          "查看 AIOS Runtime 实际状态",
+        href: "/runtime",
         status: "active",
       },
       {
-        id: "runtime-status",
-        name: "Runtime Status",
+        id: "brain",
+        name: "Runtime Console",
         description:
-          "查看 Runtime 服务状态",
-        href: "/api/runtime/status",
-        status: "ready",
+          "直接向 Runtime 提交任务",
+        href: "/brain",
+        status: "active",
       },
       {
         id: "runtime-trace",
         name: "Execution Trace",
         description:
           "查看最近一次能力调用记录",
-        href: "/api/runtime/trace",
+        href: "/runtime/trace",
         status: "ready",
       },
     ],

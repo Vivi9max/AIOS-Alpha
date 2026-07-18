@@ -4,6 +4,10 @@ import {
   useState,
 } from "react";
 
+import Link from "next/link";
+
+import WorkspaceShell from "@/components/layout/WorkspaceShell";
+
 import BrainInput from "@/components/brain/BrainInput";
 import BrainResult from "@/components/brain/BrainResult";
 
@@ -12,6 +16,12 @@ interface BrainApiResponse {
   content?: string;
   error?: string;
 }
+
+const runtimeExamples = [
+  "读取我当前的待办任务并告诉我最高优先级",
+  "分析 AIOS Alpha 当前最明显的风险",
+  "根据我的长期目标给出今天最重要的一步",
+];
 
 export default function BrainPage() {
   const [prompt, setPrompt] =
@@ -64,7 +74,8 @@ export default function BrainPage() {
         );
 
       const result =
-        (await response.json()) as BrainApiResponse;
+        (await response.json()) as
+          BrainApiResponse;
 
       if (
         !response.ok ||
@@ -78,17 +89,13 @@ export default function BrainPage() {
       }
 
       setAnswer(
-        result.content ??
-          ""
+        result.content ?? ""
       );
     } catch (runError) {
-      const message =
+      setError(
         runError instanceof Error
           ? runError.message
-          : "AIOS Runtime 暂时不可用。";
-
-      setError(
-        message
+          : "AIOS Runtime 暂时不可用。"
       );
 
       setAnswer("");
@@ -98,84 +105,190 @@ export default function BrainPage() {
   }
 
   return (
-    <main
-      style={{
-        width: "100%",
-        maxWidth: 900,
-        margin: "40px auto",
-        padding: 24,
-        boxSizing:
-          "border-box",
-      }}
-    >
-      <header
+    <WorkspaceShell>
+      <main
         style={{
-          marginBottom: 24,
+          width: "100%",
+          maxWidth: 840,
+          margin: "0 auto",
+          color: "#111827",
         }}
       >
-        <p
+        <header
           style={{
-            margin: 0,
-            color: "#6b7280",
-            fontSize: 14,
-            fontWeight: 700,
+            marginBottom: 22,
           }}
         >
-          AIOS Alpha
-        </p>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 800,
+            }}
+          >
+            AIOS Runtime
+          </p>
 
-        <h1
+          <h1
+            style={{
+              margin: "8px 0 0",
+              fontSize: 37,
+            }}
+          >
+            🧠 Runtime Console
+          </h1>
+
+          <p
+            style={{
+              margin: "12px 0 0",
+              color: "#64748b",
+              lineHeight: 1.65,
+            }}
+          >
+            直接向 AIOS Runtime 提交单次任务。复杂目标建议使用 Planner。
+          </p>
+        </header>
+
+        <section
           style={{
-            margin:
-              "7px 0 0",
-            fontSize: 34,
+            marginBottom: 18,
+            padding: 16,
+            borderRadius: 17,
+            border:
+              "1px solid #bfdbfe",
+            background: "#eff6ff",
           }}
         >
-          🧠 AIOS Runtime
-        </h1>
+          <strong>
+            Runtime Console 适合：
+          </strong>
 
-        <p
+          <p
+            style={{
+              margin: "7px 0 0",
+              color: "#475569",
+              lineHeight: 1.6,
+            }}
+          >
+            查询信息、分析问题、创建任务、保存记忆或执行一个明确操作。
+          </p>
+
+          <Link
+            href="/planner"
+            style={{
+              display:
+                "inline-block",
+              marginTop: 10,
+              color: "#1d4ed8",
+              fontWeight: 900,
+              textDecoration: "none",
+            }}
+          >
+            复杂目标前往 Planner →
+          </Link>
+        </section>
+
+        <section
           style={{
-            margin:
-              "10px 0 0",
-            color: "#6b7280",
-            lineHeight: 1.6,
+            display: "grid",
+            gap: 8,
+            marginBottom: 18,
           }}
         >
-          通过统一 Runtime
-          执行 AIOS Brain。
-        </p>
-      </header>
+          {runtimeExamples.map(
+            (example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() =>
+                  setPrompt(example)
+                }
+                style={{
+                  padding:
+                    "13px 15px",
+                  borderRadius: 13,
+                  border:
+                    "1px solid #e5e7eb",
+                  background:
+                    "#ffffff",
+                  color: "#334155",
+                  textAlign: "left",
+                  fontWeight: 800,
+                }}
+              >
+                {example}
+              </button>
+            )
+          )}
+        </section>
 
-      {error && (
+        {error && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 14,
+              border:
+                "1px solid #fecaca",
+              borderRadius: 12,
+              background: "#fff7f7",
+              color: "#b91c1c",
+              overflowWrap:
+                "anywhere",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <BrainInput
+          value={prompt}
+          loading={loading}
+          onChange={setPrompt}
+          onRun={handleRun}
+        />
+
+        <BrainResult
+          answer={answer}
+        />
+
         <div
           style={{
-            marginBottom: 16,
-            padding: 14,
-            border:
-              "1px solid #fecaca",
-            borderRadius: 12,
-            background:
-              "#fff7f7",
-            color: "#b91c1c",
-            overflowWrap:
-              "anywhere",
+            display: "grid",
+            gridTemplateColumns:
+              "1fr 1fr",
+            gap: 10,
+            marginTop: 18,
           }}
         >
-          {error}
+          <Link
+            href="/runtime"
+            style={bottomLinkStyle}
+          >
+            Runtime 状态
+          </Link>
+
+          <Link
+            href="/runtime/trace"
+            style={bottomLinkStyle}
+          >
+            Execution Trace
+          </Link>
         </div>
-      )}
-
-      <BrainInput
-        value={prompt}
-        loading={loading}
-        onChange={setPrompt}
-        onRun={handleRun}
-      />
-
-      <BrainResult
-        answer={answer}
-      />
-    </main>
+      </main>
+    </WorkspaceShell>
   );
 }
+
+const bottomLinkStyle = {
+  display: "block",
+  padding: "14px",
+  borderRadius: 13,
+  border:
+    "1px solid #e5e7eb",
+  background: "#ffffff",
+  color: "#111827",
+  textAlign: "center",
+  textDecoration: "none",
+  fontWeight: 900,
+} as const;
