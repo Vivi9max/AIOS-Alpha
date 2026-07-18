@@ -25,73 +25,81 @@ import {
   updateProviderRuntimeStatus,
 } from "./providerManager";
 
+import {
+  saveRuntimeTrace,
+} from "./trace-store";
+
 export interface RuntimeRequest {
-  prompt:
-    string;
+  prompt: string;
 }
 
 export interface RuntimeResponse {
-  success:
-    boolean;
+  success: boolean;
 
-  provider:
-    AIProvider;
+  provider: AIProvider;
 
-  requestedProvider?:
-    AIProvider;
+  requestedProvider?: AIProvider;
 
-  fallbackUsed?:
-    boolean;
+  fallbackUsed?: boolean;
 
-  error?:
-    string;
+  error?: string;
 
-  content:
-    string;
+  content: string;
 
-  actionHandled?:
-    boolean;
+  actionHandled?: boolean;
 
-  runtime:
-    string;
+  runtime: string;
 
-  runtimeVersion:
-    string;
+  runtimeVersion: string;
 
-  planId?:
-    string;
+  requestId: string;
 
-  planType?:
-    RuntimePlanType;
+  planId?: string;
 
-  goal?:
-    string;
+  planType?: RuntimePlanType;
 
-  intent?:
-    PlannerIntent;
+  goal?: string;
 
-  confidence?:
-    number;
+  intent?: PlannerIntent;
 
-  capabilities?:
-    RuntimeCapability[];
+  confidence?: number;
 
-  steps?:
-    string[];
+  capabilities?: RuntimeCapability[];
 
-  capabilityTrace?:
-    CapabilityTrace[];
+  steps?: string[];
 
-  timestamp:
-    number;
+  capabilityTrace?: CapabilityTrace[];
 
-  latencyMs:
-    number;
+  timestamp: number;
+
+  latencyMs: number;
+}
+
+function createRequestId(): string {
+  return [
+    "request",
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2, 8),
+  ].join("-");
+}
+
+function createPromptPreview(
+  prompt: string
+): string {
+  return prompt
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
 }
 
 export async function executeRuntime(
   request: RuntimeRequest
 ): Promise<RuntimeResponse> {
+  const requestId =
+    createRequestId();
+
   const prompt =
     request.prompt.trim();
 
@@ -128,6 +136,35 @@ export async function executeRuntime(
         timestamp,
     });
 
+    saveRuntimeTrace({
+      requestId,
+
+      promptPreview:
+        "",
+
+      provider:
+        "mock",
+
+      success:
+        false,
+
+      fallbackUsed:
+        false,
+
+      latencyMs,
+
+      capabilityTrace:
+        [],
+
+      error:
+        "请输入内容。",
+
+      startedAt,
+
+      completedAt:
+        timestamp,
+    });
+
     return {
       success:
         false,
@@ -155,6 +192,8 @@ export async function executeRuntime(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      requestId,
 
       timestamp,
 
@@ -180,17 +219,25 @@ export async function executeRuntime(
       timestamp -
       startedAt;
 
+    const requestedProvider =
+      result.requestedProvider ??
+      result.provider;
+
+    const fallbackUsed =
+      result.fallbackUsed ??
+      false;
+
+    const capabilityTrace =
+      result.capabilityTrace ??
+      [];
+
     updateProviderRuntimeStatus({
       provider:
         result.provider,
 
-      requestedProvider:
-        result.requestedProvider ??
-        result.provider,
+      requestedProvider,
 
-      fallbackUsed:
-        result.fallbackUsed ??
-        false,
+      fallbackUsed,
 
       success:
         result.success,
@@ -204,6 +251,47 @@ export async function executeRuntime(
         timestamp,
     });
 
+    saveRuntimeTrace({
+      requestId,
+
+      planId:
+        result.planId,
+
+      promptPreview:
+        createPromptPreview(
+          prompt
+        ),
+
+      goal:
+        result.goal,
+
+      intent:
+        result.intent,
+
+      planType:
+        result.planType,
+
+      provider:
+        result.provider,
+
+      success:
+        result.success,
+
+      fallbackUsed,
+
+      latencyMs,
+
+      capabilityTrace,
+
+      error:
+        result.error,
+
+      startedAt,
+
+      completedAt:
+        timestamp,
+    });
+
     return {
       success:
         result.success,
@@ -211,11 +299,9 @@ export async function executeRuntime(
       provider:
         result.provider,
 
-      requestedProvider:
-        result.requestedProvider,
+      requestedProvider,
 
-      fallbackUsed:
-        result.fallbackUsed,
+      fallbackUsed,
 
       error:
         result.error,
@@ -231,6 +317,8 @@ export async function executeRuntime(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      requestId,
 
       planId:
         result.planId,
@@ -253,8 +341,7 @@ export async function executeRuntime(
       steps:
         result.steps,
 
-      capabilityTrace:
-        result.capabilityTrace,
+      capabilityTrace,
 
       timestamp,
 
@@ -295,6 +382,49 @@ export async function executeRuntime(
         timestamp,
     });
 
+    saveRuntimeTrace({
+      requestId,
+
+      planId:
+        plan.id,
+
+      promptPreview:
+        createPromptPreview(
+          prompt
+        ),
+
+      goal:
+        plan.goal,
+
+      intent:
+        plan.intent,
+
+      planType:
+        plan.type,
+
+      provider:
+        "mock",
+
+      success:
+        false,
+
+      fallbackUsed:
+        false,
+
+      latencyMs,
+
+      capabilityTrace:
+        [],
+
+      error:
+        errorMessage,
+
+      startedAt,
+
+      completedAt:
+        timestamp,
+    });
+
     return {
       success:
         false,
@@ -322,6 +452,8 @@ export async function executeRuntime(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      requestId,
 
       planId:
         plan.id,
