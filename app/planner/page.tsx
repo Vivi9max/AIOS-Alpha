@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+
 import {
   useEffect,
   useMemo,
@@ -8,6 +9,11 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+
+import {
+  PLANNER_PLACEHOLDER,
+  PLANNER_PRESETS,
+} from "@/lib/planner/presets";
 
 interface PlannerPlan {
   id: string;
@@ -25,14 +31,57 @@ interface PlannerExecution {
   fallbackUsed: boolean;
   content: string;
   latencyMs: number;
+  status?: string;
+  capabilityTrace?: string[];
+}
+
+interface PlannerWorkflowTask {
+  id: string;
+  title: string;
+  status: string;
+  created: boolean;
+}
+
+interface PlannerWorkflow {
+  status: string;
+  createdCount: number;
+  reusedCount: number;
+  taskCount: number;
+  tasks: PlannerWorkflowTask[];
+}
+
+interface PlannerGoalQuality {
+  score: number;
+  level:
+    | "basic"
+    | "clear"
+    | "strong";
+  hasResult: boolean;
+  hasDeadline: boolean;
+  hasSuccessMetric: boolean;
+  hasConstraint: boolean;
+}
+
+interface PlannerAnalysis {
+  goalQuality?: PlannerGoalQuality;
+  complexity?:
+    | "low"
+    | "medium"
+    | "high";
+  stageCount?: number;
+  capabilityCount?: number;
 }
 
 interface PlannerResponse {
   success: boolean;
   mode?: "plan" | "execute";
   plan?: PlannerPlan;
-  execution?: PlannerExecution;
+  execution?: PlannerExecution | null;
+  workflow?: PlannerWorkflow | null;
+  analysis?: PlannerAnalysis;
+  latencyMs?: number;
   error?: string;
+  code?: string;
 }
 
 interface PlannerHistoryItem {
@@ -45,47 +94,9 @@ interface PlannerHistoryItem {
 }
 
 const MAX_GOAL_LENGTH = 1000;
+
 const HISTORY_KEY =
   "aios-alpha:planner-history";
-
-const quickGoals = [
-  {
-    icon: "🚀",
-    title: "完成首轮真实用户测试",
-    goal:
-      "在 7 天内完成 AIOS Alpha 第一轮真实用户测试，获得至少 5 条有效反馈，并确定下一版本最高优先级。",
-  },
-  {
-    icon: "📅",
-    title: "规划未来 7 天开发任务",
-    goal:
-      "根据当前任务、记忆和开发进度，制定未来 7 天最重要的三项开发工作、执行顺序和完成标准。",
-  },
-  {
-    icon: "⚠️",
-    title: "分析公开测试风险",
-    goal:
-      "分析 AIOS Alpha 当前影响公开测试的主要风险，并形成按优先级排序、可以立即执行的解决计划。",
-  },
-  {
-    icon: "💰",
-    title: "寻找第一批付费用户",
-    goal:
-      "为 AIOS Alpha 设计一个低成本获取第一批付费用户的验证计划，明确目标用户、核心价值、触达方式和成功指标。",
-  },
-  {
-    icon: "📈",
-    title: "提升 MVP 留存",
-    goal:
-      "分析 AIOS Alpha MVP 如何形成用户每天回来一次的理由，并制定未来 7 天可以验证的留存改进计划。",
-  },
-  {
-    icon: "🧠",
-    title: "优化 Planner 与 Runtime",
-    goal:
-      "评估当前 Planner、Runtime、Memory 和 Tasks 的协作效果，找出最影响执行闭环的问题并给出升级顺序。",
-  },
-];
 
 export default function PlannerPage() {
   const [goal, setGoal] =
@@ -139,8 +150,10 @@ export default function PlannerPage() {
 
       if (!cleanGoal) {
         return {
-          label: "等待目标",
-          color: "#94a3b8",
+          label:
+            "等待目标",
+          color:
+            "#94a3b8",
           score: 0,
         };
       }
@@ -148,13 +161,14 @@ export default function PlannerPage() {
       let score = 1;
 
       if (
-        cleanGoal.length >= 40
+        cleanGoal.length >=
+        40
       ) {
         score += 1;
       }
 
       if (
-        /天|周|月|小时|日期|期限|之前|以内/.test(
+        /天|周|月|小时|日期|期限|之前|以内|截止/.test(
           cleanGoal
         )
       ) {
@@ -162,7 +176,7 @@ export default function PlannerPage() {
       }
 
       if (
-        /至少|完成|获得|达到|成功|标准|指标|结果/.test(
+        /至少|完成|获得|达到|成功|标准|指标|结果|验证/.test(
           cleanGoal
         )
       ) {
@@ -170,7 +184,7 @@ export default function PlannerPage() {
       }
 
       if (
-        /限制|预算|手机|低成本|不能|必须|优先/.test(
+        /限制|预算|成本|时间|不能|必须|优先|资源|风险/.test(
           cleanGoal
         )
       ) {
@@ -179,29 +193,37 @@ export default function PlannerPage() {
 
       if (score >= 5) {
         return {
-          label: "目标清晰",
-          color: "#22c55e",
+          label:
+            "目标清晰",
+          color:
+            "#22c55e",
           score,
         };
       }
 
       if (score >= 3) {
         return {
-          label: "可以规划",
-          color: "#60a5fa",
+          label:
+            "可以规划",
+          color:
+            "#60a5fa",
           score,
         };
       }
 
       return {
-        label: "建议补充细节",
-        color: "#f59e0b",
+        label:
+          "建议补充细节",
+        color:
+          "#f59e0b",
         score,
       };
     }, [goal]);
 
   async function runPlanner(
-    mode: "plan" | "execute"
+    mode:
+      | "plan"
+      | "execute"
   ) {
     const cleanGoal =
       goal.trim();
@@ -224,7 +246,8 @@ export default function PlannerPage() {
         await fetch(
           "/api/planner",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -250,58 +273,35 @@ export default function PlannerPage() {
         response.ok &&
         data.success
       ) {
-        const historyItem: PlannerHistoryItem =
-          {
-            id:
-              data.plan?.id ??
-              data.execution
-                ?.requestId ??
-              `${Date.now()}`,
+        saveHistory({
+          id:
+            data.plan?.id ??
+            data.execution
+              ?.requestId ??
+            `${Date.now()}`,
 
-            goal: cleanGoal,
-            mode,
-            createdAt:
-              Date.now(),
+          goal:
+            cleanGoal,
 
-            provider:
-              data.execution
-                ?.provider,
+          mode,
 
-            latencyMs:
-              data.execution
-                ?.latencyMs,
-          };
+          createdAt:
+            Date.now(),
 
-        setHistory(
-          (current) => {
-            const next = [
-              historyItem,
+          provider:
+            data.execution
+              ?.provider,
 
-              ...current.filter(
-                (item) =>
-                  item.goal !==
-                  cleanGoal
-              ),
-            ].slice(0, 6);
-
-            try {
-              window.localStorage.setItem(
-                HISTORY_KEY,
-                JSON.stringify(
-                  next
-                )
-              );
-            } catch {
-              // 本地历史记录失败不能阻断 Planner。
-            }
-
-            return next;
-          }
-        );
+          latencyMs:
+            data.execution
+              ?.latencyMs ??
+            data.latencyMs,
+        });
       }
     } catch {
       setResult({
         success: false,
+
         error:
           "无法连接 Planner Engine，请稍后重试。",
       });
@@ -310,7 +310,38 @@ export default function PlannerPage() {
     }
   }
 
-  function selectQuickGoal(
+  function saveHistory(
+    item: PlannerHistoryItem
+  ) {
+    setHistory(
+      (current) => {
+        const next = [
+          item,
+
+          ...current.filter(
+            (existing) =>
+              existing.goal !==
+              item.goal
+          ),
+        ].slice(0, 6);
+
+        try {
+          window.localStorage.setItem(
+            HISTORY_KEY,
+            JSON.stringify(
+              next
+            )
+          );
+        } catch {
+          // 本地历史失败不能阻断 Planner。
+        }
+
+        return next;
+      }
+    );
+  }
+
+  function selectGoal(
     value: string
   ) {
     setGoal(
@@ -329,11 +360,26 @@ export default function PlannerPage() {
             "planner-goal"
           )
           ?.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
+            behavior:
+              "smooth",
+
+            block:
+              "center",
           });
       }
     );
+  }
+
+  function clearHistory() {
+    setHistory([]);
+
+    try {
+      window.localStorage.removeItem(
+        HISTORY_KEY
+      );
+    } catch {
+      // 不阻断页面。
+    }
   }
 
   return (
@@ -353,9 +399,8 @@ export default function PlannerPage() {
           </h1>
 
           <p style={subtitleStyle}>
-            把最终目标交给
-            AIOS。Planner
-            会理解意图、拆解阶段、选择能力，并在需要时调度
+            描述你希望得到的最终结果。Planner
+            将理解目标、拆解阶段、选择能力，并在需要时调度
             Runtime 执行。
           </p>
 
@@ -393,7 +438,11 @@ export default function PlannerPage() {
               goalHeadingRowStyle
             }
           >
-            <div>
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
               <label
                 htmlFor="planner-goal"
                 style={
@@ -409,8 +458,7 @@ export default function PlannerPage() {
                   goalHelpStyle
                 }
               >
-                描述最终结果，而不是只描述一个动作。目标越清楚，Planner
-                给出的路线越准确。
+                描述最终结果，而不是只输入一个动作。目标越明确，执行路线越准确。
               </p>
             </div>
 
@@ -449,12 +497,9 @@ export default function PlannerPage() {
 
               setResult(null);
             }}
-            placeholder={[
-              "描述你希望最终实现的结果…",
-              "",
-              "例如：",
-              "在 7 天内完成 AIOS Alpha 第一轮真实用户测试，收集至少 5 条有效反馈，并确定 v0.5 的最高优先级。",
-            ].join("\n")}
+            placeholder={
+              PLANNER_PLACEHOLDER
+            }
             rows={7}
             style={textareaStyle}
           />
@@ -491,21 +536,21 @@ export default function PlannerPage() {
             />
 
             <QualityItem
-              ready={/天|周|月|小时|日期|期限|之前|以内/.test(
+              ready={/天|周|月|小时|日期|期限|之前|以内|截止/.test(
                 goal
               )}
               label="时间范围"
             />
 
             <QualityItem
-              ready={/至少|完成|获得|达到|成功|标准|指标|结果/.test(
+              ready={/至少|完成|获得|达到|成功|标准|指标|结果|验证/.test(
                 goal
               )}
               label="成功标准"
             />
 
             <QualityItem
-              ready={/限制|预算|手机|低成本|不能|必须|优先/.test(
+              ready={/限制|预算|成本|时间|不能|必须|优先|资源|风险/.test(
                 goal
               )}
               label="限制条件"
@@ -608,31 +653,31 @@ export default function PlannerPage() {
 
           <div
             style={
-              quickGoalGridStyle
+              presetGridStyle
             }
           >
-            {quickGoals.map(
-              (item) => (
+            {PLANNER_PRESETS.map(
+              (preset) => (
                 <button
                   key={
-                    item.title
+                    preset.id
                   }
                   type="button"
                   onClick={() =>
-                    selectQuickGoal(
-                      item.goal
+                    selectGoal(
+                      preset.goal
                     )
                   }
                   style={
-                    quickGoalCardStyle
+                    presetCardStyle
                   }
                 >
                   <span
                     style={
-                      quickGoalIconStyle
+                      presetIconStyle
                     }
                   >
-                    {item.icon}
+                    {preset.icon}
                   </span>
 
                   <span
@@ -640,23 +685,33 @@ export default function PlannerPage() {
                       minWidth: 0,
                     }}
                   >
+                    <span
+                      style={
+                        presetCategoryStyle
+                      }
+                    >
+                      {formatCategory(
+                        preset.category
+                      )}
+                    </span>
+
                     <strong
                       style={
-                        quickGoalTitleStyle
+                        presetTitleStyle
                       }
                     >
                       {
-                        item.title
+                        preset.title
                       }
                     </strong>
 
                     <span
                       style={
-                        quickGoalTextStyle
+                        presetDescriptionStyle
                       }
                     >
                       {
-                        item.goal
+                        preset.description
                       }
                     </span>
                   </span>
@@ -665,6 +720,14 @@ export default function PlannerPage() {
             )}
           </div>
         </section>
+
+        {loadingMode && (
+          <ExecutionLoading
+            mode={
+              loadingMode
+            }
+          />
+        )}
 
         {result && (
           <section
@@ -688,7 +751,8 @@ export default function PlannerPage() {
                     margin:
                       "8px 0 0",
 
-                    lineHeight: 1.6,
+                    lineHeight:
+                      1.6,
                   }}
                 >
                   {result.error ??
@@ -717,7 +781,8 @@ export default function PlannerPage() {
                   sectionEyebrowStyle
                 }
               >
-                LOCAL HISTORY
+                PRIVATE LOCAL
+                HISTORY
               </p>
 
               <h2
@@ -733,15 +798,9 @@ export default function PlannerPage() {
               0 && (
               <button
                 type="button"
-                onClick={() => {
-                  setHistory(
-                    []
-                  );
-
-                  window.localStorage.removeItem(
-                    HISTORY_KEY
-                  );
-                }}
+                onClick={
+                  clearHistory
+                }
                 style={
                   clearHistoryButtonStyle
                 }
@@ -751,6 +810,14 @@ export default function PlannerPage() {
             )}
           </div>
 
+          <p
+            style={
+              privacyHintStyle
+            }
+          >
+            最近计划仅保存在当前设备浏览器中。避免输入密码、证件号码、银行卡信息或其他敏感资料。
+          </p>
+
           {history.length ===
           0 ? (
             <div
@@ -759,7 +826,8 @@ export default function PlannerPage() {
               }
             >
               <strong>
-                尚无 Planner 历史
+                尚无 Planner
+                历史
               </strong>
 
               <p
@@ -770,16 +838,19 @@ export default function PlannerPage() {
                   color:
                     "#64748b",
 
-                  lineHeight: 1.55,
+                  lineHeight:
+                    1.55,
                 }}
               >
-                完成一次“生成计划”或“规划并执行”后，最近记录会显示在这里。
+                完成一次生成计划或规划并执行后，最近记录会显示在这里。
               </p>
             </div>
           ) : (
             <div
               style={{
-                display: "grid",
+                display:
+                  "grid",
+
                 gap: 10,
               }}
             >
@@ -789,7 +860,7 @@ export default function PlannerPage() {
                     key={`${item.id}-${item.createdAt}`}
                     type="button"
                     onClick={() =>
-                      selectQuickGoal(
+                      selectGoal(
                         item.goal
                       )
                     }
@@ -855,14 +926,149 @@ export default function PlannerPage() {
   );
 }
 
+function ExecutionLoading({
+  mode,
+}: {
+  mode:
+    | "plan"
+    | "execute";
+}) {
+  const stages =
+    mode === "execute"
+      ? [
+          "理解目标",
+          "生成计划",
+          "选择能力",
+          "调用 Runtime",
+          "创建任务",
+        ]
+      : [
+          "理解目标",
+          "分析限制",
+          "生成计划",
+          "整理执行路线",
+        ];
+
+  return (
+    <section
+      style={
+        loadingSectionStyle
+      }
+    >
+      <div
+        style={
+          loadingHeaderStyle
+        }
+      >
+        <div>
+          <p
+            style={
+              sectionEyebrowStyle
+            }
+          >
+            EXECUTION
+            PROGRESS
+          </p>
+
+          <h2
+            style={
+              loadingTitleStyle
+            }
+          >
+            {mode ===
+            "execute"
+              ? "正在规划并执行"
+              : "正在生成计划"}
+          </h2>
+        </div>
+
+        <span
+          style={
+            runningBadgeStyle
+          }
+        >
+          RUNNING
+        </span>
+      </div>
+
+      <div
+        style={
+          progressTrackStyle
+        }
+      >
+        <span
+          style={
+            progressBarStyle
+          }
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 9,
+          marginTop: 16,
+        }}
+      >
+        {stages.map(
+          (
+            stage,
+            index
+          ) => (
+            <div
+              key={stage}
+              style={
+                loadingStageStyle
+              }
+            >
+              <span
+                style={
+                  loadingStageNumberStyle
+                }
+              >
+                {index + 1}
+              </span>
+
+              <span>
+                {stage}
+              </span>
+
+              <span
+                style={{
+                  marginLeft:
+                    "auto",
+
+                  color:
+                    index === 0
+                      ? "#2563eb"
+                      : "#94a3b8",
+                }}
+              >
+                {index === 0
+                  ? "处理中"
+                  : "等待"}
+              </span>
+            </div>
+          )
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PlannerResult({
   result,
 }: {
   result: PlannerResponse;
 }) {
-  const plan = result.plan;
+  const plan =
+    result.plan;
+
   const execution =
     result.execution;
+
+  const workflow =
+    result.workflow;
 
   return (
     <>
@@ -931,9 +1137,10 @@ function PlannerResult({
             />
 
             <AnalysisCard
-              label="意图"
-              value={formatIntent(
-                plan.intent
+              label="复杂度"
+              value={formatComplexity(
+                result.analysis
+                  ?.complexity
               )}
             />
 
@@ -947,7 +1154,7 @@ function PlannerResult({
             />
 
             <AnalysisCard
-              label="阶段数量"
+              label="执行阶段"
               value={`${plan.steps.length} Stages`}
             />
           </div>
@@ -958,7 +1165,9 @@ function PlannerResult({
             }
           >
             <p
-              style={cardLabelStyle}
+              style={
+                cardLabelStyle
+              }
             >
               FINAL GOAL
             </p>
@@ -978,9 +1187,12 @@ function PlannerResult({
             }
           >
             <p
-              style={cardLabelStyle}
+              style={
+                cardLabelStyle
+              }
             >
-              SELECTED CAPABILITIES
+              SELECTED
+              CAPABILITIES
             </p>
 
             <div
@@ -1025,32 +1237,32 @@ function PlannerResult({
               workflowSectionStyle
             }
           >
-            <div
-              style={{
-                marginBottom: 15,
-              }}
+            <p
+              style={
+                cardLabelStyle
+              }
             >
-              <p
-                style={
-                  cardLabelStyle
-                }
-              >
-                EXECUTION WORKFLOW
-              </p>
+              EXECUTION
+              WORKFLOW
+            </p>
 
-              <h3
-                style={
-                  workflowTitleStyle
-                }
-              >
-                分阶段执行路线
-              </h3>
-            </div>
+            <h3
+              style={
+                workflowTitleStyle
+              }
+            >
+              分阶段执行路线
+            </h3>
 
             <div
               style={{
-                display: "grid",
+                display:
+                  "grid",
+
                 gap: 0,
+
+                marginTop:
+                  15,
               }}
             >
               {plan.steps.map(
@@ -1141,7 +1353,8 @@ function PlannerResult({
                     "#93c5fd",
                 }}
               >
-                RUNTIME EXECUTION
+                RUNTIME
+                EXECUTION
               </p>
 
               <h3
@@ -1158,7 +1371,10 @@ function PlannerResult({
                 runtimeSuccessBadgeStyle
               }
             >
-              COMPLETED
+              {execution.status ===
+              "failed"
+                ? "FAILED"
+                : "COMPLETED"}
             </span>
           </div>
 
@@ -1170,13 +1386,14 @@ function PlannerResult({
             <RuntimeMetric
               label="Provider"
               value={
-                execution.provider
+                execution.provider ||
+                "Unknown"
               }
             />
 
             <RuntimeMetric
               label="Latency"
-              value={`${execution.latencyMs} ms`}
+              value={`${execution.latencyMs ?? 0} ms`}
             />
 
             <RuntimeMetric
@@ -1203,33 +1420,173 @@ function PlannerResult({
           >
             {execution.content}
           </div>
+        </div>
+      )}
+
+      {workflow && (
+        <div
+          style={
+            outcomeCardStyle
+          }
+        >
+          <div
+            style={
+              outcomeHeaderStyle
+            }
+          >
+            <div>
+              <p
+                style={{
+                  ...cardLabelStyle,
+
+                  color:
+                    "#166534",
+                }}
+              >
+                OUTCOME
+              </p>
+
+              <h3
+                style={
+                  outcomeTitleStyle
+                }
+              >
+                已转化为可执行任务
+              </h3>
+            </div>
+
+            <span
+              style={
+                outcomeBadgeStyle
+              }
+            >
+              READY
+            </span>
+          </div>
 
           <div
             style={
-              runtimeFooterLinksStyle
+              outcomeMetricsStyle
             }
           >
-            <Link
-              href="/runtime"
-              style={
-                runtimeFooterLinkStyle
-              }
-            >
-              查看 Runtime 状态 →
-            </Link>
+            <OutcomeMetric
+              label="任务总数"
+              value={`${workflow.taskCount}`}
+            />
 
-            <Link
-              href="/runtime/trace"
-              style={
-                runtimeFooterLinkStyle
-              }
-            >
-              查看 Execution Trace
-              →
-            </Link>
+            <OutcomeMetric
+              label="新建任务"
+              value={`${workflow.createdCount}`}
+            />
+
+            <OutcomeMetric
+              label="复用任务"
+              value={`${workflow.reusedCount}`}
+            />
           </div>
+
+          {workflow.tasks.length >
+            0 && (
+            <div
+              style={{
+                display:
+                  "grid",
+
+                gap: 8,
+
+                marginTop:
+                  15,
+              }}
+            >
+              {workflow.tasks
+                .slice(0, 5)
+                .map(
+                  (
+                    task,
+                    index
+                  ) => (
+                    <div
+                      key={
+                        task.id
+                      }
+                      style={
+                        outcomeTaskStyle
+                      }
+                    >
+                      <span
+                        style={
+                          outcomeTaskNumberStyle
+                        }
+                      >
+                        {index +
+                          1}
+                      </span>
+
+                      <span
+                        style={{
+                          minWidth:
+                            0,
+
+                          flex: 1,
+                        }}
+                      >
+                        {
+                          task.title
+                        }
+                      </span>
+
+                      <span
+                        style={
+                          outcomeTaskStatusStyle
+                        }
+                      >
+                        {task.created
+                          ? "NEW"
+                          : "REUSED"}
+                      </span>
+                    </div>
+                  )
+                )}
+            </div>
+          )}
+
+          <Link
+            href="/tasks"
+            style={
+              outcomeLinkStyle
+            }
+          >
+            打开 Tasks
+            开始下一步 →
+          </Link>
         </div>
       )}
+
+      <div
+        style={
+          resultFooterLinksStyle
+        }
+      >
+        <Link
+          href="/runtime"
+          style={
+            resultFooterLinkStyle
+          }
+        >
+          查看 Runtime 状态
+          →
+        </Link>
+
+        <Link
+          href="/runtime/trace"
+          style={
+            resultFooterLinkStyle
+          }
+        >
+          查看 Execution Trace
+          →
+        </Link>
+      </div>
     </>
   );
 }
@@ -1266,14 +1623,22 @@ function AnalysisCard({
 }) {
   return (
     <div
-      style={analysisCardStyle}
+      style={
+        analysisCardStyle
+      }
     >
-      <p style={cardLabelStyle}>
+      <p
+        style={
+          cardLabelStyle
+        }
+      >
         {label.toUpperCase()}
       </p>
 
       <p
-        style={analysisValueStyle}
+        style={
+          analysisValueStyle
+        }
       >
         {value}
       </p>
@@ -1313,6 +1678,38 @@ function RuntimeMetric({
   );
 }
 
+function OutcomeMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={
+        outcomeMetricStyle
+      }
+    >
+      <span
+        style={
+          outcomeMetricLabelStyle
+        }
+      >
+        {label}
+      </span>
+
+      <strong
+        style={
+          outcomeMetricValueStyle
+        }
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
 function normalizeConfidence(
   confidence: number
 ): number {
@@ -1333,67 +1730,25 @@ function normalizeConfidence(
 
   return Math.max(
     0,
-    Math.min(confidence, 1)
+    Math.min(
+      confidence,
+      1
+    )
   );
 }
 
 function formatPlanType(
   type: string
 ): string {
-  const normalized =
-    type.trim().toLowerCase();
-
-  if (!normalized) {
+  if (!type) {
     return "General";
   }
 
-  if (
-    normalized.includes(
-      "business"
+  return type
+    .replaceAll(
+      "_",
+      " "
     )
-  ) {
-    return "Business";
-  }
-
-  if (
-    normalized.includes(
-      "development"
-    ) ||
-    normalized.includes(
-      "code"
-    )
-  ) {
-    return "Development";
-  }
-
-  if (
-    normalized.includes(
-      "content"
-    )
-  ) {
-    return "Content";
-  }
-
-  if (
-    normalized.includes(
-      "research"
-    )
-  ) {
-    return "Research";
-  }
-
-  return type;
-}
-
-function formatIntent(
-  intent: string
-): string {
-  if (!intent) {
-    return "Goal Planning";
-  }
-
-  return intent
-    .replaceAll("_", " ")
     .replace(
       /\b\w/g,
       (letter) =>
@@ -1405,12 +1760,60 @@ function formatCapability(
   capability: string
 ): string {
   return capability
-    .replaceAll("_", " ")
+    .replaceAll(
+      "_",
+      " "
+    )
     .replace(
       /\b\w/g,
       (letter) =>
         letter.toUpperCase()
     );
+}
+
+function formatCategory(
+  category: string
+): string {
+  const labels: Record<
+    string,
+    string
+  > = {
+    work: "工作",
+    business: "商业",
+    learning: "学习",
+    content: "内容",
+    decision: "决策",
+    personal: "个人",
+  };
+
+  return (
+    labels[category] ??
+    category
+  );
+}
+
+function formatComplexity(
+  value:
+    | "low"
+    | "medium"
+    | "high"
+    | undefined
+): string {
+  if (value === "high") {
+    return "High";
+  }
+
+  if (
+    value === "medium"
+  ) {
+    return "Medium";
+  }
+
+  if (value === "low") {
+    return "Low";
+  }
+
+  return "—";
 }
 
 function shortRequestId(
@@ -1420,7 +1823,9 @@ function shortRequestId(
     return "—";
   }
 
-  if (value.length <= 10) {
+  if (
+    value.length <= 10
+  ) {
     return value;
   }
 
@@ -1436,19 +1841,24 @@ function formatHistoryTime(
   const date =
     new Date(timestamp);
 
-  const now = new Date();
+  const now =
+    new Date();
 
-  const sameDay =
+  if (
     date.toDateString() ===
-    now.toDateString();
-
-  if (sameDay) {
+    now.toDateString()
+  ) {
     return `今天 ${date.toLocaleTimeString(
       "zh-CN",
       {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit",
+
+        hour12:
+          false,
       }
     )}`;
   }
@@ -1456,8 +1866,11 @@ function formatHistoryTime(
   return date.toLocaleDateString(
     "zh-CN",
     {
-      month: "numeric",
-      day: "numeric",
+      month:
+        "numeric",
+
+      day:
+        "numeric",
     }
   );
 }
@@ -1474,15 +1887,17 @@ const eyebrowStyle = {
   color: "#64748b",
   fontSize: 13,
   fontWeight: 900,
-  letterSpacing: "0.08em",
+  letterSpacing:
+    "0.08em",
 } as const;
 
 const titleStyle = {
   margin: "8px 0 0",
   fontSize:
-    "clamp(36px, 8vw, 56px)",
+    "clamp(34px, 7vw, 52px)",
   lineHeight: 1.08,
-  letterSpacing: "-0.04em",
+  letterSpacing:
+    "-0.04em",
 } as const;
 
 const subtitleStyle = {
@@ -1502,16 +1917,19 @@ const headerLinksStyle = {
 } as const;
 
 const headerLinkStyle = {
-  display: "inline-flex",
+  display:
+    "inline-flex",
   alignItems: "center",
   minHeight: 38,
   padding: "0 12px",
   border:
     "1px solid #dbe3ef",
   borderRadius: 999,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   color: "#334155",
-  textDecoration: "none",
+  textDecoration:
+    "none",
   fontSize: 13,
   fontWeight: 850,
 } as const;
@@ -1520,7 +1938,8 @@ const goalPanelStyle = {
   padding:
     "clamp(18px, 4vw, 28px)",
   borderRadius: 26,
-  background: "#111827",
+  background:
+    "#111827",
   color: "#ffffff",
   boxShadow:
     "0 24px 60px rgba(15, 23, 42, 0.16)",
@@ -1530,7 +1949,8 @@ const goalHeadingRowStyle = {
   display: "flex",
   justifyContent:
     "space-between",
-  alignItems: "flex-start",
+  alignItems:
+    "flex-start",
   gap: 14,
   marginBottom: 16,
 } as const;
@@ -1541,7 +1961,8 @@ const goalLabelStyle = {
     "clamp(21px, 5vw, 28px)",
   lineHeight: 1.25,
   fontWeight: 950,
-  letterSpacing: "-0.02em",
+  letterSpacing:
+    "-0.02em",
 } as const;
 
 const goalHelpStyle = {
@@ -1555,16 +1976,19 @@ const goalHelpStyle = {
 const goalStatusStyle = {
   flexShrink: 0,
   padding: "7px 10px",
-  border: "1px solid",
+  border:
+    "1px solid",
   borderRadius: 999,
   fontSize: 11,
   fontWeight: 900,
-  whiteSpace: "nowrap",
+  whiteSpace:
+    "nowrap",
 } as const;
 
 const textareaStyle = {
   width: "100%",
-  boxSizing: "border-box",
+  boxSizing:
+    "border-box",
   resize: "vertical",
   border:
     "2px solid transparent",
@@ -1573,8 +1997,10 @@ const textareaStyle = {
   padding: 18,
   fontSize: 16,
   lineHeight: 1.7,
-  fontFamily: "inherit",
-  background: "#ffffff",
+  fontFamily:
+    "inherit",
+  background:
+    "#ffffff",
   color: "#111827",
   boxShadow:
     "inset 0 0 0 1px rgba(148, 163, 184, 0.18)",
@@ -1616,7 +2042,8 @@ const secondaryButtonStyle = {
   padding: "0 14px",
   border: 0,
   borderRadius: 15,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   color: "#111827",
   fontSize: 15,
   fontWeight: 900,
@@ -1629,7 +2056,8 @@ const primaryButtonStyle = {
   border:
     "1px solid #60a5fa",
   borderRadius: 15,
-  background: "#2563eb",
+  background:
+    "#2563eb",
   color: "#ffffff",
   fontSize: 15,
   fontWeight: 900,
@@ -1646,7 +2074,8 @@ const sectionHeaderStyle = {
   display: "flex",
   justifyContent:
     "space-between",
-  alignItems: "flex-end",
+  alignItems:
+    "flex-end",
   gap: 14,
   marginBottom: 12,
 } as const;
@@ -1656,14 +2085,16 @@ const sectionEyebrowStyle = {
   color: "#64748b",
   fontSize: 11,
   fontWeight: 900,
-  letterSpacing: "0.08em",
+  letterSpacing:
+    "0.08em",
 } as const;
 
 const sectionTitleStyle = {
   margin: "5px 0 0",
   fontSize: 24,
   lineHeight: 1.2,
-  letterSpacing: "-0.02em",
+  letterSpacing:
+    "-0.02em",
 } as const;
 
 const sectionHintStyle = {
@@ -1672,23 +2103,25 @@ const sectionHintStyle = {
   fontWeight: 800,
 } as const;
 
-const quickGoalGridStyle = {
+const presetGridStyle = {
   display: "grid",
   gridTemplateColumns:
     "repeat(2, minmax(0, 1fr))",
   gap: 10,
 } as const;
 
-const quickGoalCardStyle = {
+const presetCardStyle = {
   display: "flex",
-  alignItems: "flex-start",
+  alignItems:
+    "flex-start",
   gap: 12,
   minWidth: 0,
   padding: 16,
   border:
     "1px solid #e2e8f0",
   borderRadius: 17,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   color: "#111827",
   textAlign: "left",
   cursor: "pointer",
@@ -1696,25 +2129,38 @@ const quickGoalCardStyle = {
     "0 8px 24px rgba(15, 23, 42, 0.04)",
 } as const;
 
-const quickGoalIconStyle = {
+const presetIconStyle = {
   display: "grid",
-  placeItems: "center",
+  placeItems:
+    "center",
   flexShrink: 0,
   width: 38,
   height: 38,
   borderRadius: 12,
-  background: "#f1f5f9",
+  background:
+    "#f1f5f9",
   fontSize: 19,
 } as const;
 
-const quickGoalTitleStyle = {
+const presetCategoryStyle = {
   display: "block",
+  color: "#2563eb",
+  fontSize: 10,
+  fontWeight: 900,
+  letterSpacing:
+    "0.06em",
+} as const;
+
+const presetTitleStyle = {
+  display: "block",
+  marginTop: 4,
   fontSize: 15,
   lineHeight: 1.4,
 } as const;
 
-const quickGoalTextStyle = {
-  display: "-webkit-box",
+const presetDescriptionStyle = {
+  display:
+    "-webkit-box",
   marginTop: 5,
   overflow: "hidden",
   color: "#64748b",
@@ -1725,6 +2171,85 @@ const quickGoalTextStyle = {
     "vertical",
 } as const;
 
+const loadingSectionStyle = {
+  marginTop: 24,
+  padding: 20,
+  border:
+    "1px solid #dbeafe",
+  borderRadius: 20,
+  background:
+    "#eff6ff",
+} as const;
+
+const loadingHeaderStyle = {
+  display: "flex",
+  justifyContent:
+    "space-between",
+  alignItems:
+    "flex-start",
+  gap: 12,
+} as const;
+
+const loadingTitleStyle = {
+  margin: "6px 0 0",
+  fontSize: 22,
+} as const;
+
+const runningBadgeStyle = {
+  padding: "7px 10px",
+  borderRadius: 999,
+  background:
+    "#dbeafe",
+  color: "#1d4ed8",
+  fontSize: 10,
+  fontWeight: 900,
+} as const;
+
+const progressTrackStyle = {
+  height: 9,
+  marginTop: 17,
+  overflow: "hidden",
+  borderRadius: 999,
+  background:
+    "#dbeafe",
+} as const;
+
+const progressBarStyle = {
+  display: "block",
+  width: "44%",
+  height: "100%",
+  borderRadius: 999,
+  background:
+    "#2563eb",
+} as const;
+
+const loadingStageStyle = {
+  display: "flex",
+  alignItems:
+    "center",
+  gap: 10,
+  minHeight: 42,
+  padding: "0 12px",
+  borderRadius: 12,
+  background:
+    "#ffffff",
+  fontSize: 13,
+  fontWeight: 800,
+} as const;
+
+const loadingStageNumberStyle = {
+  display: "grid",
+  placeItems:
+    "center",
+  width: 24,
+  height: 24,
+  borderRadius: 999,
+  background:
+    "#eff6ff",
+  color: "#2563eb",
+  fontSize: 11,
+} as const;
+
 const resultSectionStyle = {
   marginTop: 24,
   padding:
@@ -1732,7 +2257,8 @@ const resultSectionStyle = {
   border:
     "1px solid #e2e8f0",
   borderRadius: 24,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   boxShadow:
     "0 16px 45px rgba(15, 23, 42, 0.07)",
 } as const;
@@ -1742,7 +2268,8 @@ const errorCardStyle = {
   border:
     "1px solid #fecaca",
   borderRadius: 15,
-  background: "#fff1f2",
+  background:
+    "#fff1f2",
   color: "#be123c",
 } as const;
 
@@ -1750,7 +2277,8 @@ const resultHeaderStyle = {
   display: "flex",
   justifyContent:
     "space-between",
-  alignItems: "flex-start",
+  alignItems:
+    "flex-start",
   gap: 14,
 } as const;
 
@@ -1782,7 +2310,8 @@ const analysisCardStyle = {
   border:
     "1px solid #e5e7eb",
   borderRadius: 15,
-  background: "#f8fafc",
+  background:
+    "#f8fafc",
 } as const;
 
 const cardLabelStyle = {
@@ -1790,21 +2319,24 @@ const cardLabelStyle = {
   color: "#64748b",
   fontSize: 11,
   fontWeight: 900,
-  letterSpacing: "0.06em",
+  letterSpacing:
+    "0.06em",
 } as const;
 
 const analysisValueStyle = {
   margin: "7px 0 0",
   fontSize: 19,
   fontWeight: 900,
-  overflowWrap: "anywhere",
+  overflowWrap:
+    "anywhere",
 } as const;
 
 const goalSummaryCardStyle = {
   marginTop: 16,
   padding: 17,
   borderRadius: 16,
-  background: "#eff6ff",
+  background:
+    "#eff6ff",
   border:
     "1px solid #bfdbfe",
 } as const;
@@ -1831,7 +2363,8 @@ const capabilityListStyle = {
 const capabilityBadgeStyle = {
   padding: "8px 11px",
   borderRadius: 999,
-  background: "#eef2ff",
+  background:
+    "#eef2ff",
   color: "#4338ca",
   fontSize: 12,
   fontWeight: 900,
@@ -1858,31 +2391,38 @@ const workflowRowStyle = {
 } as const;
 
 const workflowRailStyle = {
-  position: "relative",
+  position:
+    "relative",
   display: "flex",
-  justifyContent: "center",
+  justifyContent:
+    "center",
 } as const;
 
 const workflowNumberStyle = {
-  position: "relative",
+  position:
+    "relative",
   zIndex: 1,
   display: "grid",
-  placeItems: "center",
+  placeItems:
+    "center",
   width: 32,
   height: 32,
   borderRadius: 999,
-  background: "#2563eb",
+  background:
+    "#2563eb",
   color: "#ffffff",
   fontSize: 13,
   fontWeight: 900,
 } as const;
 
 const workflowLineStyle = {
-  position: "absolute",
+  position:
+    "absolute",
   top: 32,
   bottom: 0,
   width: 2,
-  background: "#dbeafe",
+  background:
+    "#dbeafe",
 } as const;
 
 const workflowCardStyle = {
@@ -1892,14 +2432,16 @@ const workflowCardStyle = {
   borderRadius: 15,
   border:
     "1px solid #e2e8f0",
-  background: "#ffffff",
+  background:
+    "#ffffff",
 } as const;
 
 const phaseLabelStyle = {
   color: "#2563eb",
   fontSize: 10,
   fontWeight: 900,
-  letterSpacing: "0.08em",
+  letterSpacing:
+    "0.08em",
 } as const;
 
 const workflowStepStyle = {
@@ -1907,14 +2449,16 @@ const workflowStepStyle = {
   color: "#1e293b",
   lineHeight: 1.65,
   fontWeight: 750,
-  overflowWrap: "anywhere",
+  overflowWrap:
+    "anywhere",
 } as const;
 
 const runtimeResultStyle = {
   marginTop: 22,
   padding: 19,
   borderRadius: 20,
-  background: "#111827",
+  background:
+    "#111827",
   color: "#ffffff",
 } as const;
 
@@ -1922,7 +2466,8 @@ const runtimeHeaderStyle = {
   display: "flex",
   justifyContent:
     "space-between",
-  alignItems: "flex-start",
+  alignItems:
+    "flex-start",
   gap: 12,
 } as const;
 
@@ -1935,7 +2480,8 @@ const runtimeSuccessBadgeStyle = {
   flexShrink: 0,
   padding: "7px 10px",
   borderRadius: 999,
-  background: "#dcfce7",
+  background:
+    "#dcfce7",
   color: "#15803d",
   fontSize: 10,
   fontWeight: 900,
@@ -1962,13 +2508,15 @@ const runtimeMetricLabelStyle = {
   color: "#94a3b8",
   fontSize: 10,
   fontWeight: 900,
-  textTransform: "uppercase",
+  textTransform:
+    "uppercase",
 } as const;
 
 const runtimeMetricValueStyle = {
   display: "block",
   marginTop: 5,
-  overflowWrap: "anywhere",
+  overflowWrap:
+    "anywhere",
 } as const;
 
 const runtimeContentStyle = {
@@ -1977,23 +2525,147 @@ const runtimeContentStyle = {
   borderRadius: 14,
   background:
     "rgba(255, 255, 255, 0.06)",
-  whiteSpace: "pre-wrap",
+  whiteSpace:
+    "pre-wrap",
   lineHeight: 1.75,
-  overflowWrap: "anywhere",
+  overflowWrap:
+    "anywhere",
 } as const;
 
-const runtimeFooterLinksStyle = {
+const outcomeCardStyle = {
+  marginTop: 20,
+  padding: 18,
+  border:
+    "1px solid #bbf7d0",
+  borderRadius: 18,
+  background:
+    "#f0fdf4",
+} as const;
+
+const outcomeHeaderStyle = {
   display: "flex",
-  flexWrap: "wrap",
-  gap: 14,
+  justifyContent:
+    "space-between",
+  alignItems:
+    "flex-start",
+  gap: 12,
+} as const;
+
+const outcomeTitleStyle = {
+  margin: "6px 0 0",
+  fontSize: 21,
+  color: "#14532d",
+} as const;
+
+const outcomeBadgeStyle = {
+  padding: "7px 10px",
+  borderRadius: 999,
+  background:
+    "#dcfce7",
+  color: "#15803d",
+  fontSize: 10,
+  fontWeight: 900,
+} as const;
+
+const outcomeMetricsStyle = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(3, minmax(0, 1fr))",
+  gap: 8,
   marginTop: 15,
 } as const;
 
-const runtimeFooterLinkStyle = {
-  color: "#93c5fd",
-  textDecoration: "none",
+const outcomeMetricStyle = {
+  minWidth: 0,
+  padding: 12,
+  borderRadius: 12,
+  background:
+    "#ffffff",
+} as const;
+
+const outcomeMetricLabelStyle = {
+  display: "block",
+  color: "#64748b",
+  fontSize: 10,
+  fontWeight: 800,
+} as const;
+
+const outcomeMetricValueStyle = {
+  display: "block",
+  marginTop: 5,
+  color: "#166534",
+  fontSize: 18,
+} as const;
+
+const outcomeTaskStyle = {
+  display: "flex",
+  alignItems:
+    "center",
+  gap: 9,
+  minWidth: 0,
+  padding: 11,
+  borderRadius: 11,
+  background:
+    "#ffffff",
+  color: "#1e293b",
+  fontSize: 12,
+  fontWeight: 750,
+} as const;
+
+const outcomeTaskNumberStyle = {
+  display: "grid",
+  placeItems:
+    "center",
+  flexShrink: 0,
+  width: 23,
+  height: 23,
+  borderRadius: 999,
+  background:
+    "#dcfce7",
+  color: "#15803d",
+  fontSize: 10,
+  fontWeight: 900,
+} as const;
+
+const outcomeTaskStatusStyle = {
+  flexShrink: 0,
+  color: "#15803d",
+  fontSize: 9,
+  fontWeight: 900,
+} as const;
+
+const outcomeLinkStyle = {
+  display:
+    "inline-flex",
+  marginTop: 15,
+  color: "#166534",
+  textDecoration:
+    "none",
+  fontSize: 13,
+  fontWeight: 900,
+} as const;
+
+const resultFooterLinksStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 14,
+  marginTop: 18,
+} as const;
+
+const resultFooterLinkStyle = {
+  color: "#2563eb",
+  textDecoration:
+    "none",
   fontSize: 13,
   fontWeight: 850,
+} as const;
+
+const privacyHintStyle = {
+  margin:
+    "-2px 0 12px",
+  color: "#64748b",
+  fontSize: 12,
+  lineHeight: 1.55,
 } as const;
 
 const clearHistoryButtonStyle = {
@@ -2001,7 +2673,8 @@ const clearHistoryButtonStyle = {
   border:
     "1px solid #e2e8f0",
   borderRadius: 10,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   color: "#64748b",
   fontSize: 12,
   fontWeight: 800,
@@ -2013,28 +2686,32 @@ const emptyHistoryStyle = {
   border:
     "1px dashed #cbd5e1",
   borderRadius: 16,
-  background: "#ffffff",
+  background:
+    "#ffffff",
 } as const;
 
 const historyCardStyle = {
   display: "flex",
   justifyContent:
     "space-between",
-  alignItems: "center",
+  alignItems:
+    "center",
   gap: 13,
   minWidth: 0,
   padding: 15,
   border:
     "1px solid #e2e8f0",
   borderRadius: 15,
-  background: "#ffffff",
+  background:
+    "#ffffff",
   color: "#111827",
   textAlign: "left",
   cursor: "pointer",
 } as const;
 
 const historyGoalStyle = {
-  display: "-webkit-box",
+  display:
+    "-webkit-box",
   overflow: "hidden",
   lineHeight: 1.5,
   WebkitLineClamp: 2,
