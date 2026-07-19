@@ -7,8 +7,15 @@ import {
   useMemo,
   useState,
 } from "react";
+import type {
+  ReactNode,
+} from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+
+import type {
+  Task,
+} from "@/lib/task/types";
 
 interface DashboardData {
   success: boolean;
@@ -77,26 +84,30 @@ interface DashboardData {
   error?: string;
 }
 
-interface ModuleCard {
+interface TasksResponse {
+  success: boolean;
+  tasks?: Task[];
+  error?: string;
+}
+
+interface HealthItem {
+  label: string;
+  detail: string;
+  status:
+    | "healthy"
+    | "warning"
+    | "offline";
+  href: string;
+}
+
+interface QuickAction {
   icon: string;
   title: string;
   description: string;
   href: string;
-  badge?: string;
 }
 
-interface FocusItem {
-  title: string;
-  description: string;
-  href: string;
-  action: string;
-  priority:
-    | "high"
-    | "medium"
-    | "normal";
-}
-
-const initialData:
+const initialDashboard:
   DashboardData = {
   success: false,
 
@@ -148,55 +159,54 @@ const initialData:
   timestamp: 0,
 };
 
-const moduleCards:
-  ModuleCard[] = [
+const quickActions:
+  QuickAction[] = [
   {
     icon: "💬",
-    title: "Workspace",
+    title: "Chat",
     description:
-      "与 AIOS Brain 对话，将目标转化为可执行工作。",
+      "进入 AIOS Workspace",
     href: "/workspace",
-    badge: "Core",
   },
 
   {
-    icon: "📋",
+    icon: "➕",
+    title: "New Task",
+    description:
+      "创建新的执行任务",
+    href: "/tasks",
+  },
+
+  {
+    icon: "📁",
     title: "Projects",
     description:
-      "集中管理正在推进的项目、目标和执行状态。",
+      "查看项目工作空间",
     href: "/projects",
-  },
-
-  {
-    icon: "✅",
-    title: "Tasks",
-    description:
-      "查看待执行任务、进行中的工作和完成记录。",
-    href: "/tasks",
   },
 
   {
     icon: "🧠",
     title: "Memory",
     description:
-      "管理长期资料、用户偏好和对话记忆。",
+      "管理长期记忆资料",
     href: "/memory",
+  },
+
+  {
+    icon: "⚡",
+    title: "Runtime",
+    description:
+      "查看执行运行状态",
+    href: "/runtime/trace",
   },
 
   {
     icon: "⚙️",
     title: "Settings",
     description:
-      "配置 AI Provider、系统能力和运行环境。",
+      "管理 Provider 配置",
     href: "/settings",
-  },
-
-  {
-    icon: "💡",
-    title: "Feedback",
-    description:
-      "提交使用反馈，帮助 AIOS Alpha 持续演化。",
-    href: "/feedback",
   },
 ];
 
@@ -206,9 +216,9 @@ function formatProvider(
   const labels:
     Record<string, string> = {
     deepseek: "DeepSeek",
-    mock: "Mock",
     qwen: "Qwen",
     openai: "OpenAI",
+    mock: "Mock",
     gemini: "Gemini",
     claude: "Claude",
     unknown: "Unknown",
@@ -222,14 +232,14 @@ function formatProvider(
   );
 }
 
-function formatStorageMode(
+function formatStorage(
   mode: string
 ): string {
   const labels:
     Record<string, string> = {
     redis: "Redis",
-    memory: "Local Memory",
-    local: "Local Storage",
+    memory: "Memory",
+    local: "Local",
     unknown: "Unknown",
   };
 
@@ -241,13 +251,13 @@ function formatStorageMode(
   );
 }
 
-function formatTimestamp(
+function formatTime(
   timestamp:
     | number
     | null
 ): string {
   if (!timestamp) {
-    return "尚未运行";
+    return "尚未记录";
   }
 
   return new Date(
@@ -255,7 +265,7 @@ function formatTimestamp(
   ).toLocaleString();
 }
 
-function getCompletionRate(
+function calculateProgress(
   completed: number,
   total: number
 ): number {
@@ -265,9 +275,42 @@ function getCompletionRate(
 
   return Math.min(
     100,
-    Math.round(
-      (completed / total) * 100
+    Math.max(
+      0,
+      Math.round(
+        (completed / total) *
+          100
+      )
     )
+  );
+}
+
+function sortTasks(
+  tasks: Task[]
+): Task[] {
+  const order = {
+    doing: 0,
+    todo: 1,
+    done: 2,
+  };
+
+  return [...tasks].sort(
+    (first, second) => {
+      const statusDifference =
+        order[first.status] -
+        order[second.status];
+
+      if (
+        statusDifference !== 0
+      ) {
+        return statusDifference;
+      }
+
+      return (
+        second.updatedAt -
+        first.updatedAt
+      );
+    }
   );
 }
 
@@ -276,8 +319,11 @@ export default function DashboardPage() {
     dashboard,
     setDashboard,
   ] = useState<DashboardData>(
-    initialData
+    initialDashboard
   );
+
+  const [tasks, setTasks] =
+    useState<Task[]>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -288,7 +334,7 @@ export default function DashboardPage() {
   const [error, setError] =
     useState("");
 
-  const loadDashboard =
+  const loadData =
     useCallback(
       async (
         silent = false
@@ -302,36 +348,71 @@ export default function DashboardPage() {
         setError("");
 
         try {
-          const response =
-            await fetch(
+          const [
+            dashboardResponse,
+            tasksResponse,
+          ] = await Promise.all([
+            fetch(
               "/api/dashboard/status",
               {
                 cache:
                   "no-store",
               }
-            );
+            ),
 
-          const data =
-            (await response.json()) as DashboardData;
+            fetch(
+              "/api/tasks",
+              {
+                cache:
+                  "no-store",
+              }
+            ),
+          ]);
+
+          const dashboardResult =
+            (await dashboardResponse.json()) as DashboardData;
+
+          const tasksResult =
+            (await tasksResponse.json()) as TasksResponse;
 
           if (
-            !response.ok ||
-            !data.success
+            !dashboardResponse.ok ||
+            !dashboardResult.success
           ) {
             throw new Error(
-              data.error ??
-                data.provider
-                  ?.error ??
+              dashboardResult.error ??
+                dashboardResult
+                  .provider.error ??
                 "Dashboard 状态读取失败。"
             );
           }
 
-          setDashboard(data);
+          if (
+            !tasksResponse.ok ||
+            !tasksResult.success
+          ) {
+            throw new Error(
+              tasksResult.error ??
+                "任务读取失败。"
+            );
+          }
+
+          setDashboard(
+            dashboardResult
+          );
+
+          setTasks(
+            Array.isArray(
+              tasksResult.tasks
+            )
+              ? tasksResult.tasks
+              : []
+          );
         } catch (loadError) {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Dashboard 状态读取失败。"
+              : "Dashboard 数据读取失败。"
           );
         } finally {
           setLoading(false);
@@ -342,18 +423,18 @@ export default function DashboardPage() {
     );
 
   useEffect(() => {
-    loadDashboard();
+    loadData();
 
     const timer =
       window.setInterval(
         () => {
-          loadDashboard(true);
+          loadData(true);
         },
         15000
       );
 
     const handleFocus = () => {
-      loadDashboard(true);
+      loadData(true);
     };
 
     window.addEventListener(
@@ -371,135 +452,207 @@ export default function DashboardPage() {
         handleFocus
       );
     };
-  }, [loadDashboard]);
+  }, [loadData]);
 
-  const activeProvider =
-    formatProvider(
-      dashboard.provider.active
+  const orderedTasks =
+    useMemo(
+      () => sortTasks(tasks),
+      [tasks]
     );
 
-  const profileRate =
-    getCompletionRate(
+  const activeTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status !==
+            "done"
+        ),
+      [orderedTasks]
+    );
+
+  const completedTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status ===
+            "done"
+        ),
+      [orderedTasks]
+    );
+
+  const doingTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status ===
+            "doing"
+        ),
+      [orderedTasks]
+    );
+
+  const missionTask =
+    doingTasks[0] ??
+    activeTasks[0] ??
+    null;
+
+  const nextTask =
+    doingTasks[1] ??
+    activeTasks.find(
+      (task) =>
+        task.id !==
+        missionTask?.id
+    ) ??
+    null;
+
+  const taskProgress =
+    calculateProgress(
+      completedTasks.length,
+      tasks.length
+    );
+
+  const profileProgress =
+    calculateProgress(
       dashboard.profile
         .completedFields,
       dashboard.profile
         .totalFields
     );
 
-  const taskCompletionRate =
-    getCompletionRate(
-      dashboard.tasks
-        .completed,
-      dashboard.tasks.count
+  const providerName =
+    formatProvider(
+      dashboard.provider.active
     );
 
   const systemHealthy =
     dashboard.runtime
       .status === "online" &&
     dashboard.storage
-      .healthy;
+      .healthy &&
+    !dashboard.provider
+      .fallbackUsed;
 
-  const focusItems =
+  const healthItems =
     useMemo<
-      FocusItem[]
-    >(() => {
-      const items:
-        FocusItem[] = [];
-
-      if (
-        dashboard.tasks.active >
-        0
-      ) {
-        items.push({
-          title: `继续推进 ${dashboard.tasks.active} 项任务`,
-          description:
-            "优先完成已经进入执行阶段的任务，减少未完成工作堆积。",
-          href: "/tasks",
-          action:
-            "查看任务",
-          priority: "high",
-        });
-      }
-
-      if (
-        dashboard.profile
-          .completedFields <
-        dashboard.profile
-          .totalFields
-      ) {
-        items.push({
-          title:
-            "完善 AIOS 长期资料",
-          description:
-            "补充目标、项目和偏好，让 Brain 的输出更准确。",
-          href: "/memory",
-          action:
-            "完善资料",
-          priority: "medium",
-        });
-      }
-
-      if (
-        !dashboard.storage
-          .persistent
-      ) {
-        items.push({
-          title:
-            "启用持久化存储",
-          description:
-            "当前数据可能随运行环境重启而丢失，建议配置 Redis。",
-          href: "/settings",
-          action:
-            "检查设置",
-          priority: "medium",
-        });
-      }
-
-      if (
-        dashboard.provider
-          .fallbackUsed
-      ) {
-        items.push({
-          title:
-            "检查 AI Provider",
-          description:
-            "当前请求使用了备用 Provider，需要检查主要模型配置。",
-          href: "/settings",
-          action:
-            "检查 Provider",
-          priority: "high",
-        });
-      }
-
-      if (
-        items.length === 0
-      ) {
-        items.push({
-          title:
-            "开始新的执行目标",
-          description:
-            "系统状态正常，可以进入 Workspace 创建下一项工作。",
+      HealthItem[]
+    >(
+      () => [
+        {
+          label: "Brain",
+          detail:
+            dashboard.provider
+              .success
+              ? `${providerName} ready`
+              : "Awaiting request",
+          status:
+            dashboard.provider
+              .fallbackUsed
+              ? "warning"
+              : dashboard.provider
+                  .success
+                ? "healthy"
+                : "warning",
           href: "/workspace",
-          action:
-            "进入 Workspace",
-          priority: "normal",
-        });
-      }
+        },
 
-      return items.slice(
-        0,
-        3
-      );
-    }, [dashboard]);
+        {
+          label: "Memory",
+          detail: `${dashboard.memory.count} records`,
+          status:
+            dashboard.memory
+              .count > 0
+              ? "healthy"
+              : "warning",
+          href: "/memory",
+        },
+
+        {
+          label: "Storage",
+          detail: `${formatStorage(
+            dashboard.storage.mode
+          )} ${
+            dashboard.storage
+              .persistent
+              ? "persistent"
+              : "temporary"
+          }`,
+          status:
+            dashboard.storage
+              .healthy
+              ? dashboard.storage
+                  .persistent
+                ? "healthy"
+                : "warning"
+              : "offline",
+          href: "/settings",
+        },
+
+        {
+          label: "Runtime",
+          detail: `v${dashboard.runtime.version}`,
+          status:
+            dashboard.runtime
+              .status ===
+            "online"
+              ? "healthy"
+              : "offline",
+          href: "/runtime/trace",
+        },
+
+        {
+          label: "Provider",
+          detail:
+            dashboard.provider
+              .fallbackUsed
+              ? `Fallback from ${formatProvider(
+                  dashboard
+                    .provider
+                    .requested
+                )}`
+              : providerName,
+          status:
+            dashboard.provider
+              .fallbackUsed
+              ? "warning"
+              : dashboard.provider
+                  .success
+                ? "healthy"
+                : "warning",
+          href: "/settings",
+        },
+
+        {
+          label: "Planner",
+          detail:
+            activeTasks.length >
+            0
+              ? `${activeTasks.length} active tasks`
+              : "Ready for goal",
+          status:
+            activeTasks.length >
+            0
+              ? "healthy"
+              : "warning",
+          href: "/tasks",
+        },
+      ],
+      [
+        activeTasks.length,
+        dashboard,
+        providerName,
+      ]
+    );
 
   return (
     <WorkspaceShell>
       <main
         style={{
           width: "100%",
-          maxWidth: 1120,
+          maxWidth: 1180,
           margin: "0 auto",
-          color: "#111827",
+          color: "#0f172a",
         }}
       >
         <header
@@ -511,31 +664,27 @@ export default function DashboardPage() {
             alignItems:
               "flex-start",
             gap: 18,
-            marginBottom: 24,
+            marginBottom: 22,
           }}
         >
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
+          <div>
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems:
                   "center",
-                flexWrap: "wrap",
                 gap: 9,
               }}
             >
               <p
                 style={{
                   margin: 0,
-                  color: "#6b7280",
-                  fontSize: 13,
-                  fontWeight: 800,
+                  color: "#64748b",
+                  fontSize: 12,
+                  fontWeight: 850,
                   letterSpacing:
-                    "0.05em",
+                    "0.08em",
                   textTransform:
                     "uppercase",
                 }}
@@ -549,8 +698,8 @@ export default function DashboardPage() {
                 }
                 text={
                   systemHealthy
-                    ? "System Online"
-                    : "Check Required"
+                    ? "Operating"
+                    : "Attention"
                 }
               />
             </div>
@@ -560,41 +709,40 @@ export default function DashboardPage() {
                 margin:
                   "8px 0 0",
                 fontSize:
-                  "clamp(30px, 5vw, 42px)",
-                lineHeight: 1.1,
+                  "clamp(30px, 6vw, 44px)",
+                lineHeight: 1.08,
                 letterSpacing:
-                  "-0.035em",
+                  "-0.04em",
               }}
             >
-              Dashboard
+              Operating Center
             </h1>
 
             <p
               style={{
-                maxWidth: 660,
+                maxWidth: 680,
                 margin:
-                  "12px 0 0",
-                color: "#6b7280",
+                  "11px 0 0",
+                color: "#64748b",
                 fontSize: 15,
                 lineHeight: 1.7,
               }}
             >
-              查看 AIOS Alpha
-              当前运行状态、今日重点与核心工作入口。
+              从目标、规划到执行，统一管理
+              AIOS Alpha 当前工作。
             </p>
           </div>
 
           <button
             type="button"
-            onClick={() =>
-              loadDashboard(true)
-            }
             disabled={
               loading ||
               refreshing
             }
+            onClick={() =>
+              loadData(true)
+            }
             style={{
-              flexShrink: 0,
               minHeight: 42,
               padding:
                 "10px 15px",
@@ -613,10 +761,8 @@ export default function DashboardPage() {
               opacity:
                 loading ||
                 refreshing
-                  ? 0.65
+                  ? 0.6
                   : 1,
-              boxShadow:
-                "0 5px 15px rgba(15, 23, 42, 0.04)",
             }}
           >
             {loading ||
@@ -627,178 +773,372 @@ export default function DashboardPage() {
         </header>
 
         {error && (
-          <section
-            style={{
-              marginBottom: 18,
-              padding:
-                "13px 15px",
-              border:
-                "1px solid #fecaca",
-              borderRadius: 13,
-              background:
-                "#fff7f7",
-              color: "#b91c1c",
-              fontSize: 14,
-              lineHeight: 1.55,
-              overflowWrap:
-                "anywhere",
-            }}
-          >
-            <strong>
-              Dashboard
-              暂时无法同步
-            </strong>
-
-            <div
-              style={{
-                marginTop: 4,
-              }}
-            >
-              {error}
-            </div>
-          </section>
+          <Alert
+            title="Dashboard 同步失败"
+            message={error}
+            tone="danger"
+          />
         )}
 
         <section
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: 12,
-            marginBottom: 24,
+            marginBottom: 18,
           }}
         >
-          <StatCard
-            label="Runtime"
-            value={
-              loading
-                ? "—"
-                : dashboard.runtime
-                    .status
-            }
-            detail={`v${dashboard.runtime.version}`}
-            status={
-              dashboard.runtime
-                .status ===
-              "online"
-                ? "success"
-                : "danger"
-            }
-          />
+          <Panel
+            emphasis
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent:
+                  "space-between",
+                gap: 18,
+              }}
+            >
+              <div
+                style={{
+                  flex:
+                    "1 1 420px",
+                  minWidth: 0,
+                }}
+              >
+                <Eyebrow>
+                  Today&apos;s
+                  Mission
+                </Eyebrow>
 
-          <StatCard
-            label="Provider"
-            value={
-              loading
-                ? "—"
-                : activeProvider
-            }
-            detail={
-              dashboard.provider
-                .latencyMs !==
-              null
-                ? `${dashboard.provider.latencyMs}ms`
-                : dashboard.provider
-                    .fallbackUsed
-                  ? "Fallback"
-                  : "Ready"
-            }
-            status={
-              dashboard.provider
-                .fallbackUsed
-                ? "warning"
-                : dashboard.provider
-                    .success
-                  ? "success"
-                  : "neutral"
-            }
-          />
+                <h2
+                  style={{
+                    margin:
+                      "9px 0 0",
+                    fontSize:
+                      "clamp(23px, 5vw, 34px)",
+                    lineHeight: 1.25,
+                    letterSpacing:
+                      "-0.03em",
+                    overflowWrap:
+                      "anywhere",
+                  }}
+                >
+                  {loading
+                    ? "正在读取当前任务…"
+                    : missionTask
+                      ? missionTask.title
+                      : "创建 AIOS Alpha 的下一项目标"}
+                </h2>
 
-          <StatCard
-            label="Active Tasks"
-            value={
-              loading
-                ? "—"
-                : dashboard.tasks
-                    .active
-            }
-            detail={`${dashboard.tasks.completed} completed`}
-            status={
-              dashboard.tasks
-                .active > 0
-                ? "primary"
-                : "success"
-            }
-          />
+                <p
+                  style={{
+                    maxWidth: 660,
+                    margin:
+                      "10px 0 0",
+                    color: "#64748b",
+                    fontSize: 14,
+                    lineHeight: 1.65,
+                    whiteSpace:
+                      "pre-wrap",
+                  }}
+                >
+                  {missionTask
+                    ?.description ??
+                    (missionTask
+                      ? "当前最高优先级执行任务。"
+                      : "系统已经准备完成。创建任务后，Planner 将自动生成今日使命。")}
+                </p>
+              </div>
 
-          <StatCard
-            label="Memory"
-            value={
-              loading
-                ? "—"
-                : dashboard.memory
-                    .count
-            }
-            detail="对话记录"
-            status="primary"
-          />
+              <div
+                style={{
+                  flex:
+                    "0 1 220px",
+                  minWidth: 190,
+                  padding: 16,
+                  border:
+                    "1px solid #e2e8f0",
+                  borderRadius: 15,
+                  background:
+                    "#f8fafc",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#64748b",
+                    fontSize: 12,
+                    fontWeight: 750,
+                  }}
+                >
+                  Overall Progress
+                </p>
 
-          <StatCard
-            label="Profile"
-            value={
-              loading
-                ? "—"
-                : `${profileRate}%`
-            }
-            detail={`${dashboard.profile.completedFields}/${dashboard.profile.totalFields} fields`}
-            status={
-              profileRate ===
-              100
-                ? "success"
-                : "warning"
-            }
-          />
+                <strong
+                  style={{
+                    display:
+                      "block",
+                    marginTop: 7,
+                    fontSize: 30,
+                  }}
+                >
+                  {taskProgress}%
+                </strong>
 
-          <StatCard
-            label="Feedback"
-            value={
-              loading
-                ? "—"
-                : dashboard.feedback
-                    .count
-            }
-            detail="用户反馈"
-            status="neutral"
-          />
+                <ProgressBar
+                  value={
+                    taskProgress
+                  }
+                />
+
+                <p
+                  style={{
+                    margin:
+                      "9px 0 0",
+                    color: "#94a3b8",
+                    fontSize: 12,
+                  }}
+                >
+                  {
+                    completedTasks.length
+                  }
+                  /
+                  {tasks.length} tasks
+                  completed
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 19,
+              }}
+            >
+              <PrimaryLink
+                href={
+                  missionTask
+                    ? "/tasks"
+                    : "/workspace"
+                }
+              >
+                {missionTask
+                  ? "继续执行"
+                  : "创建目标"}
+              </PrimaryLink>
+
+              <SecondaryLink href="/runtime/trace">
+                查看 Execution
+                Trace
+              </SecondaryLink>
+            </div>
+          </Panel>
         </section>
 
         <section
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(300px, 1fr))",
+              "repeat(auto-fit, minmax(310px, 1fr))",
             gap: 16,
-            marginBottom: 26,
+            marginBottom: 18,
           }}
         >
           <Panel>
-            <PanelHeader
-              eyebrow="Focus"
-              title="Today Focus"
-              description="根据当前系统状态生成的优先动作。"
+            <SectionHeader
+              eyebrow="AI Planner"
+              title="Current Plan"
+              description="根据现有任务自动提取当前目标和下一步。"
+            />
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                marginTop: 18,
+              }}
+            >
+              <PlannerRow
+                number="01"
+                label="Current Goal"
+                value={
+                  missionTask
+                    ?.title ??
+                  "等待创建目标"
+                }
+              />
+
+              <PlannerRow
+                number="02"
+                label="Next Step"
+                value={
+                  nextTask?.title ??
+                  (missionTask
+                    ? "完成当前任务并更新状态"
+                    : "进入 Workspace 创建第一项任务")
+                }
+              />
+
+              <PlannerRow
+                number="03"
+                label="Expected Result"
+                value={
+                  missionTask
+                    ? "形成可验证的完成结果"
+                    : "建立第一条执行路径"
+                }
+              />
+
+              <PlannerRow
+                number="04"
+                label="Execution State"
+                value={
+                  doingTasks.length >
+                  0
+                    ? `${doingTasks.length} 项正在执行`
+                    : activeTasks.length >
+                        0
+                      ? `${activeTasks.length} 项等待执行`
+                      : "Planner Ready"
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+              }}
+            >
+              <SecondaryLink href="/tasks">
+                管理完整计划
+              </SecondaryLink>
+            </div>
+          </Panel>
+
+          <Panel>
+            <SectionHeader
+              eyebrow="Execution Queue"
+              title="Next Actions"
+              description="进行中任务优先，其次是等待执行的任务。"
             />
 
             <div
               style={{
                 display: "grid",
                 gap: 10,
-                marginTop: 17,
+                marginTop: 18,
               }}
             >
-              {focusItems.map(
+              {loading ? (
+                <EmptyState>
+                  正在读取任务队列…
+                </EmptyState>
+              ) : orderedTasks.length ===
+                0 ? (
+                <EmptyState>
+                  当前没有任务。
+                </EmptyState>
+              ) : (
+                orderedTasks
+                  .slice(0, 5)
+                  .map(
+                    (
+                      task,
+                      index
+                    ) => (
+                      <QueueItem
+                        key={task.id}
+                        task={task}
+                        index={
+                          index
+                        }
+                      />
+                    )
+                  )
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+              }}
+            >
+              <SecondaryLink href="/tasks">
+                查看全部任务
+              </SecondaryLink>
+            </div>
+          </Panel>
+        </section>
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <Panel>
+            <SectionHeader
+              eyebrow="Quick Actions"
+              title="Start Work"
+              description="直接进入 AIOS Alpha 的核心操作模块。"
+            />
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(145px, 1fr))",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              {quickActions.map(
+                (action) => (
+                  <QuickActionCard
+                    key={
+                      action.href
+                    }
+                    action={
+                      action
+                    }
+                  />
+                )
+              )}
+            </div>
+          </Panel>
+        </section>
+
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(310px, 1fr))",
+            gap: 16,
+            marginBottom: 18,
+          }}
+        >
+          <Panel>
+            <SectionHeader
+              eyebrow="AI Health"
+              title="System Intelligence"
+              description="Brain、Memory、Runtime 和 Planner 健康状态。"
+            />
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(2, minmax(0, 1fr))",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              {healthItems.map(
                 (item) => (
-                  <FocusCard
-                    key={`${item.href}-${item.title}`}
+                  <HealthCard
+                    key={
+                      item.label
+                    }
                     item={item}
                   />
                 )
@@ -807,82 +1147,99 @@ export default function DashboardPage() {
           </Panel>
 
           <Panel>
-            <PanelHeader
-              eyebrow="Execution"
-              title="Progress Snapshot"
-              description="查看任务、资料和系统准备程度。"
+            <SectionHeader
+              eyebrow="Memory Snapshot"
+              title="Current Context"
+              description="当前用户资料与对话记忆概览。"
             />
 
             <div
               style={{
                 display: "grid",
-                gap: 18,
-                marginTop: 20,
+                gap: 13,
+                marginTop: 19,
               }}
             >
-              <ProgressRow
-                label="Task Completion"
+              <MetricRow
+                label="Total Memory"
                 value={
-                  taskCompletionRate
+                  dashboard.memory
+                    .count
                 }
-                detail={`${dashboard.tasks.completed}/${dashboard.tasks.count}`}
+                detail="records"
               />
 
-              <ProgressRow
-                label="Profile Readiness"
+              <MetricRow
+                label="User Messages"
                 value={
-                  profileRate
+                  dashboard.memory
+                    .userMessages
                 }
-                detail={`${dashboard.profile.completedFields}/${dashboard.profile.totalFields}`}
+                detail="inputs"
               />
 
-              <ProgressRow
-                label="Persistent Storage"
+              <MetricRow
+                label="AI Messages"
                 value={
-                  dashboard.storage
-                    .persistent
-                    ? 100
-                    : 25
+                  dashboard.memory
+                    .assistantMessages
                 }
-                detail={
-                  dashboard.storage
-                    .persistent
-                    ? "Enabled"
-                    : "Not enabled"
-                }
+                detail="responses"
               />
 
-              <ProgressRow
-                label="Provider Health"
-                value={
-                  dashboard.provider
-                    .success
-                    ? dashboard
-                        .provider
-                        .fallbackUsed
-                      ? 65
-                      : 100
-                    : 20
-                }
-                detail={
-                  dashboard.provider
-                    .fallbackUsed
-                    ? "Fallback active"
-                    : dashboard.provider
-                        .success
-                      ? "Ready"
-                      : "Awaiting request"
-                }
-              />
+              <div
+                style={{
+                  paddingTop: 4,
+                }}
+              >
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    justifyContent:
+                      "space-between",
+                    gap: 12,
+                    marginBottom: 7,
+                    color:
+                      "#475569",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>
+                    Profile
+                    Readiness
+                  </span>
+
+                  <span>
+                    {
+                      profileProgress
+                    }
+                    %
+                  </span>
+                </div>
+
+                <ProgressBar
+                  value={
+                    profileProgress
+                  }
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+              }}
+            >
+              <SecondaryLink href="/memory">
+                打开 Memory
+              </SecondaryLink>
             </div>
           </Panel>
         </section>
 
-        <section
-          style={{
-            marginBottom: 26,
-          }}
-        >
+        <section>
           <Panel>
             <div
               style={{
@@ -892,13 +1249,13 @@ export default function DashboardPage() {
                   "space-between",
                 alignItems:
                   "flex-start",
-                gap: 20,
+                gap: 16,
               }}
             >
-              <PanelHeader
+              <SectionHeader
                 eyebrow="Runtime"
-                title="System Status"
-                description="AIOS Alpha 当前运行环境与基础设施状态。"
+                title="Operating Status"
+                description="AIOS Alpha 当前运行环境与同步信息。"
               />
 
               <StatusBadge
@@ -908,7 +1265,7 @@ export default function DashboardPage() {
                 text={
                   systemHealthy
                     ? "Healthy"
-                    : "Attention"
+                    : "Check Required"
                 }
               />
             </div>
@@ -917,18 +1274,18 @@ export default function DashboardPage() {
               style={{
                 display: "grid",
                 gridTemplateColumns:
-                  "repeat(auto-fit, minmax(210px, 1fr))",
-                gap: 12,
-                marginTop: 20,
+                  "repeat(auto-fit, minmax(170px, 1fr))",
+                gap: 10,
+                marginTop: 18,
               }}
             >
-              <SystemItem
+              <RuntimeItem
                 label="Runtime"
-                value={`${dashboard.runtime.id} · v${dashboard.runtime.version}`}
-                detail={
+                value={
                   dashboard.runtime
                     .status
                 }
+                detail={`v${dashboard.runtime.version}`}
                 healthy={
                   dashboard.runtime
                     .status ===
@@ -936,20 +1293,17 @@ export default function DashboardPage() {
                 }
               />
 
-              <SystemItem
-                label="AI Provider"
+              <RuntimeItem
+                label="Provider"
                 value={
-                  activeProvider
+                  providerName
                 }
                 detail={
                   dashboard.provider
-                    .fallbackUsed
-                    ? `Requested ${formatProvider(
-                        dashboard
-                          .provider
-                          .requested
-                      )}`
-                    : "Primary provider"
+                    .latencyMs !==
+                  null
+                    ? `${dashboard.provider.latencyMs}ms`
+                    : "Ready"
                 }
                 healthy={
                   !dashboard.provider
@@ -957,9 +1311,9 @@ export default function DashboardPage() {
                 }
               />
 
-              <SystemItem
+              <RuntimeItem
                 label="Storage"
-                value={formatStorageMode(
+                value={formatStorage(
                   dashboard.storage
                     .mode
                 )}
@@ -975,8 +1329,8 @@ export default function DashboardPage() {
                 }
               />
 
-              <SystemItem
-                label="User Isolation"
+              <RuntimeItem
+                label="Isolation"
                 value={
                   dashboard.identity
                     ?.isolated
@@ -994,39 +1348,27 @@ export default function DashboardPage() {
 
             {dashboard.provider
               .fallbackUsed && (
-              <AlertBox
-                tone="warning"
-                title="Provider fallback active"
+              <Alert
+                title="Provider Fallback Active"
                 message={
                   dashboard.provider
                     .error ??
-                  "主要 Provider 暂不可用，系统已切换至备用 Provider。"
+                  "系统正在使用备用 Provider。"
                 }
+                tone="warning"
               />
             )}
 
             {!dashboard.storage
               .persistent && (
-              <AlertBox
+              <Alert
+                title="Persistent Storage Disabled"
+                message="当前存储模式不是 Redis，服务重启后部分数据可能丢失。"
                 tone="warning"
-                title="Persistent storage is not enabled"
-                message="当前数据可能随运行环境重启而丢失。建议在正式公开上线前配置 Redis 持久化存储。"
               />
             )}
 
-            {dashboard.storage
-              .error && (
-              <AlertBox
-                tone="danger"
-                title="Storage error"
-                message={
-                  dashboard.storage
-                    .error
-                }
-              />
-            )}
-
-            <div
+            <footer
               style={{
                 display: "flex",
                 flexWrap: "wrap",
@@ -1036,7 +1378,7 @@ export default function DashboardPage() {
                 marginTop: 18,
                 paddingTop: 16,
                 borderTop:
-                  "1px solid #f1f5f9",
+                  "1px solid #e2e8f0",
                 color: "#94a3b8",
                 fontSize: 12,
                 lineHeight: 1.5,
@@ -1044,96 +1386,20 @@ export default function DashboardPage() {
             >
               <span>
                 最后同步：
-                {formatTimestamp(
+                {formatTime(
                   dashboard.timestamp
                 )}
               </span>
 
               <span>
-                Provider
-                最后请求：
-                {formatTimestamp(
+                Provider：
+                {formatTime(
                   dashboard.provider
                     .lastRequestAt
                 )}
               </span>
-            </div>
+            </footer>
           </Panel>
-        </section>
-
-        <section>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              justifyContent:
-                "space-between",
-              alignItems:
-                "flex-end",
-              gap: 10,
-              marginBottom: 14,
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  color: "#64748b",
-                  fontSize: 12,
-                  fontWeight: 800,
-                  letterSpacing:
-                    "0.08em",
-                  textTransform:
-                    "uppercase",
-                }}
-              >
-                Operating Modules
-              </p>
-
-              <h2
-                style={{
-                  margin:
-                    "6px 0 0",
-                  fontSize: 23,
-                  letterSpacing:
-                    "-0.02em",
-                }}
-              >
-                Workspace Modules
-              </h2>
-            </div>
-
-            <Link
-              href="/workspace"
-              style={{
-                color: "#2563eb",
-                fontSize: 14,
-                fontWeight: 750,
-                textDecoration:
-                  "none",
-              }}
-            >
-              打开 Workspace →
-            </Link>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(230px, 1fr))",
-            }}
-          >
-            {moduleCards.map(
-              (card) => (
-                <ModuleCardView
-                  key={card.href}
-                  card={card}
-                />
-              )
-            )}
-          </div>
         </section>
       </main>
     </WorkspaceShell>
@@ -1142,9 +1408,10 @@ export default function DashboardPage() {
 
 function Panel({
   children,
+  emphasis = false,
 }: {
-  children:
-    React.ReactNode;
+  children: ReactNode;
+  emphasis?: boolean;
 }) {
   return (
     <article
@@ -1152,11 +1419,13 @@ function Panel({
         minWidth: 0,
         padding:
           "clamp(18px, 4vw, 24px)",
-        border:
-          "1px solid #e5e7eb",
+        border: emphasis
+          ? "1px solid #c7d2fe"
+          : "1px solid #e2e8f0",
         borderRadius: 20,
-        background:
-          "#ffffff",
+        background: emphasis
+          ? "linear-gradient(135deg, #ffffff 0%, #f8faff 100%)"
+          : "#ffffff",
         boxShadow:
           "0 10px 30px rgba(15, 23, 42, 0.045)",
       }}
@@ -1166,7 +1435,30 @@ function Panel({
   );
 }
 
-function PanelHeader({
+function Eyebrow({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <p
+      style={{
+        margin: 0,
+        color: "#4f46e5",
+        fontSize: 11,
+        fontWeight: 850,
+        letterSpacing:
+          "0.1em",
+        textTransform:
+          "uppercase",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function SectionHeader({
   eyebrow,
   title,
   description,
@@ -1177,20 +1469,9 @@ function PanelHeader({
 }) {
   return (
     <div>
-      <p
-        style={{
-          margin: 0,
-          color: "#64748b",
-          fontSize: 11,
-          fontWeight: 850,
-          letterSpacing:
-            "0.09em",
-          textTransform:
-            "uppercase",
-        }}
-      >
+      <Eyebrow>
         {eyebrow}
-      </p>
+      </Eyebrow>
 
       <h2
         style={{
@@ -1198,7 +1479,7 @@ function PanelHeader({
             "6px 0 0",
           fontSize: 21,
           letterSpacing:
-            "-0.02em",
+            "-0.025em",
         }}
       >
         {title}
@@ -1209,7 +1490,7 @@ function PanelHeader({
           margin:
             "7px 0 0",
           color: "#64748b",
-          fontSize: 14,
+          fontSize: 13,
           lineHeight: 1.6,
         }}
       >
@@ -1219,152 +1500,335 @@ function PanelHeader({
   );
 }
 
-function StatCard({
+function PlannerRow({
+  number,
   label,
   value,
-  detail,
-  status,
 }: {
+  number: string;
   label: string;
-  value: string | number;
-  detail: string;
-  status:
-    | "success"
-    | "warning"
-    | "danger"
-    | "primary"
-    | "neutral";
+  value: string;
 }) {
-  const accent:
-    Record<
-      typeof status,
-      string
-    > = {
-    success: "#16a34a",
-    warning: "#d97706",
-    danger: "#dc2626",
-    primary: "#2563eb",
-    neutral: "#64748b",
-  };
-
   return (
-    <article
+    <div
       style={{
-        minWidth: 0,
-        padding: 16,
+        display: "flex",
+        gap: 12,
+        padding: 13,
         border:
-          "1px solid #e5e7eb",
-        borderRadius: 16,
+          "1px solid #e2e8f0",
+        borderRadius: 14,
         background:
-          "#ffffff",
-        boxShadow:
-          "0 7px 22px rgba(15, 23, 42, 0.035)",
+          "#f8fafc",
       }}
     >
-      <div
+      <span
         style={{
-          display: "flex",
-          justifyContent:
-            "space-between",
+          display:
+            "inline-flex",
           alignItems:
             "center",
-          gap: 8,
+          justifyContent:
+            "center",
+          width: 30,
+          height: 30,
+          flexShrink: 0,
+          borderRadius: 9,
+          background:
+            "#e0e7ff",
+          color: "#4338ca",
+          fontSize: 11,
+          fontWeight: 850,
+        }}
+      >
+        {number}
+      </span>
+
+      <div
+        style={{
+          minWidth: 0,
         }}
       >
         <p
           style={{
             margin: 0,
             color: "#64748b",
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: 750,
           }}
         >
           {label}
         </p>
 
-        <span
+        <strong
           style={{
-            width: 8,
-            height: 8,
-            flexShrink: 0,
-            borderRadius:
-              "50%",
-            background:
-              accent[status],
+            display: "block",
+            marginTop: 4,
+            color: "#0f172a",
+            fontSize: 14,
+            lineHeight: 1.45,
+            overflowWrap:
+              "anywhere",
           }}
-        />
+        >
+          {value}
+        </strong>
       </div>
-
-      <strong
-        style={{
-          display: "block",
-          marginTop: 9,
-          color: "#0f172a",
-          fontSize: 25,
-          lineHeight: 1.15,
-          letterSpacing:
-            "-0.025em",
-          overflowWrap:
-            "anywhere",
-          textTransform:
-            label === "Runtime"
-              ? "capitalize"
-              : "none",
-        }}
-      >
-        {value}
-      </strong>
-
-      <p
-        style={{
-          margin:
-            "7px 0 0",
-          color: "#94a3b8",
-          fontSize: 12,
-          lineHeight: 1.4,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {detail}
-      </p>
-    </article>
+    </div>
   );
 }
 
-function FocusCard({
-  item,
+function QueueItem({
+  task,
+  index,
 }: {
-  item: FocusItem;
+  task: Task;
+  index: number;
 }) {
-  const priorityStyle = {
-    high: {
+  const statusConfig = {
+    doing: {
+      label: "Doing",
       background:
-        "#fef2f2",
+        "#eff6ff",
+      color: "#1d4ed8",
       border:
-        "#fecaca",
-      color: "#b91c1c",
-      label: "High",
+        "#bfdbfe",
     },
 
-    medium: {
+    todo: {
+      label: "Todo",
+      background:
+        "#fffbeb",
+      color: "#92400e",
+      border:
+        "#fde68a",
+    },
+
+    done: {
+      label: "Done",
+      background:
+        "#f0fdf4",
+      color: "#15803d",
+      border:
+        "#bbf7d0",
+    },
+  }[task.status];
+
+  return (
+    <Link
+      href="/tasks"
+      style={{
+        color: "inherit",
+        textDecoration:
+          "none",
+      }}
+    >
+      <article
+        style={{
+          display: "flex",
+          alignItems:
+            "flex-start",
+          gap: 11,
+          padding: 13,
+          border:
+            "1px solid #e2e8f0",
+          borderRadius: 14,
+          background:
+            "#ffffff",
+        }}
+      >
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            width: 27,
+            height: 27,
+            flexShrink: 0,
+            borderRadius: 8,
+            background:
+              "#f1f5f9",
+            color: "#475569",
+            fontSize: 11,
+            fontWeight: 800,
+          }}
+        >
+          {index + 1}
+        </span>
+
+        <div
+          style={{
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <strong
+            style={{
+              display: "block",
+              fontSize: 14,
+              lineHeight: 1.4,
+              overflowWrap:
+                "anywhere",
+              textDecoration:
+                task.status ===
+                "done"
+                  ? "line-through"
+                  : "none",
+            }}
+          >
+            {task.title}
+          </strong>
+
+          {task.description && (
+            <p
+              style={{
+                margin:
+                  "5px 0 0",
+                color: "#64748b",
+                fontSize: 12,
+                lineHeight: 1.45,
+                overflow: "hidden",
+                display:
+                  "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient:
+                  "vertical",
+              }}
+            >
+              {task.description}
+            </p>
+          )}
+        </div>
+
+        <span
+          style={{
+            flexShrink: 0,
+            padding:
+              "4px 7px",
+            border: `1px solid ${statusConfig.border}`,
+            borderRadius: 999,
+            background:
+              statusConfig.background,
+            color:
+              statusConfig.color,
+            fontSize: 9,
+            fontWeight: 850,
+            textTransform:
+              "uppercase",
+          }}
+        >
+          {statusConfig.label}
+        </span>
+      </article>
+    </Link>
+  );
+}
+
+function QuickActionCard({
+  action,
+}: {
+  action: QuickAction;
+}) {
+  return (
+    <Link
+      href={action.href}
+      style={{
+        color: "inherit",
+        textDecoration:
+          "none",
+      }}
+    >
+      <article
+        style={{
+          height: "100%",
+          boxSizing:
+            "border-box",
+          padding: 14,
+          border:
+            "1px solid #e2e8f0",
+          borderRadius: 14,
+          background:
+            "#f8fafc",
+        }}
+      >
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background:
+              "#ffffff",
+            fontSize: 17,
+          }}
+        >
+          {action.icon}
+        </span>
+
+        <strong
+          style={{
+            display: "block",
+            marginTop: 10,
+            fontSize: 14,
+          }}
+        >
+          {action.title}
+        </strong>
+
+        <p
+          style={{
+            margin:
+              "5px 0 0",
+            color: "#64748b",
+            fontSize: 11,
+            lineHeight: 1.45,
+          }}
+        >
+          {action.description}
+        </p>
+      </article>
+    </Link>
+  );
+}
+
+function HealthCard({
+  item,
+}: {
+  item: HealthItem;
+}) {
+  const palette = {
+    healthy: {
+      dot: "#22c55e",
+      background:
+        "#f0fdf4",
+      border:
+        "#bbf7d0",
+    },
+
+    warning: {
+      dot: "#f59e0b",
       background:
         "#fffbeb",
       border:
         "#fde68a",
-      color: "#92400e",
-      label: "Next",
     },
 
-    normal: {
+    offline: {
+      dot: "#ef4444",
       background:
-        "#eff6ff",
+        "#fef2f2",
       border:
-        "#bfdbfe",
-      color: "#1d4ed8",
-      label: "Ready",
+        "#fecaca",
     },
-  }[item.priority];
+  }[item.status];
 
   return (
     <Link
@@ -1377,92 +1841,64 @@ function FocusCard({
     >
       <article
         style={{
-          padding: 14,
-          border:
-            "1px solid #e5e7eb",
+          height: "100%",
+          boxSizing:
+            "border-box",
+          padding: 13,
+          border: `1px solid ${palette.border}`,
           borderRadius: 14,
           background:
-            "#fafafa",
+            palette.background,
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent:
-              "space-between",
             alignItems:
-              "flex-start",
-            gap: 10,
+              "center",
+            gap: 7,
           }}
         >
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
-            <strong
-              style={{
-                display: "block",
-                fontSize: 15,
-                lineHeight: 1.4,
-              }}
-            >
-              {item.title}
-            </strong>
-
-            <p
-              style={{
-                margin:
-                  "6px 0 0",
-                color: "#64748b",
-                fontSize: 13,
-                lineHeight: 1.55,
-              }}
-            >
-              {item.description}
-            </p>
-          </div>
-
           <span
             style={{
+              width: 8,
+              height: 8,
               flexShrink: 0,
-              padding:
-                "4px 7px",
-              border: `1px solid ${priorityStyle.border}`,
               borderRadius:
-                999,
+                "50%",
               background:
-                priorityStyle.background,
-              color:
-                priorityStyle.color,
-              fontSize: 10,
-              fontWeight: 800,
-              textTransform:
-                "uppercase",
+                palette.dot,
+            }}
+          />
+
+          <strong
+            style={{
+              fontSize: 13,
             }}
           >
-            {
-              priorityStyle.label
-            }
-          </span>
+            {item.label}
+          </strong>
         </div>
 
-        <div
+        <p
           style={{
-            marginTop: 11,
-            color: "#2563eb",
-            fontSize: 12,
-            fontWeight: 750,
+            margin:
+              "7px 0 0",
+            color: "#64748b",
+            fontSize: 11,
+            lineHeight: 1.45,
+            overflowWrap:
+              "anywhere",
           }}
         >
-          {item.action} →
-        </div>
+          {item.detail}
+        </p>
       </article>
     </Link>
   );
 }
 
-function ProgressRow({
+function MetricRow({
   label,
   value,
   detail,
@@ -1471,82 +1907,58 @@ function ProgressRow({
   value: number;
   detail: string;
 }) {
-  const normalizedValue =
-    Math.min(
-      100,
-      Math.max(
-        0,
-        Math.round(value)
-      )
-    );
-
   return (
-    <div>
-      <div
+    <div
+      style={{
+        display: "flex",
+        justifyContent:
+          "space-between",
+        alignItems:
+          "center",
+        gap: 14,
+        paddingBottom: 12,
+        borderBottom:
+          "1px solid #f1f5f9",
+      }}
+    >
+      <span
         style={{
-          display: "flex",
-          justifyContent:
-            "space-between",
-          alignItems:
-            "center",
-          gap: 12,
-          marginBottom: 7,
+          color: "#475569",
+          fontSize: 13,
+          fontWeight: 700,
         }}
       >
-        <span
+        {label}
+      </span>
+
+      <div
+        style={{
+          textAlign: "right",
+        }}
+      >
+        <strong
           style={{
-            color: "#334155",
-            fontSize: 13,
-            fontWeight: 700,
+            fontSize: 18,
           }}
         >
-          {label}
-        </span>
+          {value}
+        </strong>
 
         <span
           style={{
-            color: "#64748b",
-            fontSize: 12,
-            whiteSpace:
-              "nowrap",
+            marginLeft: 5,
+            color: "#94a3b8",
+            fontSize: 10,
           }}
         >
           {detail}
         </span>
       </div>
-
-      <div
-        style={{
-          height: 8,
-          overflow: "hidden",
-          borderRadius: 999,
-          background:
-            "#e2e8f0",
-        }}
-      >
-        <div
-          style={{
-            width: `${normalizedValue}%`,
-            height: "100%",
-            borderRadius: 999,
-            background:
-              normalizedValue >=
-              80
-                ? "#22c55e"
-                : normalizedValue >=
-                    45
-                  ? "#3b82f6"
-                  : "#f59e0b",
-            transition:
-              "width 240ms ease",
-          }}
-        />
-      </div>
     </div>
   );
 }
 
-function SystemItem({
+function RuntimeItem({
   label,
   value,
   detail,
@@ -1561,9 +1973,9 @@ function SystemItem({
     <div
       style={{
         minWidth: 0,
-        padding: 14,
+        padding: 13,
         border:
-          "1px solid #e5e7eb",
+          "1px solid #e2e8f0",
         borderRadius: 14,
         background:
           "#f8fafc",
@@ -1581,7 +1993,6 @@ function SystemItem({
           style={{
             width: 8,
             height: 8,
-            flexShrink: 0,
             borderRadius:
               "50%",
             background: healthy
@@ -1593,8 +2004,8 @@ function SystemItem({
         <span
           style={{
             color: "#64748b",
-            fontSize: 12,
-            fontWeight: 700,
+            fontSize: 11,
+            fontWeight: 750,
           }}
         >
           {label}
@@ -1605,22 +2016,7 @@ function SystemItem({
         style={{
           display: "block",
           marginTop: 8,
-          color: "#0f172a",
-          fontSize: 15,
-          lineHeight: 1.4,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {value}
-      </strong>
-
-      <p
-        style={{
-          margin:
-            "5px 0 0",
-          color: "#94a3b8",
-          fontSize: 12,
+          fontSize: 14,
           lineHeight: 1.4,
           overflowWrap:
             "anywhere",
@@ -1630,201 +2026,133 @@ function SystemItem({
               : "none",
         }}
       >
+        {value}
+      </strong>
+
+      <p
+        style={{
+          margin:
+            "4px 0 0",
+          color: "#94a3b8",
+          fontSize: 11,
+          overflowWrap:
+            "anywhere",
+        }}
+      >
         {detail}
       </p>
     </div>
   );
 }
 
-function AlertBox({
-  tone,
-  title,
-  message,
+function ProgressBar({
+  value,
 }: {
-  tone:
-    | "warning"
-    | "danger";
-  title: string;
-  message: string;
+  value: number;
 }) {
-  const palette =
-    tone === "danger"
-      ? {
-          border:
-            "#fecaca",
-          background:
-            "#fff7f7",
-          title:
-            "#b91c1c",
-          text: "#991b1b",
-        }
-      : {
-          border:
-            "#fde68a",
-          background:
-            "#fffbeb",
-          title:
-            "#92400e",
-          text: "#78350f",
-        };
+  const progress =
+    Math.min(
+      100,
+      Math.max(0, value)
+    );
 
   return (
     <div
       style={{
-        marginTop: 14,
-        padding:
-          "12px 13px",
-        border: `1px solid ${palette.border}`,
-        borderRadius: 12,
+        height: 8,
+        overflow: "hidden",
+        borderRadius: 999,
         background:
-          palette.background,
+          "#e2e8f0",
       }}
     >
-      <strong
+      <div
         style={{
-          display: "block",
-          color:
-            palette.title,
-          fontSize: 13,
+          width: `${progress}%`,
+          height: "100%",
+          borderRadius: 999,
+          background:
+            progress >= 80
+              ? "#22c55e"
+              : progress >= 40
+                ? "#4f46e5"
+                : "#f59e0b",
+          transition:
+            "width 220ms ease",
         }}
-      >
-        {title}
-      </strong>
-
-      <p
-        style={{
-          margin:
-            "5px 0 0",
-          color: palette.text,
-          fontSize: 12,
-          lineHeight: 1.55,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {message}
-      </p>
+      />
     </div>
   );
 }
 
-function ModuleCardView({
-  card,
+function PrimaryLink({
+  href,
+  children,
 }: {
-  card: ModuleCard;
+  href: string;
+  children: ReactNode;
 }) {
   return (
     <Link
-      href={card.href}
+      href={href}
       style={{
-        color: "inherit",
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "center",
+        minHeight: 40,
+        padding:
+          "9px 14px",
+        borderRadius: 11,
+        background:
+          "#111827",
+        color: "#ffffff",
+        fontSize: 13,
+        fontWeight: 750,
         textDecoration:
           "none",
       }}
     >
-      <article
-        style={{
-          height: "100%",
-          boxSizing:
-            "border-box",
-          padding: 19,
-          border:
-            "1px solid #e5e7eb",
-          borderRadius: 17,
-          background:
-            "#ffffff",
-          boxShadow:
-            "0 8px 24px rgba(15, 23, 42, 0.04)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems:
-              "flex-start",
-            gap: 10,
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              display:
-                "inline-flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              background:
-                "#f1f5f9",
-              fontSize: 19,
-            }}
-          >
-            {card.icon}
-          </span>
+      {children} →
+    </Link>
+  );
+}
 
-          {card.badge && (
-            <span
-              style={{
-                padding:
-                  "4px 8px",
-                border:
-                  "1px solid #bfdbfe",
-                borderRadius:
-                  999,
-                background:
-                  "#eff6ff",
-                color:
-                  "#1d4ed8",
-                fontSize: 10,
-                fontWeight: 800,
-                textTransform:
-                  "uppercase",
-              }}
-            >
-              {card.badge}
-            </span>
-          )}
-        </div>
-
-        <h3
-          style={{
-            margin:
-              "14px 0 0",
-            fontSize: 18,
-            letterSpacing:
-              "-0.015em",
-          }}
-        >
-          {card.title}
-        </h3>
-
-        <p
-          style={{
-            margin:
-              "8px 0 18px",
-            color: "#64748b",
-            fontSize: 13,
-            lineHeight: 1.6,
-          }}
-        >
-          {card.description}
-        </p>
-
-        <span
-          style={{
-            color: "#2563eb",
-            fontSize: 13,
-            fontWeight: 750,
-          }}
-        >
-          打开模块 →
-        </span>
-      </article>
+function SecondaryLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "center",
+        minHeight: 38,
+        padding:
+          "8px 12px",
+        border:
+          "1px solid #d1d5db",
+        borderRadius: 10,
+        background:
+          "#ffffff",
+        color: "#334155",
+        fontSize: 12,
+        fontWeight: 750,
+        textDecoration:
+          "none",
+      }}
+    >
+      {children} →
     </Link>
   );
 }
@@ -1858,8 +2186,8 @@ function StatusBadge({
         color: healthy
           ? "#15803d"
           : "#92400e",
-        fontSize: 11,
-        fontWeight: 800,
+        fontSize: 10,
+        fontWeight: 850,
       }}
     >
       <span
@@ -1876,5 +2204,99 @@ function StatusBadge({
 
       {text}
     </span>
+  );
+}
+
+function Alert({
+  title,
+  message,
+  tone,
+}: {
+  title: string;
+  message: string;
+  tone:
+    | "warning"
+    | "danger";
+}) {
+  const palette =
+    tone === "danger"
+      ? {
+          border:
+            "#fecaca",
+          background:
+            "#fef2f2",
+          title:
+            "#b91c1c",
+          text: "#991b1b",
+        }
+      : {
+          border:
+            "#fde68a",
+          background:
+            "#fffbeb",
+          title:
+            "#92400e",
+          text: "#78350f",
+        };
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: 13,
+        border: `1px solid ${palette.border}`,
+        borderRadius: 13,
+        background:
+          palette.background,
+      }}
+    >
+      <strong
+        style={{
+          display: "block",
+          color:
+            palette.title,
+          fontSize: 13,
+        }}
+      >
+        {title}
+      </strong>
+
+      <p
+        style={{
+          margin:
+            "5px 0 0",
+          color: palette.text,
+          fontSize: 12,
+          lineHeight: 1.55,
+          overflowWrap:
+            "anywhere",
+        }}
+      >
+        {message}
+      </p>
+    </div>
+  );
+}
+
+function EmptyState({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding:
+          "28px 16px",
+        border:
+          "1px dashed #cbd5e1",
+        borderRadius: 14,
+        color: "#64748b",
+        fontSize: 13,
+        textAlign: "center",
+      }}
+    >
+      {children}
+    </div>
   );
 }
