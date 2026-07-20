@@ -17,11 +17,15 @@ const PUBLIC_PATHS = [
 ];
 
 function isPublicPath(
-  pathname: string
+  pathname:
+    string
 ): boolean {
   return PUBLIC_PATHS.some(
-    (path) =>
-      pathname === path ||
+    (
+      path
+    ) =>
+      pathname ===
+        path ||
       pathname.startsWith(
         `${path}/`
       )
@@ -29,7 +33,8 @@ function isPublicPath(
 }
 
 function isPublicAsset(
-  pathname: string
+  pathname:
+    string
 ): boolean {
   return (
     pathname.startsWith(
@@ -47,8 +52,9 @@ function isPublicAsset(
   );
 }
 
-export function middleware(
-  request: NextRequest
+export function proxy(
+  request:
+    NextRequest
 ) {
   const pathname =
     request.nextUrl.pathname;
@@ -83,7 +89,8 @@ export function middleware(
   ) {
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
 
         content:
           "Alpha access required.",
@@ -98,11 +105,15 @@ export function middleware(
           Date.now(),
       },
       {
-        status: 401,
+        status:
+          401,
 
         headers: {
           "Cache-Control":
             "no-store",
+
+          "Content-Type":
+            "application/json; charset=utf-8",
         },
       }
     );
