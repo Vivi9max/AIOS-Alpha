@@ -1,21 +1,24 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 
 interface FounderFeedback {
   id: string;
   userId: string;
+
   category:
     | "great"
     | "good"
     | "neutral"
     | "bad"
     | "bug";
+
   rating: number;
   message: string;
   page: string;
@@ -27,11 +30,8 @@ interface FounderOverview {
   success: boolean;
 
   founder?: boolean;
-
   configured?: boolean;
-
   version?: string;
-
   environment?: string;
 
   deployment?: {
@@ -57,9 +57,7 @@ interface FounderOverview {
   };
 
   error?: string;
-
   content?: string;
-
   timestamp?: number;
 }
 
@@ -145,6 +143,24 @@ function formatTime(
       value
     )
   );
+}
+
+function maskUserId(
+  userId:
+    string
+): string {
+  if (
+    userId.length <= 18
+  ) {
+    return userId;
+  }
+
+  return `${userId.slice(
+    0,
+    10
+  )}…${userId.slice(
+    -6
+  )}`;
 }
 
 export default function FounderPage() {
@@ -310,17 +326,6 @@ export default function FounderPage() {
     loadOverview,
   ]);
 
-  const feedback =
-    useMemo(
-      () =>
-        overview
-          ?.feedback
-          ?.latest ?? [],
-      [
-        overview,
-      ]
-    );
-
   function logout() {
     window.sessionStorage.removeItem(
       STORAGE_KEY
@@ -347,256 +352,32 @@ export default function FounderPage() {
     !authenticated
   ) {
     return (
-      <main
-        style={{
-          minHeight:
-            "100vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
-
-          padding:
-            20,
-
-          boxSizing:
-            "border-box",
-
-          background:
-            "#f4f6fb",
-
-          color:
-            "#0f172a",
-        }}
-      >
-        <section
-          style={{
-            width:
-              "100%",
-
-            maxWidth:
-              440,
-
-            padding:
-              28,
-
-            boxSizing:
-              "border-box",
-
-            border:
-              "1px solid #e2e8f0",
-
-            borderRadius:
-              24,
-
-            background:
-              "#ffffff",
-
-            boxShadow:
-              "0 24px 70px rgba(15, 23, 42, 0.12)",
-          }}
-        >
-          <div
-            style={{
-              width:
-                54,
-
-              height:
-                54,
-
-              display:
-                "flex",
-
-              alignItems:
-                "center",
-
-              justifyContent:
-                "center",
-
-              borderRadius:
-                16,
-
-              background:
-                "#0f172a",
-
-              color:
-                "#ffffff",
-
-              fontSize:
-                26,
-            }}
-          >
-            🔐
-          </div>
-
-          <h1
-            style={{
-              margin:
-                "20px 0 0",
-
-              fontSize:
-                28,
-            }}
-          >
-            Founder Console
-          </h1>
-
-          <p
-            style={{
-              margin:
-                "8px 0 0",
-
-              color:
-                "#64748b",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            仅限 AIOS Alpha 创始人访问。
-          </p>
-
-          <input
-            type="password"
-            value={
-              accessKey
-            }
-            onChange={(
-              event
-            ) =>
-              setAccessKey(
-                event.target.value
-              )
-            }
-            onKeyDown={(
-              event
-            ) => {
-              if (
-                event.key ===
-                "Enter"
-              ) {
-                void loadOverview(
-                  accessKey
-                );
-              }
-            }}
-            placeholder="输入 Founder Access Key"
-            autoComplete="current-password"
-            style={{
-              width:
-                "100%",
-
-              height:
-                50,
-
-              marginTop:
-                24,
-
-              padding:
-                "0 16px",
-
-              boxSizing:
-                "border-box",
-
-              border:
-                "1px solid #cbd5e1",
-
-              borderRadius:
-                14,
-
-              background:
-                "#ffffff",
-
-              color:
-                "#0f172a",
-
-              font:
-                "inherit",
-
-              outline:
-                "none",
-            }}
-          />
-
-          {error && (
-            <div
-              style={{
-                marginTop:
-                  12,
-
-                color:
-                  "#b91c1c",
-
-                fontSize:
-                  13,
-
-                lineHeight:
-                  1.5,
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          <button
-            type="button"
-            disabled={
-              loading
-            }
-            onClick={() =>
-              void loadOverview(
-                accessKey
-              )
-            }
-            style={{
-              width:
-                "100%",
-
-              height:
-                50,
-
-              marginTop:
-                16,
-
-              border:
-                0,
-
-              borderRadius:
-                14,
-
-              background:
-                loading
-                  ? "#94a3b8"
-                  : "#0f172a",
-
-              color:
-                "#ffffff",
-
-              fontSize:
-                15,
-
-              fontWeight:
-                800,
-
-              cursor:
-                loading
-                  ? "default"
-                  : "pointer",
-            }}
-          >
-            {loading
-              ? "验证中…"
-              : "进入 Founder Console"}
-          </button>
-        </section>
-      </main>
+      <FounderLogin
+        accessKey={
+          accessKey
+        }
+        loading={
+          loading
+        }
+        error={
+          error
+        }
+        onChange={
+          setAccessKey
+        }
+        onSubmit={() =>
+          void loadOverview(
+            accessKey
+          )
+        }
+      />
     );
   }
+
+  const feedback =
+    overview
+      ?.feedback
+      ?.latest ?? [];
 
   return (
     <main
@@ -654,7 +435,7 @@ export default function FounderPage() {
                   12,
 
                 fontWeight:
-                  900,
+                  950,
 
                 letterSpacing:
                   "0.14em",
@@ -669,7 +450,10 @@ export default function FounderPage() {
                   "7px 0 0",
 
                 fontSize:
-                  30,
+                  31,
+
+                lineHeight:
+                  1.1,
               }}
             >
               Founder Console
@@ -678,10 +462,13 @@ export default function FounderPage() {
             <p
               style={{
                 margin:
-                  "7px 0 0",
+                  "9px 0 0",
 
                 color:
                   "#64748b",
+
+                lineHeight:
+                  1.5,
               }}
             >
               AIOS Alpha 运行、反馈与部署中心
@@ -695,16 +482,16 @@ export default function FounderPage() {
             }
             style={{
               height:
-                42,
+                43,
 
               padding:
-                "0 15px",
+                "0 16px",
 
               border:
                 "1px solid #cbd5e1",
 
               borderRadius:
-                12,
+                13,
 
               background:
                 "#ffffff",
@@ -713,7 +500,7 @@ export default function FounderPage() {
                 "#334155",
 
               fontWeight:
-                800,
+                900,
 
               cursor:
                 "pointer",
@@ -729,7 +516,7 @@ export default function FounderPage() {
               "grid",
 
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(155px, 1fr))",
+              "repeat(auto-fit, minmax(145px, 1fr))",
 
             gap:
               12,
@@ -738,7 +525,8 @@ export default function FounderPage() {
               24,
           }}
         >
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback"
             icon="💬"
             label="全部反馈"
             value={
@@ -746,10 +534,11 @@ export default function FounderPage() {
                 ?.feedback
                 ?.total ?? 0
             }
-            detail="已进入创始人反馈池"
+            detail="查看全部用户反馈"
           />
 
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback?category=bug"
             icon="🐛"
             label="Bug"
             value={
@@ -760,7 +549,8 @@ export default function FounderPage() {
             detail="需要优先检查"
           />
 
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback?rating=1"
             icon="⚠️"
             label="负面反馈"
             value={
@@ -771,7 +561,8 @@ export default function FounderPage() {
             detail="评分 1–2"
           />
 
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback?rating=5"
             icon="😍"
             label="正面反馈"
             value={
@@ -782,7 +573,8 @@ export default function FounderPage() {
             detail="评分 4–5"
           />
 
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback"
             icon="👥"
             label="反馈用户"
             value={
@@ -793,7 +585,8 @@ export default function FounderPage() {
             detail="独立匿名用户"
           />
 
-          <MetricCard
+          <MetricLink
+            href="/founder/feedback"
             icon="⭐"
             label="平均评分"
             value={
@@ -811,7 +604,7 @@ export default function FounderPage() {
               "grid",
 
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(250px, 1fr))",
+              "repeat(auto-fit, minmax(245px, 1fr))",
 
             gap:
               14,
@@ -820,20 +613,23 @@ export default function FounderPage() {
               18,
           }}
         >
-          <SystemCard
+          <SystemLink
+            href="/api/runtime/status"
             icon="⚡"
             title="Runtime"
             value="Online"
-            detail="Founder API 正常响应"
+            detail="打开 Runtime Status"
           />
 
-          <SystemCard
+          <SystemLink
+            href="/api/storage/status"
             icon="🗃️"
             title="Storage"
             value={
               overview
                 ?.storage
-                ?.mode ?? "unknown"
+                ?.mode ??
+              "unknown"
             }
             detail={
               overview
@@ -841,6 +637,22 @@ export default function FounderPage() {
                 ?.workspaceId ??
               "default"
             }
+          />
+
+          <SystemLink
+            href="/dashboard"
+            icon="📊"
+            title="Dashboard"
+            value="Operating Center"
+            detail="查看 AIOS 当前运行状态"
+          />
+
+          <SystemLink
+            href="/api/planner/snapshot"
+            icon="🎯"
+            title="Planner"
+            value="Snapshot"
+            detail="查看当前任务与执行队列"
           />
 
           <SystemCard
@@ -909,13 +721,13 @@ export default function FounderPage() {
                 "flex",
 
               alignItems:
-                "center",
+                "flex-start",
 
               justifyContent:
                 "space-between",
 
               gap:
-                12,
+                14,
             }}
           >
             <div>
@@ -925,7 +737,7 @@ export default function FounderPage() {
                     0,
 
                   fontSize:
-                    20,
+                    21,
                 }}
               >
                 最新用户反馈
@@ -934,56 +746,70 @@ export default function FounderPage() {
               <p
                 style={{
                   margin:
-                    "6px 0 0",
+                    "7px 0 0",
 
                   color:
                     "#64748b",
 
                   fontSize:
                     13,
+
+                  lineHeight:
+                    1.5,
                 }}
               >
                 所有新提交反馈会进入这里，仅 Founder API 可读取。
               </p>
             </div>
 
-            <button
-              type="button"
-              disabled={
-                loading
-              }
-              onClick={() =>
-                void loadOverview(
-                  accessKey
-                )
-              }
+            <Link
+              href="/founder/feedback"
               style={{
+                minWidth:
+                  88,
+
                 height:
-                  40,
+                  42,
+
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
 
                 padding:
-                  "0 14px",
+                  "0 13px",
+
+                boxSizing:
+                  "border-box",
 
                 border:
-                  "1px solid #cbd5e1",
+                  "1px solid #bfdbfe",
 
                 borderRadius:
-                  12,
+                  13,
 
                 background:
-                  "#ffffff",
+                  "#eff6ff",
+
+                color:
+                  "#2563eb",
+
+                fontSize:
+                  13,
 
                 fontWeight:
-                  800,
+                  900,
 
-                cursor:
-                  "pointer",
+                textDecoration:
+                  "none",
               }}
             >
-              {loading
-                ? "刷新中"
-                : "刷新"}
-            </button>
+              查看全部 →
+            </Link>
           </div>
 
           <div
@@ -1000,10 +826,14 @@ export default function FounderPage() {
           >
             {feedback.length ===
               0 && (
-              <div
+              <Link
+                href="/founder/feedback"
                 style={{
+                  display:
+                    "block",
+
                   padding:
-                    "28px 18px",
+                    "30px 18px",
 
                   border:
                     "1px dashed #cbd5e1",
@@ -1016,45 +846,56 @@ export default function FounderPage() {
 
                   textAlign:
                     "center",
+
+                  lineHeight:
+                    1.6,
+
+                  textDecoration:
+                    "none",
                 }}
               >
                 暂无全局反馈。部署后新提交的反馈会显示在这里。
-              </div>
+              </Link>
             )}
 
-            {feedback.map(
-              (item) => (
-                <article
-                  key={
-                    item.id
-                  }
-                  style={{
-                    padding:
-                      16,
-
-                    border:
-                      "1px solid #e2e8f0",
-
-                    borderRadius:
-                      16,
-
-                    background:
-                      "#f8fafc",
-                  }}
-                >
-                  <div
+            {feedback
+              .slice(
+                0,
+                5
+              )
+              .map(
+                (
+                  item
+                ) => (
+                  <Link
+                    key={
+                      item.id
+                    }
+                    href="/founder/feedback"
                     style={{
                       display:
-                        "flex",
+                        "block",
 
-                      alignItems:
-                        "flex-start",
+                      padding:
+                        16,
 
-                      justifyContent:
-                        "space-between",
+                      border:
+                        item.category ===
+                        "bug"
+                          ? "1px solid #fecaca"
+                          : "1px solid #e2e8f0",
 
-                      gap:
-                        12,
+                      borderRadius:
+                        16,
+
+                      background:
+                        "#f8fafc",
+
+                      color:
+                        "inherit",
+
+                      textDecoration:
+                        "none",
                     }}
                   >
                     <div
@@ -1063,144 +904,537 @@ export default function FounderPage() {
                           "flex",
 
                         alignItems:
-                          "center",
+                          "flex-start",
+
+                        justifyContent:
+                          "space-between",
 
                         gap:
-                          9,
-
-                        fontWeight:
-                          900,
+                          12,
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          fontSize:
-                            22,
+                          display:
+                            "flex",
+
+                          alignItems:
+                            "center",
+
+                          gap:
+                            9,
+
+                          fontWeight:
+                            900,
                         }}
                       >
-                        {getCategoryEmoji(
-                          item.category
-                        )}
-                      </span>
+                        <span
+                          style={{
+                            fontSize:
+                              22,
+                          }}
+                        >
+                          {getCategoryEmoji(
+                            item.category
+                          )}
+                        </span>
 
-                      <span>
-                        {getCategoryLabel(
-                          item.category
-                        )}
-                      </span>
+                        <span>
+                          {getCategoryLabel(
+                            item.category
+                          )}
+                        </span>
 
-                      <span
+                        <span
+                          style={{
+                            color:
+                              "#f59e0b",
+
+                            fontSize:
+                              13,
+
+                            letterSpacing:
+                              1,
+                          }}
+                        >
+                          {"★".repeat(
+                            item.rating
+                          )}
+                        </span>
+                      </div>
+
+                      <time
                         style={{
                           color:
-                            "#f59e0b",
+                            "#64748b",
 
-                          letterSpacing:
-                            1,
+                          fontSize:
+                            11,
+
+                          whiteSpace:
+                            "nowrap",
                         }}
                       >
-                        {"★".repeat(
-                          item.rating
+                        {formatTime(
+                          item.createdAt
                         )}
-                      </span>
+                      </time>
                     </div>
 
-                    <time
+                    <p
                       style={{
-                        color:
-                          "#64748b",
+                        margin:
+                          "13px 0 0",
 
-                        fontSize:
-                          12,
+                        color:
+                          item.message
+                            ? "#1e293b"
+                            : "#94a3b8",
+
+                        lineHeight:
+                          1.65,
 
                         whiteSpace:
-                          "nowrap",
+                          "pre-wrap",
+
+                        overflowWrap:
+                          "anywhere",
                       }}
                     >
-                      {formatTime(
-                        item.createdAt
-                      )}
-                    </time>
-                  </div>
+                      {item.message ||
+                        "用户未填写文字反馈。"}
+                    </p>
 
-                  <p
-                    style={{
-                      margin:
-                        "13px 0 0",
+                    <div
+                      style={{
+                        display:
+                          "flex",
 
-                      color:
-                        item.message
-                          ? "#1e293b"
-                          : "#94a3b8",
+                        flexWrap:
+                          "wrap",
 
-                      lineHeight:
-                        1.65,
+                        gap:
+                          7,
 
-                      whiteSpace:
-                        "pre-wrap",
-                    }}
-                  >
-                    {item.message ||
-                      "用户未填写文字反馈。"}
-                  </p>
+                        marginTop:
+                          13,
+                      }}
+                    >
+                      <Tag>
+                        👤{" "}
+                        {maskUserId(
+                          item.userId
+                        )}
+                      </Tag>
 
-                  <div
-                    style={{
-                      display:
-                        "flex",
+                      <Tag>
+                        📍{" "}
+                        {item.page}
+                      </Tag>
 
-                      flexWrap:
-                        "wrap",
-
-                      gap:
-                        8,
-
-                      marginTop:
-                        13,
-                    }}
-                  >
-                    <Tag>
-                      用户：
-                      {item.userId.slice(
-                        0,
-                        16
-                      )}
-                    </Tag>
-
-                    <Tag>
-                      页面：
-                      {item.page}
-                    </Tag>
-
-                    <Tag>
-                      版本：
-                      {item.runtimeVersion}
-                    </Tag>
-                  </div>
-                </article>
-              )
-            )}
+                      <Tag>
+                        🚀 v
+                        {item.runtimeVersion}
+                      </Tag>
+                    </div>
+                  </Link>
+                )
+              )}
           </div>
         </section>
+
+        <section
+          style={{
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(230px, 1fr))",
+
+            gap:
+              12,
+
+            marginTop:
+              18,
+          }}
+        >
+          <ActionLink
+            href="/workspace"
+            icon="💬"
+            title="用户 Workspace"
+            detail="进入用户端工作空间"
+          />
+
+          <ActionLink
+            href="/tasks"
+            icon="✅"
+            title="任务中心"
+            detail="查看当前任务与完成情况"
+          />
+
+          <ActionLink
+            href="/memory"
+            icon="🗃️"
+            title="记忆中心"
+            detail="查看当前用户长期记忆"
+          />
+
+          <ActionLink
+            href="/founder/feedback"
+            icon="📮"
+            title="反馈中心"
+            detail="搜索、筛选并分析用户反馈"
+          />
+        </section>
+
+        <div
+          style={{
+            display:
+              "flex",
+
+            justifyContent:
+              "center",
+
+            marginTop:
+              22,
+          }}
+        >
+          <button
+            type="button"
+            disabled={
+              loading
+            }
+            onClick={() =>
+              void loadOverview(
+                accessKey
+              )
+            }
+            style={{
+              height:
+                44,
+
+              padding:
+                "0 18px",
+
+              border:
+                "1px solid #cbd5e1",
+
+              borderRadius:
+                13,
+
+              background:
+                "#ffffff",
+
+              color:
+                "#2563eb",
+
+              fontWeight:
+                900,
+
+              cursor:
+                loading
+                  ? "default"
+                  : "pointer",
+            }}
+          >
+            {loading
+              ? "数据刷新中…"
+              : "刷新 Founder 数据"}
+          </button>
+        </div>
       </div>
     </main>
   );
 }
 
-function MetricCard({
+function FounderLogin({
+  accessKey,
+  loading,
+  error,
+  onChange,
+  onSubmit,
+}: {
+  accessKey: string;
+  loading: boolean;
+  error: string;
+  onChange: (
+    value:
+      string
+  ) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <main
+      style={{
+        minHeight:
+          "100vh",
+
+        display:
+          "flex",
+
+        alignItems:
+          "center",
+
+        justifyContent:
+          "center",
+
+        padding:
+          20,
+
+        boxSizing:
+          "border-box",
+
+        background:
+          "#f4f6fb",
+
+        color:
+          "#0f172a",
+      }}
+    >
+      <section
+        style={{
+          width:
+            "100%",
+
+          maxWidth:
+            440,
+
+          padding:
+            28,
+
+          boxSizing:
+            "border-box",
+
+          border:
+            "1px solid #e2e8f0",
+
+          borderRadius:
+            24,
+
+          background:
+            "#ffffff",
+
+          boxShadow:
+            "0 24px 70px rgba(15, 23, 42, 0.12)",
+        }}
+      >
+        <div
+          style={{
+            width:
+              54,
+
+            height:
+              54,
+
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
+            justifyContent:
+              "center",
+
+            borderRadius:
+              16,
+
+            background:
+              "#0f172a",
+
+            color:
+              "#ffffff",
+
+            fontSize:
+              26,
+          }}
+        >
+          🔐
+        </div>
+
+        <h1
+          style={{
+            margin:
+              "20px 0 0",
+
+            fontSize:
+              28,
+          }}
+        >
+          Founder Console
+        </h1>
+
+        <p
+          style={{
+            margin:
+              "8px 0 0",
+
+            color:
+              "#64748b",
+
+            lineHeight:
+              1.6,
+          }}
+        >
+          仅限 AIOS Alpha 创始人访问。
+        </p>
+
+        <input
+          type="password"
+          value={
+            accessKey
+          }
+          onChange={(
+            event
+          ) =>
+            onChange(
+              event.target.value
+            )
+          }
+          onKeyDown={(
+            event
+          ) => {
+            if (
+              event.key ===
+              "Enter"
+            ) {
+              onSubmit();
+            }
+          }}
+          placeholder="输入 Founder Access Key"
+          autoComplete="current-password"
+          style={{
+            width:
+              "100%",
+
+            height:
+              50,
+
+            marginTop:
+              24,
+
+            padding:
+              "0 16px",
+
+            boxSizing:
+              "border-box",
+
+            border:
+              "1px solid #cbd5e1",
+
+            borderRadius:
+              14,
+
+            background:
+              "#ffffff",
+
+            color:
+              "#0f172a",
+
+            font:
+              "inherit",
+
+            outline:
+              "none",
+          }}
+        />
+
+        {error && (
+          <div
+            style={{
+              marginTop:
+                12,
+
+              color:
+                "#b91c1c",
+
+              fontSize:
+                13,
+
+              lineHeight:
+                1.5,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={
+            loading
+          }
+          onClick={
+            onSubmit
+          }
+          style={{
+            width:
+              "100%",
+
+            height:
+              50,
+
+            marginTop:
+              16,
+
+            border:
+              0,
+
+            borderRadius:
+              14,
+
+            background:
+              loading
+                ? "#94a3b8"
+                : "#0f172a",
+
+            color:
+              "#ffffff",
+
+            fontSize:
+              15,
+
+            fontWeight:
+              900,
+
+            cursor:
+              loading
+                ? "default"
+                : "pointer",
+          }}
+        >
+          {loading
+            ? "验证中…"
+            : "进入 Founder Console"}
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function MetricLink({
+  href,
   icon,
   label,
   value,
   detail,
 }: {
+  href: string;
   icon: string;
   label: string;
   value:
-    string | number;
+    string |
+    number;
   detail: string;
 }) {
   return (
-    <article
+    <Link
+      href={
+        href
+      }
       style={{
+        display:
+          "block",
+
         padding:
           17,
 
@@ -1212,6 +1446,15 @@ function MetricCard({
 
         background:
           "#ffffff",
+
+        color:
+          "#0f172a",
+
+        textDecoration:
+          "none",
+
+        boxShadow:
+          "0 5px 16px rgba(15, 23, 42, 0.03)",
       }}
     >
       <div
@@ -1238,7 +1481,7 @@ function MetricCard({
               13,
 
             fontWeight:
-              800,
+              850,
           }}
         >
           {label}
@@ -1271,6 +1514,18 @@ function MetricCard({
 
       <div
         style={{
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "space-between",
+
+          gap:
+            8,
+
           marginTop:
             5,
 
@@ -1281,9 +1536,150 @@ function MetricCard({
             12,
         }}
       >
+        <span>
+          {detail}
+        </span>
+
+        <span>
+          →
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function SystemLink({
+  href,
+  icon,
+  title,
+  value,
+  detail,
+}: {
+  href: string;
+  icon: string;
+  title: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <Link
+      href={
+        href
+      }
+      style={{
+        display:
+          "block",
+
+        padding:
+          18,
+
+        borderRadius:
+          18,
+
+        background:
+          "#0f172a",
+
+        color:
+          "#ffffff",
+
+        textDecoration:
+          "none",
+      }}
+    >
+      <div
+        style={{
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "space-between",
+        }}
+      >
+        <span
+          style={{
+            fontSize:
+              22,
+          }}
+        >
+          {icon}
+        </span>
+
+        <span
+          style={{
+            color:
+              "#64748b",
+
+            fontSize:
+              18,
+          }}
+        >
+          →
+        </span>
+      </div>
+
+      <div
+        style={{
+          marginTop:
+            13,
+
+          color:
+            "#94a3b8",
+
+          fontSize:
+            12,
+
+          fontWeight:
+            900,
+
+          letterSpacing:
+            "0.08em",
+
+          textTransform:
+            "uppercase",
+        }}
+      >
+        {title}
+      </div>
+
+      <div
+        style={{
+          marginTop:
+            6,
+
+          fontSize:
+            21,
+
+          fontWeight:
+            950,
+
+          overflowWrap:
+            "anywhere",
+        }}
+      >
+        {value}
+      </div>
+
+      <div
+        style={{
+          marginTop:
+            6,
+
+          color:
+            "#94a3b8",
+
+          fontSize:
+            12,
+
+          overflowWrap:
+            "anywhere",
+        }}
+      >
         {detail}
       </div>
-    </article>
+    </Link>
   );
 }
 
@@ -1356,7 +1752,7 @@ function SystemCard({
             21,
 
           fontWeight:
-            900,
+            950,
 
           overflowWrap:
             "anywhere",
@@ -1383,6 +1779,136 @@ function SystemCard({
         {detail}
       </div>
     </article>
+  );
+}
+
+function ActionLink({
+  href,
+  icon,
+  title,
+  detail,
+}: {
+  href: string;
+  icon: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <Link
+      href={
+        href
+      }
+      style={{
+        display:
+          "flex",
+
+        alignItems:
+          "center",
+
+        gap:
+          13,
+
+        padding:
+          16,
+
+        border:
+          "1px solid #dbe3f0",
+
+        borderRadius:
+          17,
+
+        background:
+          "#ffffff",
+
+        color:
+          "#0f172a",
+
+        textDecoration:
+          "none",
+      }}
+    >
+      <div
+        style={{
+          width:
+            44,
+
+          height:
+            44,
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "center",
+
+          flex:
+            "0 0 auto",
+
+          borderRadius:
+            13,
+
+          background:
+            "#f1f5f9",
+
+          fontSize:
+            21,
+        }}
+      >
+        {icon}
+      </div>
+
+      <div
+        style={{
+          minWidth:
+            0,
+
+          flex:
+            1,
+        }}
+      >
+        <div
+          style={{
+            fontWeight:
+              950,
+          }}
+        >
+          {title}
+        </div>
+
+        <div
+          style={{
+            marginTop:
+              4,
+
+            color:
+              "#64748b",
+
+            fontSize:
+              12,
+
+            lineHeight:
+              1.4,
+          }}
+        >
+          {detail}
+        </div>
+      </div>
+
+      <div
+        style={{
+          color:
+            "#94a3b8",
+
+          fontSize:
+            20,
+        }}
+      >
+        →
+      </div>
+    </Link>
   );
 }
 
@@ -1414,7 +1940,10 @@ function Tag({
           11,
 
         fontWeight:
-          700,
+          750,
+
+        overflowWrap:
+          "anywhere",
       }}
     >
       {children}
