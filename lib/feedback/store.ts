@@ -30,10 +30,21 @@ export interface FeedbackRecord {
   createdAt: number;
 }
 
-const MAX_FEEDBACK_RECORDS =
+export interface FounderFeedbackRecord
+  extends FeedbackRecord {
+  userId: string;
+}
+
+const MAX_USER_FEEDBACK_RECORDS =
   100;
 
-function getStorageKey():
+const MAX_FOUNDER_FEEDBACK_RECORDS =
+  1000;
+
+const FOUNDER_FEEDBACK_KEY =
+  "aios:founder:feedback";
+
+function getUserStorageKey():
   string {
   return createUserStorageKey(
     "feedback"
@@ -68,8 +79,7 @@ function isFeedbackRecord(
 ): value is FeedbackRecord {
   if (
     !value ||
-    typeof value !==
-      "object"
+    typeof value !== "object"
   ) {
     return false;
   }
@@ -96,6 +106,26 @@ function isFeedbackRecord(
   );
 }
 
+function isFounderFeedbackRecord(
+  value: unknown
+): value is FounderFeedbackRecord {
+  if (
+    !isFeedbackRecord(
+      value
+    )
+  ) {
+    return false;
+  }
+
+  const record =
+    value as Partial<FounderFeedbackRecord>;
+
+  return (
+    typeof record.userId ===
+      "string"
+  );
+}
+
 function normalizeFeedback(
   value: unknown
 ): FeedbackRecord[] {
@@ -110,17 +140,35 @@ function normalizeFeedback(
       isFeedbackRecord
     )
     .slice(
-      -MAX_FEEDBACK_RECORDS
+      -MAX_USER_FEEDBACK_RECORDS
     );
 }
 
-async function readFeedback():
+function normalizeFounderFeedback(
+  value: unknown
+): FounderFeedbackRecord[] {
+  if (
+    !Array.isArray(value)
+  ) {
+    return [];
+  }
+
+  return value
+    .filter(
+      isFounderFeedbackRecord
+    )
+    .slice(
+      -MAX_FOUNDER_FEEDBACK_RECORDS
+    );
+}
+
+async function readUserFeedback():
   Promise<FeedbackRecord[]> {
   const stored =
     await storage.get<
       FeedbackRecord[]
     >(
-      getStorageKey()
+      getUserStorageKey()
     );
 
   return normalizeFeedback(
@@ -128,14 +176,40 @@ async function readFeedback():
   );
 }
 
-async function writeFeedback(
+async function writeUserFeedback(
   records:
     FeedbackRecord[]
 ): Promise<void> {
   await storage.set(
-    getStorageKey(),
+    getUserStorageKey(),
     records.slice(
-      -MAX_FEEDBACK_RECORDS
+      -MAX_USER_FEEDBACK_RECORDS
+    )
+  );
+}
+
+async function readFounderFeedback():
+  Promise<FounderFeedbackRecord[]> {
+  const stored =
+    await storage.get<
+      FounderFeedbackRecord[]
+    >(
+      FOUNDER_FEEDBACK_KEY
+    );
+
+  return normalizeFounderFeedback(
+    stored
+  );
+}
+
+async function writeFounderFeedback(
+  records:
+    FounderFeedbackRecord[]
+): Promise<void> {
+  await storage.set(
+    FOUNDER_FEEDBACK_KEY,
+    records.slice(
+      -MAX_FOUNDER_FEEDBACK_RECORDS
     )
   );
 }
@@ -159,7 +233,7 @@ export async function createFeedback(
   }
 ): Promise<FeedbackRecord> {
   const records =
-    await readFeedback();
+    await readUserFeedback();
 
   const safeRating =
     Math.min(
@@ -215,17 +289,78 @@ export async function createFeedback(
     record
   );
 
-  await writeFeedback(
+  await writeUserFeedback(
     records
   );
 
   return record;
 }
 
+export async function appendFounderFeedback(
+  record:
+    FeedbackRecord,
+
+  userId:
+    string
+): Promise<FounderFeedbackRecord> {
+  const records =
+    await readFounderFeedback();
+
+  const founderRecord:
+    FounderFeedbackRecord = {
+    ...record,
+
+    userId:
+      userId
+        .trim()
+        .slice(
+          0,
+          100
+        ) || "unknown",
+  };
+
+  const existingIndex =
+    records.findIndex(
+      (item) =>
+        item.id ===
+        founderRecord.id
+    );
+
+  if (
+    existingIndex >= 0
+  ) {
+    records[
+      existingIndex
+    ] = founderRecord;
+  } else {
+    records.push(
+      founderRecord
+    );
+  }
+
+  await writeFounderFeedback(
+    records
+  );
+
+  return founderRecord;
+}
+
 export async function listFeedback():
   Promise<FeedbackRecord[]> {
   const records =
-    await readFeedback();
+    await readUserFeedback();
+
+  return records.sort(
+    (a, b) =>
+      b.createdAt -
+      a.createdAt
+  );
+}
+
+export async function listFounderFeedback():
+  Promise<FounderFeedbackRecord[]> {
+  const records =
+    await readFounderFeedback();
 
   return records.sort(
     (a, b) =>
@@ -237,12 +372,25 @@ export async function listFeedback():
 export async function getFeedbackCount():
   Promise<number> {
   const records =
-    await readFeedback();
+    await readUserFeedback();
+
+  return records.length;
+}
+
+export async function getFounderFeedbackCount():
+  Promise<number> {
+  const records =
+    await readFounderFeedback();
 
   return records.length;
 }
 
 export function getFeedbackStorageKey():
   string {
-  return getStorageKey();
+  return getUserStorageKey();
+}
+
+export function getFounderFeedbackStorageKey():
+  string {
+  return FOUNDER_FEEDBACK_KEY;
 }

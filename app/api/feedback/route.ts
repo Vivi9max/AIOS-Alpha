@@ -13,6 +13,7 @@ import {
 } from "@/lib/runtime/request-context";
 
 import {
+  appendFounderFeedback,
   createFeedback,
   listFeedback,
   type FeedbackCategory,
@@ -209,7 +210,12 @@ export async function POST(
           })
       );
 
-    const response =
+    await appendFounderFeedback(
+  record,
+  identity.userId
+);
+    
+      const response =
       NextResponse.json(
         {
           success:
