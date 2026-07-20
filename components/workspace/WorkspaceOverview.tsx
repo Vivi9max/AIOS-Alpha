@@ -12,6 +12,10 @@ import {
   MODULE_ICONS,
 } from "@/lib/ui/module-icons";
 
+import {
+  openFeedbackPanel,
+} from "@/lib/ui/feedback-events";
+
 interface DashboardStatus {
   success?: boolean;
 
@@ -380,6 +384,9 @@ export default function WorkspaceOverview() {
       href:
         "/tasks",
 
+        action:
+          "link" as const,
+
       icon:
         "✓",
     },
@@ -397,6 +404,9 @@ export default function WorkspaceOverview() {
       href:
         "/memory",
 
+        action:
+          "link" as const,
+
       icon:
         MODULE_ICONS.memory,
     },
@@ -409,10 +419,13 @@ export default function WorkspaceOverview() {
         feedbackCount,
 
       detail:
-        "独立存储",
+        "提交或查看反馈",
 
-      href:
-        "#feedback",
+  href:
+    "",
+
+  action:
+    "feedback" as const,
 
       icon:
         "💬",
@@ -436,6 +449,9 @@ export default function WorkspaceOverview() {
 
       href:
         "/dashboard",
+
+        action:
+          "link" as const,
 
       icon:
         "⚡",
@@ -805,103 +821,162 @@ export default function WorkspaceOverview() {
           }}
         >
           {stats.map(
-            (
-              item
-            ) => (
-              <Link
-                key={
-                  item.label
-                }
-                href={
-                  item.href
-                }
-                style={{
-                  padding:
-                    14,
+  (
+    item
+  ) => {
+    const content = (
+      <>
+        <div
+          style={{
+            display:
+              "flex",
 
-                  border:
-                    "1px solid #e2e8f0",
+            alignItems:
+              "center",
 
-                  borderRadius:
-                    16,
+            justifyContent:
+              "space-between",
 
-                  background:
-                    "#ffffff",
+            gap:
+              10,
+          }}
+        >
+          <span
+            style={{
+              color:
+                "#64748b",
 
-                  color:
-                    "#0f172a",
+              fontSize:
+                12,
 
-                  textDecoration:
-                    "none",
-                }}
-              >
-                <div
-                  style={{
-                    display:
-                      "flex",
+              fontWeight:
+                700,
+            }}
+          >
+            {item.label}
+          </span>
 
-                    alignItems:
-                      "center",
+          <span
+            aria-hidden="true"
+            style={{
+              fontSize:
+                18,
+            }}
+          >
+            {item.icon}
+          </span>
+        </div>
 
-                    justifyContent:
-                      "space-between",
+        <div
+          style={{
+            marginTop:
+              8,
 
-                    gap:
-                      10,
-                  }}
-                >
-                  <span
-                    style={{
-                      color:
-                        "#64748b",
+            fontSize:
+              24,
 
-                      fontSize:
-                        12,
+            fontWeight:
+              900,
+          }}
+        >
+          {item.value}
+        </div>
 
-                      fontWeight:
-                        700,
-                    }}
-                  >
-                    {item.label}
-                  </span>
+        <div
+          style={{
+            marginTop:
+              3,
 
-                  <span>
-                    {item.icon}
-                  </span>
-                </div>
+            color:
+              "#94a3b8",
 
-                <div
-                  style={{
-                    marginTop:
-                      8,
+            fontSize:
+              11,
+          }}
+        >
+          {item.detail}
+        </div>
+      </>
+    );
 
-                    fontSize:
-                      24,
+    const cardStyle = {
+      minWidth:
+        0,
 
-                    fontWeight:
-                      900,
-                  }}
-                >
-                  {item.value}
-                </div>
+      padding:
+        14,
 
-                <div
-                  style={{
-                    marginTop:
-                      3,
+      boxSizing:
+        "border-box" as const,
 
-                    color:
-                      "#94a3b8",
+      border:
+        "1px solid #e2e8f0",
 
-                    fontSize:
-                      11,
-                  }}
-                >
-                  {item.detail}
-                </div>
-              </Link>
-            )
-          )}
+      borderRadius:
+        16,
+
+      background:
+        "#ffffff",
+
+      color:
+        "#0f172a",
+
+      textAlign:
+        "left" as const,
+
+      textDecoration:
+        "none",
+
+      font:
+        "inherit",
+
+      cursor:
+        "pointer",
+    };
+
+    if (
+      item.action ===
+      "feedback"
+    ) {
+      return (
+        <button
+          key={
+            item.label
+          }
+          type="button"
+          onClick={
+            openFeedbackPanel
+          }
+          aria-label="打开用户反馈面板"
+          style={
+            cardStyle
+          }
+        >
+          {content}
+        </button>
+      );
+    }
+
+    return (
+      <Link
+        key={
+          item.label
+        }
+        href={
+          item.href
+        }
+        prefetch={
+          false
+        }
+        style={
+          cardStyle
+        }
+      >
+        {content}
+      </Link>
+    );
+  }
+)}
         </div>
       </section>
 

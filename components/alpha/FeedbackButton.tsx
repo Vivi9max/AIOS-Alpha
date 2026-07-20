@@ -1,8 +1,13 @@
 "use client";
 
 import {
+  useEffect,
   useState,
 } from "react";
+
+import {
+  OPEN_FEEDBACK_EVENT,
+} from "@/lib/ui/feedback-events";
 
 type FeedbackCategory =
   | "great"
@@ -146,6 +151,34 @@ export default function FeedbackButton() {
     useState(
       ""
     );
+
+    useEffect(() => {
+  function handleOpenFeedback() {
+    setSuccess(
+      false
+    );
+
+    setError(
+      ""
+    );
+
+    setOpen(
+      true
+    );
+  }
+
+  window.addEventListener(
+    OPEN_FEEDBACK_EVENT,
+    handleOpenFeedback
+  );
+
+  return () => {
+    window.removeEventListener(
+      OPEN_FEEDBACK_EVENT,
+      handleOpenFeedback
+    );
+  };
+}, []);
 
   function closePanel() {
     if (
