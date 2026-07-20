@@ -1,6 +1,16 @@
 import {
+  NextRequest,
   NextResponse,
 } from "next/server";
+
+import {
+  AIOS_USER_COOKIE,
+  resolveAlphaIdentity,
+} from "@/lib/auth/identity";
+
+import {
+  runWithUserContext,
+} from "@/lib/runtime/request-context";
 
 import type {
   TaskStatus,
@@ -17,158 +27,423 @@ import {
 export const dynamic =
   "force-dynamic";
 
-export async function GET() {
+export const runtime =
+  "nodejs";
+
+function applyIdentityCookie(
+  response:
+    NextResponse,
+
+  userId:
+    string
+): NextResponse {
+  response.cookies.set(
+    AIOS_USER_COOKIE,
+    userId,
+    {
+      httpOnly:
+        true,
+
+      sameSite:
+        "lax",
+
+      secure:
+        process.env
+          .NODE_ENV ===
+        "production",
+
+      path:
+        "/",
+
+      maxAge:
+        60 *
+        60 *
+        24 *
+        365,
+    }
+  );
+
+  return response;
+}
+
+function jsonResponse(
+  body:
+    Record<
+      string,
+      unknown
+    >,
+
+  userId:
+    string,
+
+  status =
+    200
+): NextResponse {
+  const response =
+    NextResponse.json(
+      body,
+      {
+        status,
+
+        headers: {
+          "Cache-Control":
+            "no-store",
+
+          "Content-Type":
+            "application/json; charset=utf-8",
+        },
+      }
+    );
+
+  return applyIdentityCookie(
+    response,
+    userId
+  );
+}
+
+export async function GET(
+  request:
+    NextRequest
+) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
   try {
     const tasks =
-      await listPersistentTasks();
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          listPersistentTasks()
+      );
 
-    return NextResponse.json({
-      success: true,
-      tasks,
-      count: tasks.length,
-      completedCount:
-        tasks.filter(
-          (task) =>
-            task.status === "done"
-        ).length,
-      timestamp:
-        Date.now(),
-    });
-  } catch (error) {
-    return NextResponse.json(
+    const completedCount =
+      tasks.filter(
+        (task) =>
+          task.status ===
+          "done"
+      ).length;
+
+    const activeCount =
+      tasks.filter(
+        (task) =>
+          task.status !==
+          "done"
+      ).length;
+
+    return jsonResponse(
       {
-        success: false,
-        tasks: [],
-        count: 0,
-        completedCount: 0,
+        success:
+          true,
+
+        tasks,
+
+        count:
+          tasks.length,
+
+        activeCount,
+
+        completedCount,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId
+    );
+  } catch (error) {
+    return jsonResponse(
+      {
+        success:
+          false,
+
+        tasks:
+          [],
+
+        count:
+          0,
+
+        activeCount:
+          0,
+
+        completedCount:
+          0,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
         error:
           error instanceof Error
             ? error.message
             : "Tasks loading failed.",
+
+        timestamp:
+          Date.now(),
       },
-      {
-        status: 500,
-      }
+      identity.userId,
+      500
     );
   }
 }
 
 export async function POST(
-  request: Request
+  request:
+    NextRequest
 ) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
   try {
     const body =
       (await request.json()) as {
-        title?: string;
-        description?: string;
+        title?:
+          unknown;
+
+        description?:
+          unknown;
       };
 
+    const title =
+      typeof body.title ===
+      "string"
+        ? body.title
+        : "";
+
+    const description =
+      typeof body.description ===
+      "string"
+        ? body.description
+        : "";
+
     const task =
-      await createPersistentTask(
-        body.title ?? "",
-        body.description ?? ""
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          createPersistentTask(
+            title,
+            description
+          )
       );
 
-    return NextResponse.json({
-      success: true,
-      task,
-      timestamp:
-        Date.now(),
-    });
-  } catch (error) {
-    return NextResponse.json(
+    return jsonResponse(
       {
-        success: false,
+        success:
+          true,
+
+        task,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId,
+      201
+    );
+  } catch (error) {
+    return jsonResponse(
+      {
+        success:
+          false,
+
         error:
           error instanceof Error
             ? error.message
             : "Task creation failed.",
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
       },
-      {
-        status: 400,
-      }
+      identity.userId,
+      400
     );
   }
 }
 
 export async function PATCH(
-  request: Request
+  request:
+    NextRequest
 ) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
   try {
     const body =
       (await request.json()) as {
-        id?: string;
-        title?: string;
-        description?: string;
-        status?: TaskStatus;
+        id?:
+          unknown;
+
+        title?:
+          unknown;
+
+        description?:
+          unknown;
+
+        status?:
+          unknown;
       };
 
-    if (!body.id) {
-      return NextResponse.json(
+    const id =
+      typeof body.id ===
+      "string"
+        ? body.id
+        : "";
+
+    if (
+      !id.trim()
+    ) {
+      return jsonResponse(
         {
-          success: false,
+          success:
+            false,
+
           error:
             "Task id is required.",
+
+          timestamp:
+            Date.now(),
         },
-        {
-          status: 400,
-        }
+        identity.userId,
+        400
       );
     }
+
+    const status =
+      body.status ===
+        "todo" ||
+      body.status ===
+        "doing" ||
+      body.status ===
+        "done"
+        ? (
+            body.status as
+              TaskStatus
+          )
+        : undefined;
 
     const task =
-      await updatePersistentTask(
-        body.id,
-        {
-          title:
-            body.title,
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          updatePersistentTask(
+            id,
+            {
+              title:
+                typeof body.title ===
+                "string"
+                  ? body.title
+                  : undefined,
 
-          description:
-            body.description,
+              description:
+                typeof body.description ===
+                "string"
+                  ? body.description
+                  : undefined,
 
-          status:
-            body.status,
-        }
+              status,
+            }
+          )
       );
 
-    if (!task) {
-      return NextResponse.json(
+    if (
+      !task
+    ) {
+      return jsonResponse(
         {
-          success: false,
+          success:
+            false,
+
           error:
             "Task not found.",
+
+          timestamp:
+            Date.now(),
         },
-        {
-          status: 404,
-        }
+        identity.userId,
+        404
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      task,
-      timestamp:
-        Date.now(),
-    });
-  } catch (error) {
-    return NextResponse.json(
+    return jsonResponse(
       {
-        success: false,
+        success:
+          true,
+
+        task,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId
+    );
+  } catch (error) {
+    return jsonResponse(
+      {
+        success:
+          false,
+
         error:
           error instanceof Error
             ? error.message
             : "Task update failed.",
+
+        timestamp:
+          Date.now(),
       },
-      {
-        status: 500,
-      }
+      identity.userId,
+      500
     );
   }
 }
 
 export async function DELETE(
-  request: Request
+  request:
+    NextRequest
 ) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
   try {
     const url =
       new URL(
@@ -180,53 +455,103 @@ export async function DELETE(
         "id"
       );
 
-    if (!id) {
-      await clearPersistentTasks();
+    if (
+      !id
+    ) {
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          clearPersistentTasks()
+      );
 
-      return NextResponse.json({
-        success: true,
-        cleared: true,
-        timestamp:
-          Date.now(),
-      });
+      return jsonResponse(
+        {
+          success:
+            true,
+
+          cleared:
+            true,
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId
+      );
     }
 
     const deleted =
-      await deletePersistentTask(
-        id
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          deletePersistentTask(
+            id
+          )
       );
 
-    if (!deleted) {
-      return NextResponse.json(
+    if (
+      !deleted
+    ) {
+      return jsonResponse(
         {
-          success: false,
+          success:
+            false,
+
           error:
             "Task not found.",
+
+          timestamp:
+            Date.now(),
         },
-        {
-          status: 404,
-        }
+        identity.userId,
+        404
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      deleted: true,
-      timestamp:
-        Date.now(),
-    });
-  } catch (error) {
-    return NextResponse.json(
+    return jsonResponse(
       {
-        success: false,
+        success:
+          true,
+
+        deleted:
+          true,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId
+    );
+  } catch (error) {
+    return jsonResponse(
+      {
+        success:
+          false,
+
         error:
           error instanceof Error
             ? error.message
             : "Task deletion failed.",
+
+        timestamp:
+          Date.now(),
       },
-      {
-        status: 500,
-      }
+      identity.userId,
+      500
     );
   }
 }
