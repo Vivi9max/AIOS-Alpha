@@ -8,6 +8,10 @@ import {
   useState,
 } from "react";
 
+import {
+  MODULE_ICONS,
+} from "@/lib/ui/module-icons";
+
 interface DashboardStatus {
   success?: boolean;
 
@@ -73,8 +77,8 @@ const quickActions:
       href:
         "/memory",
 
-      icon:
-        "🧠",
+        icon:
+          MODULE_ICONS.memory,
 
       title:
         "记录信息",
@@ -394,7 +398,7 @@ export default function WorkspaceOverview() {
         "/memory",
 
       icon:
-        "🧠",
+        MODULE_ICONS.memory,
     },
 
     {

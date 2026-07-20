@@ -13,6 +13,10 @@ import type {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
+import {
+  MODULE_ICONS,
+} from "@/lib/ui/module-icons";
+
 import type {
   Task,
 } from "@/lib/task/types";
@@ -186,7 +190,7 @@ const quickActions:
   },
 
   {
-    icon: "🧠",
+    icon: MODULE_ICONS.memory,
     title: "Memory",
     description:
       "管理长期记忆资料",

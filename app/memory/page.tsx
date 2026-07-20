@@ -8,6 +8,10 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
+import {
+  MODULE_ICONS,
+} from "@/lib/ui/module-icons";
+
 interface MemoryRecord {
   id: number;
   role: "user" | "assistant";
@@ -429,7 +433,7 @@ export default function MemoryPage() {
                 fontSize: 30,
               }}
             >
-              🧠 Memory
+              {MODULE_ICONS.memory} Memory
             </h1>
 
             <p
