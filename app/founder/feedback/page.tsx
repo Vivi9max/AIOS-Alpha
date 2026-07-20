@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import {
   useCallback,
   useEffect,
@@ -18,107 +16,205 @@ type FeedbackCategory =
 
 interface FeedbackRecord {
   id: string;
+
   userId: string;
+
   category:
     FeedbackCategory;
+
   rating: number;
+
   message: string;
+
   page: string;
+
   runtimeVersion: string;
+
   createdAt: number;
 }
 
 interface FeedbackSummary {
   total: number;
+
   bugs: number;
+
   positive: number;
+
   negative: number;
+
   neutral: number;
+
   averageRating: number;
+
   uniqueUsers: number;
 }
 
 interface FeedbackResponse {
   success: boolean;
 
-  summary?: FeedbackSummary;
+  summary?:
+    FeedbackSummary;
 
-  items?: FeedbackRecord[];
+  items?:
+    FeedbackRecord[];
 
-  error?: string;
+  error?:
+    string;
 
-  content?: string;
-
-  timestamp?: number;
+  content?:
+    string;
 }
 
-const FOUNDER_KEY_STORAGE =
+const STORAGE_KEY =
   "aios-founder-access-key";
 
-const categoryOptions: Array<{
+const categories: Array<{
   value:
     "all" |
     FeedbackCategory;
 
-  label: string;
+  label:
+    string;
 
-  emoji: string;
+  icon:
+    string;
 }> = [
   {
     value:
       "all",
+
     label:
       "全部",
-    emoji:
+
+    icon:
       "💬",
   },
+
   {
     value:
       "bug",
+
     label:
       "Bug",
-    emoji:
+
+    icon:
       "🐛",
   },
+
   {
     value:
       "great",
+
     label:
       "很满意",
-    emoji:
+
+    icon:
       "😍",
   },
+
   {
     value:
       "good",
+
     label:
       "满意",
-    emoji:
+
+    icon:
       "🙂",
   },
+
   {
     value:
       "neutral",
+
     label:
       "一般",
-    emoji:
+
+    icon:
       "😐",
   },
+
   {
     value:
       "bad",
+
     label:
       "不满意",
-    emoji:
+
+    icon:
       "☹️",
   },
 ];
 
-function getCategoryLabel(
+function readInitialCategory():
+  "all" |
+  FeedbackCategory {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return "all";
+  }
+
+  const value =
+    new URLSearchParams(
+      window.location.search
+    ).get(
+      "category"
+    );
+
+  if (
+    value ===
+      "great" ||
+    value ===
+      "good" ||
+    value ===
+      "neutral" ||
+    value ===
+      "bad" ||
+    value ===
+      "bug"
+  ) {
+    return value;
+  }
+
+  return "all";
+}
+
+function readInitialRating():
+  string {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return "all";
+  }
+
+  const value =
+    new URLSearchParams(
+      window.location.search
+    ).get(
+      "rating"
+    );
+
+  if (
+    value === "1" ||
+    value === "2" ||
+    value === "3" ||
+    value === "4" ||
+    value === "5"
+  ) {
+    return value;
+  }
+
+  return "all";
+}
+
+function categoryLabel(
   category:
     FeedbackCategory
 ): string {
-  const labels = {
+  const values = {
     great:
       "很满意",
 
@@ -135,16 +231,16 @@ function getCategoryLabel(
       "Bug",
   } as const;
 
-  return labels[
+  return values[
     category
   ];
 }
 
-function getCategoryEmoji(
+function categoryIcon(
   category:
     FeedbackCategory
 ): string {
-  const emojis = {
+  const values = {
     great:
       "😍",
 
@@ -161,7 +257,7 @@ function getCategoryEmoji(
       "🐛",
   } as const;
 
-  return emojis[
+  return values[
     category
   ];
 }
@@ -173,9 +269,6 @@ function formatTime(
   return new Intl.DateTimeFormat(
     "zh-CN",
     {
-      year:
-        "numeric",
-
       month:
         "2-digit",
 
@@ -195,21 +288,22 @@ function formatTime(
   );
 }
 
-function maskUserId(
+function maskUser(
   userId:
     string
 ): string {
   if (
-    userId.length <= 18
+    userId.length <=
+    18
   ) {
     return userId;
   }
 
   return `${userId.slice(
     0,
-    10
+    9
   )}…${userId.slice(
-    -6
+    -5
   )}`;
 }
 
@@ -264,8 +358,8 @@ export default function FounderFeedbackPage() {
     setSummary,
   ] =
     useState<
-      FeedbackSummary
-      | null
+      FeedbackSummary |
+      null
     >(null);
 
   const [
@@ -277,18 +371,18 @@ export default function FounderFeedbackPage() {
     );
 
   const [
-    error,
-    setError,
-  ] =
-    useState("");
-
-  const [
     authorized,
     setAuthorized,
   ] =
     useState(
       false
     );
+
+  const [
+    error,
+    setError,
+  ] =
+    useState("");
 
   const loadFeedback =
     useCallback(
@@ -320,7 +414,7 @@ export default function FounderFeedbackPage() {
           );
 
           setError(
-            "Founder Access Key 不存在，请先从 Founder Console 登录。"
+            "请先从 Founder Console 登录。"
           );
 
           return;
@@ -340,13 +434,12 @@ export default function FounderFeedbackPage() {
 
           query.set(
             "limit",
-            "300"
+            "200"
           );
 
           if (
-            selectedCategory &&
             selectedCategory !==
-              "all"
+            "all"
           ) {
             query.set(
               "category",
@@ -355,9 +448,8 @@ export default function FounderFeedbackPage() {
           }
 
           if (
-            selectedRating &&
             selectedRating !==
-              "all"
+            "all"
           ) {
             query.set(
               "rating",
@@ -378,9 +470,6 @@ export default function FounderFeedbackPage() {
             await fetch(
               `/api/founder/feedback?${query.toString()}`,
               {
-                method:
-                  "GET",
-
                 cache:
                   "no-store",
 
@@ -433,22 +522,15 @@ export default function FounderFeedbackPage() {
             null
           );
 
+          setAuthorized(
+            false
+          );
+
           setError(
             requestError instanceof Error
               ? requestError.message
               : "反馈加载失败。"
           );
-
-          if (
-            requestError instanceof Error &&
-            requestError.message.includes(
-              "密钥"
-            )
-          ) {
-            setAuthorized(
-              false
-            );
-          }
         } finally {
           setLoading(
             false
@@ -461,41 +543,47 @@ export default function FounderFeedbackPage() {
   useEffect(() => {
     const storedKey =
       window.sessionStorage.getItem(
-        FOUNDER_KEY_STORAGE
+        STORAGE_KEY
       ) ?? "";
+
+    const initialCategory =
+      readInitialCategory();
+
+    const initialRating =
+      readInitialRating();
 
     setAccessKey(
       storedKey
     );
 
+    setCategory(
+      initialCategory
+    );
+
+    setRating(
+      initialRating
+    );
+
     void loadFeedback(
       storedKey,
-      category,
-      rating,
-      appliedSearch
+      initialCategory,
+      initialRating,
+      ""
     );
   }, [
-    appliedSearch,
-    category,
     loadFeedback,
-    rating,
   ]);
 
   const emptyText =
     useMemo(
-      () => {
-        if (
-          category !==
+      () =>
+        category !==
           "all" ||
-          rating !==
+        rating !==
           "all" ||
-          appliedSearch
-        ) {
-          return "当前筛选条件下没有反馈。";
-        }
-
-        return "暂时没有用户反馈。新反馈提交后会显示在这里。";
-      },
+        appliedSearch
+          ? "当前筛选条件下没有反馈。"
+          : "暂时没有用户反馈。",
       [
         appliedSearch,
         category,
@@ -503,9 +591,67 @@ export default function FounderFeedbackPage() {
       ]
     );
 
+  function refresh(
+    nextCategory =
+      category,
+
+    nextRating =
+      rating,
+
+    nextSearch =
+      appliedSearch
+  ) {
+    void loadFeedback(
+      accessKey,
+      nextCategory,
+      nextRating,
+      nextSearch
+    );
+  }
+
+  function changeCategory(
+    value:
+      "all" |
+      FeedbackCategory
+  ) {
+    setCategory(
+      value
+    );
+
+    refresh(
+      value,
+      rating,
+      appliedSearch
+    );
+  }
+
+  function changeRating(
+    value:
+      string
+  ) {
+    setRating(
+      value
+    );
+
+    refresh(
+      category,
+      value,
+      appliedSearch
+    );
+  }
+
   function submitSearch() {
+    const value =
+      search.trim();
+
     setAppliedSearch(
-      search.trim()
+      value
+    );
+
+    refresh(
+      category,
+      rating,
+      value
     );
   }
 
@@ -523,6 +669,12 @@ export default function FounderFeedbackPage() {
     );
 
     setAppliedSearch(
+      ""
+    );
+
+    refresh(
+      "all",
+      "all",
       ""
     );
   }
@@ -565,7 +717,7 @@ export default function FounderFeedbackPage() {
               "100%",
 
             maxWidth:
-              460,
+              440,
 
             padding:
               28,
@@ -601,7 +753,7 @@ export default function FounderFeedbackPage() {
                 "16px 0 0",
 
               fontSize:
-                25,
+                26,
             }}
           >
             Founder Access Required
@@ -616,15 +768,21 @@ export default function FounderFeedbackPage() {
                 "#64748b",
 
               lineHeight:
-                1.65,
+                1.6,
             }}
           >
             {error}
           </p>
 
-          <Link
+          <a
             href="/founder"
             style={{
+              height:
+                48,
+
+              marginTop:
+                20,
+
               display:
                 "flex",
 
@@ -633,12 +791,6 @@ export default function FounderFeedbackPage() {
 
               justifyContent:
                 "center",
-
-              height:
-                48,
-
-              marginTop:
-                20,
 
               borderRadius:
                 14,
@@ -657,7 +809,7 @@ export default function FounderFeedbackPage() {
             }}
           >
             返回 Founder Console
-          </Link>
+          </a>
         </section>
       </main>
     );
@@ -670,7 +822,7 @@ export default function FounderFeedbackPage() {
           "100vh",
 
         padding:
-          "22px 18px 60px",
+          "22px 17px 60px",
 
         boxSizing:
           "border-box",
@@ -688,7 +840,7 @@ export default function FounderFeedbackPage() {
             "100%",
 
           maxWidth:
-            1180,
+            1100,
 
           margin:
             "0 auto",
@@ -706,11 +858,11 @@ export default function FounderFeedbackPage() {
               "space-between",
 
             gap:
-              14,
+              12,
           }}
         >
           <div>
-            <Link
+            <a
               href="/founder"
               style={{
                 color:
@@ -727,36 +879,15 @@ export default function FounderFeedbackPage() {
               }}
             >
               ← Founder Console
-            </Link>
-
-            <div
-              style={{
-                marginTop:
-                  16,
-
-                color:
-                  "#2563eb",
-
-                fontSize:
-                  12,
-
-                fontWeight:
-                  950,
-
-                letterSpacing:
-                  "0.13em",
-              }}
-            >
-              PRIVATE FEEDBACK CENTER
-            </div>
+            </a>
 
             <h1
               style={{
                 margin:
-                  "6px 0 0",
+                  "17px 0 0",
 
                 fontSize:
-                  30,
+                  29,
               }}
             >
               用户反馈中心
@@ -774,7 +905,7 @@ export default function FounderFeedbackPage() {
                   1.5,
               }}
             >
-              查看所有用户提交的评分、Bug 和产品建议。
+              查看评分、Bug 和用户建议。
             </p>
           </div>
 
@@ -784,19 +915,11 @@ export default function FounderFeedbackPage() {
               loading
             }
             onClick={() =>
-              void loadFeedback(
-                accessKey,
-                category,
-                rating,
-                appliedSearch
-              )
+              refresh()
             }
             style={{
-              minWidth:
-                76,
-
               height:
-                43,
+                42,
 
               padding:
                 "0 14px",
@@ -805,7 +928,7 @@ export default function FounderFeedbackPage() {
                 "1px solid #cbd5e1",
 
               borderRadius:
-                13,
+                12,
 
               background:
                 "#ffffff",
@@ -813,18 +936,12 @@ export default function FounderFeedbackPage() {
               color:
                 "#2563eb",
 
-              fontSize:
-                14,
-
               fontWeight:
                 900,
-
-              cursor:
-                "pointer",
             }}
           >
             {loading
-              ? "刷新中"
+              ? "加载中"
               : "刷新"}
           </button>
         </header>
@@ -835,10 +952,10 @@ export default function FounderFeedbackPage() {
               "grid",
 
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(145px, 1fr))",
+              "repeat(2, minmax(0, 1fr))",
 
             gap:
-              12,
+              11,
 
             marginTop:
               22,
@@ -891,7 +1008,7 @@ export default function FounderFeedbackPage() {
 
           <SummaryCard
             icon="⭐"
-            label="平均评分"
+            label="平均"
             value={
               summary
                 ?.averageRating ?? 0
@@ -902,16 +1019,16 @@ export default function FounderFeedbackPage() {
         <section
           style={{
             marginTop:
-              18,
+              16,
 
             padding:
-              16,
+              15,
 
             border:
               "1px solid #dbe3f0",
 
             borderRadius:
-              20,
+              19,
 
             background:
               "#ffffff",
@@ -923,74 +1040,65 @@ export default function FounderFeedbackPage() {
                 "flex",
 
               gap:
-                9,
+                8,
 
               overflowX:
                 "auto",
-
-              paddingBottom:
-                3,
             }}
           >
-            {categoryOptions.map(
+            {categories.map(
               (
-                option
-              ) => {
-                const active =
-                  category ===
-                  option.value;
+                item
+              ) => (
+                <button
+                  key={
+                    item.value
+                  }
+                  type="button"
+                  onClick={() =>
+                    changeCategory(
+                      item.value
+                    )
+                  }
+                  style={{
+                    flex:
+                      "0 0 auto",
 
-                return (
-                  <button
-                    key={
-                      option.value
-                    }
-                    type="button"
-                    onClick={() =>
-                      setCategory(
-                        option.value
-                      )
-                    }
-                    style={{
-                      flex:
-                        "0 0 auto",
+                    height:
+                      39,
 
-                      height:
-                        40,
+                    padding:
+                      "0 12px",
 
-                      padding:
-                        "0 13px",
+                    border:
+                      category ===
+                      item.value
+                        ? "1px solid #0f172a"
+                        : "1px solid #dbe3f0",
 
-                      border:
-                        active
-                          ? "1px solid #0f172a"
-                          : "1px solid #dbe3f0",
+                    borderRadius:
+                      999,
 
-                      borderRadius:
-                        999,
+                    background:
+                      category ===
+                      item.value
+                        ? "#0f172a"
+                        : "#ffffff",
 
-                      background:
-                        active
-                          ? "#0f172a"
-                          : "#ffffff",
+                    color:
+                      category ===
+                      item.value
+                        ? "#ffffff"
+                        : "#475569",
 
-                      color:
-                        active
-                          ? "#ffffff"
-                          : "#475569",
-
-                      fontWeight:
-                        850,
-
-                      cursor:
-                        "pointer",
-                    }}
-                  >
-                    {option.emoji}{" "}
-                    {option.label}
-                  </button>
-                );
-              }
+                    fontWeight:
+                      850,
+                  }}
+                >
+                  {item.icon}{" "}
+                  {item.label}
+                </button>
+              )
             )}
           </div>
 
@@ -1003,10 +1111,10 @@ export default function FounderFeedbackPage() {
                 "minmax(0, 1fr) auto",
 
               gap:
-                9,
+                8,
 
               marginTop:
-                14,
+                13,
             }}
           >
             <input
@@ -1030,16 +1138,16 @@ export default function FounderFeedbackPage() {
                   submitSearch();
                 }
               }}
-              placeholder="搜索反馈内容、用户、页面或版本"
+              placeholder="搜索内容、用户或页面"
               style={{
                 width:
                   "100%",
 
                 height:
-                  44,
+                  43,
 
                 padding:
-                  "0 13px",
+                  "0 12px",
 
                 boxSizing:
                   "border-box",
@@ -1048,13 +1156,10 @@ export default function FounderFeedbackPage() {
                   "1px solid #cbd5e1",
 
                 borderRadius:
-                  12,
+                  11,
 
                 font:
                   "inherit",
-
-                outline:
-                  "none",
               }}
             />
 
@@ -1065,16 +1170,16 @@ export default function FounderFeedbackPage() {
               }
               style={{
                 height:
-                  44,
+                  43,
 
                 padding:
-                  "0 16px",
+                  "0 15px",
 
                 border:
                   0,
 
                 borderRadius:
-                  12,
+                  11,
 
                 background:
                   "#2563eb",
@@ -1084,9 +1189,6 @@ export default function FounderFeedbackPage() {
 
                 fontWeight:
                   900,
-
-                cursor:
-                  "pointer",
               }}
             >
               搜索
@@ -1104,11 +1206,8 @@ export default function FounderFeedbackPage() {
               justifyContent:
                 "space-between",
 
-              gap:
-                12,
-
               marginTop:
-                12,
+                11,
             }}
           >
             <select
@@ -1118,31 +1217,25 @@ export default function FounderFeedbackPage() {
               onChange={(
                 event
               ) =>
-                setRating(
+                changeRating(
                   event.target.value
                 )
               }
               style={{
                 height:
-                  40,
+                  39,
 
                 padding:
-                  "0 12px",
+                  "0 11px",
 
                 border:
                   "1px solid #cbd5e1",
 
                 borderRadius:
-                  11,
+                  10,
 
                 background:
                   "#ffffff",
-
-                color:
-                  "#334155",
-
-                font:
-                  "inherit",
               }}
             >
               <option value="all">
@@ -1187,9 +1280,6 @@ export default function FounderFeedbackPage() {
 
                 fontWeight:
                   850,
-
-                cursor:
-                  "pointer",
               }}
             >
               清除筛选
@@ -1201,25 +1291,22 @@ export default function FounderFeedbackPage() {
           <div
             style={{
               marginTop:
-                16,
+                14,
 
               padding:
-                14,
+                13,
 
               border:
                 "1px solid #fecaca",
 
               borderRadius:
-                14,
+                13,
 
               background:
                 "#fef2f2",
 
               color:
                 "#b91c1c",
-
-              lineHeight:
-                1.5,
             }}
           >
             {error}
@@ -1232,67 +1319,24 @@ export default function FounderFeedbackPage() {
               "grid",
 
             gap:
-              13,
+              12,
 
             marginTop:
-              18,
+              16,
           }}
         >
           {loading && (
-            <div
-              style={{
-                padding:
-                  34,
-
-                border:
-                  "1px solid #dbe3f0",
-
-                borderRadius:
-                  20,
-
-                background:
-                  "#ffffff",
-
-                color:
-                  "#64748b",
-
-                textAlign:
-                  "center",
-              }}
-            >
+            <EmptyCard>
               正在加载用户反馈…
-            </div>
+            </EmptyCard>
           )}
 
           {!loading &&
             records.length ===
               0 && (
-              <div
-                style={{
-                  padding:
-                    "42px 20px",
-
-                  border:
-                    "1px dashed #cbd5e1",
-
-                  borderRadius:
-                    20,
-
-                  background:
-                    "#ffffff",
-
-                  color:
-                    "#64748b",
-
-                  textAlign:
-                    "center",
-
-                  lineHeight:
-                    1.6,
-                }}
-              >
+              <EmptyCard>
                 {emptyText}
-              </div>
+              </EmptyCard>
             )}
 
           {!loading &&
@@ -1321,23 +1365,27 @@ function SummaryCard({
   label,
   value,
 }: {
-  icon: string;
-  label: string;
+  icon:
+    string;
+
+  label:
+    string;
+
   value:
-    string |
-    number;
+    number |
+    string;
 }) {
   return (
     <article
       style={{
         padding:
-          16,
+          15,
 
         border:
           "1px solid #dbe3f0",
 
         borderRadius:
-          18,
+          17,
 
         background:
           "#ffffff",
@@ -1347,9 +1395,6 @@ function SummaryCard({
         style={{
           display:
             "flex",
-
-          alignItems:
-            "center",
 
           justifyContent:
             "space-between",
@@ -1368,12 +1413,7 @@ function SummaryCard({
           {label}
         </span>
 
-        <span
-          style={{
-            fontSize:
-              20,
-          }}
-        >
+        <span>
           {icon}
         </span>
       </div>
@@ -1381,10 +1421,10 @@ function SummaryCard({
       <div
         style={{
           marginTop:
-            10,
+            9,
 
           fontSize:
-            29,
+            28,
 
           fontWeight:
             950,
@@ -1406,7 +1446,7 @@ function FeedbackCard({
     <article
       style={{
         padding:
-          17,
+          16,
 
         border:
           record.category ===
@@ -1415,7 +1455,7 @@ function FeedbackCard({
             : "1px solid #dbe3f0",
 
         borderRadius:
-          19,
+          18,
 
         background:
           "#ffffff",
@@ -1426,14 +1466,11 @@ function FeedbackCard({
           display:
             "flex",
 
-          alignItems:
-            "flex-start",
-
           justifyContent:
             "space-between",
 
           gap:
-            12,
+            10,
         }}
       >
         <div
@@ -1446,33 +1483,25 @@ function FeedbackCard({
 
             gap:
               9,
-
-            minWidth:
-              0,
           }}
         >
           <span
             style={{
               fontSize:
-                24,
+                23,
             }}
           >
-            {getCategoryEmoji(
+            {categoryIcon(
               record.category
             )}
           </span>
 
           <div>
-            <div
-              style={{
-                fontWeight:
-                  950,
-              }}
-            >
-              {getCategoryLabel(
+            <strong>
+              {categoryLabel(
                 record.category
               )}
-            </div>
+            </strong>
 
             <div
               style={{
@@ -1483,10 +1512,7 @@ function FeedbackCard({
                   "#f59e0b",
 
                 fontSize:
-                  13,
-
-                letterSpacing:
-                  1,
+                  12,
               }}
             >
               {"★".repeat(
@@ -1514,9 +1540,6 @@ function FeedbackCard({
 
             fontSize:
               11,
-
-            whiteSpace:
-              "nowrap",
           }}
         >
           {formatTime(
@@ -1528,18 +1551,15 @@ function FeedbackCard({
       <p
         style={{
           margin:
-            "15px 0 0",
+            "14px 0 0",
 
           color:
             record.message
               ? "#1e293b"
               : "#94a3b8",
 
-          fontSize:
-            15,
-
           lineHeight:
-            1.7,
+            1.65,
 
           whiteSpace:
             "pre-wrap",
@@ -1564,12 +1584,12 @@ function FeedbackCard({
             7,
 
           marginTop:
-            14,
+            13,
         }}
       >
         <Tag>
           👤{" "}
-          {maskUserId(
+          {maskUser(
             record.userId
           )}
         </Tag>
@@ -1583,15 +1603,41 @@ function FeedbackCard({
           🚀 v
           {record.runtimeVersion}
         </Tag>
-
-        <Tag>
-          ID{" "}
-          {record.id.slice(
-            -8
-          )}
-        </Tag>
       </div>
     </article>
+  );
+}
+
+function EmptyCard({
+  children,
+}: {
+  children:
+    React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding:
+          "38px 18px",
+
+        border:
+          "1px dashed #cbd5e1",
+
+        borderRadius:
+          18,
+
+        background:
+          "#ffffff",
+
+        color:
+          "#64748b",
+
+        textAlign:
+          "center",
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -1605,7 +1651,7 @@ function Tag({
     <span
       style={{
         padding:
-          "5px 9px",
+          "5px 8px",
 
         border:
           "1px solid #e2e8f0",
@@ -1624,9 +1670,6 @@ function Tag({
 
         fontWeight:
           750,
-
-        overflowWrap:
-          "anywhere",
       }}
     >
       {children}
