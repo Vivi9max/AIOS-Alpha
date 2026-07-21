@@ -18,8 +18,13 @@ body {
     sans-serif;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 button,
@@ -30,7 +35,11 @@ select {
 }
 
 button {
-  transition: opacity 0.2s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 button:hover {
@@ -39,6 +48,29 @@ button:hover {
 
 a {
   color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aios-workspace-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  background: #f6f7fb;
+}
+
+.aios-workspace-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.aios-workspace-main {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 18px 48px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .aios-mobile-menu-button {
@@ -50,40 +82,200 @@ a {
   min-width: 250px;
 }
 
+.aios-sidebar-overlay {
+  display: none;
+}
+
 @media (max-width: 768px) {
+  .aios-workspace-main {
+    width: 100%;
+    padding:
+      32px
+      18px
+      calc(
+        104px +
+        env(
+          safe-area-inset-bottom
+        )
+      );
+  }
+
   .aios-mobile-menu-button {
-    display: flex !important;
     position: fixed;
-    left: 16px;
-    bottom: 18px;
-    z-index: 90;
-    width: 48px;
-    height: 48px;
+    left: 18px;
+    bottom:
+      calc(
+        24px +
+        env(
+          safe-area-inset-bottom
+        )
+      );
+    z-index: 1002;
+
+    display: flex !important;
+    width: 54px;
+    height: 54px;
     padding: 0;
+
     align-items: center;
     justify-content: center;
+
     border: 0;
     border-radius: 50%;
+
     background: #111827;
     color: #ffffff;
-    font-size: 21px;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.25);
+
+    font-size: 23px;
+    font-weight: 800;
+    line-height: 1;
+
+    box-shadow:
+      0 14px 34px
+      rgba(
+        15,
+        23,
+        42,
+        0.3
+      );
+
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .aios-mobile-menu-button:active {
+    transform: scale(0.94);
+  }
+
+  .aios-mobile-menu-button.is-open {
+    background: #1e293b;
   }
 
   .aios-sidebar-container {
     position: fixed;
     inset: 0 auto 0 0;
-    z-index: 80;
-    width: 250px;
-    min-width: 250px;
-    transform: translateX(-105%);
-    transition: transform 180ms ease;
+    z-index: 1001;
+
+    width: min(
+      82vw,
+      310px
+    );
+    min-width: 0;
+    height: 100dvh;
+
     background: #ffffff;
+
+    transform:
+      translate3d(
+        -105%,
+        0,
+        0
+      );
+
+    transition:
+      transform
+      220ms
+      ease;
+
     overflow-y: auto;
-    box-shadow: 12px 0 32px rgba(15, 23, 42, 0.2);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+
+    box-shadow:
+      18px
+      0
+      48px
+      rgba(
+        15,
+        23,
+        42,
+        0.22
+      );
+
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .aios-sidebar-container.is-open {
-    transform: translateX(0);
+    transform:
+      translate3d(
+        0,
+        0,
+        0
+      );
+
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .aios-sidebar-container > aside {
+    width: 100% !important;
+    min-height: 100dvh !important;
+  }
+
+  .aios-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+
+    display: block;
+
+    width: 100%;
+    height: 100%;
+
+    padding: 0;
+    border: 0;
+
+    background:
+      rgba(
+        15,
+        23,
+        42,
+        0.42
+      );
+
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+
+    transition:
+      opacity
+      180ms
+      ease,
+      visibility
+      180ms
+      ease;
+
+    touch-action: none;
+  }
+
+  .aios-sidebar-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .aios-workspace-shell.menu-open {
+    overscroll-behavior: none;
+  }
+}
+
+@media (min-width: 769px) {
+  .aios-sidebar-container {
+    position: relative;
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+
+@media (
+  prefers-reduced-motion:
+  reduce
+) {
+  .aios-mobile-menu-button,
+  .aios-sidebar-container,
+  .aios-sidebar-overlay {
+    transition: none;
   }
 }
