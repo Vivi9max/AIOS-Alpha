@@ -17,49 +17,71 @@ import {
   fetchPlannerSnapshot,
 } from "@/lib/planner/client";
 
+import {
+  PLANNER_REFRESH_EVENT,
+} from "@/lib/planner/events";
+
+import type {
+  PlannerRefreshDetail,
+} from "@/lib/planner/events";
+
 import type {
   PlannerSnapshot,
 } from "@/lib/planner/types";
 
 export interface PlannerContextValue {
   snapshot:
-    | PlannerSnapshot
-    | null;
+    PlannerSnapshot |
+    null;
 
-  loading: boolean;
-  refreshing: boolean;
+  loading:
+    boolean;
+
+  refreshing:
+    boolean;
+
   error:
-    | string
-    | null;
+    string |
+    null;
 
   lastUpdated:
-    | number
-    | null;
+    number |
+    null;
 
-  refresh: () =>
-    Promise<void>;
+  lastRefreshReason:
+    string |
+    null;
+
+  refresh: (
+    reason?:
+      string
+  ) => Promise<void>;
 }
 
 export const PlannerContext =
   createContext<
-    PlannerContextValue
-    | undefined
+    PlannerContextValue |
+    undefined
   >(undefined);
 
 interface PlannerProviderProps {
-  children: ReactNode;
+  children:
+    ReactNode;
 
   initialSnapshot?:
-    | PlannerSnapshot
-    | null;
+    PlannerSnapshot |
+    null;
 
-  autoRefresh?: boolean;
+  autoRefresh?:
+    boolean;
 
-  refreshInterval?: number;
+  refreshInterval?:
+    number;
 }
 
 function getErrorMessage(
-  error: unknown
+  error:
+    unknown
 ): string {
   if (
     error instanceof Error &&
@@ -74,86 +96,132 @@ function getErrorMessage(
 export default function PlannerProvider({
   children,
 
-  initialSnapshot = null,
+  initialSnapshot =
+    null,
 
-  autoRefresh = true,
+  autoRefresh =
+    true,
 
-  refreshInterval = 30000,
+  refreshInterval =
+    30000,
 }: PlannerProviderProps) {
   const [
     snapshot,
     setSnapshot,
   ] =
     useState<
-      PlannerSnapshot
-      | null
-    >(initialSnapshot);
+      PlannerSnapshot |
+      null
+    >(
+      initialSnapshot
+    );
 
   const [
     loading,
     setLoading,
   ] =
     useState(
-      initialSnapshot === null
+      initialSnapshot ===
+      null
     );
 
   const [
     refreshing,
     setRefreshing,
   ] =
-    useState(false);
+    useState(
+      false
+    );
 
   const [
     error,
     setError,
   ] =
     useState<
-      string
-      | null
-    >(null);
+      string |
+      null
+    >(
+      null
+    );
 
   const [
     lastUpdated,
     setLastUpdated,
   ] =
     useState<
-      number
-      | null
+      number |
+      null
     >(
       initialSnapshot
         ?.generatedAt ??
         null
     );
 
-  const mountedRef =
-    useRef(true);
+  const [
+    lastRefreshReason,
+    setLastRefreshReason,
+  ] =
+    useState<
+      string |
+      null
+    >(
+      initialSnapshot
+        ? "initial"
+        : null
+    );
 
-  const activeControllerRef =
+  const mountedRef =
+    useRef(
+      true
+    );
+
+  const snapshotRef =
     useRef<
-      AbortController
-      | null
-    >(null);
+      PlannerSnapshot |
+      null
+    >(
+      initialSnapshot
+    );
+
+  const controllerRef =
+    useRef<
+      AbortController |
+      null
+    >(
+      null
+    );
 
   const refresh =
     useCallback(
-      async () => {
-        activeControllerRef
+      async (
+        reason =
+          "manual"
+      ) => {
+        controllerRef
           .current
           ?.abort();
 
         const controller =
           new AbortController();
 
-        activeControllerRef.current =
+        controllerRef.current =
           controller;
 
-        if (!snapshot) {
-          setLoading(true);
+        if (
+          snapshotRef.current
+        ) {
+          setRefreshing(
+            true
+          );
         } else {
-          setRefreshing(true);
+          setLoading(
+            true
+          );
         }
 
-        setError(null);
+        setError(
+          null
+        );
 
         try {
           const nextSnapshot =
@@ -173,6 +241,9 @@ export default function PlannerProvider({
             return;
           }
 
+          snapshotRef.current =
+            nextSnapshot;
+
           setSnapshot(
             nextSnapshot
           );
@@ -180,7 +251,13 @@ export default function PlannerProvider({
           setLastUpdated(
             nextSnapshot.generatedAt
           );
-        } catch (requestError) {
+
+          setLastRefreshReason(
+            reason
+          );
+        } catch (
+          requestError
+        ) {
           if (
             requestError instanceof
               DOMException &&
@@ -205,32 +282,117 @@ export default function PlannerProvider({
           if (
             mountedRef.current
           ) {
-            setLoading(false);
-            setRefreshing(false);
+            setLoading(
+              false
+            );
+
+            setRefreshing(
+              false
+            );
           }
         }
       },
-      [snapshot]
+      []
     );
 
   useEffect(() => {
     mountedRef.current =
       true;
 
-    if (!initialSnapshot) {
-      void refresh();
+    if (
+      !initialSnapshot
+    ) {
+      void refresh(
+        "initial"
+      );
     }
 
     return () => {
       mountedRef.current =
         false;
 
-      activeControllerRef
+      controllerRef
         .current
         ?.abort();
     };
   }, [
     initialSnapshot,
+    refresh,
+  ]);
+
+  useEffect(() => {
+    function handlePlannerRefresh(
+      event:
+        Event
+    ) {
+      const customEvent =
+        event as
+          CustomEvent<
+            PlannerRefreshDetail
+          >;
+
+      void refresh(
+        customEvent.detail
+          ?.reason ??
+          "event"
+      );
+    }
+
+    window.addEventListener(
+      PLANNER_REFRESH_EVENT,
+      handlePlannerRefresh
+    );
+
+    return () => {
+      window.removeEventListener(
+        PLANNER_REFRESH_EVENT,
+        handlePlannerRefresh
+      );
+    };
+  }, [
+    refresh,
+  ]);
+
+  useEffect(() => {
+    function handleFocus() {
+      void refresh(
+        "window-focus"
+      );
+    }
+
+    function handleVisibilityChange() {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        void refresh(
+          "page-visible"
+        );
+      }
+    }
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
+  }, [
     refresh,
   ]);
 
@@ -245,7 +407,9 @@ export default function PlannerProvider({
     const interval =
       window.setInterval(
         () => {
-          void refresh();
+          void refresh(
+            "interval"
+          );
         },
         refreshInterval
       );
@@ -271,6 +435,7 @@ export default function PlannerProvider({
         refreshing,
         error,
         lastUpdated,
+        lastRefreshReason,
         refresh,
       }),
       [
@@ -279,13 +444,16 @@ export default function PlannerProvider({
         refreshing,
         error,
         lastUpdated,
+        lastRefreshReason,
         refresh,
       ]
     );
 
   return (
     <PlannerContext.Provider
-      value={value}
+      value={
+        value
+      }
     >
       {children}
     </PlannerContext.Provider>

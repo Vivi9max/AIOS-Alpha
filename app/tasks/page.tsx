@@ -13,6 +13,10 @@ import type {
   TaskStatus,
 } from "@/lib/task/types";
 
+import {
+  requestPlannerRefresh,
+} from "@/lib/planner/events";
+
 interface TasksResponse {
   success: boolean;
   tasks?: Task[];
@@ -139,10 +143,19 @@ export default function TasksPage() {
         );
       }
 
-      setTitle("");
-      setDescription("");
+      setTitle(
+        ""
+      );
+
+      setDescription(
+        ""
+      );
 
       await loadTasks();
+
+      requestPlannerRefresh(
+        "task-created"
+      );
     } catch {
       setError(
         "任务创建失败。"
@@ -192,6 +205,13 @@ export default function TasksPage() {
       }
 
       await loadTasks();
+
+      requestPlannerRefresh(
+        status ===
+          "done"
+          ? "task-completed"
+          : "task-updated"
+      );
     } catch {
       setError(
         "任务更新失败。"
@@ -241,6 +261,10 @@ export default function TasksPage() {
       }
 
       await loadTasks();
+
+      requestPlannerRefresh(
+        "task-deleted"
+      );
     } catch {
       setError(
         "任务删除失败。"

@@ -5,11 +5,14 @@ import type {
   Viewport,
 } from "next";
 
+import PlannerProvider from "@/components/planner/PlannerProvider";
+
 export const metadata:
   Metadata = {
   title: {
     default:
       "AIOS Alpha",
+
     template:
       "%s · AIOS Alpha",
   },
@@ -40,20 +43,27 @@ export const metadata:
     "AIOS Alpha",
 
   robots: {
-    index: false,
-    follow: false,
+    index:
+      false,
+
+    follow:
+      false,
   },
 
   appleWebApp: {
-    capable: true,
+    capable:
+      true,
+
     title:
       "AIOS Alpha",
+
     statusBarStyle:
       "black-translucent",
   },
 
   formatDetection: {
-    telephone: false,
+    telephone:
+      false,
   },
 };
 
@@ -62,9 +72,11 @@ export const viewport:
   width:
     "device-width",
 
-  initialScale: 1,
+  initialScale:
+    1,
 
-  maximumScale: 1,
+  maximumScale:
+    1,
 
   viewportFit:
     "cover",
@@ -80,9 +92,20 @@ export default function RootLayout({
     React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html
+      lang="zh-CN"
+    >
       <body>
-        {children}
+        <PlannerProvider
+          autoRefresh={
+            true
+          }
+          refreshInterval={
+            30000
+          }
+        >
+          {children}
+        </PlannerProvider>
       </body>
     </html>
   );
