@@ -10,6 +10,8 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 
+import OutcomeExecutionCenter from "@/components/planner/OutcomeExecutionCenter";
+
 import {
   PLANNER_PLACEHOLDER,
   PLANNER_PRESETS,
@@ -428,7 +430,9 @@ export default function PlannerPage() {
               Trace
             </Link>
           </div>
-        </header>
+                </header>
+
+        <OutcomeExecutionCenter />
 
         <section
           style={goalPanelStyle}
