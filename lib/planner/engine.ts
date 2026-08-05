@@ -1,5 +1,6 @@
 import type {
   Task,
+  TaskStatus,
 } from "@/lib/task/types";
 
 import type {
@@ -12,16 +13,156 @@ import type {
   PlannerState,
 } from "@/lib/planner/types";
 
-const STATUS_ORDER = {
+const STATUS_ORDER: Record<
+  TaskStatus,
+  number
+> = {
   doing: 0,
   todo: 1,
   done: 2,
-} as const;
+};
+
+const HOUR_MS =
+  60 * 60 * 1000;
+
+const STALE_DOING_MS =
+  24 * HOUR_MS;
 
 function cleanText(
-  value: string | undefined
+  value: unknown
 ): string {
-  return value?.trim() ?? "";
+  return typeof value ===
+    "string"
+    ? value
+        .trim()
+        .replace(
+          /\s+/g,
+          " "
+        )
+    : "";
+}
+
+function safeTimestamp(
+  value: unknown,
+  fallback: number
+): number {
+  return typeof value ===
+      "number" &&
+    Number.isFinite(value) &&
+    value > 0
+    ? value
+    : fallback;
+}
+
+function isTaskStatus(
+  value: unknown
+): value is TaskStatus {
+  return (
+    value === "todo" ||
+    value === "doing" ||
+    value === "done"
+  );
+}
+
+function normalizeTask(
+  value: unknown
+): Task | null {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return null;
+  }
+
+  const candidate =
+    value as Partial<Task>;
+
+  const id = cleanText(
+    candidate.id
+  );
+
+  const title = cleanText(
+    candidate.title
+  );
+
+  if (
+    !id ||
+    !title ||
+    !isTaskStatus(
+      candidate.status
+    )
+  ) {
+    return null;
+  }
+
+  const createdAt =
+    safeTimestamp(
+      candidate.createdAt,
+      Date.now()
+    );
+
+  const updatedAt =
+    Math.max(
+      createdAt,
+      safeTimestamp(
+        candidate.updatedAt,
+        createdAt
+      )
+    );
+
+  return {
+    id,
+    title,
+    description:
+      cleanText(
+        candidate.description
+      ),
+    status:
+      candidate.status,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeTasks(
+  tasks: unknown
+): Task[] {
+  if (!Array.isArray(tasks)) {
+    return [];
+  }
+
+  const uniqueTasks =
+    new Map<string, Task>();
+
+  for (const value of tasks) {
+    const task =
+      normalizeTask(value);
+
+    if (!task) {
+      continue;
+    }
+
+    const existing =
+      uniqueTasks.get(
+        task.id
+      );
+
+    if (
+      !existing ||
+      task.updatedAt >=
+        existing.updatedAt
+    ) {
+      uniqueTasks.set(
+        task.id,
+        task
+      );
+    }
+  }
+
+  return [
+    ...uniqueTasks.values(),
+  ];
 }
 
 function calculatePercentage(
@@ -37,9 +178,47 @@ function calculatePercentage(
     Math.max(
       0,
       Math.round(
-        (completed / total) * 100
+        (completed / total) *
+          100
       )
     )
+  );
+}
+
+function compareTasks(
+  first: Task,
+  second: Task
+): number {
+  const statusDifference =
+    STATUS_ORDER[
+      first.status
+    ] -
+    STATUS_ORDER[
+      second.status
+    ];
+
+  if (statusDifference !== 0) {
+    return statusDifference;
+  }
+
+  const updateDifference =
+    second.updatedAt -
+    first.updatedAt;
+
+  if (updateDifference !== 0) {
+    return updateDifference;
+  }
+
+  const createDifference =
+    first.createdAt -
+    second.createdAt;
+
+  if (createDifference !== 0) {
+    return createDifference;
+  }
+
+  return first.id.localeCompare(
+    second.id
   );
 }
 
@@ -47,26 +226,14 @@ function sortTasks(
   tasks: Task[]
 ): Task[] {
   return [...tasks].sort(
-    (first, second) => {
-      const statusDifference =
-        STATUS_ORDER[first.status] -
-        STATUS_ORDER[second.status];
-
-      if (statusDifference !== 0) {
-        return statusDifference;
-      }
-
-      return (
-        second.updatedAt -
-        first.updatedAt
-      );
-    }
+    compareTasks
   );
 }
 
 function getPriority(
   task: Task,
-  position: number
+  activePosition: number,
+  generatedAt: number
 ): PlannerPriority {
   if (task.status === "done") {
     return "completed";
@@ -74,14 +241,17 @@ function getPriority(
 
   if (
     task.status === "doing" &&
-    position === 0
+    (activePosition === 0 ||
+      generatedAt -
+        task.updatedAt >=
+        STALE_DOING_MS)
   ) {
     return "critical";
   }
 
   if (
     task.status === "doing" ||
-    position <= 1
+    activePosition <= 1
   ) {
     return "high";
   }
@@ -90,25 +260,39 @@ function getPriority(
 }
 
 function createQueue(
-  tasks: Task[]
+  tasks: Task[],
+  generatedAt: number
 ): PlannerQueueItem[] {
+  let activePosition = 0;
+
   return sortTasks(tasks).map(
-    (task, index) => ({
-      id: task.id,
-      title: task.title,
-      description:
-        cleanText(
-          task.description
-        ),
-      status: task.status,
-      priority: getPriority(
-        task,
-        index
-      ),
-      position: index + 1,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-    })
+    (task, index) => {
+      const currentActivePosition =
+        task.status === "done"
+          ? Number.MAX_SAFE_INTEGER
+          : activePosition++;
+
+      return {
+        id: task.id,
+        title: task.title,
+        description:
+          cleanText(
+            task.description
+          ),
+        status: task.status,
+        priority:
+          getPriority(
+            task,
+            currentActivePosition,
+            generatedAt
+          ),
+        position: index + 1,
+        createdAt:
+          task.createdAt,
+        updatedAt:
+          task.updatedAt,
+      };
+    }
   );
 }
 
@@ -118,19 +302,22 @@ function createProgress(
   const doing =
     tasks.filter(
       (task) =>
-        task.status === "doing"
+        task.status ===
+        "doing"
     ).length;
 
   const todo =
     tasks.filter(
       (task) =>
-        task.status === "todo"
+        task.status ===
+        "todo"
     ).length;
 
   const completed =
     tasks.filter(
       (task) =>
-        task.status === "done"
+        task.status ===
+        "done"
     ).length;
 
   return {
@@ -174,20 +361,22 @@ function createMission(
   const current =
     queue.find(
       (task) =>
-        task.status === "doing"
+        task.status ===
+        "doing"
     ) ??
     queue.find(
       (task) =>
-        task.status === "todo"
+        task.status ===
+        "todo"
     );
 
   if (!current) {
     return {
       id: null,
       title:
-        "创建 AIOS Alpha 的下一项目标",
+        "创建下一项成果目标",
       description:
-        "当前没有等待执行的任务。创建新任务后，Planner 将自动生成执行计划。",
+        "当前执行周期已完成。定义下一项可验证成果后，Planner 将自动建立执行路径。",
       status: "idle",
       priority: "normal",
     };
@@ -204,15 +393,31 @@ function createMission(
   };
 }
 
+function createExpectedResult(
+  mission: PlannerMission
+): string {
+  if (
+    mission.status === "idle"
+  ) {
+    return "形成一项可执行、可验证、可记录的新成果目标";
+  }
+
+  return mission.description
+    ? `完成“${mission.title}”，并产出可验证结果：${mission.description}`
+    : `完成“${mission.title}”，记录执行结果与验证证据`;
+}
+
 function createPlan(
   queue: PlannerQueueItem[],
   mission: PlannerMission,
-  progress: PlannerProgress
+  progress: PlannerProgress,
+  generatedAt: number
 ): PlannerPlan {
   const activeQueue =
     queue.filter(
       (task) =>
-        task.status !== "done"
+        task.status !==
+        "done"
     );
 
   const nextTask =
@@ -222,16 +427,14 @@ function createPlan(
         mission.id
     );
 
-  if (
-    progress.total === 0
-  ) {
+  if (progress.total === 0) {
     return {
       currentGoal:
-        "建立第一条执行目标",
+        "建立第一项成果目标",
       nextStep:
         "创建一项明确、可完成、可验证的任务",
       expectedResult:
-        "形成 AIOS Alpha 的第一条 Planner 执行路径",
+        "形成 AIOS Alpha 的第一条闭环执行路径",
       executionState:
         "Planner Ready",
     };
@@ -243,27 +446,47 @@ function createPlan(
   ) {
     return {
       currentGoal:
-        "当前任务已经全部完成",
+        "当前执行周期已经完成",
       nextStep:
-        "创建下一阶段目标",
+        "根据已完成结果创建下一阶段目标",
       expectedResult:
-        "进入新的执行周期",
+        "启动新的成果执行周期",
       executionState:
         `${progress.completed} 项任务已完成`,
     };
   }
 
+  const currentTask =
+    mission.id
+      ? activeQueue.find(
+          (task) =>
+            task.id ===
+            mission.id
+        )
+      : undefined;
+
+  const isStale =
+    currentTask?.status ===
+      "doing" &&
+    generatedAt -
+      currentTask.updatedAt >=
+      STALE_DOING_MS;
+
   return {
     currentGoal:
       mission.title,
-
-    nextStep:
-      nextTask?.title ??
-      "完成当前任务并更新执行状态",
-
+    nextStep: isStale
+      ? `检查“${mission.title}”的阻碍并更新执行状态`
+      : mission.status ===
+          "todo"
+        ? `开始执行“${mission.title}”`
+        : nextTask?.title
+          ? `完成当前任务后推进“${nextTask.title}”`
+          : "完成当前任务并记录验证结果",
     expectedResult:
-      "形成可验证、可记录的完成结果",
-
+      createExpectedResult(
+        mission
+      ),
     executionState:
       progress.doing > 0
         ? `${progress.doing} 项正在执行，${progress.todo} 项等待执行`
@@ -274,16 +497,22 @@ function createPlan(
 export function buildPlannerSnapshot(
   tasks: Task[]
 ): PlannerSnapshot {
+  const generatedAt =
+    Date.now();
+
   const safeTasks =
-    Array.isArray(tasks)
-      ? tasks
-      : [];
+    normalizeTasks(tasks);
 
   const queue =
-    createQueue(safeTasks);
+    createQueue(
+      safeTasks,
+      generatedAt
+    );
 
   const progress =
-    createProgress(safeTasks);
+    createProgress(
+      safeTasks
+    );
 
   const state =
     createState(progress);
@@ -295,14 +524,16 @@ export function buildPlannerSnapshot(
     createPlan(
       queue,
       mission,
-      progress
+      progress,
+      generatedAt
     );
 
   const completedTasks =
     sortTasks(
       safeTasks.filter(
         (task) =>
-          task.status === "done"
+          task.status ===
+          "done"
       )
     );
 
@@ -313,6 +544,6 @@ export function buildPlannerSnapshot(
     queue,
     progress,
     completedTasks,
-    generatedAt: Date.now(),
+    generatedAt,
   };
 }
