@@ -14,8 +14,12 @@ import type {
 } from "react";
 
 import {
-  fetchPlannerSnapshot,
+  fetchPlannerRuntimeSnapshot,
 } from "@/lib/planner/client";
+
+import type {
+  PlannerLearningSnapshot,
+} from "@/lib/planner/learning";
 
 import {
   PLANNER_REFRESH_EVENT,
@@ -32,6 +36,17 @@ import type {
 export interface PlannerContextValue {
   snapshot:
     PlannerSnapshot |
+    null;
+
+  learning:
+    PlannerLearningSnapshot |
+    null;
+
+  taskCount:
+    number;
+
+  generatedAt:
+    number |
     null;
 
   loading:
@@ -72,6 +87,13 @@ interface PlannerProviderProps {
     PlannerSnapshot |
     null;
 
+  initialLearning?:
+    PlannerLearningSnapshot |
+    null;
+
+  initialTaskCount?:
+    number;
+
   autoRefresh?:
     boolean;
 
@@ -99,6 +121,14 @@ export default function PlannerProvider({
   initialSnapshot =
     null,
 
+  initialLearning =
+    null,
+
+  initialTaskCount =
+    initialSnapshot
+      ?.progress.total ??
+    0,
+
   autoRefresh =
     true,
 
@@ -114,6 +144,38 @@ export default function PlannerProvider({
       null
     >(
       initialSnapshot
+    );
+
+  const [
+    learning,
+    setLearning,
+  ] =
+    useState<
+      PlannerLearningSnapshot |
+      null
+    >(
+      initialLearning
+    );
+
+  const [
+    taskCount,
+    setTaskCount,
+  ] =
+    useState(
+      initialTaskCount
+    );
+
+  const [
+    generatedAt,
+    setGeneratedAt,
+  ] =
+    useState<
+      number |
+      null
+    >(
+      initialSnapshot
+        ?.generatedAt ??
+        null
     );
 
   const [
@@ -224,8 +286,8 @@ export default function PlannerProvider({
         );
 
         try {
-          const nextSnapshot =
-            await fetchPlannerSnapshot(
+          const runtimeSnapshot =
+            await fetchPlannerRuntimeSnapshot(
               {
                 signal:
                   controller.signal,
@@ -242,14 +304,26 @@ export default function PlannerProvider({
           }
 
           snapshotRef.current =
-            nextSnapshot;
+            runtimeSnapshot.planner;
 
           setSnapshot(
-            nextSnapshot
+            runtimeSnapshot.planner
+          );
+
+          setLearning(
+            runtimeSnapshot.learning
+          );
+
+          setTaskCount(
+            runtimeSnapshot.taskCount
+          );
+
+          setGeneratedAt(
+            runtimeSnapshot.generatedAt
           );
 
           setLastUpdated(
-            nextSnapshot.generatedAt
+            runtimeSnapshot.generatedAt
           );
 
           setLastRefreshReason(
@@ -431,6 +505,9 @@ export default function PlannerProvider({
     >(
       () => ({
         snapshot,
+        learning,
+        taskCount,
+        generatedAt,
         loading,
         refreshing,
         error,
@@ -440,6 +517,9 @@ export default function PlannerProvider({
       }),
       [
         snapshot,
+        learning,
+        taskCount,
+        generatedAt,
         loading,
         refreshing,
         error,
