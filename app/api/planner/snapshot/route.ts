@@ -17,6 +17,10 @@ import {
 } from "@/lib/planner/engine";
 
 import {
+  buildPlannerLearningSnapshot,
+} from "@/lib/planner/learning";
+
+import {
   listPersistentTasks,
 } from "@/lib/task/server-store";
 
@@ -107,16 +111,33 @@ export async function GET(
     );
 
   try {
-    const planner =
+    const snapshot =
       await runWithUserContext(
         identity.userId,
         async () => {
           const tasks =
             await listPersistentTasks();
 
-          return buildPlannerSnapshot(
-            tasks
-          );
+          const generatedAt =
+            Date.now();
+
+          return {
+            planner:
+              buildPlannerSnapshot(
+                tasks
+              ),
+
+            learning:
+              buildPlannerLearningSnapshot(
+                tasks,
+                generatedAt
+              ),
+
+            taskCount:
+              tasks.length,
+
+            generatedAt,
+          };
         }
       );
 
@@ -125,7 +146,17 @@ export async function GET(
         success:
           true,
 
-        planner,
+        planner:
+          snapshot.planner,
+
+        learning:
+          snapshot.learning,
+
+        taskCount:
+          snapshot.taskCount,
+
+        generatedAt:
+          snapshot.generatedAt,
 
         identity: {
           userId:
@@ -148,6 +179,12 @@ export async function GET(
 
         planner:
           null,
+
+        learning:
+          null,
+
+        taskCount:
+          0,
 
         identity: {
           userId:
