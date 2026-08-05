@@ -1,12 +1,26 @@
 import type {
+  PlannerLearningSnapshot,
+} from "@/lib/planner/learning";
+
+import type {
   PlannerSnapshot,
 } from "@/lib/planner/types";
 
 export interface PlannerApiResponse {
   success: boolean;
   planner: PlannerSnapshot | null;
+  learning?: PlannerLearningSnapshot | null;
+  taskCount?: number;
+  generatedAt?: number;
   error?: string;
   timestamp: number;
+}
+
+export interface PlannerRuntimeSnapshot {
+  planner: PlannerSnapshot;
+  learning: PlannerLearningSnapshot | null;
+  taskCount: number;
+  generatedAt: number;
 }
 
 export interface PlannerClientOptions {
@@ -44,9 +58,31 @@ function normalizeErrorMessage(
   return "Planner request failed.";
 }
 
-export async function fetchPlannerSnapshot(
-  options: PlannerClientOptions = {}
-): Promise<PlannerSnapshot> {
+function safeCount(
+  value: unknown,
+  fallback: number
+): number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function safeTimestamp(
+  value: unknown,
+  fallback: number
+): number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0
+    ? value
+    : fallback;
+}
+
+async function requestPlannerSnapshot(
+  options: PlannerClientOptions
+): Promise<PlannerApiResponse> {
   const response =
     await fetch(
       "/api/planner/snapshot",
@@ -95,10 +131,56 @@ export async function fetchPlannerSnapshot(
     );
   }
 
-  return result.planner;
+  return result;
+}
+
+export async function fetchPlannerRuntimeSnapshot(
+  options: PlannerClientOptions = {}
+): Promise<PlannerRuntimeSnapshot> {
+  const result =
+    await requestPlannerSnapshot(
+      options
+    );
+
+  const planner =
+    result.planner as PlannerSnapshot;
+
+  return {
+    planner,
+
+    learning:
+      result.learning ??
+      null,
+
+    taskCount:
+      safeCount(
+        result.taskCount,
+        planner.progress.total
+      ),
+
+    generatedAt:
+      safeTimestamp(
+        result.generatedAt,
+        planner.generatedAt
+      ),
+  };
+}
+
+export async function fetchPlannerSnapshot(
+  options: PlannerClientOptions = {}
+): Promise<PlannerSnapshot> {
+  const runtimeSnapshot =
+    await fetchPlannerRuntimeSnapshot(
+      options
+    );
+
+  return runtimeSnapshot.planner;
 }
 
 export const plannerClient = {
   getSnapshot:
     fetchPlannerSnapshot,
+
+  getRuntimeSnapshot:
+    fetchPlannerRuntimeSnapshot,
 };
