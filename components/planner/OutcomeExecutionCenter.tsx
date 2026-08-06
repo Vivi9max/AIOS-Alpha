@@ -662,6 +662,9 @@ function getActionMessage(
     case "task-already-doing":
       return "当前任务已经处于执行状态。";
 
+    case "planner-concurrency-blocked":
+      return "Planner 已达到当前并行上限，请先完成正在执行的任务。";
+
     case "task-completed":
       return "任务已完成，执行队列和 Outcome 进度已更新。";
 
