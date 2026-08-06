@@ -12,6 +12,9 @@ import type {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import {
+  usePlanner,
+} from "@/components/planner/usePlanner";
 
 import {
   MODULE_ICONS,
@@ -319,6 +322,15 @@ function sortTasks(
 }
 
 export default function DashboardPage() {
+  const {
+    learning,
+    loading: plannerLoading,
+    refreshing: plannerRefreshing,
+    error: plannerError,
+    generatedAt: plannerGeneratedAt,
+    refresh: refreshPlanner,
+  } = usePlanner();
+
   const [
     dashboard,
     setDashboard,
@@ -528,6 +540,43 @@ export default function DashboardPage() {
   const providerName =
     formatProvider(
       dashboard.provider.active
+    );
+
+  const learningMetrics =
+    learning?.metrics ?? null;
+
+  const plannerBusy =
+    plannerLoading ||
+    plannerRefreshing;
+
+  const learningHealth =
+    learning?.health ??
+    "insufficient-data";
+
+  const learningHealthLabel = {
+    "insufficient-data": "Learning",
+    healthy: "Healthy",
+    attention: "Attention",
+    blocked: "Blocked",
+  }[learningHealth];
+
+  const learningHealthy =
+    learningHealth === "healthy";
+
+  const handleRefresh =
+    useCallback(
+      async () => {
+        await Promise.all([
+          loadData(true),
+          refreshPlanner(
+            "dashboard-manual"
+          ),
+        ]);
+      },
+      [
+        loadData,
+        refreshPlanner,
+      ]
     );
 
   const systemHealthy =
@@ -741,11 +790,12 @@ export default function DashboardPage() {
             type="button"
             disabled={
               loading ||
-              refreshing
+              refreshing ||
+              plannerBusy
             }
-            onClick={() =>
-              loadData(true)
-            }
+            onClick={() => {
+              void handleRefresh();
+            }}
             style={{
               minHeight: 42,
               padding:
@@ -759,18 +809,21 @@ export default function DashboardPage() {
               fontWeight: 750,
               cursor:
                 loading ||
-                refreshing
+                refreshing ||
+                plannerBusy
                   ? "not-allowed"
                   : "pointer",
               opacity:
                 loading ||
-                refreshing
+                refreshing ||
+                plannerBusy
                   ? 0.6
                   : 1,
             }}
           >
             {loading ||
-            refreshing
+            refreshing ||
+            plannerBusy
               ? "同步中…"
               : "同步状态"}
           </button>
@@ -781,6 +834,14 @@ export default function DashboardPage() {
             title="Dashboard 同步失败"
             message={error}
             tone="danger"
+          />
+        )}
+
+        {plannerError && (
+          <Alert
+            title="Planner Learning 同步失败"
+            message={plannerError}
+            tone="warning"
           />
         )}
 
@@ -937,6 +998,171 @@ export default function DashboardPage() {
                 Trace
               </SecondaryLink>
             </div>
+          </Panel>
+        </section>
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <Panel>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent:
+                  "space-between",
+                alignItems:
+                  "flex-start",
+                gap: 14,
+              }}
+            >
+              <SectionHeader
+                eyebrow="Planner Learning"
+                title="Execution Intelligence"
+                description="根据真实任务结果持续识别速度、停滞与下一轮优化方向。"
+              />
+
+              <StatusBadge
+                healthy={
+                  learningHealthy
+                }
+                text={
+                  learningHealthLabel
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              <LearningMetric
+                label="Completion"
+                value={`${learningMetrics?.completionRate ?? 0}%`}
+                detail={`${learningMetrics?.completed ?? 0}/${learningMetrics?.total ?? 0} tasks`}
+              />
+
+              <LearningMetric
+                label="Velocity"
+                value={`${learningMetrics?.executionVelocity ?? 0}`}
+                detail="tasks / day"
+              />
+
+              <LearningMetric
+                label="Stale"
+                value={`${learningMetrics?.stale ?? 0}`}
+                detail="over 24 hours"
+                warning={
+                  (learningMetrics?.stale ?? 0) > 0
+                }
+              />
+
+              <LearningMetric
+                label="Confidence"
+                value={`${learning?.confidence ?? 0}%`}
+                detail="learning quality"
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 12,
+                marginTop: 14,
+              }}
+            >
+              <div
+                style={{
+                  padding: 15,
+                  border:
+                    "1px solid #c7d2fe",
+                  borderRadius: 15,
+                  background:
+                    "#f8faff",
+                }}
+              >
+                <Eyebrow>
+                  Next Recommendation
+                </Eyebrow>
+
+                <strong
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {learning
+                    ?.recommendation ??
+                    "创建并推进第一项任务，Planner 将从执行结果中开始学习。"}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                }}
+              >
+                {plannerBusy ? (
+                  <EmptyState>
+                    正在分析执行数据…
+                  </EmptyState>
+                ) : learning?.insights
+                    .length ? (
+                  learning.insights
+                    .slice(0, 2)
+                    .map(
+                      (insight) => (
+                        <LearningInsight
+                          key={
+                            insight.id
+                          }
+                          title={
+                            insight.title
+                          }
+                          action={
+                            insight.action
+                          }
+                          warning={
+                            insight.severity ===
+                              "warning" ||
+                            insight.severity ===
+                              "critical"
+                          }
+                        />
+                      )
+                    )
+                ) : (
+                  <EmptyState>
+                    等待形成学习洞察。
+                  </EmptyState>
+                )}
+              </div>
+            </div>
+
+            <footer
+              style={{
+                marginTop: 14,
+                color: "#94a3b8",
+                fontSize: 11,
+              }}
+            >
+              Learning 更新：
+              {formatTime(
+                plannerGeneratedAt
+              )}
+            </footer>
           </Panel>
         </section>
 
@@ -1958,6 +2184,123 @@ function MetricRow({
           {detail}
         </span>
       </div>
+    </div>
+  );
+}
+
+function LearningMetric({
+  label,
+  value,
+  detail,
+  warning = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  warning?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: 14,
+        border: `1px solid ${
+          warning
+            ? "#fde68a"
+            : "#e2e8f0"
+        }`,
+        borderRadius: 14,
+        background: warning
+          ? "#fffbeb"
+          : "#f8fafc",
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          color: "#64748b",
+          fontSize: 11,
+          fontWeight: 750,
+        }}
+      >
+        {label}
+      </p>
+
+      <strong
+        style={{
+          display: "block",
+          marginTop: 6,
+          color: warning
+            ? "#92400e"
+            : "#0f172a",
+          fontSize: 24,
+        }}
+      >
+        {value}
+      </strong>
+
+      <span
+        style={{
+          display: "block",
+          marginTop: 3,
+          color: "#94a3b8",
+          fontSize: 10,
+        }}
+      >
+        {detail}
+      </span>
+    </div>
+  );
+}
+
+function LearningInsight({
+  title,
+  action,
+  warning,
+}: {
+  title: string;
+  action: string;
+  warning: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        border: `1px solid ${
+          warning
+            ? "#fde68a"
+            : "#dbeafe"
+        }`,
+        borderRadius: 13,
+        background: warning
+          ? "#fffbeb"
+          : "#eff6ff",
+      }}
+    >
+      <strong
+        style={{
+          display: "block",
+          color: warning
+            ? "#92400e"
+            : "#1e40af",
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        {title}
+      </strong>
+
+      <p
+        style={{
+          margin: "5px 0 0",
+          color: warning
+            ? "#78350f"
+            : "#1e3a8a",
+          fontSize: 11,
+          lineHeight: 1.5,
+        }}
+      >
+        {action}
+      </p>
     </div>
   );
 }
