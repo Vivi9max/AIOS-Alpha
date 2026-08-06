@@ -5,11 +5,25 @@ import type {
 import type {
   PlannerSnapshot,
 } from "@/lib/planner/types";
+import type {
+  PlannerAdaptiveStrategy,
+  PlannerLearningHistory,
+} from "@/lib/planner/runtime";
+
+export type {
+  PlannerAdaptiveMode,
+  PlannerAdaptiveStrategy,
+  PlannerLearningHistory,
+  PlannerLearningHistoryPoint,
+  PlannerLearningTrend,
+} from "@/lib/planner/runtime";
 
 export interface PlannerApiResponse {
   success: boolean;
   planner: PlannerSnapshot | null;
   learning?: PlannerLearningSnapshot | null;
+  learningHistory?: PlannerLearningHistory | null;
+  adaptiveStrategy?: PlannerAdaptiveStrategy | null;
   taskCount?: number;
   generatedAt?: number;
   error?: string;
@@ -19,6 +33,8 @@ export interface PlannerApiResponse {
 export interface PlannerRuntimeSnapshot {
   planner: PlannerSnapshot;
   learning: PlannerLearningSnapshot | null;
+  learningHistory: PlannerLearningHistory | null;
+  adaptiveStrategy: PlannerAdaptiveStrategy | null;
   taskCount: number;
   generatedAt: number;
 }
@@ -150,6 +166,14 @@ export async function fetchPlannerRuntimeSnapshot(
 
     learning:
       result.learning ??
+      null,
+
+    learningHistory:
+      result.learningHistory ??
+      null,
+
+    adaptiveStrategy:
+      result.adaptiveStrategy ??
       null,
 
     taskCount:
