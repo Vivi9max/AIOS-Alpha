@@ -12,6 +12,16 @@ import {
   runWithUserContext,
 } from "@/lib/runtime/request-context";
 
+import {
+  buildPlannerTaskControl,
+  evaluatePlannerTaskCreation,
+  evaluatePlannerTaskStatusChange,
+} from "@/lib/planner/execution-control";
+
+import {
+  buildPlannerRuntimeIntelligence,
+} from "@/lib/planner/runtime-server";
+
 import type {
   TaskStatus,
 } from "@/lib/task/types";
@@ -101,6 +111,29 @@ function jsonResponse(
   );
 }
 
+async function buildTaskControl(
+  tasks:
+    Awaited<
+      ReturnType<
+        typeof listPersistentTasks
+      >
+    >
+) {
+  const intelligence =
+    await buildPlannerRuntimeIntelligence(
+      tasks,
+      {
+        recordHistory:
+          false,
+      }
+    );
+
+  return buildPlannerTaskControl(
+    tasks,
+    intelligence.adaptiveStrategy
+  );
+}
+
 export async function GET(
   request:
     NextRequest
@@ -111,12 +144,26 @@ export async function GET(
     );
 
   try {
-    const tasks =
+    const result =
       await runWithUserContext(
         identity.userId,
-        () =>
-          listPersistentTasks()
+        async () => {
+          const tasks =
+            await listPersistentTasks();
+
+          return {
+            tasks,
+
+            control:
+              await buildTaskControl(
+                tasks
+              ),
+          };
+        }
       );
+
+    const tasks =
+      result.tasks;
 
     const completedCount =
       tasks.filter(
@@ -145,6 +192,9 @@ export async function GET(
         activeCount,
 
         completedCount,
+
+        control:
+          result.control,
 
         identity: {
           userId:
@@ -176,6 +226,9 @@ export async function GET(
 
         completedCount:
           0,
+
+        control:
+          null,
 
         identity: {
           userId:
@@ -230,22 +283,105 @@ export async function POST(
         ? body.description
         : "";
 
-    const task =
+    const result =
       await runWithUserContext(
         identity.userId,
-        () =>
-          createPersistentTask(
-            title,
-            description
-          )
+        async () => {
+          const tasks =
+            await listPersistentTasks();
+
+          const control =
+            await buildTaskControl(
+              tasks
+            );
+
+          const decision =
+            evaluatePlannerTaskCreation(
+              control
+            );
+
+          if (
+            !decision.allowed
+          ) {
+            return {
+              allowed:
+                false as const,
+
+              control,
+
+              decision,
+            };
+          }
+
+          const task =
+            await createPersistentTask(
+              title,
+              description
+            );
+
+          const updatedTasks =
+            await listPersistentTasks();
+
+          return {
+            allowed:
+              true as const,
+
+            task,
+
+            control:
+              await buildTaskControl(
+                updatedTasks
+              ),
+          };
+        }
       );
+
+    if (
+      !result.allowed
+    ) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          code:
+            result.decision.code,
+
+          error:
+            result.decision.message,
+
+          action:
+            result.decision.action,
+
+          control:
+            result.control,
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        409
+      );
+    }
 
     return jsonResponse(
       {
         success:
           true,
 
-        task,
+        task:
+          result.task,
+
+        control:
+          result.control,
 
         identity: {
           userId:
@@ -352,32 +488,147 @@ export async function PATCH(
           )
         : undefined;
 
-    const task =
+    const result =
       await runWithUserContext(
         identity.userId,
-        () =>
-          updatePersistentTask(
-            id,
-            {
-              title:
-                typeof body.title ===
-                "string"
-                  ? body.title
-                  : undefined,
+        async () => {
+          const tasks =
+            await listPersistentTasks();
 
-              description:
-                typeof body.description ===
-                "string"
-                  ? body.description
-                  : undefined,
+          const currentTask =
+            tasks.find(
+              (task) =>
+                task.id ===
+                id
+            );
 
+          if (
+            !currentTask
+          ) {
+            return {
+              found:
+                false as const,
+            };
+          }
+
+          const control =
+            await buildTaskControl(
+              tasks
+            );
+
+          const decision =
+            evaluatePlannerTaskStatusChange(
+              tasks,
+              id,
               status,
-            }
-          )
+              control
+            );
+
+          if (
+            !decision.allowed
+          ) {
+            return {
+              found:
+                true as const,
+
+              allowed:
+                false as const,
+
+              control,
+
+              decision,
+            };
+          }
+
+          const task =
+            await updatePersistentTask(
+              id,
+              {
+                title:
+                  typeof body.title ===
+                  "string"
+                    ? body.title
+                    : undefined,
+
+                description:
+                  typeof body.description ===
+                  "string"
+                    ? body.description
+                    : undefined,
+
+                status,
+              }
+            );
+
+          const updatedTasks =
+            await listPersistentTasks();
+
+          return {
+            found:
+              true as const,
+
+            allowed:
+              true as const,
+
+            task,
+
+            control:
+              await buildTaskControl(
+                updatedTasks
+              ),
+          };
+        }
       );
 
     if (
-      !task
+      !result.found
+    ) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          error:
+            "Task not found.",
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        404
+      );
+    }
+
+    if (
+      !result.allowed
+    ) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          code:
+            result.decision.code,
+
+          error:
+            result.decision.message,
+
+          action:
+            result.decision.action,
+
+          control:
+            result.control,
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        409
+      );
+    }
+
+    if (
+      !result.task
     ) {
       return jsonResponse(
         {
@@ -400,7 +651,11 @@ export async function PATCH(
         success:
           true,
 
-        task,
+        task:
+          result.task,
+
+        control:
+          result.control,
 
         identity: {
           userId:
