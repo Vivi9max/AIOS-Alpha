@@ -21,6 +21,25 @@ import {
 } from "@/lib/planner/learning";
 
 import {
+  buildPlannerAdaptiveStrategy,
+  buildPlannerLearningHistory,
+  MAX_PLANNER_LEARNING_HISTORY,
+  toPlannerHistoryPoint,
+} from "@/lib/planner/runtime";
+
+import type {
+  PlannerLearningHistory,
+} from "@/lib/planner/runtime";
+
+import {
+  storage,
+} from "@/lib/server-storage";
+
+import {
+  createUserStorageKey,
+} from "@/lib/storage/data-scope";
+
+import {
   listPersistentTasks,
 } from "@/lib/task/server-store";
 
@@ -29,6 +48,32 @@ export const dynamic =
 
 export const runtime =
   "nodejs";
+
+function learningHistoryKey(): string {
+  return createUserStorageKey(
+    "planner-learning-history"
+  );
+}
+
+async function recordLearningHistory(
+  learning: Parameters<typeof toPlannerHistoryPoint>[0]
+): Promise<PlannerLearningHistory> {
+  const current =
+    toPlannerHistoryPoint(learning);
+  const stored =
+    await storage.get<unknown[]>(
+      learningHistoryKey()
+    );
+  const history = buildPlannerLearningHistory(current, stored);
+
+  if (history.changed) {
+    await storage.set(
+      learningHistoryKey(),
+      history.history.slice(-MAX_PLANNER_LEARNING_HISTORY)
+    );
+  }
+  return history.result;
+}
 
 function applyIdentityCookie(
   response:
@@ -121,17 +166,34 @@ export async function GET(
           const generatedAt =
             Date.now();
 
+          const learning =
+            buildPlannerLearningSnapshot(
+              tasks,
+              generatedAt
+            );
+
+          const learningHistory =
+            await recordLearningHistory(
+              learning
+            );
+
+          const adaptiveStrategy =
+            buildPlannerAdaptiveStrategy(
+              learning,
+              learningHistory
+            );
+
           return {
             planner:
               buildPlannerSnapshot(
                 tasks
               ),
 
-            learning:
-              buildPlannerLearningSnapshot(
-                tasks,
-                generatedAt
-              ),
+            learning,
+
+            learningHistory,
+
+            adaptiveStrategy,
 
             taskCount:
               tasks.length,
@@ -151,6 +213,12 @@ export async function GET(
 
         learning:
           snapshot.learning,
+
+        learningHistory:
+          snapshot.learningHistory,
+
+        adaptiveStrategy:
+          snapshot.adaptiveStrategy,
 
         taskCount:
           snapshot.taskCount,
@@ -181,6 +249,12 @@ export async function GET(
           null,
 
         learning:
+          null,
+
+        learningHistory:
+          null,
+
+        adaptiveStrategy:
           null,
 
         taskCount:
