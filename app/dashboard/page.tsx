@@ -324,6 +324,8 @@ function sortTasks(
 export default function DashboardPage() {
   const {
     learning,
+    learningHistory,
+    adaptiveStrategy,
     loading: plannerLoading,
     refreshing: plannerRefreshing,
     error: plannerError,
@@ -562,6 +564,47 @@ export default function DashboardPage() {
 
   const learningHealthy =
     learningHealth === "healthy";
+
+  const learningTrend =
+    learningHistory?.trend ??
+    "insufficient-data";
+
+  const learningTrendLabel = {
+    "insufficient-data": "Collecting Baseline",
+    improving: "Improving",
+    stable: "Stable",
+    declining: "Declining",
+  }[learningTrend];
+
+  const learningTrendHealthy =
+    learningTrend === "improving" ||
+    learningTrend === "stable";
+
+  const strategyMode =
+    adaptiveStrategy?.mode ??
+    "baseline";
+
+  const strategyModeLabel = {
+    baseline: "Baseline",
+    accelerate: "Accelerate",
+    focus: "Focus",
+    recover: "Recover",
+  }[strategyMode];
+
+  const strategyHealthy =
+    strategyMode === "baseline" ||
+    strategyMode === "accelerate";
+
+  const formatChange = (
+    value: number,
+    suffix = ""
+  ): string => {
+    if (value === 0) {
+      return `0${suffix}`;
+    }
+
+    return `${value > 0 ? "+" : ""}${value}${suffix}`;
+  };
 
   const handleRefresh =
     useCallback(
@@ -1073,6 +1116,108 @@ export default function DashboardPage() {
 
             <div
               style={{
+                marginTop: 14,
+                padding: 15,
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius: 15,
+                background: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems:
+                    "center",
+                  justifyContent:
+                    "space-between",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <Eyebrow>
+                    Learning Trend
+                  </Eyebrow>
+
+                  <p
+                    style={{
+                      margin:
+                        "6px 0 0",
+                      color:
+                        "#64748b",
+                      fontSize: 12,
+                    }}
+                  >
+                    {learningHistory
+                      ? `${learningHistory.sampleCount} historical samples`
+                      : "等待形成首个历史基线"}
+                  </p>
+                </div>
+
+                <StatusBadge
+                  healthy={
+                    learningTrendHealthy
+                  }
+                  text={
+                    learningTrendLabel
+                  }
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(145px, 1fr))",
+                  gap: 10,
+                  marginTop: 13,
+                }}
+              >
+                <LearningMetric
+                  label="Completion Δ"
+                  value={formatChange(
+                    learningHistory?.completionRateChange ??
+                      0,
+                    "%"
+                  )}
+                  detail="vs previous cycle"
+                  warning={
+                    (learningHistory?.completionRateChange ??
+                      0) < 0
+                  }
+                />
+
+                <LearningMetric
+                  label="Velocity Δ"
+                  value={formatChange(
+                    learningHistory?.velocityChange ??
+                      0
+                  )}
+                  detail="tasks / day"
+                  warning={
+                    (learningHistory?.velocityChange ??
+                      0) < 0
+                  }
+                />
+
+                <LearningMetric
+                  label="Stale Δ"
+                  value={formatChange(
+                    learningHistory?.staleChange ??
+                      0
+                  )}
+                  detail="lower is better"
+                  warning={
+                    (learningHistory?.staleChange ??
+                      0) > 0
+                  }
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
                 display: "grid",
                 gridTemplateColumns:
                   "repeat(auto-fit, minmax(280px, 1fr))",
@@ -1163,6 +1308,206 @@ export default function DashboardPage() {
                 plannerGeneratedAt
               )}
             </footer>
+          </Panel>
+        </section>
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <Panel>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent:
+                  "space-between",
+                alignItems:
+                  "flex-start",
+                gap: 14,
+              }}
+            >
+              <SectionHeader
+                eyebrow="Adaptive Runtime"
+                title="Execution Control"
+                description="把 Planner 的学习结果转换为当前周期可直接执行的控制策略。"
+              />
+
+              <StatusBadge
+                healthy={
+                  strategyHealthy
+                }
+                text={
+                  strategyModeLabel
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              <LearningMetric
+                label="Parallel Limit"
+                value={`${adaptiveStrategy?.maxConcurrentTasks ?? 1}`}
+                detail="maximum active tasks"
+              />
+
+              <LearningMetric
+                label="New Tasks"
+                value={
+                  adaptiveStrategy?.allowNewTasks
+                    ? "Allowed"
+                    : "Paused"
+                }
+                detail="controlled by runtime"
+                warning={
+                  adaptiveStrategy
+                    ? !adaptiveStrategy.allowNewTasks
+                    : false
+                }
+              />
+
+              <LearningMetric
+                label="Runtime Mode"
+                value={
+                  strategyModeLabel
+                }
+                detail="adaptive execution"
+                warning={
+                  strategyMode === "recover"
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 14,
+                padding: 16,
+                border:
+                  strategyMode === "recover"
+                    ? "1px solid #fecaca"
+                    : "1px solid #c7d2fe",
+                borderRadius: 15,
+                background:
+                  strategyMode === "recover"
+                    ? "#fff7f7"
+                    : "#f8faff",
+              }}
+            >
+              <Eyebrow>
+                Primary Action
+              </Eyebrow>
+
+              <strong
+                style={{
+                  display: "block",
+                  marginTop: 8,
+                  fontSize: 15,
+                  lineHeight: 1.6,
+                }}
+              >
+                {adaptiveStrategy
+                  ?.primaryAction ??
+                  "创建一项具有明确完成标准的任务，建立首个执行基线。"}
+              </strong>
+
+              <p
+                style={{
+                  margin: "8px 0 0",
+                  color: "#64748b",
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                }}
+              >
+                {adaptiveStrategy
+                  ?.reason ??
+                  "Planner 正在等待真实任务数据。"}
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 10,
+                marginTop: 12,
+              }}
+            >
+              {(adaptiveStrategy?.actions ?? [
+                "明确本轮完成标准",
+                "推进一项真实任务",
+                "完成后记录结果",
+              ]).map((action, index) => (
+                <div
+                  key={`${action}-${index}`}
+                  style={{
+                    display: "flex",
+                    alignItems:
+                      "flex-start",
+                    gap: 10,
+                    padding: 13,
+                    border:
+                      "1px solid #e2e8f0",
+                    borderRadius: 13,
+                    background: "#ffffff",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "grid",
+                      placeItems:
+                        "center",
+                      flex: "0 0 25px",
+                      width: 25,
+                      height: 25,
+                      borderRadius: 999,
+                      background:
+                        "#eef2ff",
+                      color: "#4338ca",
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {index + 1}
+                  </span>
+
+                  <span
+                    style={{
+                      color: "#334155",
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {action}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 15,
+              }}
+            >
+              <PrimaryLink href="/tasks">
+                执行当前策略
+              </PrimaryLink>
+
+              <SecondaryLink href="/runtime/trace">
+                查看运行证据
+              </SecondaryLink>
+            </div>
           </Panel>
         </section>
 
