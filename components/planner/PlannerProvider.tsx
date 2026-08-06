@@ -18,6 +18,11 @@ import {
 } from "@/lib/planner/client";
 
 import type {
+  PlannerAdaptiveStrategy,
+  PlannerLearningHistory,
+} from "@/lib/planner/client";
+
+import type {
   PlannerLearningSnapshot,
 } from "@/lib/planner/learning";
 
@@ -40,6 +45,14 @@ export interface PlannerContextValue {
 
   learning:
     PlannerLearningSnapshot |
+    null;
+
+  learningHistory:
+    PlannerLearningHistory |
+    null;
+
+  adaptiveStrategy:
+    PlannerAdaptiveStrategy |
     null;
 
   taskCount:
@@ -91,6 +104,14 @@ interface PlannerProviderProps {
     PlannerLearningSnapshot |
     null;
 
+  initialLearningHistory?:
+    PlannerLearningHistory |
+    null;
+
+  initialAdaptiveStrategy?:
+    PlannerAdaptiveStrategy |
+    null;
+
   initialTaskCount?:
     number;
 
@@ -122,6 +143,12 @@ export default function PlannerProvider({
     null,
 
   initialLearning =
+    null,
+
+  initialLearningHistory =
+    null,
+
+  initialAdaptiveStrategy =
     null,
 
   initialTaskCount =
@@ -156,6 +183,24 @@ export default function PlannerProvider({
     >(
       initialLearning
     );
+
+  const [
+    learningHistory,
+    setLearningHistory,
+  ] =
+    useState<
+      PlannerLearningHistory |
+      null
+    >(
+      initialLearningHistory
+    );
+
+  const [
+    adaptiveStrategy,
+    setAdaptiveStrategy,
+  ] = useState<PlannerAdaptiveStrategy | null>(
+    initialAdaptiveStrategy
+  );
 
   const [
     taskCount,
@@ -312,6 +357,14 @@ export default function PlannerProvider({
 
           setLearning(
             runtimeSnapshot.learning
+          );
+
+          setLearningHistory(
+            runtimeSnapshot.learningHistory
+          );
+
+          setAdaptiveStrategy(
+            runtimeSnapshot.adaptiveStrategy
           );
 
           setTaskCount(
@@ -506,6 +559,8 @@ export default function PlannerProvider({
       () => ({
         snapshot,
         learning,
+        learningHistory,
+        adaptiveStrategy,
         taskCount,
         generatedAt,
         loading,
@@ -518,6 +573,8 @@ export default function PlannerProvider({
       [
         snapshot,
         learning,
+        learningHistory,
+        adaptiveStrategy,
         taskCount,
         generatedAt,
         loading,
