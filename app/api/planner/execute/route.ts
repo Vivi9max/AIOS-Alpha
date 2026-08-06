@@ -14,6 +14,15 @@ import {
   plannerSummary,
 } from "@/lib/planner/execution-engine";
 
+import {
+  buildPlannerTaskControl,
+  evaluatePlannerTaskStatusChange,
+} from "@/lib/planner/execution-control";
+
+import {
+  buildPlannerRuntimeIntelligence,
+} from "@/lib/planner/runtime-server";
+
 import type {
   Outcome as ExecutionOutcome,
   Milestone as ExecutionMilestone,
@@ -816,6 +825,21 @@ export async function POST(
               linkedTasks
             );
 
+          const initialIntelligence =
+            await buildPlannerRuntimeIntelligence(
+              initialTasks,
+              {
+                recordHistory:
+                  false,
+              }
+            );
+
+          let executionControl =
+            buildPlannerTaskControl(
+              initialTasks,
+              initialIntelligence.adaptiveStrategy
+            );
+
           let performedAction:
             string =
               "inspect";
@@ -851,21 +875,36 @@ export async function POST(
               taskToStart.status ===
                 "todo"
             ) {
-              await updatePersistentTask(
-                taskToStart.id,
-                {
-                  status:
-                    "doing",
-                }
-              );
+              const decision =
+                evaluatePlannerTaskStatusChange(
+                  initialTasks,
+                  taskToStart.id,
+                  "doing",
+                  executionControl
+                );
 
-              await activateTaskMilestone(
-                outcome,
-                taskToStart.id
-              );
+              if (
+                decision.allowed
+              ) {
+                await updatePersistentTask(
+                  taskToStart.id,
+                  {
+                    status:
+                      "doing",
+                  }
+                );
 
-              performedAction =
-                "task-started";
+                await activateTaskMilestone(
+                  outcome,
+                  taskToStart.id
+                );
+
+                performedAction =
+                  "task-started";
+              } else {
+                performedAction =
+                  "planner-concurrency-blocked";
+              }
             } else if (
               currentDoingTask
             ) {
@@ -987,10 +1026,28 @@ export async function POST(
             );
           }
 
+          const finalTasks =
+            await listPersistentTasks();
+
+          const finalIntelligence =
+            await buildPlannerRuntimeIntelligence(
+              finalTasks,
+              {
+                recordHistory:
+                  false,
+              }
+            );
+
+          executionControl =
+            buildPlannerTaskControl(
+              finalTasks,
+              finalIntelligence.adaptiveStrategy
+            );
+
           const latestTasks =
             selectOutcomeTasks(
               updatedOutcome,
-              await listPersistentTasks()
+              finalTasks
             );
 
           return {
@@ -998,6 +1055,8 @@ export async function POST(
               true,
 
             performedAction,
+
+            executionControl,
 
             content:
               await buildExecutionResult(
@@ -1068,6 +1127,9 @@ export async function POST(
 
           snapshotEndpoint:
             "/api/planner/snapshot",
+
+          executionControl:
+            result.executionControl,
         },
 
         identity: {

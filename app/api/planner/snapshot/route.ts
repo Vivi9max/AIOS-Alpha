@@ -17,27 +17,8 @@ import {
 } from "@/lib/planner/engine";
 
 import {
-  buildPlannerLearningSnapshot,
-} from "@/lib/planner/learning";
-
-import {
-  buildPlannerAdaptiveStrategy,
-  buildPlannerLearningHistory,
-  MAX_PLANNER_LEARNING_HISTORY,
-  toPlannerHistoryPoint,
-} from "@/lib/planner/runtime";
-
-import type {
-  PlannerLearningHistory,
-} from "@/lib/planner/runtime";
-
-import {
-  storage,
-} from "@/lib/server-storage";
-
-import {
-  createUserStorageKey,
-} from "@/lib/storage/data-scope";
+  buildPlannerRuntimeIntelligence,
+} from "@/lib/planner/runtime-server";
 
 import {
   listPersistentTasks,
@@ -48,32 +29,6 @@ export const dynamic =
 
 export const runtime =
   "nodejs";
-
-function learningHistoryKey(): string {
-  return createUserStorageKey(
-    "planner-learning-history"
-  );
-}
-
-async function recordLearningHistory(
-  learning: Parameters<typeof toPlannerHistoryPoint>[0]
-): Promise<PlannerLearningHistory> {
-  const current =
-    toPlannerHistoryPoint(learning);
-  const stored =
-    await storage.get<unknown[]>(
-      learningHistoryKey()
-    );
-  const history = buildPlannerLearningHistory(current, stored);
-
-  if (history.changed) {
-    await storage.set(
-      learningHistoryKey(),
-      history.history.slice(-MAX_PLANNER_LEARNING_HISTORY)
-    );
-  }
-  return history.result;
-}
 
 function applyIdentityCookie(
   response:
@@ -166,21 +121,14 @@ export async function GET(
           const generatedAt =
             Date.now();
 
-          const learning =
-            buildPlannerLearningSnapshot(
+          const intelligence =
+            await buildPlannerRuntimeIntelligence(
               tasks,
-              generatedAt
-            );
-
-          const learningHistory =
-            await recordLearningHistory(
-              learning
-            );
-
-          const adaptiveStrategy =
-            buildPlannerAdaptiveStrategy(
-              learning,
-              learningHistory
+              {
+                generatedAt,
+                recordHistory:
+                  true,
+              }
             );
 
           return {
@@ -189,11 +137,14 @@ export async function GET(
                 tasks
               ),
 
-            learning,
+            learning:
+              intelligence.learning,
 
-            learningHistory,
+            learningHistory:
+              intelligence.learningHistory,
 
-            adaptiveStrategy,
+            adaptiveStrategy:
+              intelligence.adaptiveStrategy,
 
             taskCount:
               tasks.length,
