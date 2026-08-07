@@ -22,6 +22,10 @@ import {
   buildPlannerRuntimeIntelligence,
 } from "@/lib/planner/runtime-server";
 
+import {
+  appendExecutionLedger,
+} from "@/lib/planner/execution-ledger";
+
 import type {
   TaskStatus,
 } from "@/lib/task/types";
@@ -303,6 +307,17 @@ export async function POST(
           if (
             !decision.allowed
           ) {
+            await appendExecutionLedger({
+              action: "task-create",
+              decision: "blocked",
+              mode: control.mode,
+              code: decision.code,
+              message: decision.message,
+              taskTitle: title.trim() || null,
+              maxConcurrentTasks: control.maxConcurrentTasks,
+              doingCount: control.doingCount,
+            });
+
             return {
               allowed:
                 false as const,
@@ -318,6 +333,17 @@ export async function POST(
               title,
               description
             );
+
+          await appendExecutionLedger({
+            action: "task-create",
+            decision: "allowed",
+            mode: control.mode,
+            message: "Planner 允许创建任务。",
+            taskId: task.id,
+            taskTitle: task.title,
+            maxConcurrentTasks: control.maxConcurrentTasks,
+            doingCount: control.doingCount,
+          });
 
           const updatedTasks =
             await listPersistentTasks();
@@ -527,6 +553,18 @@ export async function PATCH(
           if (
             !decision.allowed
           ) {
+            await appendExecutionLedger({
+              action: status === "doing" ? "task-start" : "task-update",
+              decision: "blocked",
+              mode: control.mode,
+              code: decision.code,
+              message: decision.message,
+              taskId: currentTask.id,
+              taskTitle: currentTask.title,
+              maxConcurrentTasks: control.maxConcurrentTasks,
+              doingCount: control.doingCount,
+            });
+
             return {
               found:
                 true as const,
@@ -559,6 +597,27 @@ export async function PATCH(
                 status,
               }
             );
+
+          if (task) {
+            await appendExecutionLedger({
+              action: status === "doing"
+                ? "task-start"
+                : status === "done"
+                  ? "task-complete"
+                  : "task-update",
+              decision: "allowed",
+              mode: control.mode,
+              message: status === "done"
+                ? "任务已完成。"
+                : status === "doing"
+                  ? "Planner 允许任务开始执行。"
+                  : "任务已更新。",
+              taskId: task.id,
+              taskTitle: task.title,
+              maxConcurrentTasks: control.maxConcurrentTasks,
+              doingCount: control.doingCount,
+            });
+          }
 
           const updatedTasks =
             await listPersistentTasks();
