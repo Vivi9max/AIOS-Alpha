@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "project": "AIOS Alpha",
+  "release": "C124",
+  "updatedAt": "2026-08-09",
+  "mission": "A multilingual, provider-independent AI operating system that turns outcomes into guarded, traceable execution.",
+  "status": "alpha",
+  "defaultLocale": "en",
+  "locales": ["en", "zh-CN", "ja"],
+  "runtime": {
+    "framework": "Next.js 16",
+    "language": "TypeScript",
+    "packageManager": "npm",
+    "requiredNode": ">=20.9.0"
+  },
+  "commands": {
+    "install": "npm ci",
+    "develop": "npm run dev",
+    "typecheck": "npx tsc --noEmit",
+    "build": "npm run build",
+    "start": "npm start"
+  },
+  "capabilities": [
+    "provider-routing",
+    "memory",
+    "task-execution",
+    "planner-guard",
+    "execution-ledger",
+    "execution-review",
+    "multilingual-interface",
+    "handoff-capsule"
+  ],
+  "continuity": {
+    "readFirst": [
+      "aios-alpha.manifest.json",
+      "docs/AIOS-HANDOFF.md",
+      "docs/aios-spec.md"
+    ],
+    "rules": [
+      "Preserve working capabilities and never regress a more advanced implementation.",
+      "Deliver complete runnable modules, not isolated fragments.",
+      "Keep model providers replaceable and avoid a mandatory ChatGPT dependency.",
+      "Add internationalized UI through the shared i18n foundation.",
+      "Run typecheck and production build before delivery."
+    ],
+    "nextPriority": "Extend shared internationalization into the highest-use workspace, tasks, planner and runtime pages."
+  }
+}
