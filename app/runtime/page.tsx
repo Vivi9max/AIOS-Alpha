@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 interface RuntimeModule {
   enabled?: boolean;
@@ -39,16 +40,18 @@ interface RuntimeStatus {
 }
 
 function formatTime(
-  timestamp?: number
+  timestamp: number | undefined,
+  locale: string,
+  emptyLabel: string
 ): string {
   if (!timestamp) {
-    return "尚无执行记录";
+    return emptyLabel;
   }
 
   return new Date(
     timestamp
   ).toLocaleString(
-    "zh-CN",
+    locale,
     {
       hour12: false,
     }
@@ -56,6 +59,7 @@ function formatTime(
 }
 
 export default function RuntimePage() {
+  const { locale, t } = useLanguage();
   const [data, setData] =
     useState<RuntimeStatus | null>(
       null
@@ -90,7 +94,7 @@ export default function RuntimePage() {
           !result.success
         ) {
           throw new Error(
-            "Runtime 状态读取失败。"
+            t("runtime.loadError")
           );
         }
 
@@ -99,12 +103,12 @@ export default function RuntimePage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Runtime 状态读取失败。"
+            : t("runtime.loadError")
         );
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [t]);
 
   useEffect(() => {
     void loadStatus();
@@ -148,7 +152,7 @@ export default function RuntimePage() {
               lineHeight: 1.15,
             }}
           >
-            ⚡ Runtime Control Center
+            ⚡ {t("runtime.title")}
           </h1>
 
           <p
@@ -158,7 +162,7 @@ export default function RuntimePage() {
               lineHeight: 1.65,
             }}
           >
-            查看 AIOS 是否在线、当前模型、系统模块和最近执行状态。
+            {t("runtime.description")}
           </p>
         </header>
 
@@ -199,11 +203,11 @@ export default function RuntimePage() {
                 }}
               >
                 {loading
-                  ? "检查中…"
+                  ? t("runtime.checking")
                   : data?.status ===
                       "online"
-                    ? "在线"
-                    : "离线"}
+                    ? t("runtime.online")
+                    : t("runtime.offline")}
               </h2>
 
               <p
@@ -261,7 +265,7 @@ export default function RuntimePage() {
               fontWeight: 900,
             }}
           >
-            刷新状态
+            {t("runtime.refresh")}
           </button>
         </section>
 
@@ -294,7 +298,7 @@ export default function RuntimePage() {
             value={
               data?.provider ?? "—"
             }
-            note="当前 AI 模型"
+            note={t("runtime.modelNote")}
           />
 
           <StatusCard
@@ -302,7 +306,7 @@ export default function RuntimePage() {
             value={String(
               data?.memoryCount ?? 0
             )}
-            note="当前记忆记录"
+            note={t("runtime.memoryNote")}
           />
 
           <StatusCard
@@ -311,7 +315,7 @@ export default function RuntimePage() {
               data?.providerRuntime
                 ?.latencyMs ?? 0
             } ms`}
-            note="最近请求耗时"
+            note={t("runtime.latencyNote")}
           />
 
           <StatusCard
@@ -319,12 +323,14 @@ export default function RuntimePage() {
             value={
               data?.providerRuntime
                 ?.success
-                ? "成功"
-                : "暂无"
+                ? t("runtime.success")
+                : t("runtime.none")
             }
             note={formatTime(
               data?.providerRuntime
-                ?.lastRequestAt
+                ?.lastRequestAt,
+              locale,
+              t("runtime.noRuns")
             )}
           />
         </section>
@@ -358,7 +364,7 @@ export default function RuntimePage() {
                   color: "#64748b",
                 }}
               >
-                正在读取模块状态…
+                {t("runtime.loadingModules")}
               </p>
             ) : (
               modules.map(
@@ -415,20 +421,20 @@ export default function RuntimePage() {
         >
           <RuntimeLink
             href="/planner"
-            label="🧭 打开 Planner"
-            description="输入目标，由 AIOS 生成计划并调度执行"
+            label={`🧭 ${t("runtime.openPlanner")}`}
+            description={t("runtime.openPlannerDescription")}
           />
 
           <RuntimeLink
             href="/brain"
-            label="🧠 打开 Runtime Console"
-            description="直接向 Runtime 提交单次任务"
+            label={`🧠 ${t("runtime.openConsole")}`}
+            description={t("runtime.openConsoleDescription")}
           />
 
           <RuntimeLink
             href="/runtime/trace"
-            label="📍 查看 Execution Trace"
-            description="查看最近一次真实执行过程"
+            label={`📍 ${t("runtime.openTrace")}`}
+            description={t("runtime.openTraceDescription")}
           />
         </section>
       </main>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 import {
   useCallback,
@@ -75,6 +76,7 @@ type ExecutionAction =
   | "sync";
 
 export default function OutcomeExecutionCenter() {
+  const { t } = useLanguage();
   const [
     data,
     setData,
@@ -129,18 +131,18 @@ export default function OutcomeExecutionCenter() {
         ) {
           setMessage(
             result.error ??
-              "执行计划读取失败。"
+              t("execution.loadError")
           );
         }
       } catch {
         setData(null);
         setMessage(
-          "暂时无法连接 Execution Engine。"
+          t("execution.connectionError")
         );
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [t]);
 
   useEffect(() => {
     void loadExecution();
@@ -192,7 +194,7 @@ export default function OutcomeExecutionCenter() {
       ) {
         setMessage(
           result.error ??
-            "执行操作失败。"
+            t("execution.actionError")
         );
 
         return;
@@ -205,7 +207,7 @@ export default function OutcomeExecutionCenter() {
       );
     } catch {
       setMessage(
-        "Execution Engine 暂时无法完成操作。"
+        t("execution.actionError")
       );
     } finally {
       setActionLoading(null);
@@ -220,12 +222,11 @@ export default function OutcomeExecutionCenter() {
 
           <div>
             <strong>
-              正在载入执行中心
+              {t("execution.loading")}
             </strong>
 
             <p style={mutedTextStyle}>
-              正在同步 Outcome、
-              Milestone 和 Tasks。
+              {t("execution.loadingDescription")}
             </p>
           </div>
         </div>
@@ -251,13 +252,11 @@ export default function OutcomeExecutionCenter() {
             </p>
 
             <h2 style={emptyTitleStyle}>
-              尚未建立执行队列
+              {t("execution.emptyTitle")}
             </h2>
 
             <p style={emptyTextStyle}>
-              创建 Outcome
-              并将里程碑生成为任务后，AIOS
-              会在这里推荐下一项行动。
+              {t("execution.emptyDescription")}
             </p>
           </div>
 
@@ -266,7 +265,7 @@ export default function OutcomeExecutionCenter() {
               href="/outcomes"
               style={primaryLinkStyle}
             >
-              打开 Outcome Center
+              {t("execution.openOutcomes")}
             </Link>
 
             <button
@@ -276,7 +275,7 @@ export default function OutcomeExecutionCenter() {
               }
               style={secondaryButtonStyle}
             >
-              重新检查
+              {t("execution.retry")}
             </button>
           </div>
         </div>
@@ -331,7 +330,7 @@ export default function OutcomeExecutionCenter() {
           </h2>
 
           <p style={subtitleStyle}>
-            将长期成果转换为当前可以立即完成的下一项行动。
+            {t("execution.description")}
           </p>
         </div>
 
@@ -348,8 +347,8 @@ export default function OutcomeExecutionCenter() {
           >
             {actionLoading ===
             "sync"
-              ? "同步中…"
-              : "同步进度"}
+              ? t("execution.syncing")
+              : t("execution.sync")}
           </button>
 
           <Link
@@ -402,28 +401,28 @@ export default function OutcomeExecutionCenter() {
 
         <div style={metricGridStyle}>
           <MetricCard
-            label="已完成"
+            label={t("execution.completed")}
             value={
               execution.completedTasks
             }
           />
 
           <MetricCard
-            label="待执行"
+            label={t("execution.remaining")}
             value={
               execution.remainingTasks
             }
           />
 
           <MetricCard
-            label="队列总数"
+            label={t("execution.queueTotal")}
             value={
               execution.queueSize
             }
           />
 
           <MetricCard
-            label="当前阶段"
+            label={t("execution.stage")}
             value={
               execution
                 .currentMilestone
@@ -441,20 +440,20 @@ export default function OutcomeExecutionCenter() {
 
           <h3 style={nextActionTitleStyle}>
             {isCompleted
-              ? "当前 Outcome 已完成"
+              ? t("execution.outcomeComplete")
               : execution.nextAction
                   .title}
           </h3>
 
           <p style={nextActionTextStyle}>
             {isCompleted
-              ? "所有关联任务均已完成，可以复盘成果或创建下一个 Outcome。"
+              ? t("execution.outcomeCompleteDescription")
               : execution.nextAction
                   .description ||
                 execution
                   .currentMilestone
                   ?.title ||
-                "执行当前最重要的任务。"}
+                t("execution.defaultAction")}
           </p>
 
           {execution.currentMilestone && (
@@ -462,7 +461,7 @@ export default function OutcomeExecutionCenter() {
               style={milestoneStyle}
             >
               <span>
-                当前里程碑
+                {t("execution.milestone")}
               </span>
 
               <strong>
@@ -495,8 +494,8 @@ export default function OutcomeExecutionCenter() {
               >
                 {actionLoading ===
                 "start-next"
-                  ? "启动中…"
-                  : "▶ 开始下一项"}
+                  ? t("execution.starting")
+                  : `▶ ${t("execution.startNext")}`}
               </button>
             )}
 
@@ -517,8 +516,8 @@ export default function OutcomeExecutionCenter() {
               >
                 {actionLoading ===
                 "complete-current"
-                  ? "完成中…"
-                  : "✓ 完成当前任务"}
+                  ? t("execution.completing")
+                  : `✓ ${t("execution.completeCurrent")}`}
               </button>
             )}
 
@@ -527,7 +526,7 @@ export default function OutcomeExecutionCenter() {
               href="/outcomes"
               style={startButtonStyle}
             >
-              查看成果
+              {t("execution.viewOutcome")}
             </Link>
           )}
         </div>
@@ -541,24 +540,24 @@ export default function OutcomeExecutionCenter() {
 
       <div style={queueGridStyle}>
         <QueueColumn
-          title="正在执行"
+          title={t("execution.doing")}
           icon="🚀"
           tasks={doingTasks}
-          emptyText="目前没有执行中的任务"
+          emptyText={t("execution.noDoing")}
         />
 
         <QueueColumn
-          title="等待执行"
+          title={t("execution.todo")}
           icon="⏳"
           tasks={todoTasks}
-          emptyText="目前没有等待任务"
+          emptyText={t("execution.noTodo")}
         />
 
         <QueueColumn
-          title="已经完成"
+          title={t("execution.done")}
           icon="✅"
           tasks={doneTasks.slice(0, 6)}
-          emptyText="完成的任务会显示在这里"
+          emptyText={t("execution.noDone")}
         />
       </div>
     </section>

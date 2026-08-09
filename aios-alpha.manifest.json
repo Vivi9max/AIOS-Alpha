@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "AIOS Alpha",
-  "release": "C125",
+  "release": "C126",
   "updatedAt": "2026-08-09",
   "mission": "A multilingual, provider-independent AI operating system that turns outcomes into guarded, traceable execution.",
   "status": "alpha",
@@ -29,7 +29,8 @@
     "execution-review",
     "multilingual-interface",
     "handoff-capsule",
-    "localized-workspace-and-tasks"
+    "localized-workspace-and-tasks",
+    "localized-planner-runtime"
   ],
   "continuity": {
     "readFirst": [
@@ -44,6 +45,6 @@
       "Add internationalized UI through the shared i18n foundation.",
       "Run typecheck and production build before delivery."
     ],
-    "nextPriority": "Extend shared internationalization into the planner and runtime flows."
+    "nextPriority": "Extend shared internationalization into outcomes, memory and project flows."
   }
 }
