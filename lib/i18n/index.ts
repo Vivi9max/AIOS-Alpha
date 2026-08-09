@@ -1,3 +1,5 @@
+import type { Project } from "@/lib/project/types";
+
 export const supportedLocales = ["en", "zh-CN", "ja"] as const;
 
 export type Locale = (typeof supportedLocales)[number];
@@ -145,6 +147,22 @@ const messages = {
     "execution.noTodo": "No tasks are waiting",
     "execution.done": "Completed",
     "execution.noDone": "Completed tasks will appear here",
+    "projects.eyebrow": "AIOS Project Center",
+    "projects.title": "Projects",
+    "projects.description": "Choose a project to enter its workspace and system modules.",
+    "projects.modules": "modules",
+    "projects.open": "Open project",
+    "projects.back": "Back to Projects",
+    "projects.enterWorkspace": "Enter workspace",
+    "projects.projectModules": "Project modules",
+    "projects.openModule": "Open",
+    "projects.status.running": "Running",
+    "projects.status.planning": "Planning",
+    "projects.status.building": "Building",
+    "projects.status.waiting": "Waiting",
+    "projects.moduleStatus.active": "Active",
+    "projects.moduleStatus.ready": "Ready",
+    "projects.moduleStatus.planned": "Planned",
   },
   "zh-CN": {
     "nav.chat": "对话",
@@ -279,6 +297,22 @@ const messages = {
     "execution.noTodo": "目前没有等待任务",
     "execution.done": "已经完成",
     "execution.noDone": "完成的任务会显示在这里",
+    "projects.eyebrow": "AIOS 项目中心",
+    "projects.title": "项目",
+    "projects.description": "选择项目，进入对应工作空间和系统模块。",
+    "projects.modules": "个模块",
+    "projects.open": "打开项目",
+    "projects.back": "返回项目列表",
+    "projects.enterWorkspace": "进入工作空间",
+    "projects.projectModules": "项目模块",
+    "projects.openModule": "打开",
+    "projects.status.running": "运行中",
+    "projects.status.planning": "规划中",
+    "projects.status.building": "建设中",
+    "projects.status.waiting": "等待中",
+    "projects.moduleStatus.active": "运行中",
+    "projects.moduleStatus.ready": "已就绪",
+    "projects.moduleStatus.planned": "已规划",
   },
   ja: {
     "nav.chat": "チャット",
@@ -413,6 +447,22 @@ const messages = {
     "execution.noTodo": "待機中のタスクはありません",
     "execution.done": "完了済み",
     "execution.noDone": "完了したタスクがここに表示されます",
+    "projects.eyebrow": "AIOS プロジェクトセンター",
+    "projects.title": "プロジェクト",
+    "projects.description": "プロジェクトを選び、ワークスペースとシステムモジュールを開きます。",
+    "projects.modules": "モジュール",
+    "projects.open": "プロジェクトを開く",
+    "projects.back": "プロジェクト一覧に戻る",
+    "projects.enterWorkspace": "ワークスペースへ",
+    "projects.projectModules": "プロジェクトモジュール",
+    "projects.openModule": "開く",
+    "projects.status.running": "稼働中",
+    "projects.status.planning": "計画中",
+    "projects.status.building": "構築中",
+    "projects.status.waiting": "待機中",
+    "projects.moduleStatus.active": "稼働中",
+    "projects.moduleStatus.ready": "準備完了",
+    "projects.moduleStatus.planned": "計画済み",
   },
 } as const;
 
@@ -431,4 +481,45 @@ export function detectLocale(language?: string): Locale {
 
 export function translate(locale: Locale, key: MessageKey): string {
   return messages[locale][key] ?? messages[DEFAULT_LOCALE][key];
+}
+
+type ProjectCopy = Pick<Project, "name" | "description"> & {
+  modules: Array<{ name: string; description: string }>;
+};
+
+const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
+  en: {
+    "aios-alpha": { name: "AIOS Alpha", description: "AIOS Alpha Runtime, Memory, Tasks, Planner and unified workspace.", modules: [
+      { name: "AIOS Workspace", description: "Enter the main AIOS workspace" }, { name: "Planner Engine", description: "Turn goals into executable workflows" }, { name: "Runtime Control Center", description: "Inspect system, model and module status" }, { name: "Execution Trace", description: "Inspect the latest execution and capability calls" }, { name: "Memory", description: "Manage long-term memory and user profile" }, { name: "Tasks", description: "Manage execution tasks created by plans" },
+    ] },
+    "content-os": { name: "Content OS", description: "A system for content research, production, publishing and growth validation.", modules: [
+      { name: "Content Production Workspace", description: "Enter the content research and production workflow" }, { name: "Content Tasks", description: "View content production tasks" },
+    ] },
+    "brain-engine": { name: "Brain Engine", description: "The core for goal understanding, planning, capability routing and Runtime execution.", modules: [
+      { name: "Planner Engine", description: "Understand goals and generate execution workflows" }, { name: "Runtime Control Center", description: "Inspect the actual AIOS Runtime state" }, { name: "Runtime Console", description: "Submit tasks directly to Runtime" }, { name: "Execution Trace", description: "Inspect the latest capability call records" },
+    ] },
+    "film-studio": { name: "Film Studio", description: "An AI multimodal system for concepts, shots, assets and content production.", modules: [
+      { name: "Creative Production Workspace", description: "Enter the AI multimodal creative production workflow" },
+    ] },
+  },
+  "zh-CN": {},
+  ja: {
+    "aios-alpha": { name: "AIOS Alpha", description: "AIOS Alpha の Runtime、Memory、Tasks、Planner、統合ワークスペース。", modules: [
+      { name: "AIOS ワークスペース", description: "AIOS のメインワークスペースを開く" }, { name: "Planner Engine", description: "目標を実行可能なワークフローに変換" }, { name: "Runtime 管理センター", description: "システム、モデル、モジュールの状態を確認" }, { name: "実行トレース", description: "最新の実行と機能呼び出しを確認" }, { name: "メモリー", description: "長期メモリーとユーザー情報を管理" }, { name: "タスク", description: "計画から生成された実行タスクを管理" },
+    ] },
+    "content-os": { name: "Content OS", description: "コンテンツの調査、制作、公開、成長検証を行うシステム。", modules: [
+      { name: "コンテンツ制作ワークスペース", description: "コンテンツ調査と制作ワークフローを開く" }, { name: "コンテンツタスク", description: "コンテンツ制作タスクを表示" },
+    ] },
+    "brain-engine": { name: "Brain Engine", description: "目標理解、計画、機能ルーティング、Runtime 実行の中核。", modules: [
+      { name: "Planner Engine", description: "目標を理解して実行ワークフローを生成" }, { name: "Runtime 管理センター", description: "AIOS Runtime の実際の状態を確認" }, { name: "Runtime Console", description: "Runtime にタスクを直接送信" }, { name: "実行トレース", description: "最新の機能呼び出し履歴を確認" },
+    ] },
+    "film-studio": { name: "Film Studio", description: "AI マルチモーダルの企画、ショット、素材、コンテンツ制作システム。", modules: [
+      { name: "クリエイティブ制作ワークスペース", description: "AI マルチモーダル制作ワークフローを開く" },
+    ] },
+  },
+};
+
+export function projectCopy(locale: Locale, project: Project): ProjectCopy {
+  if (locale === "zh-CN") return { name: project.name, description: project.description, modules: project.modules.map(({ name, description }) => ({ name, description })) };
+  return projectCopies[locale][project.id] ?? projectCopies.en[project.id] ?? { name: project.name, description: project.description, modules: project.modules.map(({ name, description }) => ({ name, description })) };
 }
