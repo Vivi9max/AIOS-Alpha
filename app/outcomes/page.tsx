@@ -10,6 +10,8 @@ import {
 } from "react";
 
 import MaterializeOutcomeButton from "@/components/outcomes/MaterializeOutcomeButton";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import type { Locale } from "@/lib/i18n";
 
 type OutcomeStatus =
   | "planned"
@@ -91,7 +93,16 @@ const EMPTY_SUMMARY: OutcomeSummary = {
   averageProgress: 0,
 };
 
-const INITIAL_MILESTONES: MilestoneDraft[] = [
+const OUTCOME_COPY = {
+  en: { subtitle: "From goals and milestones to completed outcomes.", new: "＋ New outcome", cancel: "Cancel", all: "All outcomes", active: "Active", blocked: "Blocked", completed: "Completed", average: "Average progress", planned: "Planned", createTitle: "Create a new outcome", createDescription: "Define the final result, success criteria and key milestones.", title: "Outcome title", titlePlaceholder: "For example: Publicly launch AIOS Alpha", description: "Description", descriptionPlaceholder: "Explain the problem this outcome must solve.", criteria: "Success criteria", criteriaPlaceholder: "For example: 10 real users complete the core flow and submit feedback.", priority: "Priority", targetDate: "Target date", milestones: "Milestones", milestoneHelp: "Ordered by the real execution sequence.", add: "＋ Add", milestone: "Milestone", delete: "Delete", milestoneTitle: "Milestone title", milestoneDescription: "Milestone description", creating: "Creating…", create: "Create outcome", list: "Outcome list", listDescription: "Current outcomes, progress and milestones.", refreshing: "Refreshing", refresh: "Refresh", loading: "Loading outcomes…", empty: "No outcomes yet. Create your first outcome with New outcome.", low: "Low", normal: "Normal", high: "High", critical: "Critical", priorityPrefix: "Priority", done: "complete", linked: "linked tasks", start: "🚀 Start", markComplete: "✅ Mark complete", archive: "Archive", remove: "Delete outcome", status: { planned: "Planned", active: "Active", blocked: "Blocked", completed: "Completed", archived: "Archived" }, milestoneStatus: { pending: "Pending", active: "Active", blocked: "Blocked", completed: "Completed" } },
+  "zh-CN": { subtitle: "从目标、里程碑到成果完成。", new: "＋ 新建 Outcome", cancel: "取消创建", all: "全部成果", active: "进行中", blocked: "受阻", completed: "已完成", average: "平均进度", planned: "已规划", createTitle: "创建新的 Outcome", createDescription: "定义最终成果、成功标准与关键里程碑。", title: "Outcome 标题", titlePlaceholder: "例如：公开发布 AIOS Alpha", description: "成果说明", descriptionPlaceholder: "说明这个成果需要解决什么问题。", criteria: "成功标准", criteriaPlaceholder: "例如：至少 10 位真实用户完成核心流程并提交反馈。", priority: "优先级", targetDate: "目标日期", milestones: "里程碑", milestoneHelp: "按实际执行顺序排列。", add: "＋ 添加", milestone: "里程碑", delete: "删除", milestoneTitle: "里程碑标题", milestoneDescription: "里程碑说明", creating: "正在创建…", create: "创建 Outcome", list: "Outcome 列表", listDescription: "当前成果、进度与里程碑。", refreshing: "刷新中", refresh: "刷新", loading: "正在加载 Outcomes…", empty: "还没有 Outcome。点击“新建 Outcome”创建第一个成果目标。", low: "低", normal: "普通", high: "高", critical: "最高", priorityPrefix: "优先级", done: "完成", linked: "项关联任务", start: "🚀 开始执行", markComplete: "✅ 标记完成", archive: "归档", remove: "删除 Outcome", status: { planned: "已规划", active: "进行中", blocked: "受阻", completed: "已完成", archived: "已归档" }, milestoneStatus: { pending: "待开始", active: "进行中", blocked: "受阻", completed: "已完成" } },
+  ja: { subtitle: "目標とマイルストーンから成果達成まで。", new: "＋ 新しい成果", cancel: "キャンセル", all: "すべての成果", active: "進行中", blocked: "停止中", completed: "完了", average: "平均進捗", planned: "計画済み", createTitle: "新しい成果を作成", createDescription: "最終成果、成功基準、主要マイルストーンを定義します。", title: "成果名", titlePlaceholder: "例：AIOS Alpha を一般公開", description: "成果の説明", descriptionPlaceholder: "この成果で解決する課題を説明してください。", criteria: "成功基準", criteriaPlaceholder: "例：実ユーザー10名が主要フローを完了し、フィードバックを送信。", priority: "優先度", targetDate: "目標日", milestones: "マイルストーン", milestoneHelp: "実際の実行順に並べます。", add: "＋ 追加", milestone: "マイルストーン", delete: "削除", milestoneTitle: "マイルストーン名", milestoneDescription: "マイルストーンの説明", creating: "作成中…", create: "成果を作成", list: "成果一覧", listDescription: "現在の成果、進捗、マイルストーン。", refreshing: "更新中", refresh: "更新", loading: "成果を読み込み中…", empty: "成果はまだありません。「新しい成果」から最初の成果を作成してください。", low: "低", normal: "通常", high: "高", critical: "最優先", priorityPrefix: "優先度", done: "完了", linked: "件の関連タスク", start: "🚀 実行開始", markComplete: "✅ 完了にする", archive: "アーカイブ", remove: "成果を削除", status: { planned: "計画済み", active: "進行中", blocked: "停止中", completed: "完了", archived: "アーカイブ済み" }, milestoneStatus: { pending: "未着手", active: "進行中", blocked: "停止中", completed: "完了" } },
+} as const;
+
+function initialMilestones(locale: Locale): MilestoneDraft[] {
+  if (locale === "en") return [{ title: "Complete the MVP", description: "Core capabilities run as one complete user flow." }, { title: "Complete public deployment", description: "The public version is stable and mobile-tested." }, { title: "Invite initial users", description: "Real users complete the flow and submit feedback." }];
+  if (locale === "ja") return [{ title: "MVPを完成", description: "主要機能を完全な利用フローとして動作させる。" }, { title: "一般公開を完了", description: "公開版を安定稼働させ、モバイルで検証する。" }, { title: "初期ユーザーを招待", description: "実ユーザーに体験とフィードバックを依頼する。" }];
+  return [
   {
     title: "完成 MVP",
     description: "核心功能可以正常运行并形成完整使用流程。",
@@ -104,7 +115,8 @@ const INITIAL_MILESTONES: MilestoneDraft[] = [
     title: "邀请首批用户",
     description: "邀请真实用户体验并提交反馈。",
   },
-];
+  ];
+}
 
 function getStatusLabel(status: OutcomeStatus): string {
   return {
@@ -144,8 +156,8 @@ function getMilestoneIcon(status: MilestoneStatus): string {
   }[status];
 }
 
-function formatDate(timestamp: number): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+function formatDate(timestamp: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -211,6 +223,8 @@ async function readJson(response: Response): Promise<OutcomesResponse> {
 }
 
 export default function OutcomesPage() {
+  const { locale } = useLanguage();
+  const copy = OUTCOME_COPY[locale];
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [summary, setSummary] = useState<OutcomeSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
@@ -224,7 +238,7 @@ export default function OutcomesPage() {
   const [priority, setPriority] = useState<OutcomePriority>("normal");
   const [targetDate, setTargetDate] = useState("");
   const [milestones, setMilestones] =
-    useState<MilestoneDraft[]>(INITIAL_MILESTONES);
+    useState<MilestoneDraft[]>(() => initialMilestones(locale));
 
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -296,7 +310,7 @@ export default function OutcomesPage() {
     setSuccessCriteria("");
     setPriority("normal");
     setTargetDate("");
-    setMilestones(INITIAL_MILESTONES.map((item) => ({ ...item })));
+    setMilestones(initialMilestones(locale));
   }
 
   async function createNewOutcome() {
@@ -475,7 +489,7 @@ export default function OutcomesPage() {
         <div>
           <div style={styles.eyebrow}>OUTCOME ENGINE</div>
           <h1 style={styles.title}>Outcomes</h1>
-          <p style={styles.subtitle}>从目标、里程碑到成果完成。</p>
+          <p style={styles.subtitle}>{copy.subtitle}</p>
         </div>
 
         <button
@@ -491,21 +505,21 @@ export default function OutcomesPage() {
             color: formOpen ? "#334155" : "#ffffff",
           }}
         >
-          {formOpen ? "取消创建" : "＋ 新建 Outcome"}
+          {formOpen ? copy.cancel : copy.new}
         </button>
       </header>
 
       <section style={styles.summaryGrid}>
-        <SummaryCard label="全部成果" value={summary.total} icon="🎯" />
-        <SummaryCard label="进行中" value={summary.active} icon="🚀" />
-        <SummaryCard label="受阻" value={summary.blocked} icon="⚠️" />
-        <SummaryCard label="已完成" value={summary.completed} icon="✅" />
+        <SummaryCard label={copy.all} value={summary.total} icon="🎯" />
+        <SummaryCard label={copy.active} value={summary.active} icon="🚀" />
+        <SummaryCard label={copy.blocked} value={summary.blocked} icon="⚠️" />
+        <SummaryCard label={copy.completed} value={summary.completed} icon="✅" />
         <SummaryCard
-          label="平均进度"
+          label={copy.average}
           value={`${summary.averageProgress}%`}
           icon="📊"
         />
-        <SummaryCard label="已规划" value={summary.planned} icon="📝" />
+        <SummaryCard label={copy.planned} value={summary.planned} icon="📝" />
       </section>
 
       {error ? <MessageBox type="error">{error}</MessageBox> : null}
@@ -515,40 +529,40 @@ export default function OutcomesPage() {
 
       {formOpen ? (
         <section style={styles.panel}>
-          <h2 style={styles.sectionTitle}>创建新的 Outcome</h2>
+          <h2 style={styles.sectionTitle}>{copy.createTitle}</h2>
           <p style={styles.sectionDescription}>
-            定义最终成果、成功标准与关键里程碑。
+            {copy.createDescription}
           </p>
 
-          <FieldLabel>Outcome 标题</FieldLabel>
+          <FieldLabel>{copy.title}</FieldLabel>
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="例如：公开发布 AIOS Alpha"
+            placeholder={copy.titlePlaceholder}
             style={styles.input}
           />
 
-          <FieldLabel>成果说明</FieldLabel>
+          <FieldLabel>{copy.description}</FieldLabel>
           <textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="说明这个成果需要解决什么问题。"
+            placeholder={copy.descriptionPlaceholder}
             rows={4}
             style={styles.textarea}
           />
 
-          <FieldLabel>成功标准</FieldLabel>
+          <FieldLabel>{copy.criteria}</FieldLabel>
           <textarea
             value={successCriteria}
             onChange={(event) => setSuccessCriteria(event.target.value)}
-            placeholder="例如：至少 10 位真实用户完成核心流程并提交反馈。"
+            placeholder={copy.criteriaPlaceholder}
             rows={3}
             style={styles.textarea}
           />
 
           <div style={styles.twoColumns}>
             <div>
-              <FieldLabel>优先级</FieldLabel>
+              <FieldLabel>{copy.priority}</FieldLabel>
               <select
                 value={priority}
                 onChange={(event) =>
@@ -556,15 +570,12 @@ export default function OutcomesPage() {
                 }
                 style={styles.input}
               >
-                <option value="low">低</option>
-                <option value="normal">普通</option>
-                <option value="high">高</option>
-                <option value="critical">最高</option>
+                <option value="low">{copy.low}</option><option value="normal">{copy.normal}</option><option value="high">{copy.high}</option><option value="critical">{copy.critical}</option>
               </select>
             </div>
 
             <div>
-              <FieldLabel>目标日期</FieldLabel>
+              <FieldLabel>{copy.targetDate}</FieldLabel>
               <input
                 type="date"
                 value={targetDate}
@@ -576,8 +587,7 @@ export default function OutcomesPage() {
 
           <div style={{ ...styles.sectionHeader, marginTop: 22 }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: 18 }}>里程碑</h3>
-              <p style={styles.sectionDescription}>按实际执行顺序排列。</p>
+              <h3 style={{ margin: 0, fontSize: 18 }}>{copy.milestones}</h3><p style={styles.sectionDescription}>{copy.milestoneHelp}</p>
             </div>
 
             <button
@@ -585,7 +595,7 @@ export default function OutcomesPage() {
               onClick={addMilestoneDraft}
               style={styles.secondaryButton}
             >
-              ＋ 添加
+              {copy.add}
             </button>
           </div>
 
@@ -593,7 +603,7 @@ export default function OutcomesPage() {
             {milestones.map((milestone, index) => (
               <div key={index} style={styles.draftCard}>
                 <div style={styles.sectionHeader}>
-                  <strong>里程碑 {index + 1}</strong>
+                  <strong>{copy.milestone} {index + 1}</strong>
 
                   {milestones.length > 1 ? (
                     <button
@@ -601,7 +611,7 @@ export default function OutcomesPage() {
                       onClick={() => removeMilestoneDraft(index)}
                       style={styles.dangerTextButton}
                     >
-                      删除
+                      {copy.delete}
                     </button>
                   ) : null}
                 </div>
@@ -611,7 +621,7 @@ export default function OutcomesPage() {
                   onChange={(event) =>
                     updateMilestoneDraft(index, "title", event.target.value)
                   }
-                  placeholder="里程碑标题"
+                  placeholder={copy.milestoneTitle}
                   style={{ ...styles.input, marginTop: 11 }}
                 />
 
@@ -624,7 +634,7 @@ export default function OutcomesPage() {
                       event.target.value
                     )
                   }
-                  placeholder="里程碑说明"
+                  placeholder={copy.milestoneDescription}
                   rows={2}
                   style={{ ...styles.textarea, marginTop: 9 }}
                 />
@@ -644,7 +654,7 @@ export default function OutcomesPage() {
               cursor: saving ? "default" : "pointer",
             }}
           >
-            {saving ? "正在创建…" : "创建 Outcome"}
+            {saving ? copy.creating : copy.create}
           </button>
         </section>
       ) : null}
@@ -652,8 +662,7 @@ export default function OutcomesPage() {
       <section style={{ marginTop: 22 }}>
         <div style={styles.sectionHeader}>
           <div>
-            <h2 style={styles.sectionTitle}>Outcome 列表</h2>
-            <p style={styles.sectionDescription}>当前成果、进度与里程碑。</p>
+            <h2 style={styles.sectionTitle}>{copy.list}</h2><p style={styles.sectionDescription}>{copy.listDescription}</p>
           </div>
 
           <button
@@ -662,17 +671,15 @@ export default function OutcomesPage() {
             onClick={() => void loadOutcomes()}
             style={styles.secondaryButton}
           >
-            {loading ? "刷新中" : "刷新"}
+            {loading ? copy.refreshing : copy.refresh}
           </button>
         </div>
 
         <div style={{ display: "grid", gap: 14, marginTop: 15 }}>
-          {loading ? <EmptyState>正在加载 Outcomes…</EmptyState> : null}
+          {loading ? <EmptyState>{copy.loading}</EmptyState> : null}
 
           {!loading && visibleOutcomes.length === 0 ? (
-            <EmptyState>
-              还没有 Outcome。点击右上角“新建 Outcome”创建第一个成果目标。
-            </EmptyState>
+            <EmptyState>{copy.empty}</EmptyState>
           ) : null}
 
           {!loading
@@ -723,6 +730,8 @@ function OutcomeCard({
   onDelete: (outcome: Outcome) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
+  const { locale } = useLanguage();
+  const copy = OUTCOME_COPY[locale];
   const orderedMilestones = [...outcome.milestones].sort(
     (first, second) => first.order - second.order
   );
@@ -737,7 +746,7 @@ function OutcomeCard({
                 {getStatusIcon(outcome.status)}
               </span>
               <span style={styles.statusBadge}>
-                {getStatusLabel(outcome.status)}
+                {copy.status[outcome.status]}
               </span>
               <span
                 style={{
@@ -748,7 +757,7 @@ function OutcomeCard({
                     outcome.priority === "critical" ? "#dc2626" : "#64748b",
                 }}
               >
-                优先级 {getPriorityLabel(outcome.priority)}
+                {copy.priorityPrefix} {copy[outcome.priority]}
               </span>
             </div>
 
@@ -801,7 +810,7 @@ function OutcomeCard({
 
           {outcome.successCriteria ? (
             <div style={styles.criteria}>
-              <div style={styles.criteriaLabel}>SUCCESS CRITERIA</div>
+              <div style={styles.criteriaLabel}>{copy.criteria.toUpperCase()}</div>
               <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
                 {outcome.successCriteria}
               </p>
@@ -809,14 +818,14 @@ function OutcomeCard({
           ) : null}
 
           <div style={{ ...styles.sectionHeader, marginTop: 17 }}>
-            <h4 style={{ margin: 0, fontSize: 17 }}>Milestones</h4>
+            <h4 style={{ margin: 0, fontSize: 17 }}>{copy.milestones}</h4>
             <span style={{ color: "#64748b", fontSize: 12 }}>
               {
                 outcome.milestones.filter(
                   (item) => item.status === "completed"
                 ).length
               }
-              /{outcome.milestones.length} 完成
+              /{outcome.milestones.length} {copy.done}
             </span>
           </div>
 
@@ -844,7 +853,7 @@ function OutcomeCard({
 
                     {milestone.taskIds.length > 0 ? (
                       <div style={styles.linkedTask}>
-                        已连接 {milestone.taskIds.length} 项任务
+                        {milestone.taskIds.length} {copy.linked}
                       </div>
                     ) : null}
                   </div>
@@ -860,10 +869,7 @@ function OutcomeCard({
                     }
                     style={styles.milestoneSelect}
                   >
-                    <option value="pending">待开始</option>
-                    <option value="active">进行中</option>
-                    <option value="blocked">受阻</option>
-                    <option value="completed">已完成</option>
+                    <option value="pending">{copy.milestoneStatus.pending}</option><option value="active">{copy.milestoneStatus.active}</option><option value="blocked">{copy.milestoneStatus.blocked}</option><option value="completed">{copy.milestoneStatus.completed}</option>
                   </select>
                 </div>
               </div>
@@ -876,7 +882,7 @@ function OutcomeCard({
               <ActionButton
                 onClick={() => void onStatusChange(outcome, "active")}
               >
-                🚀 开始执行
+                {copy.start}
               </ActionButton>
             ) : null}
 
@@ -885,7 +891,7 @@ function OutcomeCard({
               <ActionButton
                 onClick={() => void onStatusChange(outcome, "blocked")}
               >
-                ⚠️ 标记受阻
+                ⚠️ {copy.blocked}
               </ActionButton>
             ) : null}
 
@@ -893,17 +899,17 @@ function OutcomeCard({
               <ActionButton
                 onClick={() => void onStatusChange(outcome, "completed")}
               >
-                ✅ 完成 Outcome
+                {copy.markComplete}
               </ActionButton>
             ) : null}
 
             <ActionButton danger onClick={() => void onDelete(outcome)}>
-              删除
+              {copy.delete}
             </ActionButton>
           </div>
 
           <div style={styles.updatedAt}>
-            更新于 {formatDate(outcome.updatedAt)}
+            {copy.refresh} · {formatDate(outcome.updatedAt, locale)}
           </div>
         </div>
       ) : null}
