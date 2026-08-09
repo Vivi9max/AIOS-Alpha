@@ -16,6 +16,7 @@ import {
 
 import Header from "./Header";
 import Sidebar from "./Sidebar";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 export default function WorkspaceShell({
   children,
@@ -23,6 +24,7 @@ export default function WorkspaceShell({
   children:
     ReactNode;
 }) {
+  const { t } = useLanguage();
   const pathname =
     usePathname();
 
@@ -185,8 +187,8 @@ export default function WorkspaceShell({
         }
         aria-label={
           menuOpen
-            ? "关闭导航菜单"
-            : "打开导航菜单"
+            ? t("nav.close")
+            : t("nav.open")
         }
         aria-expanded={
           menuOpen
@@ -248,7 +250,7 @@ export default function WorkspaceShell({
           onClick={
             closeMenu
           }
-          aria-label="关闭导航菜单"
+          aria-label={t("nav.close")}
           tabIndex={
             menuOpen
               ? 0
