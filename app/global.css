@@ -51,6 +51,23 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+.aios-language-label {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .aios-language-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 .aios-workspace-shell {
   display: flex;
   min-height: 100vh;

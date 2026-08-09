@@ -6,6 +6,7 @@ import type {
 } from "next";
 
 import PlannerProvider from "@/components/planner/PlannerProvider";
+import LanguageProvider from "@/components/i18n/LanguageProvider";
 
 export const metadata:
   Metadata = {
@@ -93,19 +94,17 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="zh-CN"
+      lang="en"
     >
       <body>
-        <PlannerProvider
-          autoRefresh={
-            true
-          }
-          refreshInterval={
-            30000
-          }
-        >
-          {children}
-        </PlannerProvider>
+        <LanguageProvider>
+          <PlannerProvider
+            autoRefresh={true}
+            refreshInterval={30000}
+          >
+            {children}
+          </PlannerProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

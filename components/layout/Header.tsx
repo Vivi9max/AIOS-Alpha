@@ -13,6 +13,9 @@ import {
   APP_BADGE,
   APP_CONFIG,
 } from "@/lib/config/app";
+import LanguageSwitcher from "@/components/i18n/LanguageSwitcher";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import type { MessageKey } from "@/lib/i18n";
 
 interface RuntimeStatus {
   status:
@@ -23,33 +26,33 @@ interface RuntimeStatus {
 }
 
 const pageTitles:
-  Record<string, string> = {
+  Record<string, MessageKey> = {
     "/":
-      "Chat Workspace",
+      "page.workspace",
 
     "/workspace":
-      "Chat Workspace",
+      "page.workspace",
 
     "/dashboard":
-      "Dashboard",
+      "nav.dashboard",
 
     "/memory":
-      "Memory",
+      "nav.memory",
 
     "/tasks":
-      "Tasks",
+      "nav.tasks",
 
     "/projects":
-      "Projects",
+      "nav.projects",
 
     "/settings":
-      "Settings",
+      "nav.settings",
 
     "/brain":
-      "AIOS Runtime",
+      "page.runtime",
 
     "/release":
-      "Release",
+      "page.release",
   };
 
 const initialStatus:
@@ -62,6 +65,7 @@ const initialStatus:
   };
 
 export default function Header() {
+  const { t } = useLanguage();
   const pathname =
     usePathname();
 
@@ -73,9 +77,7 @@ export default function Header() {
       initialStatus
     );
 
-  const pageTitle =
-    pageTitles[pathname] ??
-    "AIOS Workspace";
+  const pageTitle = t(pageTitles[pathname] ?? "page.default");
 
   useEffect(() => {
     let active =
@@ -315,9 +317,7 @@ export default function Header() {
               }}
             />
 
-            {isOnline
-              ? "Runtime Online"
-              : "Runtime Offline"}
+            {isOnline ? t("runtime.online") : t("runtime.offline")}
           </span>
 
           <span>
@@ -330,7 +330,7 @@ export default function Header() {
                 "capitalize",
             }}
           >
-            Provider:{" "}
+            {t("runtime.provider")}:{" "}
             {runtime.provider}
           </span>
 
@@ -344,44 +344,14 @@ export default function Header() {
         </div>
       </div>
 
-      <div
-        title={`${APP_CONFIG.stage} User`}
-        style={{
-          flexShrink:
-            0,
-
-          width:
-            44,
-
-          height:
-            44,
-
-          borderRadius:
-            "50%",
-
-          background:
-            "#374151",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
-
-          fontWeight:
-            800,
-
-          fontSize:
-            17,
-
-          border:
-            "1px solid #4b5563",
-        }}
-      >
-        V
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+        <LanguageSwitcher />
+        <div
+          title={`${APP_CONFIG.stage} User`}
+          style={{ width: 44, height: 44, borderRadius: "50%", background: "#374151", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, border: "1px solid #4b5563" }}
+        >
+          V
+        </div>
       </div>
     </header>
   );

@@ -14,51 +14,47 @@ import {
 import {
   projects,
 } from "@/lib/project/store";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import type { MessageKey } from "@/lib/i18n";
 
 const menus = [
   {
-    label:
-      "💬 Chat",
+    icon: "💬", label: "nav.chat" as MessageKey,
 
     href:
       "/workspace",
   },
 
   {
-    label:
-      "🗃️ Memory",
+    icon: "🗃️", label: "nav.memory" as MessageKey,
 
     href:
       "/memory",
   },
 
   {
-    label:
-      "✅ Tasks",
+    icon: "✅", label: "nav.tasks" as MessageKey,
 
     href:
       "/tasks",
   },
 
   {
-    label:
-      "📂 Projects",
+    icon: "📂", label: "nav.projects" as MessageKey,
 
     href:
       "/projects",
   },
 
   {
-    label:
-      "📊 Dashboard",
+    icon: "📊", label: "nav.dashboard" as MessageKey,
 
     href:
       "/dashboard",
   },
 
   {
-    label:
-      "⚙️ Settings",
+    icon: "⚙️", label: "nav.settings" as MessageKey,
 
     href:
       "/settings",
@@ -82,6 +78,7 @@ function isProjectActive(
 }
 
 export default function Sidebar() {
+  const { t } = useLanguage();
   const pathname =
     usePathname();
 
@@ -205,7 +202,7 @@ export default function Sidebar() {
                 "uppercase",
             }}
           >
-            Projects
+            {t("nav.projects")}
           </p>
 
           <Link
@@ -227,7 +224,7 @@ export default function Sidebar() {
                 "none",
             }}
           >
-            全部
+            {t("nav.allProjects")}
           </Link>
         </div>
 
@@ -441,7 +438,7 @@ export default function Sidebar() {
                       : 600,
                 }}
               >
-                {item.label}
+                {item.icon} {t(item.label)}
               </Link>
             );
           }
@@ -466,7 +463,7 @@ export default function Sidebar() {
             12,
         }}
       >
-        {APP_NAME} Runtime Online
+        {APP_NAME} · {t("runtime.online")}
       </div>
     </aside>
   );
