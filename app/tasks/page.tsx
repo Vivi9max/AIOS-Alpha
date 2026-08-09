@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 import type {
   Task,
@@ -33,6 +34,7 @@ interface TasksResponse {
 }
 
 export default function TasksPage() {
+  const { t } = useLanguage();
   const [tasks, setTasks] =
     useState<Task[]>([]);
 
@@ -284,7 +286,7 @@ export default function TasksPage() {
   ) {
     const confirmed =
       window.confirm(
-        "确定删除这项任务吗？"
+        t("tasks.deleteConfirm")
       );
 
     if (!confirmed) {
@@ -395,7 +397,7 @@ export default function TasksPage() {
               fontSize: 30,
             }}
           >
-            Tasks
+            {t("tasks.title")}
           </h1>
 
           <p
@@ -405,7 +407,7 @@ export default function TasksPage() {
               lineHeight: 1.6,
             }}
           >
-            创建、更新并完成你的工作任务。
+            {t("tasks.description")}
           </p>
         </header>
 
@@ -474,7 +476,7 @@ export default function TasksPage() {
                     "uppercase",
                 }}
               >
-                Planner Execution Guard
+                {t("tasks.guard")}
               </p>
 
               <h2
@@ -485,7 +487,7 @@ export default function TasksPage() {
                 }}
               >
                 {control?.title ??
-                  "正在同步执行策略"}
+                  t("tasks.syncTitle")}
               </h2>
 
               <p
@@ -497,7 +499,7 @@ export default function TasksPage() {
                 }}
               >
                 {control?.reason ??
-                  "正在读取 Planner 当前运行限制。"}
+                  t("tasks.syncReason")}
               </p>
             </div>
 
@@ -534,7 +536,7 @@ export default function TasksPage() {
             }}
           >
             <ControlMetric
-              label="并行执行"
+              label={t("tasks.concurrent")}
               value={
                 control
                   ? `${control.doingCount} / ${control.maxConcurrentTasks}`
@@ -543,7 +545,7 @@ export default function TasksPage() {
             />
 
             <ControlMetric
-              label="任务队列"
+              label={t("tasks.queue")}
               value={
                 control
                   ? `${control.queuedCount} 待处理`
@@ -552,11 +554,11 @@ export default function TasksPage() {
             />
 
             <ControlMetric
-              label="新增任务"
+              label={t("tasks.newTask")}
               value={
                 canCreateTask
-                  ? "允许"
-                  : "已暂停"
+                  ? t("tasks.allowed")
+                  : t("tasks.paused")
               }
             />
           </div>
@@ -574,7 +576,7 @@ export default function TasksPage() {
                 lineHeight: 1.55,
               }}
             >
-              当前行动：
+              {t("tasks.currentAction")}
               {control.primaryAction}
             </p>
           )}
@@ -612,7 +614,7 @@ export default function TasksPage() {
             )}
 
           <input
-            aria-label="任务标题"
+            aria-label={t("tasks.titleLabel")}
             value={title}
             disabled={
               saving ||
@@ -624,7 +626,7 @@ export default function TasksPage() {
                 event.target.value
               )
             }
-            placeholder="任务标题"
+            placeholder={t("tasks.titleLabel")}
             style={{
               width: "100%",
               boxSizing:
@@ -638,7 +640,7 @@ export default function TasksPage() {
           />
 
           <textarea
-            aria-label="任务说明"
+            aria-label={t("tasks.descriptionLabel")}
             value={description}
             disabled={
               saving ||
@@ -650,7 +652,7 @@ export default function TasksPage() {
                 event.target.value
               )
             }
-            placeholder="任务说明（可选）"
+            placeholder={t("tasks.descriptionLabel")}
             rows={3}
             style={{
               width: "100%",
@@ -695,10 +697,10 @@ export default function TasksPage() {
             }}
           >
             {saving
-              ? "处理中…"
+              ? t("tasks.processing")
               : !canCreateTask
                 ? "Planner 已暂停新增任务"
-                : "创建任务"}
+                : t("tasks.create")}
           </button>
         </section>
 
@@ -718,7 +720,7 @@ export default function TasksPage() {
                 fontSize: 19,
               }}
             >
-              任务列表
+              {t("tasks.list")}
             </h2>
 
             <span
@@ -739,7 +741,7 @@ export default function TasksPage() {
                 color: "#64748b",
               }}
             >
-              正在读取任务……
+              {t("tasks.loading")}
             </div>
           ) : tasks.length === 0 ? (
             <div
@@ -755,7 +757,7 @@ export default function TasksPage() {
                 color: "#64748b",
               }}
             >
-              还没有任务，先创建第一项任务。
+              {t("tasks.empty")}
             </div>
           ) : (
             <div
