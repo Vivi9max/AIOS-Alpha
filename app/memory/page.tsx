@@ -7,6 +7,8 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import type { Locale } from "@/lib/i18n";
 
 import {
   MODULE_ICONS,
@@ -42,7 +44,12 @@ const emptyProfile: MemoryProfile = {
   preference: "",
 };
 
-const profileFields = [
+function getProfileFields(locale: Locale) {
+ const fields = {
+  en: [
+   { key: "name", label: "Name", icon: "👤", placeholder: "For example: Vivi" }, { key: "location", label: "Location", icon: "📍", placeholder: "For example: China or Japan" }, { key: "project", label: "Current project", icon: "🚀", placeholder: "For example: AIOS Alpha" }, { key: "goal", label: "Long-term goal", icon: "🎯", placeholder: "For example: Publicly launch AIOS Alpha" }, { key: "preference", label: "Preferences", icon: "✨", placeholder: "For example: concise, delivery-first responses" },
+  ],
+  "zh-CN": [
   {
     key: "name",
     label: "姓名",
@@ -73,9 +80,22 @@ const profileFields = [
     icon: "✨",
     placeholder: "例如：少废话、直接交付",
   },
-] as const;
+  ],
+  ja: [
+   { key: "name", label: "名前", icon: "👤", placeholder: "例：Vivi" }, { key: "location", label: "所在地", icon: "📍", placeholder: "例：中国、日本" }, { key: "project", label: "現在のプロジェクト", icon: "🚀", placeholder: "例：AIOS Alpha" }, { key: "goal", label: "長期目標", icon: "🎯", placeholder: "例：AIOS Alpha を一般公開" }, { key: "preference", label: "ユーザー設定", icon: "✨", placeholder: "例：簡潔で成果物を優先" },
+  ],
+ } as const;
+ return fields[locale];
+}
 
 export default function MemoryPage() {
+  const { locale } = useLanguage();
+  const copy = {
+    en: { title: "Memory", description: "Manage structured long-term information and conversation memory.", clear: "Clear conversations", loading: "Loading memory…", profile: "Memory Profile", profileDescription: "Automatically extracted and manually editable.", items: "fields", saving: "Saving…", save: "Save profile", cancel: "Cancel", missing: "Not recorded", edit: "Edit profile", reset: "Reset manual profile", conversationTitle: "Conversation memory", conversationDescription: "Context retained from earlier conversations.", empty: "No conversation memory yet." },
+    "zh-CN": { title: "记忆", description: "管理结构化长期资料和对话记忆。", clear: "清空对话", loading: "正在读取记忆……", profile: "Memory Profile", profileDescription: "自动提取，也可以手动修正。", items: "项", saving: "保存中…", save: "保存资料", cancel: "取消", missing: "尚未记录", edit: "编辑 Profile", reset: "重置手动资料", conversationTitle: "对话记忆", conversationDescription: "从历史对话中保留的上下文。", empty: "还没有对话记忆。" },
+    ja: { title: "メモリー", description: "構造化された長期情報と会話メモリーを管理します。", clear: "会話を消去", loading: "メモリーを読み込み中…", profile: "メモリープロフィール", profileDescription: "自動抽出された内容を手動で修正できます。", items: "項目", saving: "保存中…", save: "プロフィールを保存", cancel: "キャンセル", missing: "未登録", edit: "プロフィールを編集", reset: "手動情報をリセット", conversationTitle: "会話メモリー", conversationDescription: "過去の会話から保持されたコンテキスト。", empty: "会話メモリーはまだありません。" },
+  }[locale];
+  const profileFields = getProfileFields(locale);
   const [items, setItems] =
     useState<MemoryRecord[]>([]);
 
@@ -433,7 +453,7 @@ export default function MemoryPage() {
                 fontSize: 30,
               }}
             >
-              {MODULE_ICONS.memory} Memory
+              {MODULE_ICONS.memory} {copy.title}
             </h1>
 
             <p
@@ -443,7 +463,7 @@ export default function MemoryPage() {
                 lineHeight: 1.55,
               }}
             >
-              管理结构化长期资料和对话记忆。
+              {copy.description}
             </p>
           </div>
 
@@ -471,7 +491,7 @@ export default function MemoryPage() {
               fontWeight: 700,
             }}
           >
-            清空对话
+            {copy.clear}
           </button>
         </header>
 
@@ -517,7 +537,7 @@ export default function MemoryPage() {
               background: "#ffffff",
             }}
           >
-            正在读取记忆……
+            {copy.loading}
           </div>
         ) : (
           <>
@@ -549,7 +569,7 @@ export default function MemoryPage() {
                       fontSize: 21,
                     }}
                   >
-                    Memory Profile
+                    {copy.profile}
                   </h2>
 
                   <p
@@ -561,7 +581,7 @@ export default function MemoryPage() {
                       fontSize: 13,
                     }}
                   >
-                    自动提取，也可以手动修正。
+                    {copy.profileDescription}
                   </p>
                 </div>
 
@@ -579,7 +599,7 @@ export default function MemoryPage() {
                   }}
                 >
                   {completedFields}/
-                  {profileFields.length} 项
+                  {profileFields.length} {copy.items}
                 </span>
               </div>
 
@@ -696,8 +716,8 @@ export default function MemoryPage() {
                       }}
                     >
                       {saving
-                        ? "保存中…"
-                        : "保存资料"}
+                        ? copy.saving
+                        : copy.save}
                     </button>
 
                     <button
@@ -720,7 +740,7 @@ export default function MemoryPage() {
                         fontWeight: 700,
                       }}
                     >
-                      取消
+                      {copy.cancel}
                     </button>
                   </div>
                 </div>
@@ -787,8 +807,7 @@ export default function MemoryPage() {
                                   : "#9ca3af",
                               }}
                             >
-                              {value ||
-                                "尚未记录"}
+                              {value || copy.missing}
                             </strong>
                           </article>
                         );
@@ -823,7 +842,7 @@ export default function MemoryPage() {
                         fontWeight: 800,
                       }}
                     >
-                      编辑 Profile
+                      {copy.edit}
                     </button>
 
                     <button
@@ -846,7 +865,7 @@ export default function MemoryPage() {
                         fontWeight: 700,
                       }}
                     >
-                      重置手动资料
+                      {copy.reset}
                     </button>
                   </div>
                 </>
@@ -871,7 +890,7 @@ export default function MemoryPage() {
                       fontSize: 21,
                     }}
                   >
-                    Conversation Memory
+                    {copy.conversationTitle}
                   </h2>
 
                   <p
@@ -883,7 +902,7 @@ export default function MemoryPage() {
                       fontSize: 13,
                     }}
                   >
-                    原始用户消息与 AI 回复。
+                    {copy.conversationDescription}
                   </p>
                 </div>
 
@@ -894,7 +913,7 @@ export default function MemoryPage() {
                     fontSize: 13,
                   }}
                 >
-                  {items.length} 条
+                  {items.length} {copy.items}
                 </strong>
               </div>
 
@@ -915,8 +934,7 @@ export default function MemoryPage() {
                     lineHeight: 1.7,
                   }}
                 >
-                  还没有对话记忆。先在 Chat
-                  中进行一轮对话。
+                  {copy.empty}
                 </div>
               ) : (
                 <div

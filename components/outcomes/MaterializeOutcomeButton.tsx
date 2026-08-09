@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 import {
   useState,
@@ -104,6 +105,12 @@ export default function MaterializeOutcomeButton({
   existingTaskCount,
   onCompleted,
 }: MaterializeOutcomeButtonProps) {
+  const { locale } = useLanguage();
+  const copy = {
+    en: { connected: "Execution tasks connected", convert: "Turn milestones into real tasks", existing: `This outcome has ${existingTaskCount} linked tasks. Running again will not duplicate active tasks with the same name.`, fresh: `Create one task for every milestone in “${outcomeTitle}” and synchronize them with Planner.`, generating: "Generating execution tasks…", resync: "Synchronize execution tasks", generate: "⚡ Generate execution tasks", result: "Execution workflow synchronized", created: "created", reused: "reused", open: "Open tasks" },
+    "zh-CN": { connected: "执行任务已连接", convert: "将里程碑转为真实任务", existing: `当前 Outcome 已连接 ${existingTaskCount} 项任务。再次执行不会重复创建活动中的同名任务。`, fresh: `为「${outcomeTitle}」的每个里程碑创建一项任务，并同步到 Planner。`, generating: "正在生成执行任务…", resync: "重新同步执行任务", generate: "⚡ 生成执行任务", result: "执行工作流已同步", created: "新建", reused: "复用", open: "打开任务" },
+    ja: { connected: "実行タスク接続済み", convert: "マイルストーンを実行タスクに変換", existing: `この成果には ${existingTaskCount} 件のタスクが接続済みです。再実行しても同名の有効タスクは重複しません。`, fresh: `「${outcomeTitle}」の各マイルストーンからタスクを作成し、Planner と同期します。`, generating: "実行タスクを生成中…", resync: "実行タスクを再同期", generate: "⚡ 実行タスクを生成", result: "実行ワークフローを同期しました", created: "新規", reused: "再利用", open: "タスクを開く" },
+  }[locale];
   const [
     loading,
     setLoading,
@@ -308,8 +315,8 @@ export default function MaterializeOutcomeButton({
             }}
           >
             {alreadyMaterialized
-              ? "执行任务已连接"
-              : "将里程碑转为真实任务"}
+              ? copy.connected
+              : copy.convert}
           </h4>
 
           <p
@@ -328,8 +335,8 @@ export default function MaterializeOutcomeButton({
             }}
           >
             {alreadyMaterialized
-              ? `当前 Outcome 已连接 ${existingTaskCount} 项任务。再次执行不会重复创建活动中的同名任务。`
-              : `为「${outcomeTitle}」的每个里程碑创建一项任务，并同步到 Planner。`}
+              ? copy.existing
+              : copy.fresh}
           </p>
         </div>
 
@@ -395,10 +402,10 @@ export default function MaterializeOutcomeButton({
         }}
       >
         {loading
-          ? "正在生成执行任务…"
+          ? copy.generating
           : alreadyMaterialized
-            ? "重新同步执行任务"
-            : "⚡ 生成执行任务"}
+            ? copy.resync
+            : copy.generate}
       </button>
 
       {error && (
