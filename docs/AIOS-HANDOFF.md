@@ -4,7 +4,7 @@ This file is the durable starting point for any human or AI continuing the proje
 
 ## Current checkpoint
 
-- Release: C124
+- Release: C125
 - Product direction: multilingual international edition first
 - Supported interface languages: English, Simplified Chinese, Japanese
 - Runtime: Next.js 16, React 19, TypeScript
@@ -31,6 +31,7 @@ The authoritative machine-readable checkpoint is `/aios-alpha.manifest.json`.
 - Shared browser-persisted language state
 - English, Simplified Chinese and Japanese global navigation
 - Runtime handoff API and continuity page
+- Localized workspace and task management flows in English, Simplified Chinese and Japanese
 
 ## Non-negotiable engineering rules
 
@@ -44,9 +45,8 @@ The authoritative machine-readable checkpoint is `/aios-alpha.manifest.json`.
 
 ## High-value next work
 
-Continue translating the highest-use pages in this order: workspace, tasks, planner, runtime. Do not add more languages until these core flows are complete in the existing three.
+Continue translating the planner and runtime flows. Do not add more languages until these core flows are complete in the existing three.
 
 ## Minimal prompt for another AI
 
 > Read `aios-alpha.manifest.json`, `docs/AIOS-HANDOFF.md`, and `docs/aios-spec.md`, then inspect the latest `main`. Continue the manifest's `nextPriority` as one complete runnable module. Preserve existing capabilities, keep providers replaceable, extend the shared i18n system, and run `npx tsc --noEmit` plus `npm run build` before delivery.
-
