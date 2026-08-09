@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 import {
   useEffect,
@@ -60,65 +61,6 @@ interface QuickAction {
   title: string;
   description: string;
 }
-
-const quickActions:
-  QuickAction[] = [
-    {
-      href:
-        "/tasks",
-
-      icon:
-        "＋",
-
-      title:
-        "新建任务",
-
-      description:
-        "把目标变成下一步行动",
-    },
-
-    {
-      href:
-        "/memory",
-
-        icon:
-          MODULE_ICONS.memory,
-
-      title:
-        "记录信息",
-
-      description:
-        "保存长期资料和偏好",
-    },
-
-    {
-      href:
-        "/projects",
-
-      icon:
-        "📁",
-
-      title:
-        "查看项目",
-
-      description:
-        "管理正在推进的工作",
-    },
-
-    {
-      href:
-        "#aios-chat",
-
-      icon:
-        "✨",
-
-      title:
-        "询问 AIOS",
-
-      description:
-        "规划、分析或执行操作",
-    },
-  ];
 
 const emptyStatus:
   DashboardStatus = {
@@ -186,6 +128,13 @@ function safeNumber(
 }
 
 export default function WorkspaceOverview() {
+  const { t } = useLanguage();
+  const quickActions: QuickAction[] = [
+    { href: "/tasks", icon: "＋", title: t("workspace.action.newTask"), description: t("workspace.action.newTaskDescription") },
+    { href: "/memory", icon: MODULE_ICONS.memory, title: t("workspace.action.memory"), description: t("workspace.action.memoryDescription") },
+    { href: "/projects", icon: "📁", title: t("workspace.action.projects"), description: t("workspace.action.projectsDescription") },
+    { href: "#aios-chat", icon: "✨", title: t("workspace.action.ask"), description: t("workspace.action.askDescription") },
+  ];
   const [
     status,
     setStatus,
@@ -532,7 +481,7 @@ export default function WorkspaceOverview() {
                   1.2,
               }}
             >
-              今天准备完成什么？
+              {t("workspace.heroTitle")}
             </h1>
 
             <p
@@ -550,7 +499,7 @@ export default function WorkspaceOverview() {
                   1.65,
               }}
             >
-              AIOS 可以帮助你规划项目、管理任务、保存记忆并持续推进工作。
+              {t("workspace.heroDescription")}
             </p>
           </div>
 
@@ -617,7 +566,7 @@ export default function WorkspaceOverview() {
                 17,
             }}
           >
-            快捷操作
+            {t("workspace.quickActions")}
           </h2>
 
           <span
@@ -629,7 +578,7 @@ export default function WorkspaceOverview() {
                 12,
             }}
           >
-            一键开始
+            {t("workspace.oneTap")}
           </span>
         </div>
 
