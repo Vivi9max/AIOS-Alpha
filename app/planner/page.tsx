@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 import OutcomeExecutionCenter from "@/components/planner/OutcomeExecutionCenter";
 
@@ -101,6 +102,7 @@ const HISTORY_KEY =
   "aios-alpha:planner-history";
 
 export default function PlannerPage() {
+  const { t } = useLanguage();
   const [goal, setGoal] =
     useState("");
 
@@ -153,7 +155,7 @@ export default function PlannerPage() {
       if (!cleanGoal) {
         return {
           label:
-            "等待目标",
+            t("planner.waitingGoal"),
           color:
             "#94a3b8",
           score: 0,
@@ -196,7 +198,7 @@ export default function PlannerPage() {
       if (score >= 5) {
         return {
           label:
-            "目标清晰",
+            t("planner.goalClear"),
           color:
             "#22c55e",
           score,
@@ -206,7 +208,7 @@ export default function PlannerPage() {
       if (score >= 3) {
         return {
           label:
-            "可以规划",
+            t("planner.readyToPlan"),
           color:
             "#60a5fa",
           score,
@@ -215,12 +217,12 @@ export default function PlannerPage() {
 
       return {
         label:
-          "建议补充细节",
+          t("planner.addDetails"),
         color:
           "#f59e0b",
         score,
       };
-    }, [goal]);
+    }, [goal, t]);
 
   async function runPlanner(
     mode:
@@ -234,7 +236,7 @@ export default function PlannerPage() {
       setResult({
         success: false,
         error:
-          "请输入希望 AIOS 最终完成的目标。",
+          t("planner.goalRequired"),
       });
 
       return;
@@ -305,7 +307,7 @@ export default function PlannerPage() {
         success: false,
 
         error:
-          "无法连接 Planner Engine，请稍后重试。",
+          t("planner.connectionError"),
       });
     } finally {
       setLoadingMode(null);
@@ -397,13 +399,11 @@ export default function PlannerPage() {
           </p>
 
           <h1 style={titleStyle}>
-            🧭 Strategic Planner
+            🧭 {t("planner.title")}
           </h1>
 
           <p style={subtitleStyle}>
-            描述你希望得到的最终结果。Planner
-            将理解目标、拆解阶段、选择能力，并在需要时调度
-            Runtime 执行。
+            {t("planner.description")}
           </p>
 
           <div
@@ -417,7 +417,7 @@ export default function PlannerPage() {
                 headerLinkStyle
               }
             >
-              ⚡ Runtime 状态
+              ⚡ {t("planner.runtimeStatus")}
             </Link>
 
             <Link
@@ -453,8 +453,7 @@ export default function PlannerPage() {
                   goalLabelStyle
                 }
               >
-                你希望 AIOS
-                最终完成什么？
+                {t("planner.goalLabel")}
               </label>
 
               <p
@@ -462,7 +461,7 @@ export default function PlannerPage() {
                   goalHelpStyle
                 }
               >
-                描述最终结果，而不是只输入一个动作。目标越明确，执行路线越准确。
+                {t("planner.goalHelp")}
               </p>
             </div>
 
@@ -512,10 +511,7 @@ export default function PlannerPage() {
             style={goalMetaStyle}
           >
             <span>
-              建议包含：最终结果
-              · 时间范围 ·
-              成功标准 ·
-              已知限制
+              {t("planner.goalHint")}
             </span>
 
             <span>
@@ -536,28 +532,28 @@ export default function PlannerPage() {
                 goal.trim()
                   .length >= 20
               }
-              label="最终结果"
+              label={t("planner.result")}
             />
 
             <QualityItem
               ready={/天|周|月|小时|日期|期限|之前|以内|截止/.test(
                 goal
               )}
-              label="时间范围"
+              label={t("planner.timeframe")}
             />
 
             <QualityItem
               ready={/至少|完成|获得|达到|成功|标准|指标|结果|验证/.test(
                 goal
               )}
-              label="成功标准"
+              label={t("planner.successMetric")}
             />
 
             <QualityItem
               ready={/限制|预算|成本|时间|不能|必须|优先|资源|风险/.test(
                 goal
               )}
-              label="限制条件"
+              label={t("planner.constraints")}
             />
           </div>
 
@@ -587,8 +583,8 @@ export default function PlannerPage() {
             >
               {loadingMode ===
               "plan"
-                ? "正在生成计划…"
-                : "仅生成计划"}
+                ? t("planner.generating")
+                : t("planner.planOnly")}
             </button>
 
             <button
@@ -614,8 +610,8 @@ export default function PlannerPage() {
             >
               {loadingMode ===
               "execute"
-                ? "正在规划并执行…"
-                : "规划并执行"}
+                ? t("planner.executing")
+                : t("planner.planAndExecute")}
             </button>
           </div>
         </section>
@@ -642,7 +638,7 @@ export default function PlannerPage() {
                   sectionTitleStyle
                 }
               >
-                快速目标
+                {t("planner.quickGoals")}
               </h2>
             </div>
 
@@ -651,7 +647,7 @@ export default function PlannerPage() {
                 sectionHintStyle
               }
             >
-              点击即可载入
+              {t("planner.tapToLoad")}
             </span>
           </div>
 
