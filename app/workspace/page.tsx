@@ -1,10 +1,14 @@
+"use client";
+
 import ChatPanel from "@/components/chat/ChatPanel";
 import InviteBanner from "@/components/alpha/InviteBanner";
 import FeedbackButton from "@/components/alpha/FeedbackButton";
 import WorkspaceOverview from "@/components/workspace/WorkspaceOverview";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 export default function WorkspacePage() {
+  const { t } = useLanguage();
   return (
     <WorkspaceShell>
       <main
@@ -61,7 +65,7 @@ export default function WorkspacePage() {
                   18,
               }}
             >
-              AIOS 对话
+              {t("workspace.chatTitle")}
             </h2>
 
             <p
@@ -76,7 +80,7 @@ export default function WorkspacePage() {
                   13,
               }}
             >
-              输入目标、问题或要执行的操作。
+              {t("workspace.chatDescription")}
             </p>
           </div>
 
