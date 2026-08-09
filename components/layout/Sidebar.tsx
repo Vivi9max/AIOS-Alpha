@@ -59,6 +59,13 @@ const menus = [
     href:
       "/settings",
   },
+
+  {
+    icon: "🧭", label: "nav.handoff" as MessageKey,
+
+    href:
+      "/runtime/handoff",
+  },
 ];
 
 function isProjectActive(
