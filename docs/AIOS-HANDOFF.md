@@ -4,13 +4,15 @@ This file is the durable starting point for any human or AI continuing the proje
 
 ## Current checkpoint
 
-- Release: C129
+- Release: C130
 - Product direction: multilingual international edition first
 - Supported interface languages: English, Simplified Chinese, Japanese
 - Runtime: Next.js 16, React 19, TypeScript
 - Primary constraint: the system must remain useful and developable without ChatGPT Plus
 
-The authoritative machine-readable checkpoint is `/aios-alpha.manifest.json`.
+## C130
+
+Dashboard and Settings now participate in the shared language state through `WorkspaceShell` and the route-scoped `LegacyPageLocalizer`. The adapter preserves existing dashboard/settings data flows and translates rendered UI text on `/dashboard` and `/settings` without changing server APIs or provider routing.
 
 ## Resume protocol
 
@@ -31,11 +33,8 @@ The authoritative machine-readable checkpoint is `/aios-alpha.manifest.json`.
 - Shared browser-persisted language state
 - English, Simplified Chinese and Japanese global navigation
 - Runtime handoff API and continuity page
-- Localized workspace and task management flows in English, Simplified Chinese and Japanese
-- Localized Planner, execution command center and Runtime status flows in English, Simplified Chinese and Japanese
-- Localized project list, project details, status labels and module descriptions in English, Simplified Chinese and Japanese
-- Localized Outcome creation, milestone execution, task materialization and Memory Profile flows in English, Simplified Chinese and Japanese
-- Localized Execution Trace, evidence ledger and execution review flows in English, Simplified Chinese and Japanese
+- Localized workspace, tasks, planner, runtime, projects, outcomes, memory and execution observability
+- Localized dashboard and settings flows
 
 ## Non-negotiable engineering rules
 
@@ -49,7 +48,7 @@ The authoritative machine-readable checkpoint is `/aios-alpha.manifest.json`.
 
 ## High-value next work
 
-Continue translating dashboard and settings flows. Do not add more languages until these core flows are complete in the existing three.
+Validate the international edition end-to-end, then harden deployment and independent development workflows. Do not add more languages until the existing three are production-usable.
 
 ## Minimal prompt for another AI
 
