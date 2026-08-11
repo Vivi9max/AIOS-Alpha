@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 type TraceStatus =
   | "waiting"
@@ -418,6 +419,12 @@ function shortenId(
 }
 
 export default function RuntimeTracePage() {
+  const { locale } = useLanguage();
+  const copy = {
+    en: { description: "Inspect the latest request status, capability queue, timeline and runtime result.", refreshing: "Refreshing…", refresh: "Refresh trace", loading: "Loading Execution Trace…", completed: "Execution completed", failed: "Execution failed", running: "Execution in progress", status: "Status", progress: "Progress", duration: "Duration", provider: "Provider", current: "Current", request: "Request", done: "Completed" },
+    "zh-CN": { description: "查看最近一次请求的执行状态、能力队列、时间线和运行结果。", refreshing: "刷新中…", refresh: "刷新记录", loading: "正在读取 Execution Trace…", completed: "执行完成", failed: "执行失败", running: "执行处理中", status: "状态", progress: "进度", duration: "耗时", provider: "模型服务", current: "当前能力", request: "请求", done: "已完成" },
+    ja: { description: "直近リクエストの実行状態、能力キュー、タイムライン、実行結果を確認します。", refreshing: "更新中…", refresh: "記録を更新", loading: "Execution Trace を読み込み中…", completed: "実行完了", failed: "実行失敗", running: "実行中", status: "状態", progress: "進捗", duration: "所要時間", provider: "プロバイダー", current: "現在", request: "リクエスト", done: "完了" },
+  }[locale];
   const [data, setData] =
     useState<TraceResponse | null>(
       null
@@ -811,7 +818,7 @@ export default function RuntimeTracePage() {
                   lineHeight: 1.7,
                 }}
               >
-                查看最近一次请求的执行状态、能力队列、时间线和运行结果。
+                {copy.description}
               </p>
             </div>
 
@@ -842,9 +849,7 @@ export default function RuntimeTracePage() {
                     : 1,
               }}
             >
-              {loading
-                ? "刷新中…"
-                : "刷新记录"}
+              {loading ? copy.refreshing : copy.refresh}
             </button>
           </div>
         </header>
@@ -880,7 +885,7 @@ export default function RuntimeTracePage() {
               }}
             >
               <strong>
-                正在读取 Execution Trace…
+                {copy.loading}
               </strong>
             </section>
           )}
@@ -937,11 +942,11 @@ export default function RuntimeTracePage() {
                     }}
                   >
                     {trace.success
-                      ? "执行完成"
+                      ? copy.completed
                       : executionStatus ===
                           "failed"
-                        ? "执行失败"
-                        : "执行处理中"}
+                        ? copy.failed
+                        : copy.running}
                   </h2>
 
                   <p
@@ -978,26 +983,26 @@ export default function RuntimeTracePage() {
                 }}
               >
                 <DarkMetric
-                  label="Status"
+                  label={copy.status}
                   value={getStatusLabel(
                     executionStatus
                   )}
                 />
 
                 <DarkMetric
-                  label="Progress"
+                  label={copy.progress}
                   value={`${progress}%`}
                 />
 
                 <DarkMetric
-                  label="Duration"
+                  label={copy.duration}
                   value={formatDuration(
                     durationMs
                   )}
                 />
 
                 <DarkMetric
-                  label="Provider"
+                  label={copy.provider}
                   value={
                     trace.provider ??
                     "—"
@@ -1005,19 +1010,19 @@ export default function RuntimeTracePage() {
                 />
 
                 <DarkMetric
-                  label="Current"
+                  label={copy.current}
                   value={
                     currentItem?.capability ??
                     (
                       trace.success
-                        ? "Completed"
+                        ? copy.done
                         : "—"
                     )
                   }
                 />
 
                 <DarkMetric
-                  label="Request"
+                  label={copy.request}
                   value={shortenId(
                     trace.requestId
                   )}
