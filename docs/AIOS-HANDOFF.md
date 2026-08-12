@@ -1,18 +1,34 @@
 # AIOS Alpha — Independent Development Handoff
 
-This file is the durable starting point for any human or AI continuing the project.
-
 ## Current checkpoint
 
-- Release: C130
+- Release: C131
 - Product direction: multilingual international edition first
 - Supported interface languages: English, Simplified Chinese, Japanese
 - Runtime: Next.js 16, React 19, TypeScript
 - Primary constraint: the system must remain useful and developable without ChatGPT Plus
 
-## C130
+## C131
 
-Dashboard and Settings now participate in the shared language state through `WorkspaceShell` and the route-scoped `LegacyPageLocalizer`. The adapter preserves existing dashboard/settings data flows and translates rendered UI text on `/dashboard` and `/settings` without changing server APIs or provider routing.
+C131 hardens independent development and deployment readiness after C130.
+
+Added:
+- First-class `typecheck` npm script.
+- Deterministic `verify` project-continuity gate.
+- GitHub Actions CI for verification, typecheck and production build.
+- C131 release metadata and handoff state.
+
+The CI checks do not require an OpenAI API key because they validate the repository, TypeScript graph and production build rather than provider runtime calls.
+
+## Local verification
+
+```bash
+npm install
+npm run verify
+npm run typecheck
+npm run build
+npm start
+```
 
 ## Resume protocol
 
@@ -20,15 +36,16 @@ Dashboard and Settings now participate in the shared language state through `Wor
 2. Read this handoff.
 3. Read `/docs/aios-spec.md`.
 4. Preserve existing working capabilities.
-5. Run typecheck and production build before delivery.
+5. Run `npm run verify`, `npm run typecheck`, and `npm run build` before delivery.
 
 ## Current capability baseline
 
 - Shared browser-persisted language state
 - English, Simplified Chinese and Japanese global navigation
-- Runtime handoff API and continuity page
 - Localized workspace, tasks, planner, runtime, projects, outcomes, memory and execution observability
 - Localized dashboard and settings flows
+- Provider-independent architecture
+- Independent repository verification and CI gate
 
 ## Non-negotiable engineering rules
 
@@ -36,12 +53,8 @@ Dashboard and Settings now participate in the shared language state through `Wor
 - Deliver complete runnable modules, not isolated fragments.
 - Keep model providers replaceable and avoid a mandatory ChatGPT dependency.
 - Add internationalized UI through the shared i18n foundation.
-- Run typecheck and production build before delivery.
+- Run verification, typecheck and production build before delivery.
 
 ## High-value next work
 
-Validate the international edition end-to-end, then harden deployment and independent development workflows. Do not add more languages until the existing three are production-usable.
-
-## Minimal prompt for another AI
-
-Continue AIOS Alpha from C130. Read `aios-alpha.manifest.json`, `docs/AIOS-HANDOFF.md`, and `docs/aios-spec.md` first. Preserve all working capabilities, avoid mandatory ChatGPT dependency, use the shared i18n foundation, and deliver a complete runnable module with typecheck and production-build validation.
+Use the C131 CI gate to harden deployment and independent development workflows before adding more languages or non-core surface area.
