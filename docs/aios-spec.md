@@ -1,335 +1,81 @@
 # AIOS Alpha Specification
 
 > Canonical engineering specification for AIOS Alpha.
->
-> This document is the single source of truth for architecture, module status,
-> engineering conventions and roadmap.
 
----
+## Project
 
-# Project
+Name: AIOS Alpha
 
-Name
+Mission: An AI Operating System that converts long-term goals into executable outcomes, continuously learns from execution, and evolves through accumulated knowledge.
 
-AIOS Alpha
+Current Stage: Private Alpha
 
-Mission
+Current Release: C132
 
-An AI Operating System that converts long-term goals into executable outcomes,
-continuously learns from execution, and evolves through accumulated knowledge.
+## Core Architecture
 
-Current Stage
+Dashboard / Planner / Outcomes / Tasks / Memory / Knowledge / Runtime / Founder Console / User Profile / Storage / APIs
 
-Private Alpha
+## Core Engines
 
-Current Commit
+### Planner Engine
+Status: Active
+Responsibilities: Planning, Prioritization, Next Action, Execution Queue
 
-c117
+### Execution Engine
+Status: Active
+Responsibilities: Execute Tasks, Update Progress, Sync Milestones, Complete Outcomes
 
----
+### Execution Memory
+Status: Active
+Responsibilities: Store execution history, Runtime metrics, Planner history, Learning context
 
-# Core Architecture
+### Knowledge Engine
+Status: Planned
+Responsibilities: Long-term knowledge, Retrieval, Experience synthesis, Planner optimization
 
-AIOS Alpha
+## Internationalization
 
-├── Dashboard
-├── Planner
-├── Outcomes
-├── Tasks
-├── Memory
-├── Knowledge
-├── Runtime
-├── Founder Console
-├── User Profile
-├── Storage
-└── APIs
+Status: Active
 
----
+Supported locales:
+- en
+- zh-CN
+- ja
 
-# Core Engines
+Dashboard and Settings: Localized
 
-Planner Engine
+Workspace and execution surfaces: Localized
 
-Status
+## Independent Development
 
-Active
+Status: Active
 
-Responsibilities
+Capabilities:
+- Project continuity verification
+- TypeScript typecheck
+- Production build verification
+- GitHub Actions CI
+- Provider-independent deployment health endpoint
+- Provider-independent deployment verification
 
-- Planning
-- Prioritization
-- Next Action
-- Execution Queue
+## Deployment Health
 
-Execution Engine
+Endpoint: `GET /api/health`
 
-Status
+Purpose: Confirm that the deployed AIOS Alpha application is running and its canonical release manifest is available.
 
-Active
+The endpoint must not require an AI provider or API key.
 
-Responsibilities
+Verification:
+`npm run verify:deployment -- https://your-domain.example`
 
-- Execute Tasks
-- Update Progress
-- Sync Milestones
-- Complete Outcomes
+## Engineering Rules
 
-Execution Memory
-
-Status
-
-Active
-
-Responsibilities
-
-- Store execution history
-- Runtime metrics
-- Planner history
-- Learning context
-
-Knowledge Engine
-
-Status
-
-Planned
-
-Responsibilities
-
-- Long-term knowledge
-- Retrieval
-- Experience synthesis
-- Planner optimization
-
----
-
-# Modules
-
-Dashboard
-
-Status
-
-Implemented
-
-Planner
-
-Status
-
-Implemented
-
-Outcomes
-
-Status
-
-Implemented
-
-Tasks
-
-Status
-
-Implemented
-
-Memory
-
-Status
-
-Implemented
-
-Founder Console
-
-Status
-
-Implemented
-
-Execution Timeline
-
-Status
-
-Planned
-
-Knowledge
-
-Status
-
-Planned
-
----
-
-# Runtime
-
-Execution Flow
-
-Outcome
-
-↓
-
-Milestones
-
-↓
-
-Tasks
-
-↓
-
-Planner
-
-↓
-
-Execution Engine
-
-↓
-
-Execution Memory
-
-↓
-
-Knowledge
-
-↓
-
-Planner
-
----
-
-# Storage
-
-Persistent Storage
-
-Enabled
-
-User Isolation
-
-Enabled
-
-Execution Memory
-
-Enabled
-
-Outcome Store
-
-Enabled
-
-Task Store
-
-Enabled
-
----
-
-# APIs
-
-/api/chat
-
-/api/tasks
-
-/api/outcomes
-
-/api/planner
-
-/api/planner/execute
-
-/api/runtime/status
-
-/api/profile
-
-/api/memory
-
-Future
-
-/api/memory/execution
-
-/api/knowledge
-
----
-
-# Engineering Rules
-
-1.
-
-Never replace newer implementations.
-
-2.
-
-Always preserve backward compatibility.
-
-3.
-
-Prefer complete-file delivery.
-
-4.
-
-Every commit must improve standalone capability.
-
-5.
-
-Planner always drives execution.
-
-6.
-
-Execution always produces memory.
-
-7.
-
-Memory always improves planning.
-
----
-
-# Completed
-
-c111
-
-Planner Snapshot
-
-c112
-
-Founder Console
-
-c113
-
-Outcome Engine
-
-c114
-
-Materialize Tasks
-
-c115
-
-Execution Engine
-
-c116
-
-Execution Memory
-
----
-
-# Current Target
-
-C117
-
-Knowledge Engine
-
-Execution Timeline
-
-Planner Learning
-
-Knowledge Retrieval
-
----
-
-# Long-term Vision
-
-Outcome OS
-
-↓
-
-Autonomous Planning
-
-↓
-
-Autonomous Execution
-
-↓
-
-Autonomous Learning
-
-↓
-
-Continuous Evolution
+1. Preserve existing working capabilities.
+2. Do not replace a more advanced implementation with a weaker shortcut.
+3. Keep model providers replaceable.
+4. Avoid mandatory ChatGPT dependency.
+5. Prefer complete runnable modules.
+6. Run verification, typecheck and production build before delivery.
+7. Verify deployed applications independently of AI provider availability.
