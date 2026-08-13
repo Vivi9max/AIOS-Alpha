@@ -7,22 +7,59 @@ if (!baseUrl) {
 
 const url = `${baseUrl.replace(/\/$/, "")}/api/health`;
 
+const headers = {
+  Accept: "application/json",
+};
+
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+if (bypassSecret) {
+  headers["x-vercel-protection-bypass"] = bypassSecret;
+}
+
 try {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await fetch(url, { headers });
   const body = await response.json().catch(() => null);
 
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    if (response.status === 401 && !bypassSecret) {
+      throw new Error(
+        "HTTP 401: Vercel Deployment Protection is enabled and VERCEL_AUTOMATION_BYPASS_SECRET is not available."
+      );
+    }
+
+    throw new Error(`HTTP ${response.status}`);
+  }
 
   const failures = [];
-  if (body?.ok !== true) failures.push("health.ok must be true");
-  if (body?.service !== "AIOS Alpha") failures.push("health.service mismatch");
-  if (!body?.release) failures.push("health.release is missing");
-  if (body?.checks?.application !== "ok") failures.push("application check failed");
-  if (body?.checks?.manifest !== "ok") failures.push("manifest check failed");
+
+  if (body?.ok !== true) {
+    failures.push("health.ok must be true");
+  }
+
+  if (body?.service !== "AIOS Alpha") {
+    failures.push("health.service mismatch");
+  }
+
+  if (!body?.release) {
+    failures.push("health.release is missing");
+  }
+
+  if (body?.checks?.application !== "ok") {
+    failures.push("application check failed");
+  }
+
+  if (body?.checks?.manifest !== "ok") {
+    failures.push("manifest check failed");
+  }
 
   if (failures.length) {
     console.error("Deployment verification failed.");
-    failures.forEach((x) => console.error(`- ${x}`));
+
+    failures.forEach((failure) => {
+      console.error(`- ${failure}`);
+    });
+
     process.exit(1);
   }
 
