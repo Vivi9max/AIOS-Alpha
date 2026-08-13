@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    env:
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -54,4 +57,7 @@ jobs:
           echo "base_url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed AIOS Alpha
-        run: npm run verify:deployment -- "${{ steps.deployment.outputs.base_url }}"
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          npm run verify:deployment -- "${{ steps.deployment.outputs.base_url }}"
