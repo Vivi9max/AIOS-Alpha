@@ -6,7 +6,8 @@
     "typecheck": "tsc --noEmit",
     "build": "next build",
     "start": "next start",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
     "next": "^16.2.10",
