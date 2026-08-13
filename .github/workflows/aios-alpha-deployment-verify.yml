@@ -1,29 +1,25 @@
 name: AIOS Alpha Deployment Verify
 
 on:
-  deployment_status:
+  push:
+    branches:
+      - c133-automated-deployment-verification
+
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Deployed AIOS Alpha URL"
-        required: true
+        description: "Optional deployed AIOS Alpha URL"
+        required: false
         type: string
 
 permissions:
   contents: read
+  deployments: read
 
 jobs:
   verify-deployment:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'deployment_status' &&
-        github.event.deployment_status.state == 'success' &&
-        github.event.deployment_status.environment_url != ''
-      )
-
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
@@ -36,28 +32,21 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm install
 
       - name: Resolve deployment URL
         id: deployment
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MANUAL_URL: ${{ inputs.base_url }}
-          DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
         run: |
-          URL="${MANUAL_URL:-$DEPLOYMENT_URL}"
-
-          if [ -z "$URL" ]; then
-            echo "No deployment URL was provided."
-            exit 1
+          if [ -n "$MANUAL_URL" ]; then
+            echo "base_url=$MANUAL_URL" >> "$GITHUB_OUTPUT"
+          else
+            node scripts/wait-for-vercel-deployment.mjs
           fi
-
-          echo "base_url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed AIOS Alpha
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          npm run verify:deployment -- "${{ steps.deployment.outputs.base_url }}"
+          node scripts/verify-deployment.mjs "${{ steps.deployment.outputs.base_url }}"
