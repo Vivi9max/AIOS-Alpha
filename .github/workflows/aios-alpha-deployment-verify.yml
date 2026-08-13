@@ -1,0 +1,57 @@
+name: AIOS Alpha Deployment Verify
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployed AIOS Alpha URL"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-deployment:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'deployment_status' &&
+        github.event.deployment_status.state == 'success' &&
+        github.event.deployment_status.environment_url != ''
+      )
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Resolve deployment URL
+        id: deployment
+        env:
+          MANUAL_URL: ${{ inputs.base_url }}
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
+        run: |
+          URL="${MANUAL_URL:-$DEPLOYMENT_URL}"
+
+          if [ -z "$URL" ]; then
+            echo "No deployment URL was provided."
+            exit 1
+          fi
+
+          echo "base_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed AIOS Alpha
+        run: npm run verify:deployment -- "${{ steps.deployment.outputs.base_url }}"
