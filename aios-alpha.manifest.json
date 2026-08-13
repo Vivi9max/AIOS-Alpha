@@ -1,40 +1,68 @@
 {
   "schemaVersion": 1,
   "project": "AIOS Alpha",
-  "release": "C132",
-  "updatedAt": "2026-08-12",
+  "release": "C133",
+  "updatedAt": "2026-08-13",
   "mission": "A multilingual, provider-independent AI operating system that turns outcomes into guarded, traceable execution.",
   "status": "alpha",
   "defaultLocale": "en",
-  "locales": ["en", "zh-CN", "ja"],
-  "runtime": {"framework":"Next.js 16","language":"TypeScript","packageManager":"npm","requiredNode":">=20.9.0"},
+  "locales": [
+    "en",
+    "zh-CN",
+    "ja"
+  ],
+  "runtime": {
+    "framework": "Next.js 16",
+    "language": "TypeScript",
+    "packageManager": "npm",
+    "requiredNode": ">=20.9.0"
+  },
   "commands": {
-    "install":"npm install",
-    "develop":"npm run dev",
-    "verify":"npm run verify",
-    "typecheck":"npm run typecheck",
-    "build":"npm run build",
-    "start":"npm start",
-    "verifyDeployment":"npm run verify:deployment -- https://your-domain.example"
+    "install": "npm install",
+    "develop": "npm run dev",
+    "verify": "npm run verify",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build",
+    "start": "npm start",
+    "verifyDeployment": "npm run verify:deployment -- https://your-domain.example"
   },
   "capabilities": [
-    "provider-routing","memory","task-execution","planner-guard","execution-ledger",
-    "execution-review","multilingual-interface","handoff-capsule",
-    "localized-workspace-and-tasks","localized-planner-runtime","localized-project-center",
-    "localized-outcomes-memory","localized-execution-observability",
-    "localized-dashboard-and-settings","independent-verification","github-actions-ci",
-    "deployment-health-check","deployment-verification"
+    "provider-routing",
+    "memory",
+    "task-execution",
+    "planner-guard",
+    "execution-ledger",
+    "execution-review",
+    "multilingual-interface",
+    "handoff-capsule",
+    "localized-workspace-and-tasks",
+    "localized-planner-runtime",
+    "localized-project-center",
+    "localized-outcomes-memory",
+    "localized-execution-observability",
+    "localized-dashboard-and-settings",
+    "independent-verification",
+    "github-actions-ci",
+    "deployment-health-check",
+    "deployment-verification",
+    "automated-deployment-verification",
+    "node24-ci-runtime"
   ],
   "continuity": {
-    "readFirst":["aios-alpha.manifest.json","docs/AIOS-HANDOFF.md","docs/aios-spec.md"],
-    "rules":[
+    "readFirst": [
+      "aios-alpha.manifest.json",
+      "docs/AIOS-HANDOFF.md",
+      "docs/aios-spec.md"
+    ],
+    "rules": [
       "Preserve working capabilities and never regress a more advanced implementation.",
       "Deliver complete runnable modules, not isolated fragments.",
       "Keep model providers replaceable and avoid a mandatory ChatGPT dependency.",
       "Add internationalized UI through the shared i18n foundation.",
       "Run verification, typecheck and production build before delivery.",
-      "Verify deployed applications through the provider-independent health endpoint."
+      "Verify deployed applications through the provider-independent health endpoint.",
+      "Prefer automated deployment verification after a successful deployment."
     ],
-    "nextPriority":"Harden deployment and independent development workflows, then connect deployment verification to release automation."
+    "nextPriority": "Add release-level regression and execution verification after deployment health is automated."
   }
 }
