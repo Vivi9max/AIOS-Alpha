@@ -15,14 +15,12 @@ on:
 permissions:
   contents: read
   deployments: read
+  id-token: write
 
 jobs:
   verify-deployment:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    env:
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
     steps:
       - name: Checkout
@@ -45,8 +43,17 @@ jobs:
             node scripts/wait-for-vercel-deployment.mjs
           fi
 
+      - name: Request GitHub OIDC token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            core.setOutput("token", token);
+
       - name: Verify deployed AIOS Alpha
         env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          VERCEL_TRUSTED_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           node scripts/verify-deployment.mjs "${{ steps.deployment.outputs.base_url }}"
