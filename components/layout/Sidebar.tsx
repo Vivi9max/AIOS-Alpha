@@ -450,7 +450,11 @@ export default function Sidebar() {
                       : 600,
                 }}
               >
-                {item.icon} {t(item.label)}
+{item.icon}{" "}
+{typeof item.label === "string" &&
+item.label.includes(".")
+  ? t(item.label as MessageKey)
+  : item.label}
               </Link>
             );
           }
