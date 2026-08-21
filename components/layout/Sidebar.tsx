@@ -19,52 +19,57 @@ import type { MessageKey } from "@/lib/i18n";
 
 const menus = [
   {
-    icon: "💬", label: "nav.chat" as MessageKey,
-
-    href:
-      "/workspace",
+    icon: "💬",
+    label: "nav.chat" as MessageKey,
+    href: "/workspace",
   },
 
   {
-    icon: "🗃️", label: "nav.memory" as MessageKey,
-
-    href:
-      "/memory",
+    icon: "⚡",
+    label: "Execution",
+    href: "/execution",
   },
 
   {
-    icon: "✅", label: "nav.tasks" as MessageKey,
-
-    href:
-      "/tasks",
+    icon: "🗃️",
+    label: "nav.memory" as MessageKey,
+    href: "/memory",
   },
 
   {
-    icon: "📂", label: "nav.projects" as MessageKey,
-
-    href:
-      "/projects",
+    icon: "✅",
+    label: "nav.tasks" as MessageKey,
+    href: "/tasks",
   },
 
   {
-    icon: "📊", label: "nav.dashboard" as MessageKey,
-
-    href:
-      "/dashboard",
+    icon: "📂",
+    label: "nav.projects" as MessageKey,
+    href: "/projects",
   },
 
   {
-    icon: "⚙️", label: "nav.settings" as MessageKey,
-
-    href:
-      "/settings",
+    icon: "📊",
+    label: "nav.dashboard" as MessageKey,
+    href: "/dashboard",
   },
 
   {
-    icon: "🧭", label: "nav.handoff" as MessageKey,
+    icon: "💳",
+    label: "Plans",
+    href: "/billing",
+  },
 
-    href:
-      "/runtime/handoff",
+  {
+    icon: "⚙️",
+    label: "nav.settings" as MessageKey,
+    href: "/settings",
+  },
+
+  {
+    icon: "🧭",
+    label: "nav.handoff" as MessageKey,
+    href: "/runtime/handoff",
   },
 ];
 
