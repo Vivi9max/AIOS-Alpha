@@ -50,25 +50,20 @@ interface ExecutionResponse {
 }
 
 export default function ExecutionPage() {
-  const [goal, setGoal] =
-    useState(
-      "验证 AIOS Execution Job Runtime",
-    );
+  const [goal, setGoal] = useState(
+    "验证 AIOS Execution Job Runtime",
+  );
 
-  const [input, setInput] =
-    useState(
-      "请返回一句话：AIOS Execution Job Runtime 验证成功。",
-    );
+  const [input, setInput] = useState(
+    "请返回一句话：AIOS Execution Job Runtime 验证成功。",
+  );
 
-  const [jobs, setJobs] =
-    useState<ExecutionJob[]>(
-      [],
-    );
+  const [jobs, setJobs] = useState<
+    ExecutionJob[]
+  >([]);
 
-  const [selectedJob, setSelectedJob] =
-    useState<ExecutionJob | null>(
-      null,
-    );
+  const [selectedJobId, setSelectedJobId] =
+    useState<string | null>(null);
 
   const [loading, setLoading] =
     useState(false);
@@ -76,8 +71,14 @@ export default function ExecutionPage() {
   const [message, setMessage] =
     useState("");
 
-  const loadJobs =
-    useCallback(async () => {
+  const selectedJob =
+    jobs.find(
+      (job) =>
+        job.id === selectedJobId,
+    ) ?? null;
+
+  const loadJobs = useCallback(
+    async () => {
       try {
         const response =
           await fetch(
@@ -96,29 +97,34 @@ export default function ExecutionPage() {
         ) {
           setJobs(data.jobs);
 
-          if (
-            selectedJob
-          ) {
-            const current =
-              data.jobs.find(
-                (job) =>
-                  job.id ===
-                  selectedJob.id,
-              );
+          setSelectedJobId(
+            (current) => {
+              if (
+                current &&
+                data.jobs?.some(
+                  (job) =>
+                    job.id ===
+                    current,
+                )
+              ) {
+                return current;
+              }
 
-            if (current) {
-              setSelectedJob(
-                current,
+              return (
+                data.jobs?.[0]?.id ??
+                null
               );
-            }
-          }
+            },
+          );
         }
       } catch {
         setMessage(
           "Unable to load execution history.",
         );
       }
-    }, [selectedJob]);
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadJobs();
@@ -166,8 +172,32 @@ export default function ExecutionPage() {
         );
 
         if (data.job) {
-          setSelectedJob(
-            data.job,
+          setJobs((current) => {
+            const exists =
+              current.some(
+                (job) =>
+                  job.id ===
+                  data.job?.id,
+              );
+
+            if (exists) {
+              return current.map(
+                (job) =>
+                  job.id ===
+                  data.job?.id
+                    ? data.job!
+                    : job,
+              );
+            }
+
+            return [
+              data.job!,
+              ...current,
+            ];
+          });
+
+          setSelectedJobId(
+            data.job.id,
           );
         }
 
@@ -175,16 +205,38 @@ export default function ExecutionPage() {
       }
 
       if (data.job) {
-        setSelectedJob(
-          data.job,
+        setJobs((current) => {
+          const exists =
+            current.some(
+              (job) =>
+                job.id ===
+                data.job?.id,
+            );
+
+          if (exists) {
+            return current.map(
+              (job) =>
+                job.id ===
+                data.job?.id
+                  ? data.job!
+                  : job,
+            );
+          }
+
+          return [
+            data.job!,
+            ...current,
+          ];
+        });
+
+        setSelectedJobId(
+          data.job.id,
         );
       }
 
       setMessage(
         "Execution completed successfully.",
       );
-
-      await loadJobs();
     } catch {
       setMessage(
         "Unable to connect to the Execution API.",
@@ -238,16 +290,24 @@ export default function ExecutionPage() {
       }
 
       if (data.job) {
-        setSelectedJob(
-          data.job,
+        setJobs((current) =>
+          current.map(
+            (job) =>
+              job.id ===
+              data.job?.id
+                ? data.job!
+                : job,
+          ),
+        );
+
+        setSelectedJobId(
+          data.job.id,
         );
       }
 
       setMessage(
         "Execution retry completed.",
       );
-
-      await loadJobs();
     } catch {
       setMessage(
         "Unable to retry execution.",
@@ -264,7 +324,8 @@ export default function ExecutionPage() {
           width: "100%",
           maxWidth: 1100,
           margin: "0 auto",
-          padding: "24px 20px 40px",
+          padding:
+            "24px 20px 40px",
           boxSizing: "border-box",
         }}
       >
@@ -325,7 +386,8 @@ export default function ExecutionPage() {
         >
           <div
             style={{
-              background: "#ffffff",
+              background:
+                "#ffffff",
               border:
                 "1px solid #e5e7eb",
               borderRadius: 18,
@@ -355,7 +417,8 @@ export default function ExecutionPage() {
               }
               style={{
                 width: "100%",
-                boxSizing: "border-box",
+                boxSizing:
+                  "border-box",
                 padding:
                   "12px 13px",
                 border:
@@ -390,7 +453,8 @@ export default function ExecutionPage() {
               rows={7}
               style={{
                 width: "100%",
-                boxSizing: "border-box",
+                boxSizing:
+                  "border-box",
                 padding:
                   "12px 13px",
                 border:
@@ -453,7 +517,8 @@ export default function ExecutionPage() {
 
           <div
             style={{
-              background: "#0f172a",
+              background:
+                "#0f172a",
               borderRadius: 18,
               padding: 20,
               color: "#ffffff",
@@ -490,7 +555,8 @@ export default function ExecutionPage() {
                 display: "grid",
                 gap: 9,
                 fontSize: 13,
-                color: "#cbd5e1",
+                color:
+                  "#cbd5e1",
               }}
             >
               <div>
@@ -553,7 +619,8 @@ export default function ExecutionPage() {
                   borderRadius: 10,
                   background:
                     "transparent",
-                  color: "#ffffff",
+                  color:
+                    "#ffffff",
                   fontWeight: 800,
                   cursor:
                     loading
@@ -583,7 +650,8 @@ export default function ExecutionPage() {
               style={{
                 margin: 0,
                 fontSize: 17,
-                color: "#0f172a",
+                color:
+                  "#0f172a",
               }}
             >
               Latest Result
@@ -602,7 +670,8 @@ export default function ExecutionPage() {
                   "break-word",
                 fontSize: 14,
                 lineHeight: 1.6,
-                color: "#334155",
+                color:
+                  "#334155",
               }}
             >
               {selectedJob.result ??
@@ -617,7 +686,8 @@ export default function ExecutionPage() {
                 style={{
                   marginTop: 10,
                   fontSize: 12,
-                  color: "#64748b",
+                  color:
+                    "#64748b",
                 }}
               >
                 Verification:{" "}
@@ -647,7 +717,8 @@ export default function ExecutionPage() {
               display: "flex",
               justifyContent:
                 "space-between",
-              alignItems: "center",
+              alignItems:
+                "center",
               gap: 12,
               marginBottom: 14,
             }}
@@ -656,7 +727,8 @@ export default function ExecutionPage() {
               style={{
                 margin: 0,
                 fontSize: 17,
-                color: "#0f172a",
+                color:
+                  "#0f172a",
               }}
             >
               Execution History
@@ -667,6 +739,7 @@ export default function ExecutionPage() {
               onClick={() =>
                 void loadJobs()
               }
+              disabled={loading}
               style={{
                 border:
                   "1px solid #dbe1ea",
@@ -675,10 +748,13 @@ export default function ExecutionPage() {
                 borderRadius: 9,
                 padding:
                   "8px 11px",
-                color: "#475569",
+                color:
+                  "#475569",
                 fontWeight: 700,
                 cursor:
-                  "pointer",
+                  loading
+                    ? "wait"
+                    : "pointer",
               }}
             >
               Refresh
@@ -692,7 +768,8 @@ export default function ExecutionPage() {
                 borderRadius: 12,
                 background:
                   "#f8fafc",
-                color: "#64748b",
+                color:
+                  "#64748b",
                 fontSize: 13,
               }}
             >
@@ -711,8 +788,8 @@ export default function ExecutionPage() {
                     key={job.id}
                     type="button"
                     onClick={() =>
-                      setSelectedJob(
-                        job,
+                      setSelectedJobId(
+                        job.id,
                       )
                     }
                     style={{
@@ -722,8 +799,7 @@ export default function ExecutionPage() {
                         "1px solid #e5e7eb",
                       borderRadius: 11,
                       background:
-                        selectedJob
-                          ?.id ===
+                        selectedJobId ===
                         job.id
                           ? "#eef2ff"
                           : "#ffffff",
