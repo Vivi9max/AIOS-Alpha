@@ -17,11 +17,17 @@ import {
   retryExecutionJob,
 } from "@/lib/execution/job-store";
 
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
 
-export const runtime = "nodejs";
+export const runtime =
+  "nodejs";
 
-const MAX_GOAL_LENGTH = 1000;
+const API_VERSION =
+  "v1";
+
+const MAX_GOAL_LENGTH =
+  1000;
 
 interface CreateJobBody {
   goal?: unknown;
@@ -29,11 +35,58 @@ interface CreateJobBody {
   taskId?: unknown;
   input?: unknown;
   execute?: unknown;
+  workspaceId?: unknown;
+  client?: unknown;
+  platform?: unknown;
 }
 
 interface RetryBody {
   id?: unknown;
   action?: unknown;
+  client?: unknown;
+  platform?: unknown;
+}
+
+function getRequestId(
+  request: NextRequest,
+): string {
+  return (
+    request.headers.get(
+      "x-request-id",
+    ) ??
+    crypto.randomUUID()
+  );
+}
+
+function getClientMetadata(
+  request: NextRequest,
+  body?: {
+    client?: unknown;
+    platform?: unknown;
+  },
+) {
+  const client =
+    typeof body?.client ===
+    "string"
+      ? body.client
+      : request.headers.get(
+          "x-aios-client",
+        ) ??
+        "web";
+
+  const platform =
+    typeof body?.platform ===
+    "string"
+      ? body.platform
+      : request.headers.get(
+          "x-aios-platform",
+        ) ??
+        "web";
+
+  return {
+    client,
+    platform,
+  };
 }
 
 async function executeJob(
@@ -64,27 +117,20 @@ async function executeJob(
         execution: {
           requestId:
             result.requestId,
-
           planId:
             result.planId,
-
           provider:
             result.provider,
-
           fallbackUsed:
             result.fallbackUsed ??
             false,
-
           content:
             result.content,
-
           error:
             result.error,
-
           capabilityTrace:
             result.capabilityTrace ??
             [],
-
           latencyMs:
             result.latencyMs,
         },
@@ -99,30 +145,22 @@ async function executeJob(
 
     return {
       success: true,
-
       job: completed,
-
       execution: {
         requestId:
           result.requestId,
-
         planId:
           result.planId,
-
         provider:
           result.provider,
-
         fallbackUsed:
           result.fallbackUsed ??
           false,
-
         content:
           result.content,
-
         capabilityTrace:
           result.capabilityTrace ??
           [],
-
         latencyMs:
           result.latencyMs,
       },
@@ -141,12 +179,10 @@ async function executeJob(
 
     return {
       success: false,
-
       job: failed,
-
       error: message,
-
-      code: "EXECUTION_FAILED",
+      code:
+        "EXECUTION_FAILED",
     };
   }
 }
@@ -154,9 +190,17 @@ async function executeJob(
 export async function GET(
   request: NextRequest,
 ) {
+  const requestId =
+    getRequestId(request);
+
   const id =
     request.nextUrl.searchParams.get(
       "id",
+    );
+
+  const workspaceId =
+    request.nextUrl.searchParams.get(
+      "workspaceId",
     );
 
   if (id) {
@@ -167,10 +211,11 @@ export async function GET(
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Execution job not found.",
-
           code:
             "JOB_NOT_FOUND",
         },
@@ -182,9 +227,15 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-
+      apiVersion:
+        API_VERSION,
+      requestId,
+      scope: {
+        workspaceId:
+          workspaceId ??
+          "default",
+      },
       job,
-
       timestamp:
         Date.now(),
     });
@@ -195,12 +246,17 @@ export async function GET(
 
   return NextResponse.json({
     success: true,
-
+    apiVersion:
+      API_VERSION,
+    requestId,
+    scope: {
+      workspaceId:
+        workspaceId ??
+        "default",
+    },
     jobs,
-
     count:
       jobs.length,
-
     timestamp:
       Date.now(),
   });
@@ -209,6 +265,9 @@ export async function GET(
 export async function POST(
   request: NextRequest,
 ) {
+  const requestId =
+    getRequestId(request);
+
   try {
     const body =
       (await request.json()) as
@@ -238,17 +297,30 @@ export async function POST(
         ? body.taskId
         : undefined;
 
+    const workspaceId =
+      typeof body.workspaceId ===
+      "string"
+        ? body.workspaceId.trim()
+        : "default";
+
     const execute =
       body.execute !== false;
+
+    const clientMetadata =
+      getClientMetadata(
+        request,
+        body,
+      );
 
     if (!goal) {
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Execution goal is required.",
-
           code:
             "INVALID_GOAL",
         },
@@ -265,10 +337,11 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             `Execution goal cannot exceed ${MAX_GOAL_LENGTH} characters.`,
-
           code:
             "GOAL_TOO_LONG",
         },
@@ -281,11 +354,8 @@ export async function POST(
     const job =
       await createExecutionJob({
         goal,
-
         planId,
-
         taskId,
-
         input,
       });
 
@@ -293,14 +363,21 @@ export async function POST(
       return NextResponse.json(
         {
           success: true,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           job,
-
           execution:
             null,
-
+          scope: {
+            workspaceId,
+          },
+          client:
+            clientMetadata,
           message:
             "Execution job queued.",
+          timestamp:
+            Date.now(),
         },
         {
           status: 201,
@@ -317,7 +394,14 @@ export async function POST(
     return NextResponse.json(
       {
         ...result,
-
+        apiVersion:
+          API_VERSION,
+        requestId,
+        scope: {
+          workspaceId,
+        },
+        client:
+          clientMetadata,
         timestamp:
           Date.now(),
       },
@@ -337,13 +421,12 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-
-        error:
-          message,
-
+        apiVersion:
+          API_VERSION,
+        requestId,
+        error: message,
         code:
           "EXECUTION_JOB_ERROR",
-
         timestamp:
           Date.now(),
       },
@@ -357,6 +440,9 @@ export async function POST(
 export async function PATCH(
   request: NextRequest,
 ) {
+  const requestId =
+    getRequestId(request);
+
   try {
     const body =
       (await request.json()) as
@@ -374,14 +460,21 @@ export async function PATCH(
         ? body.action
         : "";
 
+    const clientMetadata =
+      getClientMetadata(
+        request,
+        body,
+      );
+
     if (!id) {
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Execution job id is required.",
-
           code:
             "INVALID_JOB_ID",
         },
@@ -398,10 +491,11 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Supported action: retry",
-
           code:
             "INVALID_ACTION",
         },
@@ -420,10 +514,11 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Execution job not found.",
-
           code:
             "JOB_NOT_FOUND",
         },
@@ -440,13 +535,13 @@ export async function PATCH(
       return NextResponse.json(
         {
           success: false,
-
+          apiVersion:
+            API_VERSION,
+          requestId,
           error:
             "Only failed jobs can be retried.",
-
           code:
             "JOB_NOT_RETRYABLE",
-
           job:
             queuedJob,
         },
@@ -465,10 +560,13 @@ export async function PATCH(
     return NextResponse.json(
       {
         ...result,
-
         retry:
           true,
-
+        apiVersion:
+          API_VERSION,
+        requestId,
+        client:
+          clientMetadata,
         timestamp:
           Date.now(),
       },
@@ -488,13 +586,12 @@ export async function PATCH(
     return NextResponse.json(
       {
         success: false,
-
-        error:
-          message,
-
+        apiVersion:
+          API_VERSION,
+        requestId,
+        error: message,
         code:
           "EXECUTION_RETRY_ERROR",
-
         timestamp:
           Date.now(),
       },
