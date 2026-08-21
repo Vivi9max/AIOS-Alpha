@@ -14,11 +14,11 @@ const PUBLIC_PATHS = [
   "/privacy",
   "/api/alpha/status",
   "/api/alpha/invite",
+  "/api/health",
 ];
 
 function isPublicPath(
-  pathname:
-    string
+  pathname: string
 ): boolean {
   return PUBLIC_PATHS.some(
     (
@@ -33,8 +33,7 @@ function isPublicPath(
 }
 
 function isPublicAsset(
-  pathname:
-    string
+  pathname: string
 ): boolean {
   return (
     pathname.startsWith(
@@ -53,8 +52,7 @@ function isPublicAsset(
 }
 
 export function proxy(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   const pathname =
     request.nextUrl.pathname;

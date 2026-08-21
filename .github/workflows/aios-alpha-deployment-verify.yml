@@ -1,0 +1,60 @@
+name: AIOS Alpha Deployment Verify
+
+on:
+  push:
+    branches:
+      - c133-automated-deployment-verification
+
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Optional deployed AIOS Alpha URL"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  verify-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Resolve deployment URL
+        id: deployment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANUAL_URL: ${{ inputs.base_url }}
+        run: |
+          if [ -n "$MANUAL_URL" ]; then
+            echo "base_url=$MANUAL_URL" >> "$GITHUB_OUTPUT"
+          else
+            node scripts/wait-for-vercel-deployment.mjs
+          fi
+
+      - name: Check automation bypass secret
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "::error::Missing GitHub Actions secret: VERCEL_AUTOMATION_BYPASS_SECRET"
+            exit 1
+          fi
+
+          echo "Vercel automation bypass secret is configured."
+
+      - name: Verify deployed AIOS Alpha
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          node scripts/verify-deployment.mjs "${{ steps.deployment.outputs.base_url }}"
