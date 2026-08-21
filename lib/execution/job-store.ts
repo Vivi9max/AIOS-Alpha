@@ -46,9 +46,10 @@ function isExecutionJob(
 }
 
 async function readJobs(): Promise<ExecutionJob[]> {
-  const stored = await storage.get<ExecutionJob[]>(
-    getStorageKey(),
-  );
+  const stored =
+    await storage.get<ExecutionJob[]>(
+      getStorageKey(),
+    );
 
   if (!Array.isArray(stored)) {
     return [];
@@ -84,31 +85,44 @@ export async function getExecutionJob(
   const jobs = await readJobs();
 
   return (
-    jobs.find((job) => job.id === id) ?? null
+    jobs.find(
+      (job) => job.id === id,
+    ) ?? null
   );
 }
 
-export async function createExecutionJob(input: {
-  goal: string;
-  planId?: string;
-  taskId?: string;
-  input: string;
-}): Promise<ExecutionJob> {
+export async function createExecutionJob(
+  input: {
+    goal: string;
+    planId?: string;
+    taskId?: string;
+    input: string;
+  },
+): Promise<ExecutionJob> {
   const now = Date.now();
 
   const job: ExecutionJob = {
     id: createJobId(),
+
     planId: input.planId,
+
     goal: input.goal.trim(),
+
     taskId: input.taskId,
+
     status: "queued",
+
     input: input.input.trim(),
+
     retryCount: 0,
+
     verification: {
       status: "pending",
       checkedAt: now,
     },
+
     createdAt: now,
+
     updatedAt: now,
   };
 
@@ -125,12 +139,18 @@ export async function updateExecutionJob(
   id: string,
   updates: {
     status?: ExecutionJobStatus;
-    result?: string;
-    error?: string;
+
+    result?: string | null;
+
+    error?: string | null;
+
     retryCount?: number;
+
     verification?: ExecutionJobVerification;
-    startedAt?: number;
-    completedAt?: number;
+
+    startedAt?: number | null;
+
+    completedAt?: number | null;
   },
 ): Promise<ExecutionJob | null> {
   const jobs = await readJobs();
@@ -147,17 +167,43 @@ export async function updateExecutionJob(
 
   const updated: ExecutionJob = {
     ...current,
-    status: updates.status ?? current.status,
-    result: updates.result ?? current.result,
-    error: updates.error ?? current.error,
+
+    status:
+      updates.status ??
+      current.status,
+
+    result:
+      updates.result === null
+        ? undefined
+        : updates.result ??
+          current.result,
+
+    error:
+      updates.error === null
+        ? undefined
+        : updates.error ??
+          current.error,
+
     retryCount:
-      updates.retryCount ?? current.retryCount,
+      updates.retryCount ??
+      current.retryCount,
+
     verification:
-      updates.verification ?? current.verification,
+      updates.verification ??
+      current.verification,
+
     startedAt:
-      updates.startedAt ?? current.startedAt,
+      updates.startedAt === null
+        ? undefined
+        : updates.startedAt ??
+          current.startedAt,
+
     completedAt:
-      updates.completedAt ?? current.completedAt,
+      updates.completedAt === null
+        ? undefined
+        : updates.completedAt ??
+          current.completedAt,
+
     updatedAt: Date.now(),
   };
 
@@ -173,7 +219,12 @@ export async function markExecutionJobRunning(
 ): Promise<ExecutionJob | null> {
   return updateExecutionJob(id, {
     status: "running",
+
     startedAt: Date.now(),
+
+    completedAt: null,
+
+    error: null,
   });
 }
 
@@ -185,13 +236,20 @@ export async function markExecutionJobCompleted(
 
   return updateExecutionJob(id, {
     status: "completed",
+
     result,
+
+    error: null,
+
     verification: {
       status: "passed",
+
       message:
         "Runtime execution completed successfully.",
+
       checkedAt: now,
     },
+
     completedAt: now,
   });
 }
@@ -204,12 +262,17 @@ export async function markExecutionJobFailed(
 
   return updateExecutionJob(id, {
     status: "failed",
+
     error,
+
     verification: {
       status: "failed",
+
       message: error,
+
       checkedAt: now,
     },
+
     completedAt: now,
   });
 }
@@ -229,10 +292,22 @@ export async function retryExecutionJob(
 
   return updateExecutionJob(id, {
     status: "queued",
-    retryCount: job.retryCount + 1,
+
+    retryCount:
+      job.retryCount + 1,
+
+    result: null,
+
+    error: null,
+
     verification: {
       status: "pending",
+
       checkedAt: Date.now(),
     },
+
+    startedAt: null,
+
+    completedAt: null,
   });
 }
