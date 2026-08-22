@@ -3,13 +3,12 @@ import {
   getStorageHealth,
   getStorageMode,
   getWorkspaceId,
-} from "@/lib/server-storage";
-import {
-  listEvolutionTargets,
-} from "@/lib/evolution/heartbeat";
-import {
   storage,
 } from "@/lib/server-storage";
+import { listEvolutionTargets } from "@/lib/evolution/heartbeat";
+import { createUserStorageKey } from "@/lib/storage/data-scope";
+import { resolveAlphaIdentity } from "@/lib/auth/identity";
+import { runWithUserContext } from "@/lib/runtime/request-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,8 +50,6 @@ type StoredHeartbeat = {
   nextAction?: string;
 };
 
-const LAST_HEARTBEAT_KEY = "aios:evolution:last-heartbeat";
-
 function isCronConfigured() {
   return Boolean(process.env.CRON_SECRET?.trim());
 }
@@ -87,9 +84,7 @@ function buildAutonomyState(
   }
 
   if (targetCount === 0) {
-    blockers.push(
-      "No Evolution target is registered.",
-    );
+    blockers.push("No Evolution target is registered.");
 
     recommendations.push(
       "Register the active AIOS workspace through /api/evolution/register.",
@@ -115,10 +110,7 @@ function buildAutonomyState(
     };
   }
 
-  if (
-    storageMode === "memory" &&
-    targetCount === 0
-  ) {
+  if (storageMode === "memory" && targetCount === 0) {
     return {
       ready: false,
       level: "blocked" as const,
@@ -136,59 +128,92 @@ function buildAutonomyState(
 }
 
 export async function GET(request: NextRequest) {
-  const timestamp = Date.now();
+  const identity = resolveAlphaIdentity(request);
 
-  const storageHealth = await getStorageHealth();
-  const storageMode = getStorageMode();
-  const workspaceId = getWorkspaceId();
-  const targets = await listEvolutionTargets();
+  const status = await runWithUserContext(
+    identity.userId,
+    async () => {
+      const timestamp = Date.now();
 
-  const cronSecretConfigured = isCronConfigured();
+      const storageHealth = await getStorageHealth();
+      const storageMode = getStorageMode();
+      const workspaceId = getWorkspaceId();
+      const targets = await listEvolutionTargets();
+      const cronSecretConfigured = isCronConfigured();
 
-  const lastHeartbeat =
-    await storage.get<StoredHeartbeat>(
-      LAST_HEARTBEAT_KEY,
-    );
+      /*
+       * C139:
+       * Evolution Heartbeat stores its result using the same
+       * user-scoped storage key. The Status API must read
+       * exactly that key.
+       */
+      const lastHeartbeat =
+        await storage.get<StoredHeartbeat>(
+          createUserStorageKey(
+            "evolution-last-heartbeat",
+          ),
+        );
 
-  const autonomy = buildAutonomyState(
-    storageMode,
-    cronSecretConfigured,
-    targets.length,
-    Boolean(lastHeartbeat),
+      const autonomy =
+        buildAutonomyState(
+          storageMode,
+          cronSecretConfigured,
+          targets.length,
+          Boolean(lastHeartbeat),
+        );
+
+      const result: EvolutionStatus = {
+        success:
+          storageHealth.success,
+
+        timestamp,
+
+        evolution: {
+          enabled: true,
+          schedulerConfigured: true,
+          cronSecretConfigured,
+
+          storageMode,
+
+          persistentStorageReady:
+            storageMode === "redis" &&
+            storageHealth.success,
+
+          targetCount:
+            targets.length,
+
+          workspaceId,
+        },
+
+        lastHeartbeat: {
+          available:
+            Boolean(lastHeartbeat),
+
+          heartbeatId:
+            lastHeartbeat?.heartbeatId ??
+            null,
+
+          timestamp:
+            lastHeartbeat?.timestamp ??
+            null,
+
+          healthScore:
+            typeof lastHeartbeat?.healthScore ===
+            "number"
+              ? lastHeartbeat.healthScore
+              : null,
+
+          nextAction:
+            lastHeartbeat?.nextAction ??
+            null,
+        },
+
+        autonomy,
+      };
+
+      return result;
+    },
   );
-
-  const status: EvolutionStatus = {
-    success: storageHealth.success,
-    timestamp,
-
-    evolution: {
-      enabled: true,
-      schedulerConfigured: true,
-      cronSecretConfigured,
-      storageMode,
-      persistentStorageReady:
-        storageMode === "redis" &&
-        storageHealth.success,
-      targetCount: targets.length,
-      workspaceId,
-    },
-
-    lastHeartbeat: {
-      available: Boolean(lastHeartbeat),
-      heartbeatId:
-        lastHeartbeat?.heartbeatId ?? null,
-      timestamp:
-        lastHeartbeat?.timestamp ?? null,
-      healthScore:
-        typeof lastHeartbeat?.healthScore === "number"
-          ? lastHeartbeat.healthScore
-          : null,
-      nextAction:
-        lastHeartbeat?.nextAction ?? null,
-    },
-
-    autonomy,
-  };
 
   return NextResponse.json(status);
 }
