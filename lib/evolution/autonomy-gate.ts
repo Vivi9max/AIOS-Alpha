@@ -120,7 +120,7 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
         candidateTask = {
           id: firstTodo.id,
           title: firstTodo.title,
-          description: firstTodo.description,
+          description: firstTodo.description ?? "",
         };
       }
     });
