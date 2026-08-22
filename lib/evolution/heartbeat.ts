@@ -170,7 +170,7 @@ export async function runEvolutionHeartbeat(userId: string): Promise<EvolutionHe
     };
 
     let healthScore = 100;
-    if (storageHealth.status !== "healthy") healthScore -= 35;
+    if (!storageHealth.success) healthScore -= 35;
     if (recentFailures > 0) healthScore -= Math.min(35, recentFailures * 10);
     if (planner.activeOutcomes > 0 && planner.todoTasks > 0 && planner.doingTasks === 0) {
       healthScore -= 10;
