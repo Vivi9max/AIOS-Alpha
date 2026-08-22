@@ -1,28 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  AIOS_USER_COOKIE,
-  resolveAlphaIdentity,
-} from "@/lib/auth/identity";
+import { AIOS_USER_COOKIE, resolveAlphaIdentity } from "@/lib/auth/identity";
 import { runWithUserContext } from "@/lib/runtime/request-context";
-import { executeRuntime } from "@/lib/runtime/engine";
-import { canUseCapability } from "@/lib/billing/entitlements";
-import {
-  getExecutionUsage,
-  reserveExecution,
-} from "@/lib/billing/execution-usage";
-import {
-  createExecutionJob,
-  markExecutionJobCompleted,
-  markExecutionJobFailed,
-  markExecutionJobRunning,
-} from "@/lib/execution/job-store";
 import { buildExecutionPlan } from "@/lib/planner/execution-engine";
 import { listOutcomes, updateOutcomeMilestone } from "@/lib/outcome/store";
-import {
-  listPersistentTasks,
-  updatePersistentTask,
-} from "@/lib/task/server-store";
+import { listPersistentTasks, updatePersistentTask } from "@/lib/task/server-store";
 import type { Task } from "@/lib/task/types";
 
 export const dynamic = "force-dynamic";
@@ -34,66 +16,46 @@ type Outcome = Outcomes[number];
 type OutcomeMilestone = Outcome["milestones"][number];
 
 function resolvePlanId(value: unknown): PlanId {
-  if (
-    value === "alpha" ||
-    value === "free" ||
-    value === "pro" ||
-    value === "business"
-  ) return value;
-  return "alpha";
+  return value === "alpha" || value === "free" || value === "pro" || value === "business"
+    ? value
+    : "alpha";
 }
 
-function applyIdentityCookie(response: NextResponse, userId: string) {
-  response.cookies.set(AIOS_USER_COOKIE, userId, {
+function response(body: Record<string, unknown>, userId: string, status = 200) {
+  const res = NextResponse.json({ ...body, timestamp: Date.now() }, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8",
+    },
+  });
+  res.cookies.set(AIOS_USER_COOKIE, userId, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
-  return response;
+  return res;
 }
 
-function json(
-  body: Record<string, unknown>,
-  userId: string,
-  status = 200,
-) {
-  return applyIdentityCookie(
-    NextResponse.json(
-      { ...body, timestamp: Date.now() },
-      {
-        status,
-        headers: { "Cache-Control": "no-store" },
-      },
-    ),
-    userId,
-  );
+function selectOutcome(outcomes: Outcomes, id: string): Outcome | null {
+  if (id) return outcomes.find((item) => item.id === id) ?? null;
+  return outcomes.find((item) => item.status === "active")
+    ?? outcomes.find((item) => item.status === "planned")
+    ?? outcomes.find((item) => item.status === "blocked")
+    ?? null;
 }
 
-function selectCurrentOutcome(
-  outcomes: Outcomes,
-  requestedOutcomeId: string,
-): Outcome | null {
-  if (requestedOutcomeId) {
-    return outcomes.find((item) => item.id === requestedOutcomeId) ?? null;
-  }
-  return (
-    outcomes.find((item) => item.status === "active") ??
-    outcomes.find((item) => item.status === "planned") ??
-    null
-  );
-}
-
-function selectOutcomeTasks(outcome: Outcome, allTasks: Task[]) {
+function linkedTasks(outcome: Outcome, tasks: Task[]) {
   const ids = new Set([
     ...outcome.taskIds,
     ...outcome.milestones.flatMap((milestone) => milestone.taskIds),
   ]);
-  return allTasks.filter((task) => ids.has(task.id));
+  return ids.size ? tasks.filter((task) => ids.has(task.id)) : [];
 }
 
-function toPlannerOutcome(outcome: Outcome) {
+function plannerOutcome(outcome: Outcome) {
   return {
     id: outcome.id,
     title: outcome.title,
@@ -107,38 +69,27 @@ function toPlannerOutcome(outcome: Outcome) {
       title: milestone.title,
       description: milestone.description,
       order: milestone.order,
-      status:
-        milestone.status === "blocked" ? ("pending" as const) : milestone.status,
+      status: milestone.status === "blocked" ? ("pending" as const) : milestone.status,
       taskIds: milestone.taskIds,
     })),
     taskIds: outcome.taskIds,
   };
 }
 
-function allMilestoneTasksDone(
-  milestone: OutcomeMilestone,
-  tasks: Task[],
-) {
-  if (milestone.taskIds.length === 0) return false;
-  const done = new Set(
-    tasks.filter((task) => task.status === "done").map((task) => task.id),
-  );
-  return milestone.taskIds.every((taskId) => done.has(taskId));
+function milestoneDone(milestone: OutcomeMilestone, tasks: Task[]) {
+  if (!milestone.taskIds.length) return false;
+  const done = new Set(tasks.filter((task) => task.status === "done").map((task) => task.id));
+  return milestone.taskIds.every((id) => done.has(id));
 }
 
 export async function GET(request: NextRequest) {
   const identity = resolveAlphaIdentity(request);
-  const requestedOutcomeId =
-    request.nextUrl.searchParams.get("outcomeId")?.trim() ?? "";
+  const requestedOutcomeId = request.nextUrl.searchParams.get("outcomeId")?.trim() ?? "";
 
   try {
     const result = await runWithUserContext(identity.userId, async () => {
-      const [outcomes, tasks] = await Promise.all([
-        listOutcomes(),
-        listPersistentTasks(),
-      ]);
-      const outcome = selectCurrentOutcome(outcomes, requestedOutcomeId);
-
+      const [outcomes, tasks] = await Promise.all([listOutcomes(), listPersistentTasks()]);
+      const outcome = selectOutcome(outcomes, requestedOutcomeId);
       if (!outcome) {
         return {
           found: false,
@@ -150,27 +101,12 @@ export async function GET(request: NextRequest) {
           queueSize: 0,
         };
       }
-
-      const plan = buildExecutionPlan(
-        toPlannerOutcome(outcome),
-        selectOutcomeTasks(outcome, tasks),
-      );
-
+      const plan = buildExecutionPlan(plannerOutcome(outcome), linkedTasks(outcome, tasks));
       return {
         found: true,
-        outcome: {
-          id: outcome.id,
-          title: outcome.title,
-          status: outcome.status,
-          priority: outcome.priority,
-        },
+        outcome: { id: outcome.id, title: outcome.title, status: outcome.status, priority: outcome.priority },
         nextTask: plan.nextTask
-          ? {
-              id: plan.nextTask.id,
-              title: plan.nextTask.title,
-              description: plan.nextTask.description ?? "",
-              status: plan.nextTask.status,
-            }
+          ? { id: plan.nextTask.id, title: plan.nextTask.title, description: plan.nextTask.description ?? "", status: plan.nextTask.status }
           : null,
         progress: plan.progress,
         completedTasks: plan.completedTasks,
@@ -178,35 +114,19 @@ export async function GET(request: NextRequest) {
         queueSize: plan.queue.length,
       };
     });
-
-    return json(
-      {
-        success: true,
-        ...result,
-        identity: { userId: identity.userId, isolated: true },
-      },
-      identity.userId,
-    );
+    return response({ success: true, ...result, identity: { userId: identity.userId, isolated: true } }, identity.userId);
   } catch (error) {
-    return json(
-      {
-        success: false,
-        code: "PLANNER_EXECUTION_LOAD_ERROR",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Planner execution state could not be loaded.",
-      },
-      identity.userId,
-      500,
-    );
+    return response({
+      success: false,
+      code: "PLANNER_EXECUTION_LOAD_ERROR",
+      error: error instanceof Error ? error.message : "Planner execution state could not be loaded.",
+    }, identity.userId, 500);
   }
 }
 
 export async function POST(request: NextRequest) {
   const identity = resolveAlphaIdentity(request);
-  const requestId =
-    request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
 
   try {
     const body = (await request.json().catch(() => ({}))) as {
@@ -214,60 +134,37 @@ export async function POST(request: NextRequest) {
       planId?: unknown;
       workspaceId?: unknown;
     };
-
     const planId = resolvePlanId(body.planId);
-    const requestedOutcomeId =
-      typeof body.outcomeId === "string" ? body.outcomeId.trim() : "";
-    const workspaceId =
-      typeof body.workspaceId === "string" && body.workspaceId.trim()
-        ? body.workspaceId.trim()
-        : "default";
+    const outcomeId = typeof body.outcomeId === "string" ? body.outcomeId.trim() : "";
+    const workspaceId = typeof body.workspaceId === "string" && body.workspaceId.trim() ? body.workspaceId.trim() : "default";
+
+    const [{ canUseCapability }, { reserveExecution }, jobStore, { executeRuntime }] = await Promise.all([
+      import("@/lib/billing/entitlements"),
+      import("@/lib/billing/execution-usage"),
+      import("@/lib/execution/job-store"),
+      import("@/lib/runtime/engine"),
+    ]);
 
     const capability = canUseCapability(planId, "execution");
     if (!capability.allowed) {
-      return json(
-        {
-          success: false,
-          requestId,
-          code: "EXECUTION_CAPABILITY_DENIED",
-          error:
-            "Execution capability is not available for this plan.",
-          entitlement: {
-            planId,
-            capability: "execution",
-            allowed: false,
-            reason: capability.reason,
-          },
-        },
-        identity.userId,
-        403,
-      );
+      return response({
+        success: false,
+        requestId,
+        code: "EXECUTION_CAPABILITY_DENIED",
+        error: "Execution capability is not available for this plan.",
+        entitlement: { planId, capability: "execution", allowed: false, reason: capability.reason },
+      }, identity.userId, 403);
     }
 
     const result = await runWithUserContext(identity.userId, async () => {
-      const [outcomes, allTasks] = await Promise.all([
-        listOutcomes(),
-        listPersistentTasks(),
-      ]);
-      const outcome = selectCurrentOutcome(outcomes, requestedOutcomeId);
-
+      const [outcomes, allTasks] = await Promise.all([listOutcomes(), listPersistentTasks()]);
+      const outcome = selectOutcome(outcomes, outcomeId);
       if (!outcome) {
-        return {
-          success: false,
-          status: 404,
-          code: "NO_ACTIVE_OUTCOME",
-          error:
-            "No active or planned Outcome is available for execution.",
-        };
+        return { success: false, status: 404, code: "NO_ACTIVE_OUTCOME", error: "No active or planned Outcome is available for execution." };
       }
 
-      const linkedTasks = selectOutcomeTasks(outcome, allTasks);
-      const plan = buildExecutionPlan(
-        toPlannerOutcome(outcome),
-        linkedTasks,
-      );
+      const plan = buildExecutionPlan(plannerOutcome(outcome), linkedTasks(outcome, allTasks));
       const nextTask = plan.nextTask;
-
       if (!nextTask) {
         return {
           success: true,
@@ -286,48 +183,30 @@ export async function POST(request: NextRequest) {
 
       const usage = await reserveExecution(planId);
       if (!usage.allowed) {
-        return {
-          success: false,
-          status: 429,
-          code: "EXECUTION_LIMIT_REACHED",
-          error: "Daily execution limit reached.",
-          usage,
-        };
+        return { success: false, status: 429, code: "EXECUTION_LIMIT_REACHED", error: "Daily execution limit reached.", usage };
       }
 
-      const goal = `Execute Planner task: ${nextTask.title}`;
       const input = [
         `AIOS Planner Outcome: ${outcome.title}`,
         `Task: ${nextTask.title}`,
-        nextTask.description
-          ? `Task description: ${nextTask.description}`
-          : "",
+        nextTask.description ? `Task description: ${nextTask.description}` : "",
         `Success criteria: ${outcome.successCriteria}`,
         "Complete the task as far as the available AIOS runtime capabilities allow.",
         "Return a concise execution result suitable for task verification.",
       ].filter(Boolean).join("\n");
 
-      const job = await createExecutionJob({
-        goal,
+      const job = await jobStore.createExecutionJob({
+        goal: `Execute Planner task: ${nextTask.title}`,
         planId,
         taskId: nextTask.id,
         input,
       });
-
-      await markExecutionJobRunning(job.id);
-
-      if (nextTask.status === "todo") {
-        await updatePersistentTask(nextTask.id, { status: "doing" });
-      }
+      await jobStore.markExecutionJobRunning(job.id);
+      if (nextTask.status === "todo") await updatePersistentTask(nextTask.id, { status: "doing" });
 
       const runtime = await executeRuntime({ prompt: input });
-
       if (!runtime.success) {
-        const failed = await markExecutionJobFailed(
-          job.id,
-          runtime.error ?? "Planner task execution failed.",
-        );
-
+        const failed = await jobStore.markExecutionJobFailed(job.id, runtime.error ?? "Planner task execution failed.");
         return {
           success: false,
           status: 502,
@@ -347,23 +226,13 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      const completedJob = await markExecutionJobCompleted(
-        job.id,
-        runtime.content,
-      );
-      const completedTask = await updatePersistentTask(nextTask.id, {
-        status: "done",
-      });
+      const completedJob = await jobStore.markExecutionJobCompleted(job.id, runtime.content);
+      const completedTask = await updatePersistentTask(nextTask.id, { status: "done" });
       const refreshedTasks = await listPersistentTasks();
 
       for (const milestone of outcome.milestones) {
-        if (
-          milestone.status !== "completed" &&
-          allMilestoneTasksDone(milestone, refreshedTasks)
-        ) {
-          await updateOutcomeMilestone(outcome.id, milestone.id, {
-            status: "completed",
-          });
+        if (milestone.status !== "completed" && milestoneDone(milestone, refreshedTasks)) {
+          await updateOutcomeMilestone(outcome.id, milestone.id, { status: "completed" });
         }
       }
 
@@ -389,28 +258,13 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return json(
-      {
-        ...result,
-        requestId,
-        identity: { userId: identity.userId, isolated: true },
-      },
-      identity.userId,
-      result.status ?? 200,
-    );
+    return response({ ...result, requestId, identity: { userId: identity.userId, isolated: true } }, identity.userId, result.status ?? 200);
   } catch (error) {
-    return json(
-      {
-        success: false,
-        requestId,
-        code: "PLANNER_TASK_EXECUTION_ERROR",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Planner task execution failed.",
-      },
-      identity.userId,
-      500,
-    );
+    return response({
+      success: false,
+      requestId,
+      code: "PLANNER_TASK_EXECUTION_ERROR",
+      error: error instanceof Error ? error.message : "Planner task execution failed.",
+    }, identity.userId, 500);
   }
 }
