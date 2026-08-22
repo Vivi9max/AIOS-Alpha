@@ -7,7 +7,6 @@ import {
 } from "@/lib/server-storage";
 import { listEvolutionTargets } from "@/lib/evolution/heartbeat";
 import { createUserStorageKey } from "@/lib/storage/data-scope";
-import { resolveAlphaIdentity } from "@/lib/auth/identity";
 import { runWithUserContext } from "@/lib/runtime/request-context";
 
 export const dynamic = "force-dynamic";
@@ -127,93 +126,79 @@ function buildAutonomyState(
   };
 }
 
-export async function GET(request: NextRequest) {
-  const identity = resolveAlphaIdentity(request);
+export async function GET(_request: NextRequest) {
+  const timestamp = Date.now();
 
-  const status = await runWithUserContext(
-    identity.userId,
-    async () => {
-      const timestamp = Date.now();
+  const storageHealth = await getStorageHealth();
+  const storageMode = getStorageMode();
+  const workspaceId = getWorkspaceId();
+  const targets = await listEvolutionTargets();
+  const cronSecretConfigured = isCronConfigured();
 
-      const storageHealth = await getStorageHealth();
-      const storageMode = getStorageMode();
-      const workspaceId = getWorkspaceId();
-      const targets = await listEvolutionTargets();
-      const cronSecretConfigured = isCronConfigured();
+  /*
+   * C139.1:
+   *
+   * Evolution Heartbeat executes against registered targets.
+   * The status endpoint must read the same target-scoped
+   * persistent state.
+   *
+   * Do not create a new anonymous browser identity here.
+   */
+  const targetUserId = targets[0] ?? "system";
 
-      /*
-       * C139:
-       * Evolution Heartbeat stores its result using the same
-       * user-scoped storage key. The Status API must read
-       * exactly that key.
-       */
-      const lastHeartbeat =
-        await storage.get<StoredHeartbeat>(
-          createUserStorageKey(
-            "evolution-last-heartbeat",
-          ),
-        );
-
-      const autonomy =
-        buildAutonomyState(
-          storageMode,
-          cronSecretConfigured,
-          targets.length,
-          Boolean(lastHeartbeat),
-        );
-
-      const result: EvolutionStatus = {
-        success:
-          storageHealth.success,
-
-        timestamp,
-
-        evolution: {
-          enabled: true,
-          schedulerConfigured: true,
-          cronSecretConfigured,
-
-          storageMode,
-
-          persistentStorageReady:
-            storageMode === "redis" &&
-            storageHealth.success,
-
-          targetCount:
-            targets.length,
-
-          workspaceId,
-        },
-
-        lastHeartbeat: {
-          available:
-            Boolean(lastHeartbeat),
-
-          heartbeatId:
-            lastHeartbeat?.heartbeatId ??
-            null,
-
-          timestamp:
-            lastHeartbeat?.timestamp ??
-            null,
-
-          healthScore:
-            typeof lastHeartbeat?.healthScore ===
-            "number"
-              ? lastHeartbeat.healthScore
-              : null,
-
-          nextAction:
-            lastHeartbeat?.nextAction ??
-            null,
-        },
-
-        autonomy,
-      };
-
-      return result;
-    },
+  const lastHeartbeat = await runWithUserContext(
+    targetUserId,
+    async () =>
+      storage.get<StoredHeartbeat>(
+        createUserStorageKey(
+          "evolution-last-heartbeat",
+        ),
+      ),
   );
 
-  return NextResponse.json(status);
+  const autonomy = buildAutonomyState(
+    storageMode,
+    cronSecretConfigured,
+    targets.length,
+    Boolean(lastHeartbeat),
+  );
+
+  const result: EvolutionStatus = {
+    success: storageHealth.success,
+    timestamp,
+
+    evolution: {
+      enabled: true,
+      schedulerConfigured: true,
+      cronSecretConfigured,
+      storageMode,
+      persistentStorageReady:
+        storageMode === "redis" &&
+        storageHealth.success,
+      targetCount: targets.length,
+      workspaceId,
+    },
+
+    lastHeartbeat: {
+      available: Boolean(lastHeartbeat),
+      heartbeatId:
+        lastHeartbeat?.heartbeatId ??
+        null,
+      timestamp:
+        lastHeartbeat?.timestamp ??
+        null,
+      healthScore:
+        typeof lastHeartbeat?.healthScore ===
+        "number"
+          ? lastHeartbeat.healthScore
+          : null,
+      nextAction:
+        lastHeartbeat?.nextAction ??
+        null,
+    },
+
+    autonomy,
+  };
+
+  return NextResponse.json(result);
 }
