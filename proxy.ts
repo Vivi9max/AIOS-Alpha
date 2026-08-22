@@ -15,17 +15,17 @@ const PUBLIC_PATHS = [
   "/api/alpha/status",
   "/api/alpha/invite",
   "/api/health",
+
+  // Vercel Cron / Evolution Runtime
+  "/api/evolution/heartbeat",
 ];
 
 function isPublicPath(
   pathname: string
 ): boolean {
   return PUBLIC_PATHS.some(
-    (
-      path
-    ) =>
-      pathname ===
-        path ||
+    (path) =>
+      pathname === path ||
       pathname.startsWith(
         `${path}/`
       )
@@ -57,13 +57,17 @@ export function proxy(
   const pathname =
     request.nextUrl.pathname;
 
+  /*
+   * Public routes and protected
+   * system-runtime routes are allowed
+   * to reach their own route handlers.
+   *
+   * Runtime authentication must be
+   * handled by the route itself.
+   */
   if (
-    isPublicPath(
-      pathname
-    ) ||
-    isPublicAsset(
-      pathname
-    )
+    isPublicPath(pathname) ||
+    isPublicAsset(pathname)
   ) {
     return NextResponse.next();
   }
@@ -87,8 +91,7 @@ export function proxy(
   ) {
     return NextResponse.json(
       {
-        success:
-          false,
+        success: false,
 
         content:
           "Alpha access required.",
@@ -103,8 +106,7 @@ export function proxy(
           Date.now(),
       },
       {
-        status:
-          401,
+        status: 401,
 
         headers: {
           "Cache-Control":
