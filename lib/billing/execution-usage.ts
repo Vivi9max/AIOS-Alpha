@@ -4,8 +4,11 @@ import { createUserStorageKey } from "@/lib/storage/data-scope";
 import {
   getEntitlement,
   type AIOSCapability,
-  type AIOSPlanId,
 } from "@/lib/billing/entitlements";
+
+import type {
+  AIOSPlanId,
+} from "@/lib/billing/plans";
 
 const USAGE_RESOURCE =
   "execution-usage";
