@@ -17,6 +17,15 @@ import {
   retryExecutionJob,
 } from "@/lib/execution/job-store";
 
+import {
+  canUseCapability,
+} from "@/lib/billing/entitlements";
+
+import {
+  getExecutionUsage,
+  reserveExecution,
+} from "@/lib/billing/execution-usage";
+
 export const dynamic =
   "force-dynamic";
 
@@ -45,6 +54,7 @@ interface RetryBody {
   action?: unknown;
   client?: unknown;
   platform?: unknown;
+  planId?: unknown;
 }
 
 function getRequestId(
@@ -87,6 +97,59 @@ function getClientMetadata(
     client,
     platform,
   };
+}
+
+function resolvePlanId(
+  value: unknown,
+): string {
+  if (
+    value === "alpha" ||
+    value === "free" ||
+    value === "pro" ||
+    value === "business"
+  ) {
+    return value;
+  }
+
+  return "alpha";
+}
+
+function getEntitlementFailure(
+  planId: string,
+  requestId: string,
+) {
+  const capability =
+    canUseCapability(
+      planId,
+      "execution",
+    );
+
+  return NextResponse.json(
+    {
+      success: false,
+      apiVersion:
+        API_VERSION,
+      requestId,
+      error:
+        "Execution capability is not available for this plan.",
+      code:
+        "EXECUTION_CAPABILITY_DENIED",
+      entitlement: {
+        planId,
+        capability:
+          capability.capability,
+        allowed:
+          capability.allowed,
+        reason:
+          capability.reason,
+      },
+      timestamp:
+        Date.now(),
+    },
+    {
+      status: 403,
+    },
+  );
 }
 
 async function executeJob(
@@ -203,6 +266,13 @@ export async function GET(
       "workspaceId",
     );
 
+  const planId =
+    resolvePlanId(
+      request.nextUrl.searchParams.get(
+        "plan",
+      ),
+    );
+
   if (id) {
     const job =
       await getExecutionJob(id);
@@ -244,6 +314,11 @@ export async function GET(
   const jobs =
     await listExecutionJobs();
 
+  const usage =
+    await getExecutionUsage(
+      planId,
+    );
+
   return NextResponse.json({
     success: true,
     apiVersion:
@@ -254,6 +329,14 @@ export async function GET(
         workspaceId ??
         "default",
     },
+    entitlement: {
+      planId,
+      capability:
+        "execution",
+      allowed:
+        usage.allowed,
+    },
+    usage,
     jobs,
     count:
       jobs.length,
@@ -286,10 +369,9 @@ export async function POST(
         : goal;
 
     const planId =
-      typeof body.planId ===
-      "string"
-        ? body.planId
-        : undefined;
+      resolvePlanId(
+        body.planId,
+      );
 
     const taskId =
       typeof body.taskId ===
@@ -351,6 +433,21 @@ export async function POST(
       );
     }
 
+    const capability =
+      canUseCapability(
+        planId,
+        "execution",
+      );
+
+    if (
+      !capability.allowed
+    ) {
+      return getEntitlementFailure(
+        planId,
+        requestId,
+      );
+    }
+
     const job =
       await createExecutionJob({
         goal,
@@ -369,6 +466,17 @@ export async function POST(
           job,
           execution:
             null,
+          entitlement: {
+            planId,
+            capability:
+              "execution",
+            allowed:
+              true,
+          },
+          usage:
+            await getExecutionUsage(
+              planId,
+            ),
           scope: {
             workspaceId,
           },
@@ -385,6 +493,53 @@ export async function POST(
       );
     }
 
+    const usage =
+      await reserveExecution(
+        planId,
+      );
+
+    if (
+      !usage.allowed
+    ) {
+      const failed =
+        await markExecutionJobFailed(
+          job.id,
+          "Daily execution limit reached.",
+        );
+
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion:
+            API_VERSION,
+          requestId,
+          job: failed,
+          error:
+            "Daily execution limit reached.",
+          code:
+            "EXECUTION_LIMIT_REACHED",
+          entitlement: {
+            planId,
+            capability:
+              "execution",
+            allowed:
+              false,
+          },
+          usage,
+          scope: {
+            workspaceId,
+          },
+          client:
+            clientMetadata,
+          timestamp:
+            Date.now(),
+        },
+        {
+          status: 429,
+        },
+      );
+    }
+
     const result =
       await executeJob(
         job.id,
@@ -397,6 +552,14 @@ export async function POST(
         apiVersion:
           API_VERSION,
         requestId,
+        entitlement: {
+          planId,
+          capability:
+            "execution",
+          allowed:
+            true,
+        },
+        usage,
         scope: {
           workspaceId,
         },
@@ -460,6 +623,11 @@ export async function PATCH(
         ? body.action
         : "";
 
+    const planId =
+      resolvePlanId(
+        body.planId,
+      );
+
     const clientMetadata =
       getClientMetadata(
         request,
@@ -501,6 +669,56 @@ export async function PATCH(
         },
         {
           status: 400,
+        },
+      );
+    }
+
+    const capability =
+      canUseCapability(
+        planId,
+        "execution",
+      );
+
+    if (
+      !capability.allowed
+    ) {
+      return getEntitlementFailure(
+        planId,
+        requestId,
+      );
+    }
+
+    const usage =
+      await reserveExecution(
+        planId,
+      );
+
+    if (
+      !usage.allowed
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion:
+            API_VERSION,
+          requestId,
+          error:
+            "Daily execution limit reached.",
+          code:
+            "EXECUTION_LIMIT_REACHED",
+          entitlement: {
+            planId,
+            capability:
+              "execution",
+            allowed:
+              false,
+          },
+          usage,
+          timestamp:
+            Date.now(),
+        },
+        {
+          status: 429,
         },
       );
     }
@@ -565,6 +783,14 @@ export async function PATCH(
         apiVersion:
           API_VERSION,
         requestId,
+        entitlement: {
+          planId,
+          capability:
+            "execution",
+          allowed:
+            true,
+        },
+        usage,
         client:
           clientMetadata,
         timestamp:
