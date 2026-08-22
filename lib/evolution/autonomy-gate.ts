@@ -51,6 +51,15 @@ interface StoredHeartbeat {
   nextAction?: string;
 }
 
+interface AutonomyRuntimeSnapshot {
+  heartbeat: StoredHeartbeat | null;
+  recentFailures: number;
+  activeOutcomes: number;
+  doingTasks: number;
+  todoTasks: number;
+  candidateTask: AutonomyGateResult["candidateTask"];
+}
+
 const HEARTBEAT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MIN_AUTONOMY_HEALTH_SCORE = 90;
 
@@ -87,50 +96,87 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
     );
   }
 
-  let heartbeat: StoredHeartbeat | null = null;
-  let recentFailures = 0;
-  let activeOutcomes = 0;
-  let doingTasks = 0;
-  let todoTasks = 0;
-  let candidateTask: AutonomyGateResult["candidateTask"] = null;
+  const emptySnapshot: AutonomyRuntimeSnapshot = {
+    heartbeat: null,
+    recentFailures: 0,
+    activeOutcomes: 0,
+    doingTasks: 0,
+    todoTasks: 0,
+    candidateTask: null,
+  };
 
-  if (targetUserId) {
-    await runWithUserContext(targetUserId, async () => {
-      heartbeat = await storage.get<StoredHeartbeat>(
-        createUserStorageKey("evolution-last-heartbeat"),
-      );
+  const runtimeSnapshot: AutonomyRuntimeSnapshot = targetUserId
+    ? await runWithUserContext(targetUserId, async (): Promise<AutonomyRuntimeSnapshot> => {
+        const heartbeat = await storage.get<StoredHeartbeat>(
+          createUserStorageKey("evolution-last-heartbeat"),
+        );
 
-      const [memory, outcomes, tasks] = await Promise.all([
-        getPersistentExecutionMemory(),
-        listOutcomes(),
-        listPersistentTasks(),
-      ]);
+        const [memory, outcomes, tasks] = await Promise.all([
+          getPersistentExecutionMemory(),
+          listOutcomes(),
+          listPersistentTasks(),
+        ]);
 
-      const recentCutoff = timestamp - 24 * 60 * 60 * 1000;
-      recentFailures = memory.filter(
-        (item) => item.createdAt >= recentCutoff && !item.success,
-      ).length;
+        const recentCutoff = timestamp - 24 * 60 * 60 * 1000;
 
-      activeOutcomes = outcomes.filter((item) => item.status === "active").length;
-      doingTasks = tasks.filter((item) => item.status === "doing").length;
-      todoTasks = tasks.filter((item) => item.status === "todo").length;
+        const recentFailures = memory.filter(
+          (item) => item.createdAt >= recentCutoff && !item.success,
+        ).length;
 
-      const firstTodo = tasks.find((item) => item.status === "todo");
-      if (firstTodo) {
-        candidateTask = {
-          id: firstTodo.id,
-          title: firstTodo.title,
-          description: firstTodo.description ?? "",
+        const activeOutcomes = outcomes.filter(
+          (item) => item.status === "active",
+        ).length;
+
+        const doingTasks = tasks.filter(
+          (item) => item.status === "doing",
+        ).length;
+
+        const todoTasks = tasks.filter(
+          (item) => item.status === "todo",
+        ).length;
+
+        const firstTodo = tasks.find((item) => item.status === "todo");
+
+        const candidateTask: AutonomyGateResult["candidateTask"] =
+          firstTodo
+            ? {
+                id: firstTodo.id,
+                title: firstTodo.title,
+                description: firstTodo.description ?? "",
+              }
+            : null;
+
+        return {
+          heartbeat,
+          recentFailures,
+          activeOutcomes,
+          doingTasks,
+          todoTasks,
+          candidateTask,
         };
-      }
-    });
-  }
+      })
+    : emptySnapshot;
+
+  const {
+    heartbeat,
+    recentFailures,
+    activeOutcomes,
+    doingTasks,
+    todoTasks,
+    candidateTask,
+  } = runtimeSnapshot;
 
   const heartbeatAvailable = Boolean(heartbeat?.heartbeatId);
+
+  const heartbeatTimestamp =
+    typeof heartbeat?.timestamp === "number"
+      ? heartbeat.timestamp
+      : null;
+
   const heartbeatFresh =
     heartbeatAvailable &&
-    typeof heartbeat?.timestamp === "number" &&
-    timestamp - heartbeat.timestamp <= HEARTBEAT_MAX_AGE_MS;
+    heartbeatTimestamp !== null &&
+    timestamp - heartbeatTimestamp <= HEARTBEAT_MAX_AGE_MS;
 
   if (!heartbeatAvailable) {
     blockers.push("No Evolution Heartbeat result is available.");
@@ -149,7 +195,10 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
       ? heartbeat.healthScore
       : null;
 
-  if (healthScore !== null && healthScore < MIN_AUTONOMY_HEALTH_SCORE) {
+  if (
+    healthScore !== null &&
+    healthScore < MIN_AUTONOMY_HEALTH_SCORE
+  ) {
     blockers.push(
       `Heartbeat health score ${healthScore} is below the autonomy threshold ${MIN_AUTONOMY_HEALTH_SCORE}.`,
     );
@@ -159,7 +208,9 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
   }
 
   if (recentFailures > 0) {
-    blockers.push(`${recentFailures} execution failure(s) occurred in the last 24 hours.`);
+    blockers.push(
+      `${recentFailures} execution failure(s) occurred in the last 24 hours.`,
+    );
     recommendations.push(
       "Investigate failed executions and verify recovery before autonomous execution.",
     );
@@ -168,7 +219,9 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
   if (activeOutcomes > 0 && doingTasks === 0 && todoTasks > 0) {
     // This is the only queue shape C140 considers eligible for one safe action.
   } else if (todoTasks === 0) {
-    recommendations.push("Wait for a Planner task to enter the todo queue.");
+    recommendations.push(
+      "Wait for a Planner task to enter the todo queue.",
+    );
   } else if (doingTasks > 0) {
     recommendations.push(
       "Wait for the currently running task to complete before dispatching another autonomous task.",
@@ -186,13 +239,15 @@ export async function evaluateAutonomyGate(): Promise<AutonomyGateResult> {
   }
 
   const ready = blockers.length === 0 && queueEligible;
+
   const level: AutonomyGateLevel = ready
     ? "autonomous"
-    : blockers.some((item) =>
-        item.includes("Persistent") ||
-        item.includes("CRON_SECRET") ||
-        item.includes("No Evolution target"),
-      )
+    : blockers.some(
+          (item) =>
+            item.includes("Persistent") ||
+            item.includes("CRON_SECRET") ||
+            item.includes("No Evolution target"),
+        )
       ? "blocked"
       : "observation";
 
