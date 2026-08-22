@@ -8,27 +8,70 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-function authorized(request: NextRequest) {
+function isAuthorized(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
 
-  return (
-    Boolean(secret) &&
-    request.headers.get("authorization") ===
-      `Bearer ${secret}`
-  );
+  if (!secret) {
+    return false;
+  }
+
+  const authorization =
+    request.headers.get("authorization");
+
+  if (
+    authorization ===
+    `Bearer ${secret}`
+  ) {
+    return true;
+  }
+
+  /*
+   * Vercel Cron requests can also expose
+   * the x-vercel-cron header.
+   *
+   * Keep CRON_SECRET configured as the
+   * production security requirement.
+   */
+  const vercelCron =
+    request.headers.get("x-vercel-cron");
+
+  if (
+    vercelCron === "1" &&
+    process.env.VERCEL === "1"
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+) {
   const startedAt = Date.now();
 
-  if (!authorized(request)) {
+  if (!isAuthorized(request)) {
     console.error(
       "[EVOLUTION_HEARTBEAT_UNAUTHORIZED]",
       {
         timestamp: startedAt,
+        vercel:
+          process.env.VERCEL === "1",
         hasCronSecret:
           Boolean(
             process.env.CRON_SECRET?.trim(),
+          ),
+        hasAuthorization:
+          Boolean(
+            request.headers.get(
+              "authorization",
+            ),
+          ),
+        hasVercelCronHeader:
+          Boolean(
+            request.headers.get(
+              "x-vercel-cron",
+            ),
           ),
       },
     );
@@ -65,7 +108,7 @@ export async function GET(request: NextRequest) {
       success: true,
       ran: false,
       reason:
-        "No Evolution target is registered yet. Open /api/evolution/register once from the AIOS workspace.",
+        "No Evolution target is registered yet.",
       timestamp: Date.now(),
     });
   }
@@ -73,13 +116,15 @@ export async function GET(request: NextRequest) {
   const results = [];
 
   for (const userId of targets) {
-    const targetStartedAt = Date.now();
+    const targetStartedAt =
+      Date.now();
 
     console.info(
       "[EVOLUTION_HEARTBEAT_TARGET_STARTED]",
       {
         userId,
-        timestamp: targetStartedAt,
+        timestamp:
+          targetStartedAt,
       },
     );
 
@@ -105,7 +150,16 @@ export async function GET(request: NextRequest) {
         },
       );
 
-      results.push(result);
+      results.push({
+        success: true,
+        userId,
+        heartbeatId:
+          result.heartbeatId,
+        healthScore:
+          result.healthScore,
+        nextAction:
+          result.nextAction,
+      });
     } catch (error) {
       const message =
         error instanceof Error
@@ -124,8 +178,8 @@ export async function GET(request: NextRequest) {
       );
 
       results.push({
-        userId,
         success: false,
+        userId,
         error: message,
       });
     }
@@ -139,29 +193,30 @@ export async function GET(request: NextRequest) {
     {
       targetCount:
         targets.length,
-      durationMs,
-      timestamp: Date.now(),
       successfulTargets:
         results.filter(
           (item) =>
-            "heartbeatId" in item &&
-            Boolean(item.heartbeatId),
+            item.success,
         ).length,
       failedTargets:
         results.filter(
           (item) =>
-            "success" in item &&
-            item.success === false,
+            !item.success,
         ).length,
+      durationMs,
+      timestamp:
+        Date.now(),
     },
   );
 
   return NextResponse.json({
     success: true,
     ran: true,
-    targetCount: targets.length,
+    targetCount:
+      targets.length,
     results,
     durationMs,
-    timestamp: Date.now(),
+    timestamp:
+      Date.now(),
   });
 }
