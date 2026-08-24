@@ -12,6 +12,11 @@ export type AICapability =
   | "vision"
   | "embedding";
 
+export interface AIChatOptions {
+  systemPrompt?: string;
+  historyLimit?: number;
+}
+
 export interface ChatResponse {
   success: boolean;
   provider: AIProvider;
@@ -25,6 +30,7 @@ export interface AIProviderAdapter {
   enabled: boolean;
 
   chat(
-    prompt: string
+    prompt: string,
+    options?: AIChatOptions
   ): Promise<ChatResponse>;
 }
