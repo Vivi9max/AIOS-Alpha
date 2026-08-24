@@ -11,15 +11,9 @@ import {
 import {
   addAssistantMemory,
   addMemory,
-  buildConversationContext,
   hydrateMemory,
   saveMemory,
-  searchMemory,
 } from "./memory/store";
-
-import {
-  buildMemoryProfileText,
-} from "./memory/index";
 
 import {
   hydrateManualProfile,
@@ -35,6 +29,10 @@ import {
 
 export interface BrainRequest {
   prompt: string;
+
+  systemPrompt?: string;
+
+  historyLimit?: number;
 }
 
 export interface BrainResponse {
@@ -60,7 +58,8 @@ export async function runBrain(
       requestedProvider:
         "mock",
       fallbackUsed: false,
-      content: "请输入内容。",
+      content:
+        "请输入内容。",
       actionHandled: false,
     };
   }
@@ -108,10 +107,12 @@ export async function runBrain(
             activeProvider,
           requestedProvider:
             activeProvider,
-          fallbackUsed: false,
+          fallbackUsed:
+            false,
           content:
             execution.content,
-          actionHandled: true,
+          actionHandled:
+            true,
         };
       }
     } catch (error) {
@@ -138,67 +139,34 @@ export async function runBrain(
           activeProvider,
         requestedProvider:
           activeProvider,
-        fallbackUsed: false,
-        error: errorMessage,
+        fallbackUsed:
+          false,
+        error:
+          errorMessage,
         content:
           "操作执行失败，请稍后重试。",
-        actionHandled: true,
+        actionHandled:
+          true,
       };
     }
   }
-
-  const conversationContext =
-    buildConversationContext(
-      20
-    );
-
-  const profileContext =
-    buildMemoryProfileText();
-
-  const relatedMemory =
-    searchMemory(
-      prompt
-    ).slice(-5);
 
   addMemory(
     "user",
     prompt
   );
 
-  const finalPrompt = [
-    "You are the AIOS Alpha brain.",
-    "Answer the current user message directly.",
-    "Use the saved profile and conversation memory only when relevant.",
-    "Do not claim that an action was completed unless the system actually executed it.",
-    "Do not treat questions as new personal facts.",
-    "Respond in the same language as the user unless the user asks otherwise.",
-    "",
-    "USER_PROFILE:",
-    profileContext ||
-      "(empty)",
-    "",
-    "CONVERSATION_MEMORY:",
-    conversationContext ||
-      "(empty)",
-    "",
-    "RELATED_MEMORY:",
-    relatedMemory.length > 0
-      ? relatedMemory
-          .map(
-            (item) =>
-              `${item.role}: ${item.content}`
-          )
-          .join("\n")
-      : "(empty)",
-    "",
-    "CURRENT_USER_MESSAGE:",
-    prompt,
-  ].join("\n");
-
   try {
     const result =
       await chat(
-        finalPrompt
+        prompt,
+        {
+          systemPrompt:
+            request.systemPrompt,
+          historyLimit:
+            request.historyLimit ??
+            20,
+        }
       );
 
     addAssistantMemory(
@@ -210,23 +178,18 @@ export async function runBrain(
     return {
       success:
         result.success,
-
       provider:
         result.provider,
-
       requestedProvider:
         result.requestedProvider,
-
       fallbackUsed:
         result.fallbackUsed,
-
       error:
         result.error,
-
       content:
         result.content,
-
-      actionHandled: false,
+      actionHandled:
+        false,
     };
   } catch (error) {
     await saveMemory();
