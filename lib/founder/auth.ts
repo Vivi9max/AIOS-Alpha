@@ -1,114 +1,149 @@
-import type {
-  NextRequest,
-} from "next/server";
+import type { NextRequest } from "next/server";
 
-const FOUNDER_HEADER =
-  "x-aios-founder-key";
+const FOUNDER_HEADER = "x-aios-founder-key";
+const FOUNDER_AUTHORIZATION = "authorization";
 
-function getConfiguredFounderKey():
-  string {
+export type FounderAuthFailure =
+  | "not-configured"
+  | "missing-key"
+  | "invalid-key";
+
+export interface FounderAuthDiagnostics {
+  configured: boolean;
+  authenticated: boolean;
+  failure: FounderAuthFailure | null;
+  source:
+    | "x-aios-founder-key"
+    | "authorization"
+    | "none";
+}
+
+function getConfiguredFounderKey(): string {
   return (
-    process.env
-      .FOUNDER_ACCESS_KEY
-      ?.trim() ?? ""
+    process.env.FOUNDER_ACCESS_KEY?.trim() ?? ""
   );
 }
 
 function getRequestFounderKey(
-  request:
-    NextRequest
-): string {
-  const directHeader =
-    request.headers
-      .get(
-        FOUNDER_HEADER
-      )
-      ?.trim();
+  request: NextRequest,
+): {
+  key: string;
+  source: FounderAuthDiagnostics["source"];
+} {
+  const directHeader = request.headers
+    .get(FOUNDER_HEADER)
+    ?.trim();
 
   if (directHeader) {
-    return directHeader;
+    return {
+      key: directHeader,
+      source: "x-aios-founder-key",
+    };
   }
 
-  const authorization =
-    request.headers
-      .get(
-        "authorization"
-      )
-      ?.trim();
+  const authorization = request.headers
+    .get(FOUNDER_AUTHORIZATION)
+    ?.trim();
 
   if (
     authorization
       ?.toLowerCase()
-      .startsWith(
-        "bearer "
-      )
+      .startsWith("bearer ")
   ) {
-    return authorization
-      .slice(7)
-      .trim();
+    return {
+      key: authorization
+        .slice(7)
+        .trim(),
+      source: "authorization",
+    };
   }
 
-  return "";
+  return {
+    key: "",
+    source: "none",
+  };
 }
 
 function secureCompare(
-  first:
-    string,
-
-  second:
-    string
+  first: string,
+  second: string,
 ): boolean {
   if (
     !first ||
     !second ||
-    first.length !==
-      second.length
+    first.length !== second.length
   ) {
     return false;
   }
 
-  let result =
-    0;
+  let result = 0;
 
   for (
     let index = 0;
-    index <
-    first.length;
+    index < first.length;
     index += 1
   ) {
     result |=
-      first.charCodeAt(
-        index
-      ) ^
-      second.charCodeAt(
-        index
-      );
+      first.charCodeAt(index) ^
+      second.charCodeAt(index);
   }
 
   return result === 0;
 }
 
-export function isFounderConfigured():
-  boolean {
+export function isFounderConfigured(): boolean {
   return Boolean(
-    getConfiguredFounderKey()
+    getConfiguredFounderKey(),
   );
 }
 
-export function isFounderRequest(
-  request:
-    NextRequest
-): boolean {
+export function getFounderAuthDiagnostics(
+  request: NextRequest,
+): FounderAuthDiagnostics {
   const configuredKey =
     getConfiguredFounderKey();
 
-  const requestKey =
-    getRequestFounderKey(
-      request
+  const requestData =
+    getRequestFounderKey(request);
+
+  if (!configuredKey) {
+    return {
+      configured: false,
+      authenticated: false,
+      failure: "not-configured",
+      source: requestData.source,
+    };
+  }
+
+  if (!requestData.key) {
+    return {
+      configured: true,
+      authenticated: false,
+      failure: "missing-key",
+      source: requestData.source,
+    };
+  }
+
+  const authenticated =
+    secureCompare(
+      configuredKey,
+      requestData.key,
     );
 
-  return secureCompare(
-    configuredKey,
-    requestKey
-  );
+  return {
+    configured: true,
+    authenticated,
+    failure: authenticated
+      ? null
+      : "invalid-key",
+    source: requestData.source,
+  };
+}
+
+export function isFounderRequest(
+  request: NextRequest,
+): boolean {
+  return getFounderAuthDiagnostics(
+    request,
+  ).authenticated;
 }
