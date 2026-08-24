@@ -1,5 +1,7 @@
 import type {
   AIProvider,
+  AIProviderAdapter,
+  AIChatOptions,
   ChatResponse,
 } from "./types";
 
@@ -18,7 +20,8 @@ export function getActiveProvider(): AIProvider {
 }
 
 export async function chat(
-  prompt: string
+  prompt: string,
+  options?: AIChatOptions
 ): Promise<ChatResponse> {
   const activeProvider =
     getActiveProvider();
@@ -28,7 +31,10 @@ export async function chat(
 
   try {
     const result =
-      await provider.chat(prompt);
+      await provider.chat(
+        prompt,
+        options
+      );
 
     return {
       ...result,
@@ -55,10 +61,15 @@ export async function chat(
       fallbackProvider
     ) {
       const fallback =
-        providers[fallbackProvider];
+        providers[
+          fallbackProvider
+        ];
 
       const fallbackResult =
-        await fallback.chat(prompt);
+        await fallback.chat(
+          prompt,
+          options
+        );
 
       return {
         ...fallbackResult,
