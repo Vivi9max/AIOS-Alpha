@@ -47,7 +47,7 @@ export default function C141GithubLiveVerification() {
     setStatus({ ...INITIAL_STATUS, connection: "RUNNING" });
 
     try {
-      const res = await fetch("/api/c141/verify", {
+      const res = await fetch("/api/founder/github-verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accessKey }),
