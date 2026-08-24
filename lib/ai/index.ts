@@ -1,8 +1,16 @@
 import { chat as routerChat } from "./router";
-import type { ChatResponse } from "./types";
+
+import type {
+  AIChatOptions,
+  ChatResponse,
+} from "./types";
 
 export async function chat(
-  prompt: string
+  prompt: string,
+  options?: AIChatOptions
 ): Promise<ChatResponse> {
-  return routerChat(prompt);
+  return routerChat(
+    prompt,
+    options
+  );
 }
