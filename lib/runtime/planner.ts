@@ -45,27 +45,16 @@ export type ResponseMode =
 
 export interface RuntimePlan {
   id: string;
-
   type: RuntimePlanType;
-
   prompt: string;
-
   goal: string;
-
   intent: PlannerIntent;
-
   confidence: number;
-
   action: WorkspaceAction;
-
   capabilities: RuntimeCapability[];
-
   steps: string[];
-
   responseMode: ResponseMode;
-
   responseRules: string[];
-
   createdAt: number;
 }
 
@@ -79,10 +68,42 @@ function createPlanId(): string {
   ].join("-");
 }
 
-function normalizePrompt(
+function normalizeRuntimeInput(
   prompt: string
 ): string {
-  return prompt
+  const raw = prompt.trim();
+
+  /*
+   * Founder/Runtime callers may wrap the real request with
+   * execution metadata. That wrapper is transport data, not
+   * part of the user's actual request. Strip it at the planner
+   * boundary so it cannot be persisted into conversation memory
+   * and later reintroduced after a page refresh.
+   */
+  const hasRuntimeWrapper =
+    raw.includes("你是 AIOS Runtime 的执行引擎") &&
+    raw.includes("内部执行步骤：") &&
+    raw.includes("最终回答规则：") &&
+    raw.includes("用户请求：");
+
+  if (hasRuntimeWrapper) {
+    const marker = "用户请求：";
+    const requestIndex = raw.lastIndexOf(marker);
+
+    if (requestIndex >= 0) {
+      const extracted = raw
+        .slice(requestIndex + marker.length)
+        .trim();
+
+      if (extracted) {
+        return extracted
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+    }
+  }
+
+  return raw
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -534,7 +555,7 @@ export function buildRuntimePlan(
   prompt: string
 ): RuntimePlan {
   const cleanPrompt =
-    normalizePrompt(
+    normalizeRuntimeInput(
       prompt
     );
 
@@ -568,48 +589,37 @@ export function buildRuntimePlan(
   return {
     id:
       createPlanId(),
-
     type,
-
     prompt:
       cleanPrompt,
-
     goal:
       extractGoal(
         cleanPrompt,
         intent
       ),
-
     intent,
-
     confidence:
       calculateConfidence(
         type,
         intent,
         cleanPrompt
       ),
-
     action,
-
     capabilities:
       selectCapabilities(
         type,
         intent
       ),
-
     steps:
       createPlanSteps(
         type,
         intent
       ),
-
     responseMode,
-
     responseRules:
       createResponseRules(
         responseMode
       ),
-
     createdAt:
       Date.now(),
   };
