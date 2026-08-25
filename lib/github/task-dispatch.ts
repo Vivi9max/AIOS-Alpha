@@ -196,17 +196,21 @@ export async function dispatchGitHubTask(
       });
 
     if (!result.success || !result.data) {
-      return {
-        success: false,
-        action: request.action,
-        repository,
-        branch,
-        path,
-        error:
-          result.error ||
-          "GitHub read failed.",
-      };
-    }
+  const readError =
+    "error" in result &&
+    typeof result.error === "string"
+      ? result.error
+      : "GitHub read failed.";
+
+  return {
+    success: false,
+    action: request.action,
+    repository,
+    branch,
+    path,
+    error: readError,
+  };
+}
 
     return {
       success: true,
