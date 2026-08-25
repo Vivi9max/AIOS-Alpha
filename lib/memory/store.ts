@@ -51,6 +51,86 @@ function getStorageKey():
   );
 }
 
+/**
+ * C141.6:
+ * Persisted conversation history is data, never Runtime policy.
+ *
+ * Older releases could have stored the Founder/Runtime wrapper
+ * as a user message. Those records must not be allowed to survive
+ * hydration and become active conversation context after refresh.
+ */
+function sanitizeMemoryContent(
+  content: string
+): string | null {
+  const raw = content.trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const hasRuntimeWrapper =
+    raw.includes(
+      "你是 AIOS Runtime 的执行引擎"
+    ) &&
+    raw.includes(
+      "内部执行步骤："
+    ) &&
+    raw.includes(
+      "最终回答规则："
+    ) &&
+    raw.includes(
+      "用户请求："
+    );
+
+  if (!hasRuntimeWrapper) {
+    return raw;
+  }
+
+  const marker =
+    "用户请求：";
+
+  const requestIndex =
+    raw.lastIndexOf(
+      marker
+    );
+
+  if (requestIndex < 0) {
+    return null;
+  }
+
+  const extracted =
+    raw
+      .slice(
+        requestIndex +
+          marker.length
+      )
+      .trim();
+
+  return extracted
+    ? extracted
+        .replace(/\s+/g, " ")
+        .trim()
+    : null;
+}
+
+function sanitizeMemoryRecord(
+  item: MemoryRecord
+): MemoryRecord | null {
+  const content =
+    sanitizeMemoryContent(
+      item.content
+    );
+
+  if (!content) {
+    return null;
+  }
+
+  return {
+    ...item,
+    content,
+  };
+}
+
 function getMemoryState():
   UserMemoryState {
   const scope =
@@ -122,6 +202,15 @@ function normalizeStoredMemory(
   return value
     .filter(
       isMemoryRecord
+    )
+    .map(
+      sanitizeMemoryRecord
+    )
+    .filter(
+      (
+        item
+      ): item is MemoryRecord =>
+        item !== null
     )
     .slice(
       -MAX_MEMORY_RECORDS
@@ -202,6 +291,37 @@ export async function hydrateMemory():
         state.records.push(
           ...restored
         );
+
+        /*
+         * If legacy polluted records were removed or normalized,
+         * persist the cleaned snapshot immediately. This makes the
+         * recovery permanent rather than only fixing one request.
+         */
+        if (
+          Array.isArray(stored)
+        ) {
+          const original =
+            stored.filter(
+              isMemoryRecord
+            );
+
+          const changed =
+            JSON.stringify(
+              original
+            ) !==
+            JSON.stringify(
+              restored
+            );
+
+          if (changed) {
+            await storage.set(
+              storageKey,
+              [
+                ...restored,
+              ]
+            );
+          }
+        }
       } catch (error) {
         console.error(
           "[AIOS Memory Hydration]",
@@ -229,7 +349,9 @@ export function addMemory(
   content: string
 ): MemoryRecord | null {
   const value =
-    content.trim();
+    sanitizeMemoryContent(
+      content
+    );
 
   if (!value) {
     return null;
