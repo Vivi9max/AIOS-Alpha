@@ -1,11 +1,11 @@
-// lib/github/founder‑contract‑enforcement.ts
+// lib/github/founder-contract-enforcement.ts
 import "server-only";
 
 import {
   assertFounderDevelopmentContract,
   isPathAuthorizedByFounderContract,
-  FounderDevelopmentContract,
-} from "@/lib/github/founder‑development‑contract";
+  type FounderDevelopmentContract,
+} from "@/lib/github/founder-development-contract";
 
 /**
  * C141.9 — Founder Contract Enforcement
