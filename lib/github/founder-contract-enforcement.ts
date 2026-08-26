@@ -75,11 +75,11 @@ export function enforceFounderContract(task: FounderContractTask): void {
       throw new Error("FounderContract: write requires read action to be authorized");
     }
     // readback verification authorized
-    if (!contract.actions.includes("readback verification")) {
+    if (!contract.verification.checks.includes("readback")) {
       throw new Error("FounderContract: write requires readback verification action to be authorized");
     }
     // build verification authorized
-    if (!contract.actions.includes("build verification")) {
+    if (!contract.verification.checks.includes("build")) {
       throw new Error("FounderContract: write requires build verification action to be authorized");
     }
   }
