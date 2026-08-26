@@ -88,9 +88,11 @@ export function createFounderDevelopmentContract(input: {
     throw new Error("At least one requested file is required.");
   }
 
-  const actions = Array.from(
-    new Set(input.actions ?? ["read", "write", "verify"])
-  );
+  const actions: FounderDevelopmentAction[] = Array.from(
+  new Set<FounderDevelopmentAction>(
+    input.actions ?? ["read", "write", "verify"]
+  )
+);
 
   if (!actions.includes("read") || !actions.includes("write")) {
     throw new Error(
@@ -98,9 +100,17 @@ export function createFounderDevelopmentContract(input: {
     );
   }
 
-  const checks = Array.from(
-    new Set(input.verification ?? ["readback", "build", "production"])
-  );
+  const checks: Array<
+  "readback" | "build" | "production"
+> = Array.from(
+  new Set<"readback" | "build" | "production">(
+    input.verification ?? [
+      "readback",
+      "build",
+      "production",
+    ]
+  )
+);
 
   if (!checks.includes("readback") || !checks.includes("build")) {
     throw new Error(
