@@ -66,7 +66,7 @@ function normalizePath(path: string): string {
   return path
     .trim()
     .replace(/^\/+/, "")
-    .replace(/\\/+/g, "/");
+    .replace(/\\/g, "/");
 }
 
 function isSafePath(path: string): boolean {
