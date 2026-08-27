@@ -1,7 +1,17 @@
+import "server-only";
+
+import {
+  getGitHubRepository,
+  githubBridgeStatus,
+  readGitHubFile,
+  writeGitHubFile,
+} from "@/lib/github/bridge";
+
 import {
   enforceFounderContract,
   type FounderContractTask,
 } from "@/lib/github/founder-contract-enforcement";
+
 import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
 export type GitHubTaskAction = "read" | "write";
@@ -16,196 +26,407 @@ export interface GitHubTaskRequest {
   contract: FounderDevelopmentContract;
 }
 
-export interface GitHubTaskResponse {
+export interface GitHubTaskResult {
   success: boolean;
-  code?: string;
   action: GitHubTaskAction;
   repository: string;
   branch: string;
   path: string;
+  code?: string;
+  read?: {
+    sha: string;
+    size: number;
+    content?: string;
+  };
+  write?: {
+    sha?: string;
+    commitSha: string;
+    commitUrl?: string;
+    readbackVerified?: boolean;
+  };
   error?: string;
-  commitSha?: string;
-  readbackSha?: string;
-  buildVerification?: {
-    status: "pending" | "ok" | "failed";
-  };
-  capability?: {
-    founderAuthorized: boolean;
-    founderContractEnforced: boolean;
-    githubAuthenticated: boolean;
-    executionRecorded: boolean;
-  };
 }
 
-// 原始返回类型，恢复自 12f1fee
-interface GitHubBridgeStatus {
-  ok: boolean;
-  message?: string;
+const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
+const DEFAULT_BRANCH = "main";
+
+const AUTONOMOUS_WRITE_PREFIXES = [
+  "app/",
+  "components/",
+  "docs/",
+  "lib/",
+  "scripts/",
+  "tests/",
+  "test/",
+  "public/",
+  "styles/",
+];
+
+function normalizePath(path: string): string {
+  return path
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\\/+/g, "/");
 }
 
-const AUTONOMOUS_WRITE_PREFIXES: string[] = [/* original values from 12f1fee */];
+function isSafePath(path: string): boolean {
+  if (!path) return false;
+  if (path.includes("..")) return false;
+  if (path.startsWith(".git/")) return false;
+  if (path.includes("\0")) return false;
+  if (path.startsWith(".env")) return false;
+  return true;
+}
+
+function getRepository(value?: string): string {
+  const repo = value?.trim() || DEFAULT_REPOSITORY;
+
+  if (repo !== DEFAULT_REPOSITORY) {
+    throw new Error(
+      `Founder self-development is restricted to ${DEFAULT_REPOSITORY}.`,
+    );
+  }
+
+  return repo;
+}
+
+function getBranch(value?: string): string {
+  const branch = value?.trim() || DEFAULT_BRANCH;
+
+  if (branch !== DEFAULT_BRANCH) {
+    throw new Error(
+      "Founder self-development is restricted to the main branch.",
+    );
+  }
+
+  return branch;
+}
 
 function assertSafeWritePath(path: string): void {
-  // original implementation from 12f1fee — defense‑in‑depth only
-}
+  const allowed = AUTONOMOUS_WRITE_PREFIXES.some((prefix) =>
+    path.startsWith(prefix),
+  );
 
-// ========== RESTORED REAL GitHub Bridge implementations from commit 12f1fee ==========
-async function githubBridgeStatus(): Promise<GitHubBridgeStatus> {
-  // 恢复原有真实实现：校验 GITHUB_TOKEN 环境变量、认证状态
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    return { ok: false, message: "GITHUB_TOKEN environment variable not configured" };
+  if (!allowed) {
+    throw new Error(
+      `Founder self-development writes are restricted to approved project areas: ${AUTONOMOUS_WRITE_PREFIXES.join(", ")}`,
+    );
   }
-  return { ok: true };
+
+  if (
+    path === "package.json" ||
+    path === "package-lock.json" ||
+    path === "pnpm-lock.yaml" ||
+    path === "yarn.lock" ||
+    path === "vercel.json" ||
+    path.startsWith(".github/") ||
+    path.startsWith(".env")
+  ) {
+    throw new Error(
+      "Protected project configuration cannot be modified by autonomous self-development.",
+    );
+  }
 }
 
-async function getGitHubRepository(repoSlug: string) {
-  // original GitHub octokit / fetch repo metadata implementation from 12f1fee
+function enforceContract(
+  request: GitHubTaskRequest,
+  repository: string,
+  branch: string,
+  path: string,
+): void {
+  const task: FounderContractTask = {
+    contract: request.contract,
+    action:
+      request.action === "read"
+        ? "read"
+        : "write",
+    repo: repository,
+    branch,
+    path,
+  };
+
+  enforceFounderContract(task);
 }
 
-async function readGitHubFile(repo: string, branch: string, path: string) {
-  // original raw file fetch, returns { content:string; sha:string } from 12f1fee
-}
+export async function dispatchGitHubTask(
+  request: GitHubTaskRequest,
+): Promise<GitHubTaskResult> {
+  const repository = getRepository(request.repo);
+  const branch = getBranch(request.branch);
+  const path = normalizePath(request.path);
 
-async function writeGitHubFile(repo: string, branch: string, path: string, content: string, msg?: string) {
-  // original GitHub contents API write, create commit, returns { commitSha:string } from 12f1fee
-}
-// =====================================================================================
-
-export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHubTaskResponse> {
-  const { action, repo, branch, path, content, commitMessage, contract } = req;
-
-  const repository = repo ?? "Vivi9max/AIOS‑Alpha";
-  const targetBranch = branch ?? "main";
-
-  // ========== C141.10 Founder Contract Gate — runs BEFORE any GitHub IO ==========
-  try {
-    const task: FounderContractTask = {
-      contract,
-      action,
-      repo: repository,
-      branch: targetBranch,
-      path,
-    };
-    enforceFounderContract(task);
-  } catch (err) {
+  if (!isSafePath(path)) {
     return {
       success: false,
-      code: "FOUNDER_CONTRACT_REJECTED",
-      action,
+      action: request.action,
       repository,
-      branch: targetBranch,
+      branch,
       path,
-      error: err instanceof Error ? err.message : "Founder Contract enforcement failed.",
+      code: "UNSAFE_GITHUB_PATH",
+      error: "Unsafe GitHub path.",
     };
   }
 
-  // Write pre‑condition checks (keep C141.9 contract.verification.checks path, NOT plain array)
-  if (action === "write") {
-    const okActions =
-      contract.actions.includes("read") &&
-      contract.actions.includes("write") &&
-      contract.actions.includes("verify");
+  /*
+   * C141.10 Founder Contract Runtime Gate.
+   *
+   * Contract enforcement MUST happen before any GitHub I/O.
+   */
+  try {
+    enforceContract(
+      request,
+      repository,
+      branch,
+      path,
+    );
+  } catch (error) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "FOUNDER_CONTRACT_REJECTED",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Founder Development Contract rejected the operation.",
+    };
+  }
 
-    const okVerifications =
-      contract.verification.checks.includes("readback") &&
-      contract.verification.checks.includes("build");
+  /*
+   * The actual GitHub bridge remains the single source
+   * of GitHub authentication and API access.
+   */
+  const status = await githubBridgeStatus();
 
-    if (!okActions || !okVerifications) {
+  if (!status.success) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "GITHUB_BRIDGE_UNAVAILABLE",
+      error:
+        status.error ||
+        "GitHub authentication failed.",
+    };
+  }
+
+  const repositoryResult =
+    await getGitHubRepository({
+      repo: repository,
+    });
+
+  if (!repositoryResult.success) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "GITHUB_REPOSITORY_ACCESS_FAILED",
+      error:
+        repositoryResult.error ||
+        "GitHub repository access failed.",
+    };
+  }
+
+  /*
+   * READ
+   */
+  if (request.action === "read") {
+    const result =
+      await readGitHubFile({
+        repo: repository,
+        path,
+        ref: branch,
+      });
+
+    if (!result.success || !result.data) {
+      const readError =
+        "error" in result &&
+        typeof result.error === "string"
+          ? result.error
+          : "GitHub read failed.";
+
       return {
         success: false,
-        code: "FOUNDER_CONTRACT_REJECTED",
-        action,
+        action: request.action,
         repository,
-        branch: targetBranch,
+        branch,
         path,
-        error: "FounderContract: write requires read/write/verify actions + readback/build verification checks",
+        code: "GITHUB_READ_FAILED",
+        error: readError,
       };
     }
-  }
 
-  // Real bridge status call; now has proper return type {ok,message}
-  const bridgeStatus = await githubBridgeStatus();
-  if (!bridgeStatus.ok) {
-    return {
-      success: false,
-      action,
-      repository,
-      branch: targetBranch,
-      path,
-      error: bridgeStatus.message,
-    };
-  }
-
-  if (action === "read") {
-    await readGitHubFile(repository, targetBranch, path);
     return {
       success: true,
-      code: "GITHUB_TASK_DISPATCHED",
-      action,
+      action: "read",
       repository,
-      branch: targetBranch,
+      branch,
       path,
-      capability: {
-        founderAuthorized: true,
-        founderContractEnforced: true,
-        githubAuthenticated: true,
-        executionRecorded: true,
+      code: "GITHUB_READ_SUCCESS",
+      read: {
+        sha: result.data.sha,
+        size: result.data.size,
+        content: result.data.content,
       },
     };
   }
 
-  if (action === "write") {
-    assertSafeWritePath(path);
+  /*
+   * WRITE
+   */
+  assertSafeWritePath(path);
 
-    const writeOut = await writeGitHubFile(repository, targetBranch, path, content!, commitMessage);
-    const commitSha: string | undefined = writeOut.commitSha;
-
-    // Real readback verification
-    let readbackSha: string | undefined;
-    try {
-      const readback = await readGitHubFile(repository, targetBranch, path);
-      readbackSha = readback.sha;
-      if (!readbackSha) throw new Error("readback file missing after write");
-    } catch (rbErr) {
-      return {
-        success: false,
-        code: "FOUNDER_CONTRACT_REJECTED",
-        action,
-        repository,
-        branch: targetBranch,
-        path,
-        error: `Readback verification failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`,
-        commitSha,
-      };
-    }
-
-    // Build verification remains pending (CI/Vercel backed, no fake ok)
+  if (typeof request.content !== "string") {
     return {
-      success: true,
-      code: "GITHUB_TASK_DISPATCHED",
-      action,
+      success: false,
+      action: request.action,
       repository,
-      branch: targetBranch,
+      branch,
       path,
-      commitSha,
-      readbackSha,
-      buildVerification: { status: "pending" },
-      capability: {
-        founderAuthorized: true,
-        founderContractEnforced: true,
-        githubAuthenticated: true,
-        executionRecorded: true,
+      code: "WRITE_CONTENT_REQUIRED",
+      error: "Write content is required.",
+    };
+  }
+
+  if (request.content.length > 200_000) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "WRITE_PAYLOAD_TOO_LARGE",
+      error:
+        "Autonomous write payload exceeds the 200000 character limit.",
+    };
+  }
+
+  /*
+   * Read existing content first.
+   * This provides the SHA required by GitHub for updates
+   * and establishes the pre-write state.
+   */
+  const existing =
+    await readGitHubFile({
+      repo: repository,
+      path,
+      ref: branch,
+    });
+
+  const commitMessage =
+    request.commitMessage?.trim() ||
+    "feat(C141.10): founder contract governed GitHub write";
+
+  /*
+   * Real GitHub write.
+   *
+   * This returns the actual commit SHA from lib/github/bridge.ts.
+   */
+  const write =
+    await writeGitHubFile({
+      repo: repository,
+      path,
+      content: request.content,
+      message: commitMessage,
+      branch,
+      sha:
+        existing.success && existing.data
+          ? existing.data.sha
+          : undefined,
+    });
+
+  if (!write.success || !write.data) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "GITHUB_WRITE_FAILED",
+      error:
+        write.error ||
+        "GitHub write failed.",
+    };
+  }
+
+  const commitSha = write.data.commit.sha;
+  const commitUrl = write.data.commit.html_url;
+  const contentSha = write.data.content?.sha;
+
+  /*
+   * C141.10 REAL READBACK VERIFICATION
+   *
+   * Do not report a verified write until the file can be
+   * read again from the target branch and its content matches.
+   */
+  const readback =
+    await readGitHubFile({
+      repo: repository,
+      path,
+      ref: branch,
+    });
+
+  if (!readback.success || !readback.data) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "READBACK_VERIFICATION_FAILED",
+      error:
+        "GitHub write succeeded, but readback verification failed.",
+      write: {
+        sha: contentSha,
+        commitSha,
+        commitUrl,
+        readbackVerified: false,
+      },
+    };
+  }
+
+  const readbackContent =
+    typeof readback.data.content === "string"
+      ? readback.data.content
+      : undefined;
+
+  if (readbackContent !== request.content) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "READBACK_CONTENT_MISMATCH",
+      error:
+        "GitHub write succeeded, but readback content does not match the requested content.",
+      write: {
+        sha: contentSha,
+        commitSha,
+        commitUrl,
+        readbackVerified: false,
       },
     };
   }
 
   return {
-    success: false,
-    action,
+    success: true,
+    action: "write",
     repository,
-    branch: targetBranch,
+    branch,
     path,
-    error: `unsupported action ${action}`,
+    code: "GITHUB_WRITE_VERIFIED",
+    write: {
+      sha: contentSha,
+      commitSha,
+      commitUrl,
+      readbackVerified: true,
+    },
   };
 }
