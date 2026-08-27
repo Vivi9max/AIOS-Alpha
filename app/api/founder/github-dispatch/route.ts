@@ -8,15 +8,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, path, content, commitMessage, objective } = body;
 
-    // 通过工厂创建合约，禁止手写绕过类型系统
+    // 修正：verification 直接使用字符串数组，匹配现有类型定义
     const contract = createFounderDevelopmentContract({
       objective,
       requestedFiles: [path],
       actions: ["read", "write", "verify"],
-      verification: {
-        required: true,
-        checks: ["readback", "build", "production"],
-      },
+      verification: ["readback", "build", "production"],
       commitMessage,
     });
 
