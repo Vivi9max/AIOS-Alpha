@@ -1,15 +1,11 @@
 // lib/github/founder-contract-enforcement.ts
 import "server-only";
-
 import {
   assertFounderDevelopmentContract,
   isPathAuthorizedByFounderContract,
-  type FounderDevelopmentContract,
+  FounderDevelopmentContract,
 } from "@/lib/github/founder-development-contract";
 
-/**
- * C141.9 — Founder Contract Enforcement
- */
 export type FounderContractTask = {
   contract: FounderDevelopmentContract;
   action: "read" | "write";
@@ -18,71 +14,59 @@ export type FounderContractTask = {
   path: string;
 };
 
-/**
- * Enforces Founder Contract constraints for a given task.
- * Throws Error on any validation failure.
- */
 export function enforceFounderContract(task: FounderContractTask): void {
   const { contract, action, repo, branch, path } = task;
 
-  // 1. Validate contract version must be C141.8
+  assertFounderDevelopmentContract(contract);
+
   if (contract.version !== "C141.8") {
     throw new Error(`FounderContract: invalid contract version. Expected C141.8, got ${contract.version}`);
   }
 
-  // 2. founderOnly must be true
   if (contract.founderOnly !== true) {
     throw new Error("FounderContract: founderOnly must be true");
   }
 
-  // 3. repository strictly Vivi9max/AIOS‑Alpha
-  if (repo !== "Vivi9max/AIOS‑Alpha") {
-    throw new Error(`FounderContract: invalid repository. Expected Vivi9max/AIOS‑Alpha, got ${repo}`);
+  if (repo !== "Vivi9max/AIOS-Alpha") {
+    throw new Error(`FounderContract: invalid repository, got ${repo}`);
   }
 
-  // 4. branch strictly main
   if (branch !== "main") {
-    throw new Error(`FounderContract: invalid branch. Expected main, got ${branch}`);
+    throw new Error(`FounderContract: invalid branch, got ${branch}`);
   }
 
-  // 5. action must exist inside contract.actions
   if (!contract.actions.includes(action)) {
-    throw new Error(`FounderContract: action "${action}" not permitted in contract.actions`);
+    throw new Error(`FounderContract: action "${action}" is not allowed in contract.actions`);
   }
 
-  // 6. path must be inside contract.allowedPaths
   if (!isPathAuthorizedByFounderContract(contract, path)) {
-    throw new Error(`FounderContract: path "${path}" is not in contract.allowedPaths`);
+    throw new Error(`FounderContract: path "${path}" not in allowed requestedFiles`);
   }
 
-  // 7. Protect forbidden files: package.json, vercel.json, .env, .git (any path under .git)
-  const protectedPaths = [
+  // Protected paths block
+  const protectedExact = new Set([
     "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
     "vercel.json",
     ".env",
-  ];
-  const isProtected =
-    protectedPaths.some((p) => path === p) || path.startsWith(".git/");
-
-  if (isProtected) {
-    throw new Error(`FounderContract: path "${path}" is in protected scope, modification forbidden`);
+  ]);
+  if (
+    protectedExact.has(path) ||
+    path.startsWith(".env.") ||
+    path.startsWith(".git/") ||
+    path.startsWith(".github/")
+  ) {
+    throw new Error(`FounderContract: protected path forbidden: ${path}`);
   }
 
-  // 8. WRITE additional requirements
+  // write scope checks — C141.10 correct: use contract.verification.checks
   if (action === "write") {
-    // read action authorized
-    if (!contract.actions.includes("read")) {
-      throw new Error("FounderContract: write requires read action to be authorized");
-    }
-    // readback verification authorized
-    if (!contract.verification.checks.includes("readback")) {
-      throw new Error("FounderContract: write requires readback verification action to be authorized");
-    }
-    // build verification authorized
-    if (!contract.verification.checks.includes("build")) {
-      throw new Error("FounderContract: write requires build verification action to be authorized");
-    }
+    if (!contract.actions.includes("read")) throw new Error("FounderContract: write requires read action");
+    if (!contract.actions.includes("write")) throw new Error("FounderContract: write requires write action");
+    if (!contract.actions.includes("verify")) throw new Error("FounderContract: write requires verify action");
+    if (!contract.verification.checks.includes("readback")) throw new Error("FounderContract: write requires readback check");
+    if (!contract.verification.checks.includes("build")) throw new Error("FounderContract: write requires build check");
   }
-
-  // All checks passed
 }
