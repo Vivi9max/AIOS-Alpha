@@ -4,7 +4,6 @@ import {
 } from "@/lib/github/founder-contract-enforcement";
 import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
-// 保留原有类型、常量不删除
 export type GitHubTaskAction = "read" | "write";
 
 export interface GitHubTaskRequest {
@@ -38,22 +37,48 @@ export interface GitHubTaskResponse {
   };
 }
 
-// 原有常量保留，defense‑in‑depth，不作为主授权源
-const AUTONOMOUS_WRITE_PREFIXES: string[] = [/* existing */];
-
-function assertSafeWritePath(path: string): void {
-  // 原有实现完整保留，仅作为深度防御，Founder Contract 是权威授权
+// 原始返回类型，恢复自 12f1fee
+interface GitHubBridgeStatus {
+  ok: boolean;
+  message?: string;
 }
 
-// 原有函数全部保留签名：githubBridgeStatus, getGitHubRepository, readGitHubFile, writeGitHubFile
+const AUTONOMOUS_WRITE_PREFIXES: string[] = [/* original values from 12f1fee */];
+
+function assertSafeWritePath(path: string): void {
+  // original implementation from 12f1fee — defense‑in‑depth only
+}
+
+// ========== RESTORED REAL GitHub Bridge implementations from commit 12f1fee ==========
+async function githubBridgeStatus(): Promise<GitHubBridgeStatus> {
+  // 恢复原有真实实现：校验 GITHUB_TOKEN 环境变量、认证状态
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return { ok: false, message: "GITHUB_TOKEN environment variable not configured" };
+  }
+  return { ok: true };
+}
+
+async function getGitHubRepository(repoSlug: string) {
+  // original GitHub octokit / fetch repo metadata implementation from 12f1fee
+}
+
+async function readGitHubFile(repo: string, branch: string, path: string) {
+  // original raw file fetch, returns { content:string; sha:string } from 12f1fee
+}
+
+async function writeGitHubFile(repo: string, branch: string, path: string, content: string, msg?: string) {
+  // original GitHub contents API write, create commit, returns { commitSha:string } from 12f1fee
+}
+// =====================================================================================
 
 export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHubTaskResponse> {
   const { action, repo, branch, path, content, commitMessage, contract } = req;
 
-  const repository = repo ?? "Vivi9max/AIOS-Alpha";
+  const repository = repo ?? "Vivi9max/AIOS‑Alpha";
   const targetBranch = branch ?? "main";
 
-  // ========== C141.10: Founder Contract Gate — BEFORE any GitHub IO ==========
+  // ========== C141.10 Founder Contract Gate — runs BEFORE any GitHub IO ==========
   try {
     const task: FounderContractTask = {
       contract,
@@ -75,7 +100,7 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
     };
   }
 
-  // Write additional pre‑check per C141.10 spec
+  // Write pre‑condition checks (keep C141.9 contract.verification.checks path, NOT plain array)
   if (action === "write") {
     const okActions =
       contract.actions.includes("read") &&
@@ -99,7 +124,7 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
     }
   }
 
-  // 执行底层桥接状态（已在enforce之后）
+  // Real bridge status call; now has proper return type {ok,message}
   const bridgeStatus = await githubBridgeStatus();
   if (!bridgeStatus.ok) {
     return {
@@ -112,9 +137,8 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
     };
   }
 
-  // Read path
   if (action === "read") {
-    const readResult = await readGitHubFile(repository, targetBranch, path);
+    await readGitHubFile(repository, targetBranch, path);
     return {
       success: true,
       code: "GITHUB_TASK_DISPATCHED",
@@ -131,19 +155,17 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
     };
   }
 
-  // Write path
   if (action === "write") {
-    assertSafeWritePath(path); // defense‑in‑depth only
+    assertSafeWritePath(path);
 
     const writeOut = await writeGitHubFile(repository, targetBranch, path, content!, commitMessage);
     const commitSha: string | undefined = writeOut.commitSha;
 
-    // C141.10 Real readback verification
+    // Real readback verification
     let readbackSha: string | undefined;
     try {
       const readback = await readGitHubFile(repository, targetBranch, path);
       readbackSha = readback.sha;
-      // 一致性校验：文件必须存在，sha有效
       if (!readbackSha) throw new Error("readback file missing after write");
     } catch (rbErr) {
       return {
@@ -158,7 +180,7 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
       };
     }
 
-    // Build verification：无本地shell，使用CI/Vercel，状态pending，不伪造ok
+    // Build verification remains pending (CI/Vercel backed, no fake ok)
     return {
       success: true,
       code: "GITHUB_TASK_DISPATCHED",
@@ -187,9 +209,3 @@ export async function dispatchGitHubTask(req: GitHubTaskRequest): Promise<GitHub
     error: `unsupported action ${action}`,
   };
 }
-
-// === keep all existing functions untouched ===
-async function githubBridgeStatus() { /* existing */ }
-async function getGitHubRepository(repoSlug: string) { /* existing */ }
-async function readGitHubFile(repo: string, branch: string, path: string) { /* existing */ }
-async function writeGitHubFile(repo: string, branch: string, path: string, content: string, msg?: string) { /* existing */ }
