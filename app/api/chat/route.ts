@@ -16,6 +16,10 @@ import {
   runWithUserContext,
 } from "@/lib/runtime/request-context";
 
+import {
+  executePlannerGitHubRead,
+} from "@/lib/github/planner-github-read";
+
 export const dynamic =
   "force-dynamic";
 
@@ -28,7 +32,7 @@ interface ChatRequestBody {
 
 function applyIdentityCookie(
   response: NextResponse,
-  userId: string
+  userId: string,
 ): NextResponse {
   response.cookies.set(
     AIOS_USER_COOKIE,
@@ -37,27 +41,213 @@ function applyIdentityCookie(
       httpOnly: true,
       sameSite: "lax",
       secure:
-        process.env
-          .NODE_ENV ===
+        process.env.NODE_ENV ===
         "production",
       path: "/",
       maxAge:
-        60 *
-        60 *
-        24 *
-        365,
-    }
+        60 * 60 * 24 * 365,
+    },
   );
 
   return response;
 }
 
+function isExplicitGitHubReadRequest(
+  prompt: string,
+): boolean {
+  const text =
+    prompt.trim();
+
+  if (!text) {
+    return false;
+  }
+
+  const hasGitHubContext =
+    /\bgithub\b/i.test(text) ||
+    /\brepository\b/i.test(text) ||
+    /\brepo\b/i.test(text);
+
+  if (!hasGitHubContext) {
+    return false;
+  }
+
+  const hasReadIntent =
+    /\bread\b/i.test(text) ||
+    /\binspect\b/i.test(text) ||
+    /\banaly[sz]e\b/i.test(text) ||
+    /\bcheck\b/i.test(text);
+
+  const hasPath =
+    /(?:^|\s)((?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9._/@-]+\.[A-Za-z0-9_-]+)/.test(
+      text,
+    );
+
+  return (
+    hasReadIntent &&
+    hasPath
+  );
+}
+
+async function executeChatPrompt(
+  prompt: string,
+) {
+  /*
+   * C141.11.2-C
+   *
+   * Chat → Planner GitHub READ Routing
+   *
+   * IMPORTANT:
+   *
+   * The chat layer must not ask the LLM whether it
+   * "has GitHub access".
+   *
+   * Explicit Founder GitHub READ requests are routed
+   * to the real Planner GitHub Read Bridge first.
+   */
+  if (
+    isExplicitGitHubReadRequest(
+      prompt,
+    )
+  ) {
+    const githubRead =
+      await executePlannerGitHubRead(
+        prompt,
+      );
+
+    /*
+     * The detector should only return detected=true
+     * for an explicit GitHub READ request.
+     *
+     * If detection unexpectedly fails, fall back to
+     * the normal Runtime rather than fabricating data.
+     */
+    if (
+      githubRead.detected
+    ) {
+      if (
+        !githubRead.success
+      ) {
+        return {
+          success: false,
+
+          content:
+            "GitHub READ 执行失败，AIOS 没有使用模型猜测仓库内容。",
+
+          error:
+            githubRead.error ??
+            "GitHub READ failed.",
+
+          code:
+            githubRead.code ??
+            "PLANNER_GITHUB_READ_FAILED",
+
+          execution: {
+            provider:
+              "github-direct-bridge",
+
+            capabilityTrace: [
+              "chat",
+              "github-read-routing",
+              "planner-github-read",
+              "founder-contract",
+              "github-direct-bridge",
+            ],
+
+            github: {
+              detected: true,
+
+              success: false,
+
+              path:
+                githubRead.path,
+            },
+          },
+        };
+      }
+
+      /*
+       * Real GitHub content is now authoritative.
+       *
+       * Do not send the same request to the LLM first.
+       */
+      return {
+        success: true,
+
+        content:
+          githubRead.content ??
+          "",
+
+        code:
+          "CHAT_GITHUB_READ_COMPLETED",
+
+        execution: {
+          provider:
+            "github-direct-bridge",
+
+          capabilityTrace: [
+            "chat",
+            "github-read-routing",
+            "planner-github-read",
+            "founder-contract",
+            "github-direct-bridge",
+          ],
+
+          github: {
+            detected: true,
+
+            success: true,
+
+            path:
+              githubRead.path,
+
+            sha:
+              githubRead.sha,
+
+            size:
+              githubRead.size,
+          },
+        },
+
+        github: {
+          repository:
+            "Vivi9max/AIOS-Alpha",
+
+          branch:
+            "main",
+
+          path:
+            githubRead.path,
+
+          sha:
+            githubRead.sha,
+
+          size:
+            githubRead.size,
+
+          content:
+            githubRead.content ??
+            "",
+        },
+      };
+    }
+  }
+
+  /*
+   * Existing normal AIOS Runtime path.
+   *
+   * C141.11.2-C does not change ordinary chat behavior.
+   */
+  return executeRuntime({
+    prompt,
+  });
+}
+
 export async function GET(
-  request: NextRequest
+  request: NextRequest,
 ) {
   const identity =
     resolveAlphaIdentity(
-      request
+      request,
     );
 
   const response =
@@ -76,6 +266,19 @@ export async function GET(
 
         runtimeVersion:
           "0.4",
+
+        capabilities: {
+          chat: true,
+
+          planner:
+            true,
+
+          execution:
+            true,
+
+          founderGitHubRead:
+            true,
+        },
 
         identity: {
           userId:
@@ -106,35 +309,35 @@ export async function GET(
           "Cache-Control":
             "no-store",
         },
-      }
+      },
     );
 
   return applyIdentityCookie(
     response,
-    identity.userId
+    identity.userId,
   );
 }
 
 export async function POST(
-  request: NextRequest
+  request: NextRequest,
 ) {
   const startedAt =
     Date.now();
 
   const identity =
     resolveAlphaIdentity(
-      request
+      request,
     );
 
   try {
     const contentType =
       request.headers.get(
-        "content-type"
+        "content-type",
       ) ?? "";
 
     if (
       !contentType.includes(
-        "application/json"
+        "application/json",
       )
     ) {
       const response =
@@ -156,17 +359,18 @@ export async function POST(
           },
           {
             status: 415,
-          }
+          },
         );
 
       return applyIdentityCookie(
         response,
-        identity.userId
+        identity.userId,
       );
     }
 
     const body =
-      (await request.json()) as ChatRequestBody;
+      (await request.json()) as
+        ChatRequestBody;
 
     const prompt =
       typeof body.prompt ===
@@ -194,12 +398,12 @@ export async function POST(
           },
           {
             status: 400,
-          }
+          },
         );
 
       return applyIdentityCookie(
         response,
-        identity.userId
+        identity.userId,
       );
     }
 
@@ -207,9 +411,9 @@ export async function POST(
       await runWithUserContext(
         identity.userId,
         () =>
-          executeRuntime({
+          executeChatPrompt(
             prompt,
-          })
+          ),
       );
 
     const response =
@@ -225,6 +429,10 @@ export async function POST(
 
           dataIsolated:
             true,
+
+          latencyMs:
+            Date.now() -
+            startedAt,
         },
         {
           status:
@@ -236,12 +444,12 @@ export async function POST(
             "Cache-Control":
               "no-store",
           },
-        }
+        },
       );
 
     return applyIdentityCookie(
       response,
-      identity.userId
+      identity.userId,
     );
   } catch (error) {
     const errorMessage =
@@ -251,7 +459,7 @@ export async function POST(
 
     console.error(
       "[AIOS Chat API]",
-      error
+      error,
     );
 
     const response =
@@ -288,12 +496,12 @@ export async function POST(
             "Cache-Control":
               "no-store",
           },
-        }
+        },
       );
 
     return applyIdentityCookie(
       response,
-      identity.userId
+      identity.userId,
     );
   }
 }
