@@ -17,6 +17,10 @@ import {
 } from "@/lib/runtime/request-context";
 
 import {
+  detectFounderRuntimeGitHubTask,
+} from "@/lib/github/founder-runtime-task-detector";
+
+import {
   executePlannerGitHubRead,
 } from "@/lib/github/planner-github-read";
 
@@ -52,62 +56,43 @@ function applyIdentityCookie(
   return response;
 }
 
-function isExplicitGitHubReadRequest(
-  prompt: string,
-): boolean {
-  const text =
-    prompt.trim();
-
-  if (!text) {
-    return false;
-  }
-
-  const hasGitHubContext =
-    /\bgithub\b/i.test(text) ||
-    /\brepository\b/i.test(text) ||
-    /\brepo\b/i.test(text);
-
-  if (!hasGitHubContext) {
-    return false;
-  }
-
-  const hasReadIntent =
-    /\bread\b/i.test(text) ||
-    /\binspect\b/i.test(text) ||
-    /\banaly[sz]e\b/i.test(text) ||
-    /\bcheck\b/i.test(text);
-
-  const hasPath =
-    /(?:^|\s)((?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9._/@-]+\.[A-Za-z0-9_-]+)/.test(
-      text,
-    );
-
-  return (
-    hasReadIntent &&
-    hasPath
-  );
-}
-
 async function executeChatPrompt(
   prompt: string,
 ) {
   /*
    * C141.11.2-C
    *
-   * Chat → Planner GitHub READ Routing
+   * Chat → GitHub Intent Detector
+   * → Planner GitHub READ Bridge
    *
    * IMPORTANT:
    *
-   * The chat layer must not ask the LLM whether it
-   * "has GitHub access".
+   * Explicit GitHub READ requests are intercepted
+   * before the normal LLM Runtime.
    *
-   * Explicit Founder GitHub READ requests are routed
-   * to the real Planner GitHub Read Bridge first.
+   * This prevents the model from answering:
+   *
+   * "I cannot access GitHub."
+   *
+   * when AIOS itself actually has the Founder
+   * GitHub Direct Bridge capability.
+   */
+
+  const detection =
+    detectFounderRuntimeGitHubTask(
+      prompt,
+    );
+
+  /*
+   * Only READ is routed by C141.11.2-C.
+   *
+   * WRITE remains under the existing Founder
+   * GitHub dispatch / authorization chain.
    */
   if (
-    isExplicitGitHubReadRequest(
-      prompt,
-    )
+    detection.isGitHubTask &&
+    detection.action === "read" &&
+    detection.path
   ) {
     const githubRead =
       await executePlannerGitHubRead(
@@ -115,70 +100,25 @@ async function executeChatPrompt(
       );
 
     /*
-     * The detector should only return detected=true
-     * for an explicit GitHub READ request.
+     * Safety fallback:
      *
-     * If detection unexpectedly fails, fall back to
-     * the normal Runtime rather than fabricating data.
+     * If the Bridge does not recognize the request,
+     * never fabricate GitHub content.
      */
     if (
-      githubRead.detected
+      !githubRead.detected
     ) {
-      if (
-        !githubRead.success
-      ) {
-        return {
-          success: false,
-
-          content:
-            "GitHub READ 执行失败，AIOS 没有使用模型猜测仓库内容。",
-
-          error:
-            githubRead.error ??
-            "GitHub READ failed.",
-
-          code:
-            githubRead.code ??
-            "PLANNER_GITHUB_READ_FAILED",
-
-          execution: {
-            provider:
-              "github-direct-bridge",
-
-            capabilityTrace: [
-              "chat",
-              "github-read-routing",
-              "planner-github-read",
-              "founder-contract",
-              "github-direct-bridge",
-            ],
-
-            github: {
-              detected: true,
-
-              success: false,
-
-              path:
-                githubRead.path,
-            },
-          },
-        };
-      }
-
-      /*
-       * Real GitHub content is now authoritative.
-       *
-       * Do not send the same request to the LLM first.
-       */
       return {
-        success: true,
+        success: false,
 
         content:
-          githubRead.content ??
-          "",
+          "AIOS GitHub READ 路由未能确认该请求。为避免猜测仓库内容，本次执行已停止。",
+
+        error:
+          "GitHub READ request was detected but the Planner GitHub Read Bridge did not confirm the task.",
 
         code:
-          "CHAT_GITHUB_READ_COMPLETED",
+          "GITHUB_READ_ROUTE_NOT_CONFIRMED",
 
         execution: {
           provider:
@@ -186,7 +126,46 @@ async function executeChatPrompt(
 
           capabilityTrace: [
             "chat",
-            "github-read-routing",
+            "github-intent-detection",
+            "planner-github-read",
+          ],
+
+          github: {
+            detected: true,
+
+            success: false,
+
+            path:
+              detection.path,
+          },
+        },
+      };
+    }
+
+    if (
+      !githubRead.success
+    ) {
+      return {
+        success: false,
+
+        content:
+          "GitHub READ 执行失败。AIOS 没有使用模型猜测仓库内容。",
+
+        error:
+          githubRead.error ??
+          "GitHub READ failed.",
+
+        code:
+          githubRead.code ??
+          "PLANNER_GITHUB_READ_FAILED",
+
+        execution: {
+          provider:
+            "github-direct-bridge",
+
+          capabilityTrace: [
+            "chat",
+            "github-intent-detection",
             "planner-github-read",
             "founder-contract",
             "github-direct-bridge",
@@ -195,25 +174,45 @@ async function executeChatPrompt(
           github: {
             detected: true,
 
-            success: true,
+            success: false,
 
             path:
               githubRead.path,
-
-            sha:
-              githubRead.sha,
-
-            size:
-              githubRead.size,
           },
         },
+      };
+    }
+
+    /*
+     * The content below is the authoritative result
+     * returned by GitHub Direct Bridge.
+     */
+    return {
+      success: true,
+
+      content:
+        githubRead.content ??
+        "",
+
+      code:
+        "CHAT_GITHUB_READ_COMPLETED",
+
+      execution: {
+        provider:
+          "github-direct-bridge",
+
+        capabilityTrace: [
+          "chat",
+          "github-intent-detection",
+          "planner-github-read",
+          "founder-contract",
+          "github-direct-bridge",
+        ],
 
         github: {
-          repository:
-            "Vivi9max/AIOS-Alpha",
+          detected: true,
 
-          branch:
-            "main",
+          success: true,
 
           path:
             githubRead.path,
@@ -223,19 +222,37 @@ async function executeChatPrompt(
 
           size:
             githubRead.size,
-
-          content:
-            githubRead.content ??
-            "",
         },
-      };
-    }
+      },
+
+      github: {
+        repository:
+          "Vivi9max/AIOS-Alpha",
+
+        branch:
+          "main",
+
+        path:
+          githubRead.path,
+
+        sha:
+          githubRead.sha,
+
+        size:
+          githubRead.size,
+
+        content:
+          githubRead.content ??
+          "",
+      },
+    };
   }
 
   /*
    * Existing normal AIOS Runtime path.
    *
-   * C141.11.2-C does not change ordinary chat behavior.
+   * No GitHub READ request:
+   * Chat → Runtime → Provider.
    */
   return executeRuntime({
     prompt,
