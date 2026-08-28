@@ -8,9 +8,50 @@ type StatusKey =
   | "repo"
   | "read"
   | "write"
-  | "commit";
+  | "commit"
+  | "readback";
 
-type StatusMap = Record<StatusKey, string>;
+type StatusValue =
+  | "READY"
+  | "ERROR"
+  | "RUNNING"
+  | "IDLE";
+
+type StatusMap = Record<StatusKey, StatusValue>;
+
+type VerificationResult = {
+  success?: boolean;
+  phase?: string;
+  code?: string;
+  error?: string;
+  repository?: string;
+  branch?: string;
+  timestamp?: string;
+  durationMs?: number;
+  checks?: {
+    connection?: string;
+    authentication?: string;
+    repository?: string;
+    read?: string;
+    write?: string;
+    commit?: string;
+    readback?: string;
+  };
+  read?: {
+    sha?: string;
+    size?: number;
+  };
+  write?: {
+    sha?: string;
+    commitSha?: string;
+    commitUrl?: string;
+    readbackVerified?: boolean;
+  };
+  commit?: {
+    sha?: string;
+    url?: string;
+  };
+};
 
 const INITIAL_STATUS: StatusMap = {
   connection: "IDLE",
@@ -19,6 +60,7 @@ const INITIAL_STATUS: StatusMap = {
   read: "IDLE",
   write: "IDLE",
   commit: "IDLE",
+  readback: "IDLE",
 };
 
 const STATUS_ITEMS: {
@@ -49,12 +91,13 @@ const STATUS_ITEMS: {
     key: "commit",
     label: "COMMIT",
   },
+  {
+    key: "readback",
+    label: "READBACK",
+  },
 ];
 
-const STATUS_COLOR: Record<
-  string,
-  string
-> = {
+const STATUS_COLOR: Record<string, string> = {
   READY: "#16a34a",
   ERROR: "#dc2626",
   RUNNING: "#ea580c",
@@ -62,27 +105,17 @@ const STATUS_COLOR: Record<
 };
 
 export default function C141GithubLiveVerification() {
-  const [
-    accessKey,
-    setAccessKey,
-  ] = useState("");
+  const [accessKey, setAccessKey] = useState("");
 
-  const [
-    status,
-    setStatus,
-  ] = useState<StatusMap>(
-    INITIAL_STATUS,
-  );
+  const [status, setStatus] =
+    useState<StatusMap>(INITIAL_STATUS);
 
-  const [
-    running,
-    setRunning,
-  ] = useState(false);
+  const [running, setRunning] = useState(false);
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  const [error, setError] = useState("");
+
+  const [result, setResult] =
+    useState<VerificationResult | null>(null);
 
   const handleRun = async () => {
     const normalizedKey =
@@ -92,13 +125,12 @@ export default function C141GithubLiveVerification() {
       setError(
         "请输入 Founder Access Key",
       );
-
       return;
     }
 
     setRunning(true);
-
     setError("");
+    setResult(null);
 
     setStatus({
       ...INITIAL_STATUS,
@@ -106,42 +138,65 @@ export default function C141GithubLiveVerification() {
     });
 
     try {
-      const response =
-        await fetch(
-          "/api/founder/github-verify",
-          {
-            method: "POST",
-
-            cache: "no-store",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              Accept:
-                "application/json",
-
-              Authorization:
-                `Bearer ${normalizedKey}`,
-            },
+      const response = await fetch(
+        "/api/founder/github-verify",
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "Content-Type":
+              "application/json",
+            Accept:
+              "application/json",
+            Authorization:
+              `Bearer ${normalizedKey}`,
           },
-        );
+        },
+      );
 
       const data =
-        (await response.json()) as {
-          success?: boolean;
-          error?: string;
-          code?: string;
-          phase?: string;
-          checks?: {
-            connection?: string;
-            authentication?: string;
-            repository?: string;
-            read?: string;
-            write?: string;
-            commit?: string;
-          };
-        };
+        (await response.json()) as VerificationResult;
+
+      setResult(data);
+
+      const checks = data.checks;
+
+      setStatus({
+        connection:
+          checks?.connection === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        auth:
+          checks?.authentication === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        repo:
+          checks?.repository === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        read:
+          checks?.read === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        write:
+          checks?.write === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        commit:
+          checks?.commit === "PASS"
+            ? "READY"
+            : "ERROR",
+
+        readback:
+          checks?.readback === "PASS"
+            ? "READY"
+            : "ERROR",
+      });
 
       if (!response.ok) {
         throw new Error(
@@ -150,61 +205,19 @@ export default function C141GithubLiveVerification() {
         );
       }
 
-      const checks =
-        data.checks;
-
-      setStatus({
-        connection:
-          checks?.connection ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-
-        auth:
-          checks?.authentication ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-
-        repo:
-          checks?.repository ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-
-        read:
-          checks?.read ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-
-        write:
-          checks?.write ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-
-        commit:
-          checks?.commit ===
-          "PASS"
-            ? "READY"
-            : "ERROR",
-      });
-
-      if (
-        data.success !== true
-      ) {
+      if (data.success !== true) {
         throw new Error(
           data.error ||
             "C141 Live Verification failed.",
         );
       }
     } catch (requestError) {
-      setError(
+      const message =
         requestError instanceof Error
           ? requestError.message
-          : "C141 Live Verification failed.",
-      );
+          : "C141 Live Verification failed.";
+
+      setError(message);
 
       setStatus((previous) => ({
         ...previous,
@@ -226,8 +239,7 @@ export default function C141GithubLiveVerification() {
       style={{
         minHeight: "100vh",
         background: "#fafafa",
-        padding:
-          "24px 16px",
+        padding: "24px 16px",
       }}
     >
       <div
@@ -291,7 +303,9 @@ export default function C141GithubLiveVerification() {
           真实验证：AIOS Alpha
           Production →
           GitHub Authentication →
-          READ → WRITE → COMMIT
+          Founder Contract →
+          READ → WRITE → COMMIT →
+          READBACK
         </p>
 
         <label
@@ -443,6 +457,157 @@ export default function C141GithubLiveVerification() {
             ),
           )}
         </div>
+
+        {result && (
+          <section
+            style={{
+              marginTop: 24,
+              border:
+                "1px solid #e5e7eb",
+              borderRadius: 10,
+              padding: 16,
+              background:
+                result.success
+                  ? "#f0fdf4"
+                  : "#fef2f2",
+            }}
+          >
+            <h2
+              style={{
+                margin:
+                  "0 0 12px",
+                fontSize: 15,
+                fontWeight: 700,
+                color: "#111",
+              }}
+            >
+              C141 LIVE RESULT
+            </h2>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <strong>Status:</strong>{" "}
+                {result.success
+                  ? "PASS"
+                  : "FAIL"}
+              </div>
+
+              {result.phase && (
+                <div>
+                  <strong>Phase:</strong>{" "}
+                  {result.phase}
+                </div>
+              )}
+
+              {result.code && (
+                <div>
+                  <strong>Code:</strong>{" "}
+                  {result.code}
+                </div>
+              )}
+
+              {result.repository && (
+                <div>
+                  <strong>Repository:</strong>{" "}
+                  {result.repository}
+                </div>
+              )}
+
+              {result.branch && (
+                <div>
+                  <strong>Branch:</strong>{" "}
+                  {result.branch}
+                </div>
+              )}
+
+              {result.read?.sha && (
+                <div
+                  style={{
+                    wordBreak:
+                      "break-all",
+                  }}
+                >
+                  <strong>Read SHA:</strong>{" "}
+                  {result.read.sha}
+                </div>
+              )}
+
+              {result.write?.commitSha && (
+                <div
+                  style={{
+                    wordBreak:
+                      "break-all",
+                  }}
+                >
+                  <strong>Commit SHA:</strong>{" "}
+                  {result.write.commitSha}
+                </div>
+              )}
+
+              {result.write
+                ?.readbackVerified !==
+                undefined && (
+                <div>
+                  <strong>
+                    Readback:
+                  </strong>{" "}
+                  {result.write
+                    .readbackVerified
+                    ? "VERIFIED"
+                    : "FAILED"}
+                </div>
+              )}
+
+              {result.durationMs !==
+                undefined && (
+                <div>
+                  <strong>
+                    Duration:
+                  </strong>{" "}
+                  {result.durationMs} ms
+                </div>
+              )}
+
+              {result.timestamp && (
+                <div
+                  style={{
+                    wordBreak:
+                      "break-all",
+                  }}
+                >
+                  <strong>
+                    Timestamp:
+                  </strong>{" "}
+                  {result.timestamp}
+                </div>
+              )}
+
+              {result.commit?.url && (
+                <a
+                  href={
+                    result.commit.url
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    marginTop: 4,
+                    color: "#2563eb",
+                    textDecoration:
+                      "underline",
+                  }}
+                >
+                  Open GitHub Commit
+                </a>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );
