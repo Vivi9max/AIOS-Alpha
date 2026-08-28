@@ -5,8 +5,8 @@ import {
 } from "@/lib/github/founder-runtime-task";
 
 import {
-  detectFounderRuntimeGitHubTask,
-} from "@/lib/github/founder-runtime-task-detector";
+  analyzeFounderCode,
+} from "@/lib/github/founder-code-analyzer";
 
 export type AutonomousDevelopmentPhase =
   | "read"
@@ -48,6 +48,9 @@ export interface AutonomousDevelopmentResult {
   analysis?: {
     changed: boolean;
     reason: string;
+    summary?: string;
+    provider?: string;
+    requestId?: string;
   };
 
   plan?: {
@@ -110,29 +113,6 @@ function validateRequest(
   return null;
 }
 
-function buildWriteContent(
-  input: AutonomousDevelopmentRequest,
-  currentContent: string,
-): string | undefined {
-  if (
-    typeof input.proposedContent ===
-    "string"
-  ) {
-    return input.proposedContent;
-  }
-
-  /*
-   * C141.12-A intentionally does NOT allow
-   * the orchestrator to invent source code.
-   *
-   * A later Analyze/Plan provider will populate
-   * proposedContent.
-   */
-  void currentContent;
-
-  return undefined;
-}
-
 export async function executeFounderAutonomousDevelopment(
   input: AutonomousDevelopmentRequest,
 ): Promise<AutonomousDevelopmentResult> {
@@ -150,15 +130,20 @@ export async function executeFounderAutonomousDevelopment(
 
   /*
    * -------------------------------------------------
-   * PHASE 1 — READ
+   * PHASE 1 — AUTHORITATIVE READ
    * -------------------------------------------------
    *
-   * Always read the current authoritative file first.
+   * Always read GitHub before analysis.
+   *
+   * GitHub remains the source of truth.
    */
   const readResult =
     await executeFounderRuntimeGitHubTask({
       action: "read",
-      path: input.path,
+
+      path:
+        input.path,
+
       objective:
         `Autonomous development READ phase: ${input.objective}`,
     });
@@ -185,63 +170,230 @@ export async function executeFounderAutonomousDevelopment(
 
   /*
    * -------------------------------------------------
-   * PHASE 2 — ANALYZE
+   * PHASE 2 — AI ANALYZE
    * -------------------------------------------------
    *
-   * C141.12-A does deterministic analysis only.
+   * If the caller explicitly supplies proposedContent,
+   * use it as the already-authorized proposal.
    *
-   * No model is allowed to claim that a change is
-   * necessary without an explicit proposedContent.
+   * Otherwise AIOS must analyze the authoritative
+   * GitHub source and generate a complete replacement.
    */
-  const proposedContent =
-    buildWriteContent(
-      input,
-      currentContent,
-    );
+  let proposedContent =
+    input.proposedContent;
 
-  const changed =
-    typeof proposedContent ===
-      "string" &&
-    proposedContent !==
-      currentContent;
+  let analysisSummary =
+    "";
 
-  const analysis = {
-    changed,
+  let analysisProvider:
+    | string
+    | undefined;
 
-    reason: changed
-      ? "A concrete proposed content differs from the authoritative GitHub file."
-      : "No concrete source change was supplied; autonomous write is therefore blocked.",
-  };
+  let analysisRequestId:
+    | string
+    | undefined;
+
+  if (
+    typeof proposedContent !==
+    "string"
+  ) {
+    const analysis =
+      await analyzeFounderCode({
+        objective:
+          input.objective,
+
+        path:
+          input.path,
+
+        currentContent,
+      });
+
+    analysisSummary =
+      analysis.analysis;
+
+    analysisProvider =
+      analysis.provider;
+
+    analysisRequestId =
+      analysis.requestId;
+
+    if (
+      !analysis.success
+    ) {
+      return {
+        success: false,
+
+        code:
+          analysis.code,
+
+        phase:
+          "analyze",
+
+        objective:
+          input.objective,
+
+        path:
+          input.path,
+
+        read: {
+          success: true,
+
+          content:
+            currentContent,
+
+          sha:
+            currentSha,
+
+          size:
+            readResult.github.read
+              .size,
+        },
+
+        analysis: {
+          changed:
+            false,
+
+          reason:
+            analysis.plan.reason,
+
+          summary:
+            analysis.analysis,
+
+          provider:
+            analysis.provider,
+
+          requestId:
+            analysis.requestId,
+        },
+
+        plan: {
+          action: "stop",
+
+          reason:
+            analysis.plan.reason,
+        },
+
+        error:
+          analysis.error,
+      };
+    }
+
+    if (
+      analysis.plan.action ===
+      "stop"
+    ) {
+      return {
+        success: true,
+
+        code:
+          analysis.code,
+
+        phase:
+          "completed",
+
+        objective:
+          input.objective,
+
+        path:
+          input.path,
+
+        read: {
+          success: true,
+
+          content:
+            currentContent,
+
+          sha:
+            currentSha,
+
+          size:
+            readResult.github.read
+              .size,
+        },
+
+        analysis: {
+          changed:
+            false,
+
+          reason:
+            analysis.plan.reason,
+
+          summary:
+            analysis.analysis,
+
+          provider:
+            analysis.provider,
+
+          requestId:
+            analysis.requestId,
+        },
+
+        plan: {
+          action:
+            "stop",
+
+          reason:
+            analysis.plan.reason,
+        },
+
+        verification: {
+          success:
+            true,
+
+          checks: [
+            "authoritative-read",
+            "ai-analysis",
+            "change-detection",
+            "safe-stop",
+          ],
+
+          reason:
+            "AIOS determined that no source change is required.",
+        },
+      };
+    }
+
+    proposedContent =
+      analysis.proposedContent;
+  } else {
+    analysisSummary =
+      "A concrete proposedContent was supplied to the autonomous development orchestrator.";
+
+    analysisProvider =
+      "caller-supplied-proposal";
+
+    analysisRequestId =
+      undefined;
+  }
 
   /*
    * -------------------------------------------------
    * PHASE 3 — PLAN
    * -------------------------------------------------
    */
-  const plan = changed
-    ? {
-        action:
-          "write" as const,
-
-        reason:
-          "The proposed content differs from the current GitHub state.",
-      }
-    : {
-        action:
-          "stop" as const,
-
-        reason:
-          "No verified source change is available.",
-      };
-
   if (
-    plan.action === "stop"
+    typeof proposedContent !==
+      "string" ||
+    !proposedContent
   ) {
+    return fail(
+      input,
+      "plan",
+      "AUTONOMOUS_PROPOSAL_MISSING",
+      "No proposed source content was produced.",
+    );
+  }
+
+  const changed =
+    proposedContent !==
+    currentContent;
+
+  if (!changed) {
     return {
       success: true,
 
       code:
-        "AUTONOMOUS_ANALYSIS_COMPLETE",
+        "AUTONOMOUS_NO_CHANGE",
 
       phase:
         "completed",
@@ -254,41 +406,109 @@ export async function executeFounderAutonomousDevelopment(
 
       read: {
         success: true,
+
         content:
           currentContent,
+
         sha:
           currentSha,
+
         size:
           readResult.github.read
             .size,
       },
 
-      analysis,
+      analysis: {
+        changed:
+          false,
 
-      plan,
+        reason:
+          "The proposed content is identical to the authoritative GitHub content.",
+
+        summary:
+          analysisSummary,
+
+        provider:
+          analysisProvider,
+
+        requestId:
+          analysisRequestId,
+      },
+
+      plan: {
+        action:
+          "stop",
+
+        reason:
+          "No actual source change detected.",
+      },
 
       verification: {
-        success: true,
+        success:
+          true,
 
         checks: [
           "authoritative-read",
-          "change-detection",
-          "write-safety-stop",
+          "analysis",
+          "content-comparison",
+          "write-skipped",
         ],
 
         reason:
-          "AIOS correctly refused to invent or overwrite source without a concrete proposed change.",
+          "AIOS correctly avoided an unnecessary GitHub write.",
       },
     };
   }
+
+  /*
+   * Basic proposal integrity gate.
+   */
+  if (
+    proposedContent.length <
+    10
+  ) {
+    return fail(
+      input,
+      "plan",
+      "AUTONOMOUS_PROPOSAL_INVALID",
+      "Generated source content is suspiciously short.",
+    );
+  }
+
+  /*
+   * Do not allow obvious model-wrapper output
+   * to enter the source file.
+   */
+  if (
+    /^```[\s\S]*```$/.test(
+      proposedContent.trim(),
+    )
+  ) {
+    return fail(
+      input,
+      "plan",
+      "AUTONOMOUS_PROPOSAL_CODE_FENCE",
+      "Generated source still contains a Markdown code fence.",
+    );
+  }
+
+  const plan = {
+    action:
+      "write" as const,
+
+    reason:
+      "AIOS produced concrete source content that differs from the authoritative GitHub file.",
+  };
 
   /*
    * -------------------------------------------------
    * PHASE 4 — WRITE
    * -------------------------------------------------
    *
-   * Founder Runtime creates the Contract and
-   * task-dispatch enforces it before GitHub I/O.
+   * The write NEVER bypasses Founder Runtime.
+   *
+   * Founder Runtime creates the development contract.
+   * task-dispatch enforces the contract before GitHub I/O.
    */
   const writeResult =
     await executeFounderRuntimeGitHubTask({
@@ -311,13 +531,58 @@ export async function executeFounderAutonomousDevelopment(
   if (
     !writeResult.success
   ) {
-    return fail(
-      input,
-      "write",
-      writeResult.code,
-      writeResult.github.error ??
+    return {
+      success: false,
+
+      code:
+        writeResult.code,
+
+      phase:
+        "write",
+
+      objective:
+        input.objective,
+
+      path:
+        input.path,
+
+      read: {
+        success: true,
+
+        content:
+          currentContent,
+
+        sha:
+          currentSha,
+
+        size:
+          readResult.github.read
+            .size,
+      },
+
+      analysis: {
+        changed:
+          true,
+
+        reason:
+          plan.reason,
+
+        summary:
+          analysisSummary,
+
+        provider:
+          analysisProvider,
+
+        requestId:
+          analysisRequestId,
+      },
+
+      plan,
+
+      error:
+        writeResult.github.error ??
         "GitHub autonomous write failed.",
-    );
+    };
   }
 
   const write =
@@ -336,8 +601,6 @@ export async function executeFounderAutonomousDevelopment(
    * -------------------------------------------------
    * PHASE 5 — COMMIT
    * -------------------------------------------------
-   *
-   * task-dispatch already returns the real commit SHA.
    */
   if (
     !write.commitSha
@@ -352,13 +615,10 @@ export async function executeFounderAutonomousDevelopment(
 
   /*
    * -------------------------------------------------
-   * PHASE 6 — READBACK
+   * PHASE 6 — AUTHORITATIVE READBACK
    * -------------------------------------------------
    *
-   * task-dispatch performs an immediate readback,
-   * but C141.12 performs an additional authoritative
-   * read so the outer orchestration layer has its own
-   * verification boundary.
+   * Do another complete GitHub READ after commit.
    */
   const readback =
     await executeFounderRuntimeGitHubTask({
@@ -375,13 +635,72 @@ export async function executeFounderAutonomousDevelopment(
     !readback.success ||
     !readback.github.read
   ) {
-    return fail(
-      input,
-      "readback",
-      "AUTONOMOUS_READBACK_FAILED",
-      readback.github.error ??
+    return {
+      success: false,
+
+      code:
+        "AUTONOMOUS_READBACK_FAILED",
+
+      phase:
+        "readback",
+
+      objective:
+        input.objective,
+
+      path:
+        input.path,
+
+      read: {
+        success: true,
+
+        content:
+          currentContent,
+
+        sha:
+          currentSha,
+
+        size:
+          readResult.github.read
+            .size,
+      },
+
+      analysis: {
+        changed:
+          true,
+
+        reason:
+          plan.reason,
+
+        summary:
+          analysisSummary,
+
+        provider:
+          analysisProvider,
+
+        requestId:
+          analysisRequestId,
+      },
+
+      plan,
+
+      write: {
+        success:
+          true,
+
+        commitSha:
+          write.commitSha,
+
+        commitUrl:
+          write.commitUrl,
+
+        readbackVerified:
+          false,
+      },
+
+      error:
+        readback.github.error ??
         "Autonomous readback failed.",
-    );
+    };
   }
 
   const readbackContent =
@@ -399,6 +718,8 @@ export async function executeFounderAutonomousDevelopment(
    */
   const checks = [
     "authoritative-read",
+    "ai-analysis",
+    "change-detection",
     "founder-contract",
     "safe-write-path",
     "github-write",
@@ -427,34 +748,59 @@ export async function executeFounderAutonomousDevelopment(
 
       read: {
         success: true,
+
         content:
           currentContent,
+
         sha:
           currentSha,
+
         size:
           readResult.github.read
             .size,
       },
 
-      analysis,
+      analysis: {
+        changed:
+          true,
+
+        reason:
+          plan.reason,
+
+        summary:
+          analysisSummary,
+
+        provider:
+          analysisProvider,
+
+        requestId:
+          analysisRequestId,
+      },
 
       plan,
 
       write: {
-        success: true,
+        success:
+          true,
+
         commitSha:
           write.commitSha,
+
         commitUrl:
           write.commitUrl,
+
         readbackVerified:
           false,
       },
 
       verification: {
-        success: false,
+        success:
+          false,
+
         checks,
+
         reason:
-          "The authoritative post-write file does not exactly match the proposed content.",
+          "The authoritative GitHub readback does not exactly match the generated source.",
       },
 
       error:
@@ -463,7 +809,8 @@ export async function executeFounderAutonomousDevelopment(
   }
 
   return {
-    success: true,
+    success:
+      true,
 
     code:
       "AUTONOMOUS_DEVELOPMENT_VERIFIED",
@@ -478,40 +825,61 @@ export async function executeFounderAutonomousDevelopment(
       input.path,
 
     read: {
-      success: true,
+      success:
+        true,
+
       content:
         currentContent,
+
       sha:
         currentSha,
+
       size:
         readResult.github.read
           .size,
     },
 
-    analysis,
+    analysis: {
+      changed:
+        true,
+
+      reason:
+        plan.reason,
+
+      summary:
+        analysisSummary,
+
+      provider:
+        analysisProvider,
+
+      requestId:
+        analysisRequestId,
+    },
 
     plan,
 
     write: {
-      success: true,
+      success:
+        true,
+
       commitSha:
         write.commitSha,
+
       commitUrl:
         write.commitUrl,
+
       readbackVerified:
-        write.readbackVerified === true &&
-        contentMatches,
+        true,
     },
 
     verification: {
       success:
-        write.readbackVerified === true &&
-        contentMatches,
+        true,
 
       checks,
 
       reason:
-        "READ → PLAN → WRITE → COMMIT → READBACK → VERIFY completed successfully.",
+        "READ → ANALYZE → PLAN → WRITE → COMMIT → READBACK → VERIFY completed successfully.",
     },
   };
 }
