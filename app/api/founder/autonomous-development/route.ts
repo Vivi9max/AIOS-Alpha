@@ -14,91 +14,172 @@ import {
 } from "@/lib/runtime/request-context";
 
 import {
+  isFounderConfigured,
+  isFounderRequest,
+} from "@/lib/founder/auth";
+
+import {
   runFounderAutonomousLiveTest,
 } from "@/lib/github/founder-autonomous-live-test";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+export const dynamic =
+  "force-dynamic";
 
-function getFounderAccessKey(
-  request: NextRequest,
-): string {
-  return (
-    request.headers.get(
-      "x-founder-access-key",
-    )?.trim() ?? ""
+export const runtime =
+  "nodejs";
+
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(
+    body,
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
+    },
   );
 }
 
-function isFounderAuthorized(
+export async function GET(
   request: NextRequest,
-): boolean {
-  const configuredKey =
-    process.env.FOUNDER_ACCESS_KEY?.trim();
+) {
+  const configured =
+    isFounderConfigured();
 
-  if (!configuredKey) {
-    return false;
-  }
+  const authenticated =
+    configured &&
+    isFounderRequest(request);
 
-  const suppliedKey =
-    getFounderAccessKey(request);
+  return json({
+    success: true,
 
-  return (
-    suppliedKey.length > 0 &&
-    suppliedKey === configuredKey
-  );
+    code:
+      "C141_12_E_READY",
+
+    endpoint:
+      "/api/founder/autonomous-development",
+
+    method:
+      "POST",
+
+    founderOnly:
+      true,
+
+    authorizationConfigured:
+      configured,
+
+    authenticated,
+
+    pipeline: [
+      "FOUNDER_AUTH",
+      "ALPHA_IDENTITY",
+      "READ",
+      "ANALYZE",
+      "PLAN",
+      "WRITE",
+      "COMMIT",
+      "READBACK",
+      "VERIFY",
+    ],
+  });
 }
 
 export async function POST(
   request: NextRequest,
 ) {
+  /*
+   * ------------------------------------------------
+   * C141.12-E.1
+   *
+   * Reuse the existing Founder Authentication
+   * Contract used by C141 Live Verification.
+   *
+   * DO NOT use AlphaIdentity as Founder authorization.
+   * ------------------------------------------------
+   */
+
+  if (!isFounderConfigured()) {
+    return json(
+      {
+        success: false,
+
+        code:
+          "FOUNDER_NOT_CONFIGURED",
+
+        error:
+          "Founder access is not configured.",
+      },
+      503,
+    );
+  }
+
+  if (!isFounderRequest(request)) {
+    return json(
+      {
+        success: false,
+
+        code:
+          "FOUNDER_UNAUTHORIZED",
+
+        error:
+          "Founder authorization failed.",
+      },
+      401,
+    );
+  }
+
+  const startedAt =
+    Date.now();
+
   try {
     /*
-     * Founder authorization is intentionally
-     * independent from the normal AlphaIdentity.
-     *
-     * AlphaIdentity identifies a runtime user.
-     * It does NOT represent Founder privileges.
+     * AlphaIdentity remains responsible only
+     * for runtime user isolation.
      */
-    if (!isFounderAuthorized(request)) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          code:
-            "FOUNDER_AUTONOMOUS_ACCESS_DENIED",
-
-          error:
-            "Founder authorization is required.",
-        },
-        {
-          status: 403,
-        },
-      );
-    }
-
     const identity =
-      resolveAlphaIdentity(request);
+      resolveAlphaIdentity(
+        request,
+      );
 
-    return await runWithUserContext(
-      identity.userId,
-      async () => {
-        const result =
-          await runFounderAutonomousLiveTest();
+    const result =
+      await runWithUserContext(
+        identity.userId,
+        async () =>
+          runFounderAutonomousLiveTest(),
+      );
 
-        return NextResponse.json(
-          result,
-          {
-            status:
-              result.success
-                ? 200
-                : 500,
-          },
-        );
+    return json(
+      {
+        ...result,
+
+        founderAuthenticated:
+          true,
+
+        userId:
+          identity.userId,
+
+        identityMode:
+          "founder-alpha",
+
+        latencyMs:
+          Date.now() -
+          startedAt,
       },
+      result.success
+        ? 200
+        : 500,
     );
   } catch (error) {
-    return NextResponse.json(
+    console.error(
+      "[C141.12-E] Founder autonomous development failed",
+      error,
+    );
+
+    return json(
       {
         success: false,
 
@@ -108,55 +189,13 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : "Unknown runtime error.",
+            : "Founder autonomous development failed.",
+
+        latencyMs:
+          Date.now() -
+          startedAt,
       },
-      {
-        status: 500,
-      },
+      500,
     );
   }
-}
-
-export async function GET(
-  request: NextRequest,
-) {
-  const configured =
-    Boolean(
-      process.env.FOUNDER_ACCESS_KEY?.trim(),
-    );
-
-  return NextResponse.json(
-    {
-      success: true,
-
-      code:
-        "C141_12_E_READY",
-
-      endpoint:
-        "/api/founder/autonomous-development",
-
-      method:
-        "POST",
-
-      founderOnly:
-        true,
-
-      authorizationConfigured:
-        configured,
-
-      pipeline: [
-        "FOUNDER_AUTH",
-        "READ",
-        "ANALYZE",
-        "PLAN",
-        "WRITE",
-        "COMMIT",
-        "READBACK",
-        "VERIFY",
-      ],
-    },
-    {
-      status: 200,
-    },
-  );
 }
