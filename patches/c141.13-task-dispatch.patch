@@ -1,1 +1,90 @@
- X
+*** Begin Patch
+*** Update File: lib/github/task-dispatch.ts
+@@
+ import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
++
++import {
++  evaluateFounderAutonomousSafety,
++  type FounderAutonomousSafetyAudit,
++} from "@/lib/github/founder-autonomous-safety-gate";
+@@
+ export interface GitHubTaskResult {
+@@
+   write?: {
+@@
+     readbackVerified?: boolean;
+   };
++  safetyGate?: FounderAutonomousSafetyAudit;
+   error?: string;
+ }
+@@
+   const existing =
+     await readGitHubFile({
+@@
+       ref: branch,
+     });
++
++  if (!existing.success || !existing.data) {
++    return {
++      success: false,
++      action: request.action,
++      repository,
++      branch,
++      path,
++      code: "GITHUB_EXISTING_CONTENT_READ_FAILED",
++      error:
++        "Unable to establish authoritative pre-write state; autonomous write is blocked.",
++    };
++  }
++
++  const safetyGate = evaluateFounderAutonomousSafety({
++    repository,
++    branch,
++    path,
++    currentContent: existing.data.content ?? "",
++    proposedContent: request.content,
++    objective: request.contract.objective,
++  });
++
++  if (safetyGate.decision !== "allow") {
++    return {
++      success: false,
++      action: request.action,
++      repository,
++      branch,
++      path,
++      code: "AUTONOMOUS_SAFETY_GATE_DENIED",
++      safetyGate,
++      error:
++        `C141.13 safety gate denied autonomous write: ${safetyGate.blockers.join(", ")}`,
++    };
++  }
+@@
+       error:
+         write.error ||
+         "GitHub write failed.",
++      safetyGate,
+     };
+@@
+       write: {
+@@
+         readbackVerified: false,
+       },
++      safetyGate,
+     };
+@@
+       write: {
+@@
+         readbackVerified: false,
+       },
++      safetyGate,
+     };
+@@
+     write: {
+@@
+       readbackVerified: true,
+     },
++    safetyGate,
+   };
+ }
+*** End Patch
