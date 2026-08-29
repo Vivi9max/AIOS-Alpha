@@ -2,7 +2,6 @@
 *** Update File: lib/github/task-dispatch.ts
 @@
  import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
-+
 +import {
 +  evaluateFounderAutonomousSafety,
 +  type FounderAutonomousSafetyAudit,
@@ -20,7 +19,8 @@
 @@
    const existing =
      await readGitHubFile({
-@@
+       repo: repository,
+       path,
        ref: branch,
      });
 +
@@ -66,25 +66,23 @@
 +      safetyGate,
      };
 @@
-       write: {
-@@
          readbackVerified: false,
        },
 +      safetyGate,
      };
 @@
-       write: {
-@@
          readbackVerified: false,
        },
 +      safetyGate,
      };
-@@
-     write: {
 @@
        readbackVerified: true,
      },
 +    safetyGate,
    };
  }
+*** Update File: app/api/founder/github-dispatch/route.ts
+@@
+-      repo: "Vivi9max/AIOS‑Alpha",
++      repo: "Vivi9max/AIOS-Alpha",
 *** End Patch
