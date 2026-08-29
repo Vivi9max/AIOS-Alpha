@@ -1,6 +1,9 @@
 import "server-only";
 
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
 import {
   resolveAlphaIdentity,
@@ -17,24 +20,32 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const FOUNDER_ROLE = "founder";
+function getFounderAccessKey(
+  request: NextRequest,
+): string {
+  return (
+    request.headers.get(
+      "x-founder-access-key",
+    )?.trim() ?? ""
+  );
+}
 
-function isFounderIdentity(
-  identity: unknown,
+function isFounderAuthorized(
+  request: NextRequest,
 ): boolean {
-  if (!identity || typeof identity !== "object") {
+  const configuredKey =
+    process.env.FOUNDER_ACCESS_KEY?.trim();
+
+  if (!configuredKey) {
     return false;
   }
 
-  const candidate =
-    identity as {
-      role?: unknown;
-      isFounder?: unknown;
-    };
+  const suppliedKey =
+    getFounderAccessKey(request);
 
   return (
-    candidate.role === FOUNDER_ROLE ||
-    candidate.isFounder === true
+    suppliedKey.length > 0 &&
+    suppliedKey === configuredKey
   );
 }
 
@@ -43,18 +54,13 @@ export async function POST(
 ) {
   try {
     /*
-     * IMPORTANT:
+     * Founder authorization is intentionally
+     * independent from the normal AlphaIdentity.
      *
-     * resolveAlphaIdentity() expects the complete
-     * NextRequest, not the cookie value.
-     *
-     * This preserves the existing AIOS identity
-     * resolution contract.
+     * AlphaIdentity identifies a runtime user.
+     * It does NOT represent Founder privileges.
      */
-    const identity =
-      resolveAlphaIdentity(request);
-
-    if (!isFounderIdentity(identity)) {
+    if (!isFounderAuthorized(request)) {
       return NextResponse.json(
         {
           success: false,
@@ -71,8 +77,11 @@ export async function POST(
       );
     }
 
+    const identity =
+      resolveAlphaIdentity(request);
+
     return await runWithUserContext(
-      identity,
+      identity.userId,
       async () => {
         const result =
           await runFounderAutonomousLiveTest();
@@ -108,7 +117,14 @@ export async function POST(
   }
 }
 
-export async function GET() {
+export async function GET(
+  request: NextRequest,
+) {
+  const configured =
+    Boolean(
+      process.env.FOUNDER_ACCESS_KEY?.trim(),
+    );
+
   return NextResponse.json(
     {
       success: true,
@@ -125,10 +141,11 @@ export async function GET() {
       founderOnly:
         true,
 
-      purpose:
-        "Execute the Founder-only C141.12 autonomous development live test.",
+      authorizationConfigured:
+        configured,
 
       pipeline: [
+        "FOUNDER_AUTH",
         "READ",
         "ANALYZE",
         "PLAN",
