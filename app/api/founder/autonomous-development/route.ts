@@ -3,7 +3,6 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  AIOS_USER_COOKIE,
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
 
@@ -43,20 +42,26 @@ export async function POST(
   request: NextRequest,
 ) {
   try {
-    const cookie =
-      request.cookies.get(
-        AIOS_USER_COOKIE,
-      )?.value;
-
+    /*
+     * IMPORTANT:
+     *
+     * resolveAlphaIdentity() expects the complete
+     * NextRequest, not the cookie value.
+     *
+     * This preserves the existing AIOS identity
+     * resolution contract.
+     */
     const identity =
-      resolveAlphaIdentity(cookie);
+      resolveAlphaIdentity(request);
 
     if (!isFounderIdentity(identity)) {
       return NextResponse.json(
         {
           success: false,
+
           code:
             "FOUNDER_AUTONOMOUS_ACCESS_DENIED",
+
           error:
             "Founder authorization is required.",
         },
@@ -87,8 +92,10 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
+
         code:
           "FOUNDER_AUTONOMOUS_RUNTIME_ERROR",
+
         error:
           error instanceof Error
             ? error.message
