@@ -12,7 +12,6 @@ import {
   type FounderContractTask,
 } from "@/lib/github/founder-contract-enforcement";
 
-// ==== C141.13 新增导入 ====
 import { assertC14113AutonomousSafetyBeforeWrite } from "./c141.13-safety-runtime";
 
 import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
@@ -50,13 +49,127 @@ export interface GitHubTaskResult {
   error?: string;
 }
 
-// ……… 原有全部常量、工具函数（normalizePath / isSafePath / getRepository / getBranch / assertSafeWritePath / enforceContract）保持原样不变 ………
+const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
+const DEFAULT_BRANCH = "main";
+
+function normalizePath(path: string): string {
+  return path.trim().replace(/^\/+/, "");
+}
+
+function isSafePath(path: string): boolean {
+  if (!path) {
+    return false;
+  }
+
+  if (path.includes("..")) {
+    return false;
+  }
+
+  if (path.startsWith("/")) {
+    return false;
+  }
+
+  if (path.includes("\\") || path.includes("\0")) {
+    return false;
+  }
+
+  return true;
+}
+
+function getRepository(repo?: string): string {
+  const repository = repo?.trim() || DEFAULT_REPOSITORY;
+
+  if (repository !== DEFAULT_REPOSITORY) {
+    throw new Error(
+      "Repository is outside the Founder GitHub development boundary.",
+    );
+  }
+
+  return repository;
+}
+
+function getBranch(branch?: string): string {
+  const targetBranch = branch?.trim() || DEFAULT_BRANCH;
+
+  if (targetBranch !== DEFAULT_BRANCH) {
+    throw new Error(
+      "Branch is outside the Founder GitHub development boundary.",
+    );
+  }
+
+  return targetBranch;
+}
+
+function assertSafeWritePath(path: string): void {
+  const normalizedPath = normalizePath(path);
+
+  if (!isSafePath(normalizedPath)) {
+    throw new Error("Unsafe GitHub write path.");
+  }
+
+  const blockedPaths = [
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    ".env.preview",
+    "node_modules/",
+    ".git/",
+  ];
+
+  if (
+    blockedPaths.some(
+      (blockedPath) =>
+        normalizedPath === blockedPath ||
+        normalizedPath.startsWith(blockedPath),
+    )
+  ) {
+    throw new Error(
+      "Target path is blocked by the Founder GitHub write boundary.",
+    );
+  }
+}
+
+function enforceContract(
+  request: GitHubTaskRequest,
+  repository: string,
+  branch: string,
+  path: string,
+): void {
+  const task: FounderContractTask = {
+    action: request.action,
+    repository,
+    branch,
+    path,
+  };
+
+  enforceFounderContract(task);
+}
 
 export async function dispatchGitHubTask(
   request: GitHubTaskRequest,
 ): Promise<GitHubTaskResult> {
-  const repository = getRepository(request.repo);
-  const branch = getBranch(request.branch);
+  let repository: string;
+  let branch: string;
+
+  try {
+    repository = getRepository(request.repo);
+    branch = getBranch(request.branch);
+  } catch (error) {
+    return {
+      success: false,
+      action: request.action,
+      repository: request.repo?.trim() || DEFAULT_REPOSITORY,
+      branch: request.branch?.trim() || DEFAULT_BRANCH,
+      path: normalizePath(request.path),
+      code: "GITHUB_TARGET_REJECTED",
+      error:
+        error instanceof Error
+          ? error.message
+          : "GitHub target rejected.",
+    };
+  }
+
   const path = normalizePath(request.path);
 
   if (!isSafePath(path)) {
@@ -72,9 +185,9 @@ export async function dispatchGitHubTask(
   }
 
   /*
-   * C141.10 Founder Contract Runtime Gate.
+   * Founder Contract Runtime Gate.
    *
-   * Contract enforcement MUST happen before any GitHub I/O.
+   * Contract enforcement must happen before any GitHub I/O.
    */
   try {
     enforceContract(
@@ -184,7 +297,22 @@ export async function dispatchGitHubTask(
   /*
    * WRITE
    */
-  assertSafeWritePath(path);
+  try {
+    assertSafeWritePath(path);
+  } catch (error) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "UNSAFE_GITHUB_WRITE_PATH",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unsafe GitHub write path.",
+    };
+  }
 
   if (typeof request.content !== "string") {
     return {
@@ -213,8 +341,8 @@ export async function dispatchGitHubTask(
 
   /*
    * Read existing content first.
-   * This provides the SHA required by GitHub for updates
-   * and establishes the pre-write state.
+   * This establishes the pre-write state and obtains
+   * the SHA required by GitHub for an update.
    */
   const existing =
     await readGitHubFile({
@@ -223,17 +351,27 @@ export async function dispatchGitHubTask(
       ref: branch,
     });
 
-  // ===================== C141.13 安全门接入点 START =====================
-  // 【关键】在 writeGitHubFile 调用之前执行；已有文件信息传入安全门
-  const safetyCheck = await assertC14113AutonomousSafetyBeforeWrite({
-    request,
-    repository,
-    branch,
-    path,
-    existingFileSha: existing.success && existing.data ? existing.data.sha : undefined,
-    existingContent: existing.success && existing.data ? existing.data.content : undefined,
-    contract: request.contract,
-  });
+  /*
+   * C141.13 Autonomous Safety Runtime Gate.
+   *
+   * This gate must execute before writeGitHubFile.
+   */
+  const safetyCheck =
+    await assertC14113AutonomousSafetyBeforeWrite({
+      request,
+      repository,
+      branch,
+      path,
+      existingFileSha:
+        existing.success && existing.data
+          ? existing.data.sha
+          : undefined,
+      existingContent:
+        existing.success && existing.data
+          ? existing.data.content
+          : undefined,
+      contract: request.contract,
+    });
 
   if (!safetyCheck.allowed) {
     return {
@@ -246,7 +384,6 @@ export async function dispatchGitHubTask(
       error: safetyCheck.reason,
     };
   }
-  // ===================== C141.13 安全门接入点 END =====================
 
   const commitMessage =
     request.commitMessage?.trim() ||
@@ -254,8 +391,6 @@ export async function dispatchGitHubTask(
 
   /*
    * Real GitHub write.
-   *
-   * This returns the actual commit SHA from lib/github/bridge.ts.
    */
   const write =
     await writeGitHubFile({
@@ -289,10 +424,10 @@ export async function dispatchGitHubTask(
   const contentSha = write.data.content?.sha;
 
   /*
-   * C141.10 REAL READBACK VERIFICATION
+   * REAL READBACK VERIFICATION.
    *
-   * Do not report a verified write until the file can be
-   * read again from the target branch and its content matches.
+   * Do not report a verified write until the file is
+   * read again from the target branch and content matches.
    */
   const readback =
     await readGitHubFile({
