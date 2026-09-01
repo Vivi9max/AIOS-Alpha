@@ -1,6 +1,7 @@
 import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
+
 import {
   claimAutonomousDevelopmentTask,
   completeAutonomousDevelopmentTask,
@@ -9,9 +10,21 @@ import {
   listAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
 
+import {
+  dispatchGitHubTask,
+  type GitHubTaskAction,
+} from "@/lib/github/task-dispatch";
+
+import {
+  createFounderDevelopmentContract,
+} from "@/lib/github/founder-development-contract";
+
 export const runtime = "nodejs";
 
-function founderAuthorized(request: NextRequest) {
+const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
+const DEFAULT_BRANCH = "main";
+
+function founderAuthorized(request: NextRequest): boolean {
   const configuredKey = process.env.FOUNDER_ACCESS_KEY;
 
   if (!configuredKey) {
@@ -20,9 +33,35 @@ function founderAuthorized(request: NextRequest) {
 
   const providedKey =
     request.headers.get("x-founder-access-key") ??
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    request.headers
+      .get("authorization")
+      ?.replace(/^Bearer\s+/i, "");
 
   return Boolean(providedKey) && providedKey === configuredKey;
+}
+
+function createContract(input: {
+  objective: string;
+  path: string;
+  commitMessage?: string;
+}) {
+  return createFounderDevelopmentContract({
+    objective: input.objective,
+    requestedFiles: [input.path],
+    actions: [
+      "read",
+      "write",
+      "verify",
+    ],
+    verification: [
+      "readback",
+      "build",
+      "production",
+    ],
+    commitMessage:
+      input.commitMessage?.trim() ||
+      "feat(C142.2): execute founder autonomous development task",
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -36,10 +75,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const taskId = request.nextUrl.searchParams.get("taskId");
+  const taskId =
+    request.nextUrl.searchParams.get("taskId");
 
   if (taskId) {
-    const task = getAutonomousDevelopmentTask(taskId);
+    const task =
+      getAutonomousDevelopmentTask(taskId);
 
     if (!task) {
       return NextResponse.json(
@@ -76,16 +117,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-
     const action = body?.action;
 
+    /*
+     * C142.1 task creation remains available.
+     */
     if (action === "create") {
-      const task = createAutonomousDevelopmentTask({
-        objective: String(body?.objective ?? ""),
-        targetPaths: Array.isArray(body?.targetPaths)
-          ? body.targetPaths.map(String)
-          : [],
-      });
+      const task =
+        createAutonomousDevelopmentTask({
+          objective: String(
+            body?.objective ?? "",
+          ),
+          targetPaths:
+            Array.isArray(body?.targetPaths)
+              ? body.targetPaths.map(String)
+              : [],
+        });
 
       return NextResponse.json(
         {
@@ -97,8 +144,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /*
+     * C142.1 task claiming remains available.
+     */
     if (action === "claim") {
-      const task = claimAutonomousDevelopmentTask(String(body?.taskId ?? ""));
+      const task =
+        claimAutonomousDevelopmentTask(
+          String(body?.taskId ?? ""),
+        );
 
       return NextResponse.json({
         ok: true,
@@ -107,15 +160,147 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    /*
+     * C142.2 REAL AUTONOMOUS DEVELOPMENT EXECUTION
+     *
+     * This is the first Control Plane action that
+     * actually reaches the C141 GitHub Direct Bridge.
+     */
+    if (action === "execute") {
+      const objective =
+        String(body?.objective ?? "").trim();
+
+      const path =
+        String(body?.path ?? "").trim();
+
+      const content =
+        typeof body?.content === "string"
+          ? body.content
+          : undefined;
+
+      const commitMessage =
+        typeof body?.commitMessage === "string"
+          ? body.commitMessage.trim()
+          : undefined;
+
+      if (!objective) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "DEVELOPMENT_OBJECTIVE_REQUIRED",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (!path) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "TARGET_PATH_REQUIRED",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (content === undefined) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "WRITE_CONTENT_REQUIRED",
+          },
+          { status: 400 },
+        );
+      }
+
+      /*
+       * C142.2 currently executes one target file
+       * per autonomous development task.
+       *
+       * This keeps the execution boundary aligned
+       * with the C141 GitHub task dispatcher.
+       */
+      const task =
+        createAutonomousDevelopmentTask({
+          objective,
+          targetPaths: [path],
+        });
+
+      const claimed =
+        claimAutonomousDevelopmentTask(
+          task.id,
+        );
+
+      const contract =
+        createContract({
+          objective,
+          path,
+          commitMessage,
+        });
+
+      /*
+       * Real C141 bridge execution.
+       *
+       * dispatchGitHubTask is the only GitHub
+       * execution path used by C142.2.
+       */
+      const github =
+        await dispatchGitHubTask({
+          action: "write" as GitHubTaskAction,
+          repo: DEFAULT_REPOSITORY,
+          branch: DEFAULT_BRANCH,
+          path,
+          content,
+          commitMessage,
+          contract,
+        });
+
+      const commitSha =
+        github.write?.commitSha || "";
+
+      const readbackVerified =
+        github.write?.readbackVerified === true;
+
+      const verificationPassed =
+        github.success === true &&
+        readbackVerified === true;
+
+      const receipt =
+        completeAutonomousDevelopmentTask(
+          claimed.id,
+          {
+            commitSha,
+            readbackVerified,
+            verificationPassed,
+          },
+        );
+
+      return NextResponse.json({
+        ok: github.success,
+        action,
+        task: claimed,
+        github,
+        receipt,
+      });
+    }
+
+    /*
+     * C142.1 manual completion remains available
+     * for compatibility with the existing control plane.
+     */
     if (action === "complete") {
-      const receipt = completeAutonomousDevelopmentTask(
-        String(body?.taskId ?? ""),
-        {
-          commitSha: String(body?.commitSha ?? ""),
-          readbackVerified: body?.readbackVerified === true,
-          verificationPassed: body?.verificationPassed === true,
-        },
-      );
+      const receipt =
+        completeAutonomousDevelopmentTask(
+          String(body?.taskId ?? ""),
+          {
+            commitSha:
+              String(body?.commitSha ?? ""),
+            readbackVerified:
+              body?.readbackVerified === true,
+            verificationPassed:
+              body?.verificationPassed === true,
+          },
+        );
 
       return NextResponse.json({
         ok: true,
@@ -128,7 +313,12 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         code: "UNKNOWN_ACTION",
-        allowedActions: ["create", "claim", "complete"],
+        allowedActions: [
+          "create",
+          "claim",
+          "execute",
+          "complete",
+        ],
       },
       { status: 400 },
     );
