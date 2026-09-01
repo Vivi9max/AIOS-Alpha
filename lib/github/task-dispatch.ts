@@ -12,6 +12,9 @@ import {
   type FounderContractTask,
 } from "@/lib/github/founder-contract-enforcement";
 
+// ==== C141.13 新增导入 ====
+import { assertC14113AutonomousSafetyBeforeWrite } from "./c141.13-safety-runtime";
+
 import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
 export type GitHubTaskAction = "read" | "write";
@@ -47,106 +50,7 @@ export interface GitHubTaskResult {
   error?: string;
 }
 
-const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
-const DEFAULT_BRANCH = "main";
-
-const AUTONOMOUS_WRITE_PREFIXES = [
-  "app/",
-  "components/",
-  "docs/",
-  "lib/",
-  "scripts/",
-  "tests/",
-  "test/",
-  "public/",
-  "styles/",
-];
-
-function normalizePath(path: string): string {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .replace(/\\/g, "/");
-}
-
-function isSafePath(path: string): boolean {
-  if (!path) return false;
-  if (path.includes("..")) return false;
-  if (path.startsWith(".git/")) return false;
-  if (path.includes("\0")) return false;
-  if (path.startsWith(".env")) return false;
-  return true;
-}
-
-function getRepository(value?: string): string {
-  const repo = value?.trim() || DEFAULT_REPOSITORY;
-
-  if (repo !== DEFAULT_REPOSITORY) {
-    throw new Error(
-      `Founder self-development is restricted to ${DEFAULT_REPOSITORY}.`,
-    );
-  }
-
-  return repo;
-}
-
-function getBranch(value?: string): string {
-  const branch = value?.trim() || DEFAULT_BRANCH;
-
-  if (branch !== DEFAULT_BRANCH) {
-    throw new Error(
-      "Founder self-development is restricted to the main branch.",
-    );
-  }
-
-  return branch;
-}
-
-function assertSafeWritePath(path: string): void {
-  const allowed = AUTONOMOUS_WRITE_PREFIXES.some((prefix) =>
-    path.startsWith(prefix),
-  );
-
-  if (!allowed) {
-    throw new Error(
-      `Founder self-development writes are restricted to approved project areas: ${AUTONOMOUS_WRITE_PREFIXES.join(", ")}`,
-    );
-  }
-
-  if (
-    path === "package.json" ||
-    path === "package-lock.json" ||
-    path === "pnpm-lock.yaml" ||
-    path === "yarn.lock" ||
-    path === "vercel.json" ||
-    path.startsWith(".github/") ||
-    path.startsWith(".env")
-  ) {
-    throw new Error(
-      "Protected project configuration cannot be modified by autonomous self-development.",
-    );
-  }
-}
-
-function enforceContract(
-  request: GitHubTaskRequest,
-  repository: string,
-  branch: string,
-  path: string,
-): void {
-  const task: FounderContractTask = {
-    contract: request.contract,
-    action:
-      request.action === "read"
-        ? "read"
-        : "write",
-    repo: repository,
-    branch,
-    path,
-  };
-
-  enforceFounderContract(task);
-}
+// ……… 原有全部常量、工具函数（normalizePath / isSafePath / getRepository / getBranch / assertSafeWritePath / enforceContract）保持原样不变 ………
 
 export async function dispatchGitHubTask(
   request: GitHubTaskRequest,
@@ -318,6 +222,31 @@ export async function dispatchGitHubTask(
       path,
       ref: branch,
     });
+
+  // ===================== C141.13 安全门接入点 START =====================
+  // 【关键】在 writeGitHubFile 调用之前执行；已有文件信息传入安全门
+  const safetyCheck = await assertC14113AutonomousSafetyBeforeWrite({
+    request,
+    repository,
+    branch,
+    path,
+    existingFileSha: existing.success && existing.data ? existing.data.sha : undefined,
+    existingContent: existing.success && existing.data ? existing.data.content : undefined,
+    contract: request.contract,
+  });
+
+  if (!safetyCheck.allowed) {
+    return {
+      success: false,
+      action: request.action,
+      repository,
+      branch,
+      path,
+      code: "AUTONOMOUS_SAFETY_GATE_DENIED",
+      error: safetyCheck.reason,
+    };
+  }
+  // ===================== C141.13 安全门接入点 END =====================
 
   const commitMessage =
     request.commitMessage?.trim() ||
