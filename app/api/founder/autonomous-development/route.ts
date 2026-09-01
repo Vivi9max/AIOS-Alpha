@@ -3,6 +3,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  blockAutonomousDevelopmentTask,
   claimAutonomousDevelopmentTask,
   completeAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
@@ -244,19 +245,76 @@ export async function POST(request: NextRequest) {
        * dispatchGitHubTask is the only GitHub
        * execution path used by C142.2.
        */
-      const github =
-        await dispatchGitHubTask({
-          action: "write" as GitHubTaskAction,
-          repo: DEFAULT_REPOSITORY,
-          branch: DEFAULT_BRANCH,
-          path,
-          content,
-          commitMessage,
-          contract,
-        });
+      let github;
 
-      const commitSha =
-        github.write?.commitSha || "";
+try {
+  github =
+    await dispatchGitHubTask({
+      action: "write" as GitHubTaskAction,
+      repo: DEFAULT_REPOSITORY,
+      branch: DEFAULT_BRANCH,
+      path,
+      content,
+      commitMessage,
+      contract,
+    });
+} catch (error) {
+  const reason =
+    error instanceof Error
+      ? error.message
+      : "GitHub autonomous execution failed.";
+
+  const blocked =
+    blockAutonomousDevelopmentTask(
+      claimed.id,
+      reason,
+    );
+
+  return NextResponse.json(
+    {
+      ok: false,
+      action,
+      code: "AUTONOMOUS_EXECUTION_BLOCKED",
+      task: getAutonomousDevelopmentTask(
+        claimed.id,
+      ),
+      blocked,
+      error: reason,
+    },
+    { status: 502 },
+  );
+}
+
+if (!github.success) {
+  const reason =
+    github.error ||
+    github.code ||
+    "GitHub autonomous development execution failed.";
+
+  const blocked =
+    blockAutonomousDevelopmentTask(
+      claimed.id,
+      reason,
+    );
+
+  return NextResponse.json(
+    {
+      ok: false,
+      action,
+      code: "AUTONOMOUS_EXECUTION_FAILED",
+      task: getAutonomousDevelopmentTask(
+        claimed.id,
+      ),
+      blocked,
+      github,
+      error: reason,
+    },
+    { status: 502 },
+  );
+}
+
+const commitSha =
+  github.write?.commitSha || "";
 
       const readbackVerified =
         github.write?.readbackVerified === true;
