@@ -137,8 +137,9 @@ function enforceContract(
   path: string,
 ): void {
   const task: FounderContractTask = {
+    contract: request.contract,
     action: request.action,
-    repository,
+    repo: repository,
     branch,
     path,
   };
@@ -341,6 +342,7 @@ export async function dispatchGitHubTask(
 
   /*
    * Read existing content first.
+   *
    * This establishes the pre-write state and obtains
    * the SHA required by GitHub for an update.
    */
@@ -427,7 +429,7 @@ export async function dispatchGitHubTask(
    * REAL READBACK VERIFICATION.
    *
    * Do not report a verified write until the file is
-   * read again from the target branch and content matches.
+   * read again from the target branch and its content matches.
    */
   const readback =
     await readGitHubFile({
