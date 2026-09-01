@@ -1,0 +1,158 @@
+diff --git a/lib/github/c141.13-safety-runtime.ts b/lib/github/c141.13-safety-runtime.ts
+new file mode 100644
+index 0000000..8a7f211
+--- /dev/null
++++ b/lib/github/c141.13-safety-runtime.ts
+@@ -0,0 +1,44 @@
++import type { GitHubTaskRequest } from "./task-dispatch";
++import type { FounderDevelopmentContract } from "./founder-development-contract";
++
++import { evaluateFounderAutonomousSafety } from "./c141.13-safety-gate";
++
++export type C14113SafetyCheckContext = {
++  request: GitHubTaskRequest;
++  repository: string;
++  branch: string;
++  path: string;
++  existingFileSha?: string;
++  existingContent?: string;
++  contract: FounderDevelopmentContract;
++};
++
++export type C14113SafetyResult = {
++  allowed: boolean;
++  reason: string;
++};
++
++export async function assertC14113AutonomousSafetyBeforeWrite(
++  ctx: C14113SafetyCheckContext
++): Promise<C14113SafetyResult> {
++  const gateResult = await evaluateFounderAutonomousSafety(ctx);
++
++  if (!gateResult.allowed) {
++    return {
++      allowed: false,
++      reason: gateResult.reason ?? "C141.13 Autonomous Safety Gate denied write operation",
++    };
++  }
++
++  return { allowed: true, reason: "C141.13 Safety Gate passed" };
++}
+diff --git a/lib/github/task-dispatch.ts b/lib/github/task-dispatch.ts
+index 7b2f910..d124678 100644
+--- a/lib/github/task-dispatch.ts
++++ b/lib/github/task-dispatch.ts
+@@ -4,6 +4,7 @@ import {
+   readGitHubFile,
+   writeGitHubFile,
+ } from "@/lib/github/bridge";
++import { assertC14113AutonomousSafetyBeforeWrite } from "./c141.13-safety-runtime";
+ import {
+   enforceFounderContract,
+   type FounderContractTask,
+@@ -180,6 +181,24 @@ export async function dispatchGitHubTask(
+     await readGitHubFile({
+       repo: repository,
+       path,
+       ref: branch,
+     });
+ 
++  // C141.13: Autonomous Safety Gate before REAL_GITHUB_WRITE
++  const safetyCheck = await assertC14113AutonomousSafetyBeforeWrite({
++    request,
++    repository,
++    branch,
++    path,
++    existingFileSha: existing.success && existing.data ? existing.data.sha : undefined,
++    existingContent: existing.success && existing.data ? existing.data.content : undefined,
++    contract: request.contract,
++  });
++
++  if (!safetyCheck.allowed) {
++    return {
++      success: false,
++      action: request.action,
++      repository,
++      branch,
++      path,
++      code: "AUTONOMOUS_SAFETY_GATE_DENIED",
++      error: safetyCheck.reason,
++    };
++  }
++
+   const commitMessage =
+     request.commitMessage?.trim() ||
+     "feat(C141.10): founder contract governed GitHub write";
+ 
+   /*
+diff --git a/tests/c141.13-runtime-integration.test.ts b/tests/c141.13-runtime-integration.test.ts
+new file mode 100644
+index 0000000..9c32e71
+--- /dev/null
++++ b/tests/c141.13-runtime-integration.test.ts
+@@ -0,0 +1,70 @@
++import { dispatchGitHubTask } from "../lib/github/task-dispatch";
++import { readGitHubFile, writeGitHubFile } from "@/lib/github/bridge";
++import type { FounderDevelopmentContract } from "../lib/github/founder-development-contract";
++
++jest.mock("../lib/github/c141.13-safety-gate", () => ({
++  evaluateFounderAutonomousSafety: jest.fn(),
++}));
++
++jest.mock("@/lib/github/bridge", () => ({
++  getGitHubRepository: jest.fn().mockResolvedValue({ success: true }),
++  githubBridgeStatus: jest.fn().mockResolvedValue({ success: true }),
++  readGitHubFile: jest.fn().mockResolvedValue({
++    success: true,
++    data: { sha: "mock-sha", size: 100, content: "old content" },
++  }),
++  writeGitHubFile: jest.fn(),
++}));
++
++jest.mock("../lib/github/founder-contract-enforcement", () => ({
++  enforceFounderContract: jest.fn(),
++}));
++
++const mockContract: FounderDevelopmentContract = {
++  founderId: "test-founder",
++  authorized: true,
++  contractVersion: "C141.12",
++};
++
++describe("C141.13 Runtime Integration", () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++  });
++
++  test("Case A: Safety Gate ALLOW → writeGitHubFile is called", async () => {
++    const { evaluateFounderAutonomousSafety } = require("../lib/github/c141.13-safety-gate");
++    evaluateFounderAutonomousSafety.mockResolvedValue({ allowed: true, reason: "ok" });
++
++    const res = await dispatchGitHubTask({
++      action: "write",
++      path: "lib/test.ts",
++      content: "new content",
++      contract: mockContract,
++    });
++
++    expect(res.success).toBe(true);
++    expect(writeGitHubFile).toHaveBeenCalled();
++  });
++
++  test("Case B: Safety Gate DENY → writeGitHubFile NOT called, return AUTONOMOUS_SAFETY_GATE_DENIED", async () => {
++    const { evaluateFounderAutonomousSafety } = require("../lib/github/c141.13-safety-gate");
++    evaluateFounderAutonomousSafety.mockResolvedValue({ allowed: false, reason: "unsafe operation" });
++
++    const res = await dispatchGitHubTask({
++      action: "write",
++      path: "lib/test.ts",
++      content: "new content",
++      contract: mockContract,
++    });
++
++    expect(res.success).toBe(false);
++    expect(res.code).toBe("AUTONOMOUS_SAFETY_GATE_DENIED");
++    expect(res.error).toBe("unsafe operation");
++    expect(writeGitHubFile).not.toHaveBeenCalled();
++  });
++});
