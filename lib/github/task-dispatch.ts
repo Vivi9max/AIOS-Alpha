@@ -432,11 +432,11 @@ export async function dispatchGitHubTask(
    * read again from the target branch and its content matches.
    */
   const readback =
-    await readGitHubFile({
-      repo: repository,
-      path,
-      ref: branch,
-    });
+  await readGitHubFile({
+    repo: repository,
+    path,
+    ref: commitSha,
+  });
 
   if (!readback.success || !readback.data) {
     return {
