@@ -1,201 +1,148 @@
 import "server-only";
 
+import { NextRequest, NextResponse } from "next/server";
 import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+  claimAutonomousDevelopmentTask,
+  completeAutonomousDevelopmentTask,
+  createAutonomousDevelopmentTask,
+  getAutonomousDevelopmentTask,
+  listAutonomousDevelopmentTasks,
+} from "@/lib/github/autonomous-development-control-plane";
 
-import {
-  resolveAlphaIdentity,
-} from "@/lib/auth/identity";
+export const runtime = "nodejs";
 
-import {
-  runWithUserContext,
-} from "@/lib/runtime/request-context";
+function founderAuthorized(request: NextRequest) {
+  const configuredKey = process.env.FOUNDER_ACCESS_KEY;
 
-import {
-  isFounderConfigured,
-  isFounderRequest,
-} from "@/lib/founder/auth";
+  if (!configuredKey) {
+    return false;
+  }
 
-import {
-  runFounderAutonomousLiveTest,
-} from "@/lib/github/founder-autonomous-live-test";
+  const providedKey =
+    request.headers.get("x-founder-access-key") ??
+    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
 
-export const dynamic =
-  "force-dynamic";
-
-export const runtime =
-  "nodejs";
-
-function json(
-  body: Record<string, unknown>,
-  status = 200,
-) {
-  return NextResponse.json(
-    body,
-    {
-      status,
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
-    },
-  );
+  return Boolean(providedKey) && providedKey === configuredKey;
 }
 
-export async function GET(
-  request: NextRequest,
-) {
-  const configured =
-    isFounderConfigured();
+export async function GET(request: NextRequest) {
+  if (!founderAuthorized(request)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "FOUNDER_AUTH_REQUIRED",
+      },
+      { status: 401 },
+    );
+  }
 
-  const authenticated =
-    configured &&
-    isFounderRequest(request);
+  const taskId = request.nextUrl.searchParams.get("taskId");
 
-  return json({
-    success: true,
+  if (taskId) {
+    const task = getAutonomousDevelopmentTask(taskId);
 
-    code:
-      "C141_12_E_READY",
+    if (!task) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "TASK_NOT_FOUND",
+        },
+        { status: 404 },
+      );
+    }
 
-    endpoint:
-      "/api/founder/autonomous-development",
+    return NextResponse.json({
+      ok: true,
+      task,
+    });
+  }
 
-    method:
-      "POST",
-
-    founderOnly:
-      true,
-
-    authorizationConfigured:
-      configured,
-
-    authenticated,
-
-    pipeline: [
-      "FOUNDER_AUTH",
-      "ALPHA_IDENTITY",
-      "READ",
-      "ANALYZE",
-      "PLAN",
-      "WRITE",
-      "COMMIT",
-      "READBACK",
-      "VERIFY",
-    ],
+  return NextResponse.json({
+    ok: true,
+    tasks: listAutonomousDevelopmentTasks(),
   });
 }
 
-export async function POST(
-  request: NextRequest,
-) {
-  /*
-   * ------------------------------------------------
-   * C141.12-E.1
-   *
-   * Reuse the existing Founder Authentication
-   * Contract used by C141 Live Verification.
-   *
-   * DO NOT use AlphaIdentity as Founder authorization.
-   * ------------------------------------------------
-   */
-
-  if (!isFounderConfigured()) {
-    return json(
+export async function POST(request: NextRequest) {
+  if (!founderAuthorized(request)) {
+    return NextResponse.json(
       {
-        success: false,
-
-        code:
-          "FOUNDER_NOT_CONFIGURED",
-
-        error:
-          "Founder access is not configured.",
+        ok: false,
+        code: "FOUNDER_AUTH_REQUIRED",
       },
-      503,
+      { status: 401 },
     );
   }
-
-  if (!isFounderRequest(request)) {
-    return json(
-      {
-        success: false,
-
-        code:
-          "FOUNDER_UNAUTHORIZED",
-
-        error:
-          "Founder authorization failed.",
-      },
-      401,
-    );
-  }
-
-  const startedAt =
-    Date.now();
 
   try {
-    /*
-     * AlphaIdentity remains responsible only
-     * for runtime user isolation.
-     */
-    const identity =
-      resolveAlphaIdentity(
-        request,
+    const body = await request.json();
+
+    const action = body?.action;
+
+    if (action === "create") {
+      const task = createAutonomousDevelopmentTask({
+        objective: String(body?.objective ?? ""),
+        targetPaths: Array.isArray(body?.targetPaths)
+          ? body.targetPaths.map(String)
+          : [],
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          action,
+          task,
+        },
+        { status: 201 },
+      );
+    }
+
+    if (action === "claim") {
+      const task = claimAutonomousDevelopmentTask(String(body?.taskId ?? ""));
+
+      return NextResponse.json({
+        ok: true,
+        action,
+        task,
+      });
+    }
+
+    if (action === "complete") {
+      const receipt = completeAutonomousDevelopmentTask(
+        String(body?.taskId ?? ""),
+        {
+          commitSha: String(body?.commitSha ?? ""),
+          readbackVerified: body?.readbackVerified === true,
+          verificationPassed: body?.verificationPassed === true,
+        },
       );
 
-    const result =
-      await runWithUserContext(
-        identity.userId,
-        async () =>
-          runFounderAutonomousLiveTest(),
-      );
+      return NextResponse.json({
+        ok: true,
+        action,
+        receipt,
+      });
+    }
 
-    return json(
+    return NextResponse.json(
       {
-        ...result,
-
-        founderAuthenticated:
-          true,
-
-        userId:
-          identity.userId,
-
-        identityMode:
-          "founder-alpha",
-
-        latencyMs:
-          Date.now() -
-          startedAt,
+        ok: false,
+        code: "UNKNOWN_ACTION",
+        allowedActions: ["create", "claim", "complete"],
       },
-      result.success
-        ? 200
-        : 500,
+      { status: 400 },
     );
   } catch (error) {
-    console.error(
-      "[C141.12-E] Founder autonomous development failed",
-      error,
-    );
-
-    return json(
+    return NextResponse.json(
       {
-        success: false,
-
-        code:
-          "FOUNDER_AUTONOMOUS_RUNTIME_ERROR",
-
-        error:
+        ok: false,
+        code: "AUTONOMOUS_DEVELOPMENT_ERROR",
+        message:
           error instanceof Error
             ? error.message
-            : "Founder autonomous development failed.",
-
-        latencyMs:
-          Date.now() -
-          startedAt,
+            : "Unknown autonomous development error.",
       },
-      500,
+      { status: 400 },
     );
   }
 }
