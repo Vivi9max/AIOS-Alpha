@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
+const STORAGE_KEY =
+  "aios-founder-access-key";
 
 type Result = {
+  ok?: boolean;
   success?: boolean;
   code?: string;
   phase?: string;
@@ -23,17 +30,44 @@ type Result = {
 };
 
 export default function FounderAutonomousDevelopmentPage() {
-  const [accessKey, setAccessKey] =
-    useState("");
+  const [
+    accessKey,
+    setAccessKey,
+  ] = useState("");
 
-  const [running, setRunning] =
-    useState(false);
+  const [
+    running,
+    setRunning,
+  ] = useState(false);
 
-  const [result, setResult] =
-    useState<Result | null>(null);
+  const [
+    result,
+    setResult,
+  ] = useState<Result | null>(null);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  /*
+   * C142.3.2
+   *
+   * Reuse the Founder session established
+   * by the main Founder Console.
+   */
+  useEffect(() => {
+    const storedKey =
+      window.sessionStorage.getItem(
+        STORAGE_KEY,
+      );
+
+    if (storedKey) {
+      setAccessKey(
+        storedKey,
+      );
+    }
+  }, []);
 
   const handleRun = async () => {
     const key =
@@ -41,10 +75,19 @@ export default function FounderAutonomousDevelopmentPage() {
 
     if (!key) {
       setError(
-        "请输入 Founder Access Key",
+        "请输入 Founder Access Key，或先在 Founder Console 完成验证。",
       );
       return;
     }
+
+    /*
+     * Keep the Founder session synchronized
+     * across Founder-only pages.
+     */
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      key,
+    );
 
     setRunning(true);
     setError("");
@@ -60,6 +103,9 @@ export default function FounderAutonomousDevelopmentPage() {
             cache: "no-store",
 
             headers: {
+              "Content-Type":
+                "application/json",
+
               Accept:
                 "application/json",
 
@@ -67,7 +113,10 @@ export default function FounderAutonomousDevelopmentPage() {
                 `Bearer ${key}`,
             },
 
-            body: "{}",
+            body: JSON.stringify({
+              action:
+                "dispatch-planner",
+            }),
           },
         );
 
@@ -77,16 +126,39 @@ export default function FounderAutonomousDevelopmentPage() {
       setResult(data);
 
       if (!response.ok) {
+        if (
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
+        ) {
+          window.sessionStorage.removeItem(
+            STORAGE_KEY,
+          );
+        }
+
         setError(
           data.error ||
             `Request failed (${response.status})`,
+        );
+
+        return;
+      }
+
+      if (
+        data.ok === false &&
+        data.success !== true
+      ) {
+        setError(
+          data.error ||
+            "Autonomous development dispatch failed.",
         );
       }
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "C141.12-F Live Test failed.",
+          : "Autonomous development request failed.",
       );
     } finally {
       setRunning(false);
@@ -98,8 +170,10 @@ export default function FounderAutonomousDevelopmentPage() {
       style={{
         minHeight: "100vh",
         background: "#fafafa",
-        padding: "24px 16px",
-        boxSizing: "border-box",
+        padding:
+          "24px 16px",
+        boxSizing:
+          "border-box",
       }}
     >
       <div
@@ -108,24 +182,31 @@ export default function FounderAutonomousDevelopmentPage() {
           maxWidth: 620,
           margin: "0 auto",
           background: "#fff",
-          border: "1px solid #e5e5e5",
+          border:
+            "1px solid #e5e5e5",
           borderRadius: 14,
           padding: 28,
-          boxSizing: "border-box",
+          boxSizing:
+            "border-box",
           boxShadow:
             "0 2px 8px rgba(0,0,0,0.05)",
         }}
       >
         <div
           style={{
-            display: "inline-block",
-            padding: "4px 9px",
-            border: "1px solid #dc2626",
+            display:
+              "inline-block",
+            padding:
+              "4px 9px",
+            border:
+              "1px solid #dc2626",
             borderRadius: 5,
-            color: "#dc2626",
+            color:
+              "#dc2626",
             fontSize: 11,
             fontWeight: 700,
-            letterSpacing: "0.05em",
+            letterSpacing:
+              "0.05em",
           }}
         >
           FOUNDER ONLY
@@ -140,7 +221,7 @@ export default function FounderAutonomousDevelopmentPage() {
             color: "#111",
           }}
         >
-          C141.12-F
+          C142.3
         </h1>
 
         <h2
@@ -152,7 +233,7 @@ export default function FounderAutonomousDevelopmentPage() {
             color: "#333",
           }}
         >
-          Autonomous Development Live Test
+          Planner Autonomous Development Dispatch
         </h2>
 
         <p
@@ -164,15 +245,17 @@ export default function FounderAutonomousDevelopmentPage() {
             color: "#666",
           }}
         >
-          Founder-only production verification of
-          the AIOS autonomous development loop.
+          Founder-only dispatch from Planner
+          into the Autonomous Development
+          Control Plane.
         </p>
 
         <div
           style={{
             padding: 14,
             borderRadius: 9,
-            background: "#f8fafc",
+            background:
+              "#f8fafc",
             border:
               "1px solid #e5e7eb",
             marginBottom: 20,
@@ -185,19 +268,19 @@ export default function FounderAutonomousDevelopmentPage() {
               marginBottom: 6,
             }}
           >
-            FIXED TEST TARGET
+            FOUNDER AUTH SESSION
           </div>
 
-          <code
+          <div
             style={{
               fontSize: 13,
               color: "#111",
-              wordBreak:
-                "break-all",
             }}
           >
-            docs/c141-autonomous-development-live-test.md
-          </code>
+            {accessKey
+              ? "Founder Access Key loaded"
+              : "Founder Access Key required"}
+          </div>
         </div>
 
         <div
@@ -208,7 +291,8 @@ export default function FounderAutonomousDevelopmentPage() {
           <label
             htmlFor="founder-access-key"
             style={{
-              display: "block",
+              display:
+                "block",
               marginBottom: 7,
               fontSize: 13,
               fontWeight: 650,
@@ -229,7 +313,8 @@ export default function FounderAutonomousDevelopmentPage() {
             }
             onKeyDown={(event) => {
               if (
-                event.key === "Enter" &&
+                event.key ===
+                  "Enter" &&
                 !running
               ) {
                 void handleRun();
@@ -239,8 +324,10 @@ export default function FounderAutonomousDevelopmentPage() {
             spellCheck={false}
             placeholder="Enter Founder Access Key"
             style={{
-              width: "100%",
-              boxSizing: "border-box",
+              width:
+                "100%",
+              boxSizing:
+                "border-box",
               padding:
                 "11px 12px",
               border:
@@ -259,7 +346,8 @@ export default function FounderAutonomousDevelopmentPage() {
             void handleRun()
           }
           style={{
-            width: "100%",
+            width:
+              "100%",
             padding:
               "12px 16px",
             border: "none",
@@ -278,8 +366,8 @@ export default function FounderAutonomousDevelopmentPage() {
           }}
         >
           {running
-            ? "Running Autonomous Test..."
-            : "RUN C141.12-F LIVE TEST"}
+            ? "Dispatching Planner Task..."
+            : "RUN PLANNER AUTONOMOUS DISPATCH"}
         </button>
 
         {error && (
@@ -290,8 +378,10 @@ export default function FounderAutonomousDevelopmentPage() {
               borderRadius: 8,
               border:
                 "1px solid #fecaca",
-              background: "#fef2f2",
-              color: "#b91c1c",
+              background:
+                "#fef2f2",
+              color:
+                "#b91c1c",
               fontSize: 13,
               lineHeight: 1.5,
             }}
@@ -323,18 +413,18 @@ export default function FounderAutonomousDevelopmentPage() {
 
           {[
             "FOUNDER_AUTH",
-            "READ",
-            "ANALYZE",
-            "PLAN",
-            "WRITE",
-            "COMMIT",
-            "READBACK",
-            "VERIFY",
+            "PLANNER",
+            "ELIGIBILITY",
+            "AUTONOMOUS_TASK",
+            "CLAIM",
+            "C142.2 EXECUTION",
+            "C141 GITHUB BRIDGE",
           ].map((step) => (
             <div
               key={step}
               style={{
-                display: "flex",
+                display:
+                  "flex",
                 alignItems:
                   "center",
                 gap: 9,
@@ -368,10 +458,12 @@ export default function FounderAutonomousDevelopmentPage() {
               padding: 16,
               borderRadius: 10,
               border:
+                result.ok ||
                 result.success
                   ? "1px solid #bbf7d0"
                   : "1px solid #fecaca",
               background:
+                result.ok ||
                 result.success
                   ? "#f0fdf4"
                   : "#fef2f2",
@@ -385,166 +477,68 @@ export default function FounderAutonomousDevelopmentPage() {
                 color: "#111",
               }}
             >
-              {result.success
-                ? "C141.12-F VERIFIED"
-                : "C141.12-F FAILED"}
+              {result.ok ||
+              result.success
+                ? "DISPATCH ACCEPTED"
+                : "DISPATCH BLOCKED"}
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 9,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {result.code && (
-                <div>
-                  <strong>Code:</strong>{" "}
-                  {result.code}
-                </div>
-              )}
+            {result.code && (
+              <div
+                style={{
+                  fontSize: 13,
+                  marginBottom: 8,
+                }}
+              >
+                <strong>
+                  Code:
+                </strong>{" "}
+                {result.code}
+              </div>
+            )}
 
-              {result.phase && (
-                <div>
-                  <strong>Phase:</strong>{" "}
-                  {result.phase}
-                </div>
-              )}
+            {result.phase && (
+              <div
+                style={{
+                  fontSize: 13,
+                  marginBottom: 8,
+                }}
+              >
+                <strong>
+                  Phase:
+                </strong>{" "}
+                {result.phase}
+              </div>
+            )}
 
-              {result.path && (
-                <div
-                  style={{
-                    wordBreak:
-                      "break-all",
-                  }}
-                >
-                  <strong>Path:</strong>{" "}
-                  {result.path}
-                </div>
-              )}
+            {result.error && (
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  color:
+                    "#b91c1c",
+                  lineHeight: 1.5,
+                }}
+              >
+                {result.error}
+              </div>
+            )}
 
-              {result.commitSha && (
-                <div
-                  style={{
-                    wordBreak:
-                      "break-all",
-                  }}
-                >
-                  <strong>
-                    Commit SHA:
-                  </strong>{" "}
-                  {result.commitSha}
-                </div>
-              )}
-
-              <div>
+            {result.readbackVerified !==
+              undefined && (
+              <div
+                style={{
+                  fontSize: 13,
+                  marginTop: 8,
+                }}
+              >
                 <strong>
                   Readback:
                 </strong>{" "}
                 {result.readbackVerified
                   ? "VERIFIED"
                   : "NOT VERIFIED"}
-              </div>
-            </div>
-
-            {result.commitUrl && (
-              <a
-                href={
-                  result.commitUrl
-                }
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display:
-                    "inline-block",
-                  marginTop: 14,
-                  color: "#2563eb",
-                  fontSize: 13,
-                  textDecoration:
-                    "underline",
-                }}
-              >
-                Open GitHub Commit
-              </a>
-            )}
-
-            {result.checks &&
-              result.checks.length >
-                0 && (
-                <div
-                  style={{
-                    marginTop: 18,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#666",
-                      marginBottom: 8,
-                    }}
-                  >
-                    VERIFICATION CHECKS
-                  </div>
-
-                  {result.checks.map(
-                    (check) => (
-                      <div
-                        key={check}
-                        style={{
-                          fontSize: 12,
-                          padding:
-                            "4px 0",
-                          color:
-                            "#166534",
-                        }}
-                      >
-                        ✓ {check}
-                      </div>
-                    ),
-                  )}
-                </div>
-              )}
-
-            {result.verification
-              ?.checks &&
-              result.verification
-                .checks.length >
-                0 && (
-                <div
-                  style={{
-                    marginTop: 12,
-                  }}
-                >
-                  {result.verification.checks.map(
-                    (check) => (
-                      <div
-                        key={check}
-                        style={{
-                          fontSize: 12,
-                          padding:
-                            "3px 0",
-                          color:
-                            "#166534",
-                        }}
-                      >
-                        ✓ {check}
-                      </div>
-                    ),
-                  )}
-                </div>
-              )}
-
-            {result.error && (
-              <div
-                style={{
-                  marginTop: 14,
-                  fontSize: 13,
-                  color: "#b91c1c",
-                }}
-              >
-                {result.error}
               </div>
             )}
           </section>
