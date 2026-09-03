@@ -7,6 +7,11 @@ import {
 } from "next/server";
 
 import {
+  isFounderConfigured,
+  isFounderRequest,
+} from "@/lib/founder/auth";
+
+import {
   blockAutonomousDevelopmentTask,
   claimAutonomousDevelopmentTask,
   completeAutonomousDevelopmentTask,
@@ -21,13 +26,13 @@ import {
 
 import {
   dispatchGitHubTask,
-  type GitHubTaskAction,
 } from "@/lib/github/task-dispatch";
 
 import {
   createFounderDevelopmentContract,
 } from "@/lib/github/founder-development-contract";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DEFAULT_REPOSITORY =
@@ -36,31 +41,63 @@ const DEFAULT_REPOSITORY =
 const DEFAULT_BRANCH =
   "main";
 
-function founderAuthorized(
-  request: NextRequest,
-): boolean {
-  const configuredKey =
-    process.env.FOUNDER_ACCESS_KEY;
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
 
-  if (!configuredKey) {
-    return false;
+function requireFounder(
+  request: NextRequest,
+):
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      response: NextResponse;
+    } {
+  if (!isFounderConfigured()) {
+    return {
+      ok: false,
+      response: json(
+        {
+          ok: false,
+          code:
+            "FOUNDER_NOT_CONFIGURED",
+          error:
+            "Founder access is not configured.",
+        },
+        503,
+      ),
+    };
   }
 
-  const providedKey =
-    request.headers.get(
-      "x-founder-access-key",
-    ) ??
-    request.headers
-      .get("authorization")
-      ?.replace(
-        /^Bearer\s+/i,
-        "",
-      );
+  if (!isFounderRequest(request)) {
+    return {
+      ok: false,
+      response: json(
+        {
+          ok: false,
+          code:
+            "FOUNDER_UNAUTHORIZED",
+          error:
+            "Founder authorization failed.",
+        },
+        401,
+      ),
+    };
+  }
 
-  return (
-    Boolean(providedKey) &&
-    providedKey === configuredKey
-  );
+  return {
+    ok: true,
+  };
 }
 
 function createContract(input: {
@@ -90,24 +127,18 @@ function createContract(input: {
 
     commitMessage:
       input.commitMessage?.trim() ||
-      "feat(C142.2): execute founder autonomous development task",
+      "feat(C142.3.1): execute founder autonomous development task",
   });
 }
 
 export async function GET(
   request: NextRequest,
 ) {
-  if (!founderAuthorized(request)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code:
-          "FOUNDER_AUTH_REQUIRED",
-      },
-      {
-        status: 401,
-      },
-    );
+  const auth =
+    requireFounder(request);
+
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const taskId =
@@ -122,25 +153,23 @@ export async function GET(
       );
 
     if (!task) {
-      return NextResponse.json(
+      return json(
         {
           ok: false,
           code:
             "TASK_NOT_FOUND",
         },
-        {
-          status: 404,
-        },
+        404,
       );
     }
 
-    return NextResponse.json({
+    return json({
       ok: true,
       task,
     });
   }
 
-  return NextResponse.json({
+  return json({
     ok: true,
     tasks:
       listAutonomousDevelopmentTasks(),
@@ -150,17 +179,11 @@ export async function GET(
 export async function POST(
   request: NextRequest,
 ) {
-  if (!founderAuthorized(request)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code:
-          "FOUNDER_AUTH_REQUIRED",
-      },
-      {
-        status: 401,
-      },
-    );
+  const auth =
+    requireFounder(request);
+
+  if (!auth.ok) {
+    return auth.response;
   }
 
   try {
@@ -170,18 +193,16 @@ export async function POST(
     const action =
       body?.action;
 
-    /*
-     * C142.1 task creation remains available.
-     */
     if (
       action === "create"
     ) {
       const task =
         createAutonomousDevelopmentTask({
-          objective: String(
-            body?.objective ??
-              "",
-          ),
+          objective:
+            String(
+              body?.objective ??
+                "",
+            ),
 
           targetPaths:
             Array.isArray(
@@ -193,23 +214,16 @@ export async function POST(
               : [],
         });
 
-      return NextResponse.json(
+      return json(
         {
           ok: true,
-
           action,
-
           task,
         },
-        {
-          status: 201,
-        },
+        201,
       );
     }
 
-    /*
-     * C142.1 task claiming remains available.
-     */
     if (
       action === "claim"
     ) {
@@ -221,11 +235,9 @@ export async function POST(
           ),
         );
 
-      return NextResponse.json({
+      return json({
         ok: true,
-
         action,
-
         task,
       });
     }
@@ -241,10 +253,7 @@ export async function POST(
      *   →
      * Claim
      *
-     * This action does not write to GitHub.
-     *
-     * Actual GitHub execution remains exclusively
-     * behind C142.2 / dispatchGitHubTask().
+     * No GitHub write occurs here.
      */
     if (
       action ===
@@ -256,38 +265,32 @@ export async function POST(
       if (
         !dispatch.success
       ) {
-        return NextResponse.json(
+        return json(
           {
             ok: false,
-
             action,
-
             ...dispatch,
           },
-          {
-            status:
-              dispatch.eligibility ===
-              "blocked"
-                ? 409
-                : 200,
-          },
+          dispatch.eligibility ===
+            "blocked"
+            ? 409
+            : 200,
         );
       }
 
-      return NextResponse.json({
+      return json({
         ok: true,
-
         action,
-
         ...dispatch,
       });
     }
 
     /*
-     * C142.2 REAL AUTONOMOUS DEVELOPMENT EXECUTION
+     * C142.2
      *
-     * This is the Control Plane action that
-     * reaches the C141 GitHub Direct Bridge.
+     * Real autonomous execution
+     * through the existing C141
+     * GitHub Direct Bridge.
      */
     if (
       action === "execute"
@@ -317,56 +320,40 @@ export async function POST(
           : undefined;
 
       if (!objective) {
-        return NextResponse.json(
+        return json(
           {
             ok: false,
-
             code:
               "DEVELOPMENT_OBJECTIVE_REQUIRED",
           },
-          {
-            status: 400,
-          },
+          400,
         );
       }
 
       if (!path) {
-        return NextResponse.json(
+        return json(
           {
             ok: false,
-
             code:
               "TARGET_PATH_REQUIRED",
           },
-          {
-            status: 400,
-          },
+          400,
         );
       }
 
       if (
         content === undefined
       ) {
-        return NextResponse.json(
+        return json(
           {
             ok: false,
-
             code:
               "WRITE_CONTENT_REQUIRED",
           },
-          {
-            status: 400,
-          },
+          400,
         );
       }
 
-      /*
-       * C142.2 currently executes one target
-       * file per autonomous development task.
-       *
-       * This keeps the execution boundary aligned
-       * with the C141 GitHub task dispatcher.
-       */
       const task =
         createAutonomousDevelopmentTask({
           objective,
@@ -384,25 +371,16 @@ export async function POST(
       const contract =
         createContract({
           objective,
-
           path,
-
           commitMessage,
         });
 
-      /*
-       * Real C141 bridge execution.
-       *
-       * dispatchGitHubTask is the only GitHub
-       * execution path used by C142.2.
-       */
       let github;
 
       try {
         github =
           await dispatchGitHubTask({
-            action:
-              "write" as GitHubTaskAction,
+            action: "write",
 
             repo:
               DEFAULT_REPOSITORY,
@@ -430,7 +408,7 @@ export async function POST(
             reason,
           );
 
-        return NextResponse.json(
+        return json(
           {
             ok: false,
 
@@ -449,9 +427,7 @@ export async function POST(
             error:
               reason,
           },
-          {
-            status: 502,
-          },
+          502,
         );
       }
 
@@ -467,7 +443,7 @@ export async function POST(
             reason,
           );
 
-        return NextResponse.json(
+        return json(
           {
             ok: false,
 
@@ -488,9 +464,7 @@ export async function POST(
             error:
               reason,
           },
-          {
-            status: 502,
-          },
+          502,
         );
       }
 
@@ -520,7 +494,7 @@ export async function POST(
           },
         );
 
-      return NextResponse.json({
+      return json({
         ok:
           github.success,
 
@@ -535,10 +509,6 @@ export async function POST(
       });
     }
 
-    /*
-     * C142.1 manual completion remains
-     * available for compatibility.
-     */
     if (
       action === "complete"
     ) {
@@ -565,16 +535,14 @@ export async function POST(
           },
         );
 
-      return NextResponse.json({
+      return json({
         ok: true,
-
         action,
-
         receipt,
       });
     }
 
-    return NextResponse.json(
+    return json(
       {
         ok: false,
 
@@ -589,12 +557,10 @@ export async function POST(
           "complete",
         ],
       },
-      {
-        status: 400,
-      },
+      400,
     );
   } catch (error) {
-    return NextResponse.json(
+    return json(
       {
         ok: false,
 
@@ -606,9 +572,7 @@ export async function POST(
             ? error.message
             : "Unknown autonomous development error.",
       },
-      {
-        status: 400,
-      },
+      400,
     );
   }
 }
