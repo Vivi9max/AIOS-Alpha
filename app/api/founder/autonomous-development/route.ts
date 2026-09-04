@@ -1,4 +1,3 @@
-// app/api/founder/autonomous-development/route.ts
 import "server-only";
 
 import {
@@ -25,6 +24,10 @@ import {
 } from "@/lib/github/planner-autonomous-dispatch";
 
 import {
+  executeClaimedAutonomousDevelopmentTask,
+} from "@/lib/github/autonomous-development-executor";
+
+import {
   dispatchGitHubTask,
 } from "@/lib/github/task-dispatch";
 
@@ -32,8 +35,11 @@ import {
   createFounderDevelopmentContract,
 } from "@/lib/github/founder-development-contract";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
 
 const DEFAULT_REPOSITORY =
   "Vivi9max/AIOS-Alpha";
@@ -45,12 +51,16 @@ function json(
   body: Record<string, unknown>,
   status = 200,
 ) {
-  return NextResponse.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
+  return NextResponse.json(
+    body,
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
     },
-  });
+  );
 }
 
 function requireFounder(
@@ -63,7 +73,9 @@ function requireFounder(
       ok: false;
       response: NextResponse;
     } {
-  if (!isFounderConfigured()) {
+  if (
+    !isFounderConfigured()
+  ) {
     return {
       ok: false,
       response: json(
@@ -79,7 +91,9 @@ function requireFounder(
     };
   }
 
-  if (!isFounderRequest(request)) {
+  if (
+    !isFounderRequest(request)
+  ) {
     return {
       ok: false,
       response: json(
@@ -127,7 +141,7 @@ function createContract(input: {
 
     commitMessage:
       input.commitMessage?.trim() ||
-      "feat(C142.3.1): execute founder autonomous development task",
+      "feat(C142.4): execute founder autonomous development task",
   });
 }
 
@@ -252,8 +266,6 @@ export async function POST(
      * Autonomous Development Task
      *   →
      * Claim
-     *
-     * No GitHub write occurs here.
      */
     if (
       action ===
@@ -286,11 +298,84 @@ export async function POST(
     }
 
     /*
+     * C142.4
+     *
+     * Planner
+     *   →
+     * Development Intent
+     *   →
+     * Target Path
+     *   →
+     * Eligibility
+     *   →
+     * Claim
+     *   →
+     * READ
+     *   →
+     * ANALYZE
+     *   →
+     * PLAN
+     *   →
+     * GENERATE
+     *   →
+     * C141 WRITE
+     *   →
+     * COMMIT
+     *   →
+     * READBACK
+     *   →
+     * VERIFY
+     */
+    if (
+      action ===
+      "execute-planner"
+    ) {
+      const dispatch =
+        await dispatchNextPlannerDevelopmentTask();
+
+      if (
+        !dispatch.success ||
+        !dispatch.autonomousTask?.id
+      ) {
+        return json(
+          {
+            ok: false,
+            action,
+            ...dispatch,
+          },
+          dispatch.eligibility ===
+            "blocked"
+            ? 409
+            : 200,
+        );
+      }
+
+      const execution =
+        await executeClaimedAutonomousDevelopmentTask(
+          dispatch.autonomousTask.id,
+        );
+
+      return json(
+        {
+          ok:
+            execution.success,
+          action,
+          planner:
+            dispatch,
+          execution,
+        },
+        execution.success
+          ? 200
+          : 502,
+      );
+    }
+
+    /*
      * C142.2
      *
-     * Real autonomous execution
-     * through the existing C141
-     * GitHub Direct Bridge.
+     * Manual Founder autonomous execution.
+     *
+     * This existing path remains available.
      */
     if (
       action === "execute"
@@ -357,7 +442,6 @@ export async function POST(
       const task =
         createAutonomousDevelopmentTask({
           objective,
-
           targetPaths: [
             path,
           ],
@@ -381,19 +465,13 @@ export async function POST(
         github =
           await dispatchGitHubTask({
             action: "write",
-
             repo:
               DEFAULT_REPOSITORY,
-
             branch:
               DEFAULT_BRANCH,
-
             path,
-
             content,
-
             commitMessage,
-
             contract,
           });
       } catch (error) {
@@ -411,19 +489,14 @@ export async function POST(
         return json(
           {
             ok: false,
-
             action,
-
             code:
               "AUTONOMOUS_EXECUTION_BLOCKED",
-
             task:
               getAutonomousDevelopmentTask(
                 claimed.id,
               ),
-
             blocked,
-
             error:
               reason,
           },
@@ -431,7 +504,9 @@ export async function POST(
         );
       }
 
-      if (!github.success) {
+      if (
+        !github.success
+      ) {
         const reason =
           github.error ||
           github.code ||
@@ -446,21 +521,15 @@ export async function POST(
         return json(
           {
             ok: false,
-
             action,
-
             code:
               "AUTONOMOUS_EXECUTION_FAILED",
-
             task:
               getAutonomousDevelopmentTask(
                 claimed.id,
               ),
-
             blocked,
-
             github,
-
             error:
               reason,
           },
@@ -470,8 +539,7 @@ export async function POST(
 
       const commitSha =
         github.write
-          ?.commitSha ||
-        "";
+          ?.commitSha || "";
 
       const readbackVerified =
         github.write
@@ -487,9 +555,7 @@ export async function POST(
           claimed.id,
           {
             commitSha,
-
             readbackVerified,
-
             verificationPassed,
           },
         );
@@ -497,14 +563,10 @@ export async function POST(
       return json({
         ok:
           github.success,
-
         action,
-
         task:
           claimed,
-
         github,
-
         receipt,
       });
     }
@@ -545,14 +607,13 @@ export async function POST(
     return json(
       {
         ok: false,
-
         code:
           "UNKNOWN_ACTION",
-
         allowedActions: [
           "create",
           "claim",
           "dispatch-planner",
+          "execute-planner",
           "execute",
           "complete",
         ],
@@ -563,10 +624,8 @@ export async function POST(
     return json(
       {
         ok: false,
-
         code:
           "AUTONOMOUS_DEVELOPMENT_ERROR",
-
         message:
           error instanceof Error
             ? error.message
