@@ -24,6 +24,11 @@ import {
   executePlannerGitHubRead,
 } from "@/lib/github/planner-github-read";
 
+import {
+  isLocale,
+  type Locale,
+} from "@/lib/i18n";
+
 export const dynamic =
   "force-dynamic";
 
@@ -32,6 +37,23 @@ export const runtime =
 
 interface ChatRequestBody {
   prompt?: unknown;
+}
+
+function resolveRequestLocale(
+  request: NextRequest,
+): Locale {
+  const header =
+    request.headers.get(
+      "x-aios-locale",
+    );
+
+  if (
+    isLocale(header)
+  ) {
+    return header;
+  }
+
+  return "en";
 }
 
 function applyIdentityCookie(
@@ -43,11 +65,15 @@ function applyIdentityCookie(
     userId,
     {
       httpOnly: true,
+
       sameSite: "lax",
+
       secure:
         process.env.NODE_ENV ===
         "production",
+
       path: "/",
+
       maxAge:
         60 * 60 * 24 * 365,
     },
@@ -58,6 +84,7 @@ function applyIdentityCookie(
 
 async function executeChatPrompt(
   prompt: string,
+  locale: Locale,
 ) {
   /*
    * C141.11.2-C
@@ -112,7 +139,11 @@ async function executeChatPrompt(
         success: false,
 
         content:
-          "AIOS GitHub READ 路由未能确认该请求。为避免猜测仓库内容，本次执行已停止。",
+          locale === "ja"
+            ? "AIOS GitHub READ ルートでリクエストを確認できませんでした。リポジトリ内容を推測しないため、今回の実行を停止しました。"
+            : locale === "zh-CN"
+              ? "AIOS GitHub READ 路由未能确认该请求。为避免猜测仓库内容，本次执行已停止。"
+              : "AIOS could not confirm the GitHub READ route for this request. Execution was stopped to avoid guessing repository content.",
 
         error:
           "GitHub READ request was detected but the Planner GitHub Read Bridge did not confirm the task.",
@@ -131,9 +162,11 @@ async function executeChatPrompt(
           ],
 
           github: {
-            detected: true,
+            detected:
+              true,
 
-            success: false,
+            success:
+              false,
 
             path:
               detection.path,
@@ -149,7 +182,11 @@ async function executeChatPrompt(
         success: false,
 
         content:
-          "GitHub READ 执行失败。AIOS 没有使用模型猜测仓库内容。",
+          locale === "ja"
+            ? "GitHub READ の実行に失敗しました。AIOS はモデルによるリポジトリ内容の推測を行っていません。"
+            : locale === "zh-CN"
+              ? "GitHub READ 执行失败。AIOS 没有使用模型猜测仓库内容。"
+              : "GitHub READ execution failed. AIOS did not use the model to guess repository content.",
 
         error:
           githubRead.error ??
@@ -172,9 +209,11 @@ async function executeChatPrompt(
           ],
 
           github: {
-            detected: true,
+            detected:
+              true,
 
-            success: false,
+            success:
+              false,
 
             path:
               githubRead.path,
@@ -210,9 +249,11 @@ async function executeChatPrompt(
         ],
 
         github: {
-          detected: true,
+          detected:
+            true,
 
-          success: true,
+          success:
+            true,
 
           path:
             githubRead.path,
@@ -253,9 +294,14 @@ async function executeChatPrompt(
    *
    * No GitHub READ request:
    * Chat → Runtime → Provider.
+   *
+   * Locale is transport metadata and enters
+   * Runtime as a trusted field. It is NOT appended
+   * to the user prompt.
    */
   return executeRuntime({
     prompt,
+    locale,
   });
 }
 
@@ -320,7 +366,8 @@ export async function GET(
           Date.now(),
       },
       {
-        status: 200,
+        status:
+          200,
 
         headers: {
           "Cache-Control":
@@ -360,10 +407,11 @@ export async function POST(
       const response =
         NextResponse.json(
           {
-            success: false,
+            success:
+              false,
 
             content:
-              "请求格式错误。",
+              "Invalid request format.",
 
             error:
               "Content-Type must be application/json.",
@@ -375,7 +423,8 @@ export async function POST(
               Date.now(),
           },
           {
-            status: 415,
+            status:
+              415,
           },
         );
 
@@ -395,14 +444,24 @@ export async function POST(
         ? body.prompt.trim()
         : "";
 
+    const locale =
+      resolveRequestLocale(
+        request,
+      );
+
     if (!prompt) {
       const response =
         NextResponse.json(
           {
-            success: false,
+            success:
+              false,
 
             content:
-              "请输入内容。",
+              locale === "ja"
+                ? "内容を入力してください。"
+                : locale === "zh-CN"
+                  ? "请输入内容。"
+                  : "Please enter a message.",
 
             error:
               "Prompt is required.",
@@ -414,7 +473,8 @@ export async function POST(
               Date.now(),
           },
           {
-            status: 400,
+            status:
+              400,
           },
         );
 
@@ -430,6 +490,7 @@ export async function POST(
         () =>
           executeChatPrompt(
             prompt,
+            locale,
           ),
       );
 
@@ -446,6 +507,8 @@ export async function POST(
 
           dataIsolated:
             true,
+
+          locale,
 
           latencyMs:
             Date.now() -
@@ -479,13 +542,23 @@ export async function POST(
       error,
     );
 
+    const locale =
+      resolveRequestLocale(
+        request,
+      );
+
     const response =
       NextResponse.json(
         {
-          success: false,
+          success:
+            false,
 
           content:
-            "AIOS Runtime 暂时不可用。",
+            locale === "ja"
+              ? "AIOS Runtime は一時的に利用できません。"
+              : locale === "zh-CN"
+                ? "AIOS Runtime 暂时不可用。"
+                : "AIOS Runtime is temporarily unavailable.",
 
           error:
             errorMessage,
@@ -499,6 +572,8 @@ export async function POST(
           userId:
             identity.userId,
 
+          locale,
+
           timestamp:
             Date.now(),
 
@@ -507,7 +582,8 @@ export async function POST(
             startedAt,
         },
         {
-          status: 500,
+          status:
+            500,
 
           headers: {
             "Cache-Control":
