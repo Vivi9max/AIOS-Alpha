@@ -67,7 +67,7 @@ async function hydrateRuntimeContext() {
 
 function buildTrustedRuntimePolicy(
   plan: RuntimePlan,
-  locale: Locale,
+  locale: Locale
 ): string {
   const mode =
     plan.responseMode;
@@ -109,21 +109,30 @@ function buildTrustedRuntimePolicy(
     string[]
   > = {
     en: [
-      "Respond in English by default.",
+      "Respond naturally in English by default.",
+      "Use clear, idiomatic English rather than literal translation.",
       "Keep technical identifiers, code, file paths and provider names unchanged.",
+      "Match the user's tone when appropriate.",
       "If the user explicitly requests another language, follow that explicit request.",
     ],
 
     "zh-CN": [
-      "默认使用简体中文回答。",
+      "默认使用自然、清晰的简体中文回答。",
+      "避免机械直译，优先使用符合中文表达习惯的自然句式。",
       "代码、文件路径、技术标识符和 Provider 名称保持原样。",
+      "根据用户语气自然调整表达方式。",
       "如果用户明确要求其他语言，则遵循用户明确指定的语言。",
     ],
 
     ja: [
-      "デフォルトでは日本語で回答してください。",
-      "コード、ファイルパス、技術識別子、Provider 名はそのまま維持してください。",
-      "ユーザーが別の言語を明示的に要求した場合は、その指定を優先してください。",
+      "デフォルトでは、自然で読みやすい日本語で回答してください。",
+      "中国語や英語の語順をそのまま日本語に置き換えるような直訳調の表現は避けてください。",
+      "日本語として自然な語順、助詞、言い回しを使ってください。",
+      "日常的な会話では、堅すぎる敬語や不自然に形式ばった表現を避け、自然で親しみやすい文章にしてください。",
+      "正式な説明や業務上の内容では、丁寧で落ち着いた表現を使ってください。ただし、過剰な敬語にはしないでください。",
+      "UI、製品説明、エラーメッセージでは、日本のユーザーが実際のサービスで目にして違和感のない自然な表現を優先してください。",
+      "技術的な識別子、コード、ファイルパス、Provider 名は原文のまま維持してください。",
+      "ユーザーが別の言語を明示的に指定した場合は、その指定を優先してください。",
     ],
   };
 
@@ -180,8 +189,7 @@ async function executeWorkspacePlan(
     await saveMemory();
 
     return {
-      success:
-        true,
+      success: true,
 
       provider:
         activeProvider,
@@ -249,8 +257,7 @@ async function executeWorkspacePlan(
     await saveMemory();
 
     return {
-      success:
-        false,
+      success: false,
 
       provider:
         activeProvider,
@@ -313,7 +320,7 @@ async function executeWorkspacePlan(
 
 async function executeAIPlan(
   plan: RuntimePlan,
-  locale: Locale,
+  locale: Locale
 ): Promise<RuntimeExecutionResult> {
   const context =
     await buildRuntimeContext(
@@ -331,7 +338,7 @@ async function executeAIPlan(
    * 2. current user request as user message
    * 3. normal conversation/profile data
    *
-   * Locale is also trusted Runtime metadata.
+   * Locale is trusted Runtime metadata.
    * It is never appended to the user's prompt.
    *
    * Capability context remains execution metadata.
@@ -383,7 +390,7 @@ async function executeAIPlan(
 
 export async function executeRuntimePlan(
   plan: RuntimePlan,
-  locale: Locale = "en",
+  locale: Locale = "en"
 ): Promise<RuntimeExecutionResult> {
   if (
     plan.type ===
