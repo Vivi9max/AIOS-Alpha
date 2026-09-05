@@ -11,7 +11,8 @@ import {
 } from "@/lib/memory/store";
 
 import {
-  getProviderRuntimeStatus,
+  getRuntimeHealth,
+  listProviders,
   providerStatus,
 } from "@/lib/runtime/providerManager";
 
@@ -29,8 +30,11 @@ export async function GET() {
     const provider =
       providerStatus();
 
-    const diagnostics =
-      getProviderRuntimeStatus();
+    const health =
+      getRuntimeHealth();
+
+    const providers =
+      listProviders();
 
     return NextResponse.json(
       {
@@ -47,10 +51,13 @@ export async function GET() {
           APP_CONFIG.version,
 
         versionLabel:
-          `${APP_CONFIG.stage} v${APP_CONFIG.version}`,
+          APP_CONFIG.fullTitle,
+
+        codename:
+          APP_CONFIG.codename,
 
         status:
-          "online",
+          health.status,
 
         provider:
           provider.current,
@@ -58,11 +65,18 @@ export async function GET() {
         currentProvider:
           provider.currentProvider,
 
-        providers:
-          provider.providers,
+        providers,
 
         providerRuntime:
-          diagnostics,
+          health.providerRuntime,
+
+        health: {
+          status:
+            health.status,
+
+          reasons:
+            health.reasons,
+        },
 
         memoryCount:
           memory.length,
@@ -137,7 +151,10 @@ export async function GET() {
           APP_CONFIG.version,
 
         versionLabel:
-          `${APP_CONFIG.stage} v${APP_CONFIG.version}`,
+          APP_CONFIG.fullTitle,
+
+        codename:
+          APP_CONFIG.codename,
 
         status:
           "offline",
@@ -172,6 +189,15 @@ export async function GET() {
 
           lastRequestAt:
             Date.now(),
+        },
+
+        health: {
+          status:
+            "offline",
+
+          reasons: [
+            errorMessage,
+          ],
         },
 
         memoryCount:
