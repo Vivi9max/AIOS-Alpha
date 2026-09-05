@@ -7,7 +7,116 @@ import {
   useState,
 } from "react";
 
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
+const alphaCopy = {
+  en: {
+    badge:
+      "PRIVATE ALPHA · v0.4",
+
+    title:
+      "Welcome to AIOS Alpha",
+
+    description:
+      "AIOS Alpha is currently available to the first group of test users. Enter your invitation code to enter the workspace.",
+
+    inviteLabel:
+      "Alpha invitation code",
+
+    invitePlaceholder:
+      "Enter invitation code",
+
+    verifying:
+      "Verifying…",
+
+    enter:
+      "Enter AIOS Alpha",
+
+    continueText:
+      "By continuing, you agree to the",
+
+    privacy:
+      "Alpha Privacy Notice",
+
+    invalidCode:
+      "Invitation code verification failed.",
+  },
+
+  "zh-CN": {
+    badge:
+      "PRIVATE ALPHA · v0.4",
+
+    title:
+      "欢迎来到 AIOS Alpha",
+
+    description:
+      "AIOS Alpha 目前仅向首批测试用户开放。请输入你的邀请码进入工作空间。",
+
+    inviteLabel:
+      "Alpha 邀请码",
+
+    invitePlaceholder:
+      "输入邀请码",
+
+    verifying:
+      "正在验证……",
+
+    enter:
+      "进入 AIOS Alpha",
+
+    continueText:
+      "继续即表示你同意",
+
+    privacy:
+      "Alpha 隐私说明",
+
+    invalidCode:
+      "邀请码验证失败。",
+  },
+
+  ja: {
+    badge:
+      "PRIVATE ALPHA · v0.4",
+
+    title:
+      "AIOS Alpha へようこそ",
+
+    description:
+      "AIOS Alpha は現在、最初のテストユーザーに限定して公開されています。招待コードを入力してワークスペースに進んでください。",
+
+    inviteLabel:
+      "Alpha 招待コード",
+
+    invitePlaceholder:
+      "招待コードを入力",
+
+    verifying:
+      "確認中…",
+
+    enter:
+      "AIOS Alpha に入る",
+
+    continueText:
+      "続行すると、",
+
+    privacy:
+      "Alpha プライバシー通知",
+
+    invalidCode:
+      "招待コードの確認に失敗しました。",
+  },
+} as const;
+
 export default function AlphaAccessPage() {
+  const {
+    locale,
+  } = useLanguage();
+
+  const copy =
+    alphaCopy[locale];
+
   const [
     code,
     setCode,
@@ -79,7 +188,7 @@ export default function AlphaAccessPage() {
         throw new Error(
           data.content ||
             data.error ||
-            "邀请码验证失败。"
+            copy.invalidCode
         );
       }
 
@@ -88,11 +197,13 @@ export default function AlphaAccessPage() {
         "string"
           ? data.redirect
           : "/workspace";
-    } catch (submitError) {
+    } catch (
+      submitError
+    ) {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "邀请码验证失败。"
+          : copy.invalidCode
       );
     } finally {
       setLoading(false);
@@ -181,7 +292,7 @@ export default function AlphaAccessPage() {
               800,
           }}
         >
-          PRIVATE ALPHA · v0.4
+          {copy.badge}
         </div>
 
         <div
@@ -232,8 +343,7 @@ export default function AlphaAccessPage() {
               1.2,
           }}
         >
-          Welcome to
-          AIOS Alpha
+          {copy.title}
         </h1>
 
         <p
@@ -251,8 +361,7 @@ export default function AlphaAccessPage() {
               1.7,
           }}
         >
-          AIOS Alpha
-          目前仅向首批测试用户开放。请输入你的邀请码进入工作空间。
+          {copy.description}
         </p>
 
         <form
@@ -283,7 +392,7 @@ export default function AlphaAccessPage() {
                 800,
             }}
           >
-            Alpha 邀请码
+            {copy.inviteLabel}
           </label>
 
           <input
@@ -299,7 +408,9 @@ export default function AlphaAccessPage() {
                 event.target.value
               )
             }
-            placeholder="输入邀请码"
+            placeholder={
+              copy.invitePlaceholder
+            }
             autoComplete="off"
             autoCapitalize="characters"
             style={{
@@ -412,8 +523,8 @@ export default function AlphaAccessPage() {
             }}
           >
             {loading
-              ? "正在验证……"
-              : "进入 AIOS Alpha"}
+              ? copy.verifying
+              : copy.enter}
           </button>
         </form>
 
@@ -435,7 +546,7 @@ export default function AlphaAccessPage() {
               "center",
           }}
         >
-          继续即表示你同意{" "}
+          {copy.continueText}{" "}
           <Link
             href="/privacy"
             style={{
@@ -449,7 +560,7 @@ export default function AlphaAccessPage() {
                 "none",
             }}
           >
-            Alpha 隐私说明
+            {copy.privacy}
           </Link>
         </p>
       </section>
