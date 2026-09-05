@@ -6,6 +6,10 @@ import {
   useState,
 } from "react";
 
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
 import ChatInput from "./ChatInput";
 
 import MessageList, {
@@ -59,12 +63,6 @@ interface ProviderViewState {
   latencyMs?: number;
 }
 
-const welcomeMessage: ChatMessage = {
-  role: "assistant",
-  content:
-    "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
-};
-
 const providerLabels: Record<ProviderName, string> = {
   mock: "Mock",
   qwen: "Qwen",
@@ -79,6 +77,71 @@ const defaultProviderState: ProviderViewState = {
   requestedProvider: "mock",
   fallbackUsed: false,
 };
+
+const chatCopy = {
+  en: {
+    welcome:
+      "Welcome to AIOS Alpha.\n\nAI Engine is connected.",
+    restoring:
+      "Restoring conversation…",
+    thinking:
+      "AIOS is thinking…",
+    connectionError:
+      "Connection failed. Please try again later.",
+    runtimeError:
+      "AIOS Runtime Error",
+    unknownResponse:
+      "Unknown response",
+    providerFallback:
+      "Provider fallback reason:",
+    memoryConnected:
+      "Memory connected",
+    failed:
+      "Failed",
+  },
+
+  "zh-CN": {
+    welcome:
+      "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
+    restoring:
+      "正在恢复对话……",
+    thinking:
+      "AIOS 正在思考……",
+    connectionError:
+      "连接失败，请稍后再试。",
+    runtimeError:
+      "AIOS Runtime 错误",
+    unknownResponse:
+      "未知响应",
+    providerFallback:
+      "Provider 回退原因：",
+    memoryConnected:
+      "Memory 已连接",
+    failed:
+      "失败",
+  },
+
+  ja: {
+    welcome:
+      "AIOS Alpha へようこそ。\n\nAI Engine に接続されています。",
+    restoring:
+      "会話を復元しています…",
+    thinking:
+      "AIOS が考えています…",
+    connectionError:
+      "接続に失敗しました。しばらくしてから再試行してください。",
+    runtimeError:
+      "AIOS Runtime エラー",
+    unknownResponse:
+      "不明な応答",
+    providerFallback:
+      "Provider のフォールバック理由：",
+    memoryConnected:
+      "Memory 接続済み",
+    failed:
+      "失敗",
+  },
+} as const;
 
 /**
  * C141.7.1 Runtime Context Boundary
@@ -115,7 +178,8 @@ function sanitizeRestoredMessages(
   return memory
     .filter(
       (item) =>
-        (item.role === "user" || item.role === "assistant") &&
+        (item.role === "user" ||
+          item.role === "assistant") &&
         !isRuntimeWrapper(item.content)
     )
     .map((item) => ({
@@ -143,67 +207,108 @@ function normalizeProvider(
 }
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const {
+    locale,
+  } = useLanguage();
+
+  const copy = chatCopy[locale];
+
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    []
+  );
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [historyLoading, setHistoryLoading] =
+    useState(true);
 
   const [providerState, setProviderState] =
-    useState<ProviderViewState>(defaultProviderState);
+    useState<ProviderViewState>(
+      defaultProviderState
+    );
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef =
+    useRef<HTMLDivElement>(null);
+
+  const welcomeMessage: ChatMessage = {
+    role: "assistant",
+    content: copy.welcome,
+  };
 
   useEffect(() => {
     let active = true;
 
     async function loadInitialData() {
       try {
-        const [memoryResponse, runtimeResponse] = await Promise.all([
+        const [
+          memoryResponse,
+          runtimeResponse,
+        ] = await Promise.all([
           fetch("/api/memory", {
             cache: "no-store",
           }),
+
           fetch("/api/runtime/status", {
             cache: "no-store",
           }),
         ]);
 
         if (!memoryResponse.ok) {
-          throw new Error("Failed to load chat history.");
+          throw new Error(
+            "Failed to load chat history."
+          );
         }
 
-        const memoryData = await memoryResponse.json();
+        const memoryData =
+          await memoryResponse.json();
 
-        const memory: MemoryRecord[] = Array.isArray(memoryData.items)
-          ? memoryData.items
-          : [];
+        const memory: MemoryRecord[] =
+          Array.isArray(memoryData.items)
+            ? memoryData.items
+            : [];
 
         if (runtimeResponse.ok) {
           const runtimeData =
             (await runtimeResponse.json()) as RuntimeStatusResponse;
 
-          const runtime = runtimeData.providerRuntime;
+          const runtime =
+            runtimeData.providerRuntime;
 
-          const activeProvider = normalizeProvider(
-            runtimeData.provider,
-            "mock"
-          );
+          const activeProvider =
+            normalizeProvider(
+              runtimeData.provider,
+              "mock"
+            );
 
-          const actualProvider = normalizeProvider(
-            runtime?.provider,
-            activeProvider
-          );
+          const actualProvider =
+            normalizeProvider(
+              runtime?.provider,
+              activeProvider
+            );
 
-          const requestedProvider = normalizeProvider(
-            runtime?.requestedProvider,
-            activeProvider
-          );
+          const requestedProvider =
+            normalizeProvider(
+              runtime?.requestedProvider,
+              activeProvider
+            );
 
           if (active) {
             setProviderState({
-              provider: actualProvider,
+              provider:
+                actualProvider,
+
               requestedProvider,
-              fallbackUsed: runtime?.fallbackUsed ?? false,
-              error: runtime?.error,
-              latencyMs: runtime?.latencyMs,
+
+              fallbackUsed:
+                runtime?.fallbackUsed ??
+                false,
+
+              error:
+                runtime?.error,
+
+              latencyMs:
+                runtime?.latencyMs,
             });
           }
         }
@@ -212,7 +317,10 @@ export default function ChatPanel() {
           return;
         }
 
-        const restoredMessages = sanitizeRestoredMessages(memory);
+        const restoredMessages =
+          sanitizeRestoredMessages(
+            memory
+          );
 
         setMessages(
           restoredMessages.length > 0
@@ -221,7 +329,9 @@ export default function ChatPanel() {
         );
       } catch {
         if (active) {
-          setMessages([welcomeMessage]);
+          setMessages([
+            welcomeMessage,
+          ]);
         }
       } finally {
         if (active) {
@@ -235,138 +345,230 @@ export default function ChatPanel() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({
-      behavior: historyLoading ? "auto" : "smooth",
+      behavior:
+        historyLoading
+          ? "auto"
+          : "smooth",
     });
-  }, [messages, loading, historyLoading]);
+  }, [
+    messages,
+    loading,
+    historyLoading,
+  ]);
 
-  async function handleSend(prompt: string) {
-    const cleanPrompt = prompt.trim();
+  async function handleSend(
+    prompt: string
+  ) {
+    const cleanPrompt =
+      prompt.trim();
 
-    if (!cleanPrompt || loading) {
+    if (
+      !cleanPrompt ||
+      loading
+    ) {
       return;
     }
 
-    const userMessage: ChatMessage = {
+    const userMessage:
+      ChatMessage = {
       role: "user",
       content: cleanPrompt,
     };
 
-    setMessages((current) => [...current, userMessage]);
+    setMessages(
+      (current) => [
+        ...current,
+        userMessage,
+      ]
+    );
+
     setLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: cleanPrompt,
-        }),
-      });
+      const response =
+        await fetch(
+          "/api/chat",
+          {
+            method: "POST",
 
-      const data = (await response.json()) as ChatApiResponse;
+            headers: {
+              "Content-Type":
+                "application/json",
 
-      const actualProvider = normalizeProvider(
-        data.provider,
-        "mock"
-      );
+              "x-aios-locale":
+                locale,
+            },
 
-      const requestedProvider = normalizeProvider(
-        data.requestedProvider,
-        actualProvider
-      );
+            body:
+              JSON.stringify({
+                prompt:
+                  cleanPrompt,
+              }),
+          }
+        );
+
+      const data =
+        (await response.json()) as ChatApiResponse;
+
+      const actualProvider =
+        normalizeProvider(
+          data.provider,
+          "mock"
+        );
+
+      const requestedProvider =
+        normalizeProvider(
+          data.requestedProvider,
+          actualProvider
+        );
 
       setProviderState({
-        provider: actualProvider,
+        provider:
+          actualProvider,
+
         requestedProvider,
-        fallbackUsed: data.fallbackUsed ?? false,
-        error: data.error,
-        latencyMs: data.latencyMs,
+
+        fallbackUsed:
+          data.fallbackUsed ??
+          false,
+
+        error:
+          data.error,
+
+        latencyMs:
+          data.latencyMs,
       });
 
       if (!response.ok) {
         throw new Error(
-          data.content ?? "AIOS Runtime Error"
+          data.content ??
+            copy.runtimeError
         );
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: data.content ?? "Unknown Response",
-        },
-      ]);
+      setMessages(
+        (current) => [
+          ...current,
+          {
+            role:
+              "assistant",
+
+            content:
+              data.content ??
+              copy.unknownResponse,
+          },
+        ]
+      );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "连接失败，请稍后再试。";
+          : copy.connectionError;
 
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: message,
-        },
-      ]);
+      setMessages(
+        (current) => [
+          ...current,
+          {
+            role:
+              "assistant",
+
+            content:
+              message,
+          },
+        ]
+      );
     } finally {
       setLoading(false);
     }
   }
 
   const actualProviderLabel =
-    providerLabels[providerState.provider];
+    providerLabels[
+      providerState.provider
+    ];
 
   const requestedProviderLabel =
-    providerLabels[providerState.requestedProvider];
+    providerLabels[
+      providerState.requestedProvider
+    ];
 
-  const providerSummary = providerState.fallbackUsed
-    ? `${actualProviderLabel} ← ${requestedProviderLabel} Failed`
-    : actualProviderLabel;
+  const providerSummary =
+    providerState.fallbackUsed
+      ? `${actualProviderLabel} ← ${requestedProviderLabel} ${copy.failed}`
+      : actualProviderLabel;
 
   return (
     <section
       style={{
-        minHeight: "calc(100vh - 165px)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 18,
-        boxShadow: "0 12px 32px rgba(15, 23, 42, 0.06)",
+        minHeight:
+          "calc(100vh - 165px)",
+
+        display:
+          "flex",
+
+        flexDirection:
+          "column",
+
+        overflow:
+          "hidden",
+
+        background:
+          "#ffffff",
+
+        border:
+          "1px solid #e5e7eb",
+
+        borderRadius:
+          18,
+
+        boxShadow:
+          "0 12px 32px rgba(15, 23, 42, 0.06)",
       }}
     >
       <div
         style={{
-          padding: "18px 20px",
-          borderBottom: "1px solid #e5e7eb",
+          padding:
+            "18px 20px",
+
+          borderBottom:
+            "1px solid #e5e7eb",
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 21 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 21,
+          }}
+        >
           AIOS Brain
         </h1>
 
         <p
           style={{
-            margin: "6px 0 0",
-            color: providerState.fallbackUsed
-              ? "#b45309"
-              : "#6b7280",
+            margin:
+              "6px 0 0",
+
+            color:
+              providerState.fallbackUsed
+                ? "#b45309"
+                : "#6b7280",
+
             fontSize: 13,
-            fontWeight: providerState.fallbackUsed
-              ? 700
-              : 500,
+
+            fontWeight:
+              providerState.fallbackUsed
+                ? 700
+                : 500,
           }}
         >
-          Memory connected · {providerSummary}
-          {typeof providerState.latencyMs === "number" &&
+          {copy.memoryConnected} ·{" "}
+          {providerSummary}
+          {typeof providerState.latencyMs ===
+            "number" &&
             ` · ${providerState.latencyMs}ms`}
         </p>
 
@@ -374,18 +576,36 @@ export default function ChatPanel() {
           providerState.error && (
             <div
               style={{
-                marginTop: 10,
-                padding: "10px 12px",
-                border: "1px solid #fed7aa",
-                borderRadius: 10,
-                background: "#fff7ed",
-                color: "#9a3412",
+                marginTop:
+                  10,
+
+                padding:
+                  "10px 12px",
+
+                border:
+                  "1px solid #fed7aa",
+
+                borderRadius:
+                  10,
+
+                background:
+                  "#fff7ed",
+
+                color:
+                  "#9a3412",
+
                 fontSize: 12,
-                lineHeight: 1.55,
-                overflowWrap: "anywhere",
+
+                lineHeight:
+                  1.55,
+
+                overflowWrap:
+                  "anywhere",
               }}
             >
-              <strong>Provider 回退原因：</strong>{" "}
+              <strong>
+                {copy.providerFallback}
+              </strong>{" "}
               {providerState.error}
             </div>
           )}
@@ -394,70 +614,129 @@ export default function ChatPanel() {
       <div
         style={{
           flex: 1,
+
           minHeight: 0,
-          overflowY: "auto",
-          padding: "22px 18px",
-          background: "#f8fafc",
+
+          overflowY:
+            "auto",
+
+          padding:
+            "22px 18px",
+
+          background:
+            "#f8fafc",
         }}
       >
         {historyLoading ? (
           <div
             style={{
-              padding: 18,
-              color: "#6b7280",
-              textAlign: "center",
+              padding:
+                18,
+
+              color:
+                "#6b7280",
+
+              textAlign:
+                "center",
             }}
           >
-            正在恢复对话……
+            {copy.restoring}
           </div>
         ) : (
-          <MessageList messages={messages} />
+          <MessageList
+            messages={
+              messages
+            }
+          />
         )}
 
         {loading && (
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 18,
-              color: "#6b7280",
-              fontSize: 14,
+              display:
+                "flex",
+
+              alignItems:
+                "center",
+
+              gap:
+                10,
+
+              marginBottom:
+                18,
+
+              color:
+                "#6b7280",
+
+              fontSize:
+                14,
             }}
           >
             <span
               style={{
-                width: 34,
-                height: 34,
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "50%",
-                background: "#111827",
-                color: "#ffffff",
-                fontWeight: 800,
+                width:
+                  34,
+
+                height:
+                  34,
+
+                flexShrink:
+                  0,
+
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                borderRadius:
+                  "50%",
+
+                background:
+                  "#111827",
+
+                color:
+                  "#ffffff",
+
+                fontWeight:
+                  800,
               }}
             >
               AI
             </span>
-            AIOS 正在思考……
+
+            {copy.thinking}
           </div>
         )}
 
-        <div ref={bottomRef} />
+        <div
+          ref={bottomRef}
+        />
       </div>
 
       <div
         style={{
-          padding: 14,
-          borderTop: "1px solid #e5e7eb",
-          background: "#ffffff",
+          padding:
+            14,
+
+          borderTop:
+            "1px solid #e5e7eb",
+
+          background:
+            "#ffffff",
         }}
       >
         <ChatInput
-          loading={loading || historyLoading}
-          onSend={handleSend}
+          loading={
+            loading ||
+            historyLoading
+          }
+          onSend={
+            handleSend
+          }
         />
       </div>
     </section>
