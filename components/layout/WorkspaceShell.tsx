@@ -1,83 +1,240 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import type {
+  ReactNode,
+} from "react";
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  usePathname,
+} from "next/navigation";
+
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-import { useLanguage } from "@/components/i18n/LanguageProvider";
-import LegacyPageLocalizer from "@/components/i18n/LegacyPageLocalizer";
 
-export default function WorkspaceShell({ children }: { children: ReactNode }) {
-  const { t } = useLanguage();
-  const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const openMenu = useCallback(() => setMenuOpen(true), []);
-  const closeMenu = useCallback(() => setMenuOpen(false), []);
-  const toggleMenu = useCallback(() => setMenuOpen((current) => !current), []);
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
 
-  useEffect(() => { closeMenu(); }, [pathname, closeMenu]);
+export default function WorkspaceShell({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const { t } =
+    useLanguage();
+
+  const pathname =
+    usePathname();
+
+  const [
+    menuOpen,
+    setMenuOpen,
+  ] = useState(false);
+
+  const openMenu =
+    useCallback(
+      () => setMenuOpen(true),
+      [],
+    );
+
+  const closeMenu =
+    useCallback(
+      () => setMenuOpen(false),
+      [],
+    );
+
+  const toggleMenu =
+    useCallback(
+      () =>
+        setMenuOpen(
+          (current) => !current,
+        ),
+      [],
+    );
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function handleKeyDown(event: KeyboardEvent) { if (event.key === "Escape") closeMenu(); }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [menuOpen, closeMenu]);
+    closeMenu();
+  }, [
+    pathname,
+    closeMenu,
+  ]);
 
-  function handleMenuPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow =
+      "hidden";
+
+    function handleKeyDown(
+      event: KeyboardEvent,
+    ) {
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        closeMenu();
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
+
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
+    };
+  }, [
+    menuOpen,
+    closeMenu,
+  ]);
+
+  function handleMenuPointerDown(
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) {
     event.stopPropagation();
-    if (event.pointerType === "touch") toggleMenu();
+
+    if (
+      event.pointerType ===
+      "touch"
+    ) {
+      toggleMenu();
+    }
   }
 
-  function handleMenuClick(event: React.MouseEvent<HTMLButtonElement>) {
+  function handleMenuClick(
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) {
     event.stopPropagation();
-    if (event.detail === 0) { toggleMenu(); return; }
-    const pointerSupported = typeof window !== "undefined" && "PointerEvent" in window;
-    if (!pointerSupported) toggleMenu();
+
+    if (
+      event.detail === 0
+    ) {
+      toggleMenu();
+      return;
+    }
+
+    const pointerSupported =
+      typeof window !==
+        "undefined" &&
+      "PointerEvent" in
+        window;
+
+    if (!pointerSupported) {
+      toggleMenu();
+    }
   }
 
   return (
-    <div className={menuOpen ? "aios-workspace-shell menu-open" : "aios-workspace-shell"}>
+    <div
+      className={
+        menuOpen
+          ? "aios-workspace-shell menu-open"
+          : "aios-workspace-shell"
+      }
+    >
       <Header />
-      <LegacyPageLocalizer />
+
       <button
         type="button"
-        className={menuOpen ? "aios-mobile-menu-button is-open" : "aios-mobile-menu-button"}
-        onPointerDown={handleMenuPointerDown}
-        onClick={handleMenuClick}
-        aria-label={menuOpen ? t("nav.close") : t("nav.open")}
-        aria-expanded={menuOpen}
-        aria-controls="aios-mobile-sidebar"
+        className={
+          menuOpen
+            ? "aios-mobile-menu-button is-open"
+            : "aios-mobile-menu-button"
+        }
+        onPointerDown={
+          handleMenuPointerDown
+        }
+        onClick={
+          handleMenuClick
+        }
+        aria-label={
+          menuOpen
+            ? t("nav.close")
+            : t("nav.open")
+        }
+        aria-expanded={
+          menuOpen
+        }
+        aria-controls={
+          "aios-mobile-sidebar"
+        }
       >
-        <span aria-hidden="true">{menuOpen ? "×" : "☰"}</span>
+        <span aria-hidden="true">
+          {menuOpen
+            ? "×"
+            : "☰"}
+        </span>
       </button>
+
       <div className="aios-workspace-body">
         <aside
           id="aios-mobile-sidebar"
-          className={["aios-sidebar-container", menuOpen ? "is-open" : ""].filter(Boolean).join(" ")}
-          aria-hidden={!menuOpen}
+          className={[
+            "aios-sidebar-container",
+            menuOpen
+              ? "is-open"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden={
+            !menuOpen
+          }
         >
           <Sidebar />
         </aside>
+
         <button
           type="button"
-          className={["aios-sidebar-overlay", menuOpen ? "is-visible" : ""].filter(Boolean).join(" ")}
-          onPointerDown={(event) => {
+          className={[
+            "aios-sidebar-overlay",
+            menuOpen
+              ? "is-visible"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onPointerDown={(
+            event,
+          ) => {
             event.preventDefault();
             event.stopPropagation();
             closeMenu();
           }}
-          onClick={closeMenu}
-          aria-label={t("nav.close")}
-          tabIndex={menuOpen ? 0 : -1}
+          onClick={
+            closeMenu
+          }
+          aria-label={t(
+            "nav.close",
+          )}
+          tabIndex={
+            menuOpen
+              ? 0
+              : -1
+          }
         />
-        <main className="aios-workspace-main">{children}</main>
+
+        <main className="aios-workspace-main">
+          {children}
+        </main>
       </div>
     </div>
   );
