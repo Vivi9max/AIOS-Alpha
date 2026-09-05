@@ -29,6 +29,10 @@ import {
   type Locale,
 } from "@/lib/i18n";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -92,17 +96,8 @@ async function executeChatPrompt(
    * Chat → GitHub Intent Detector
    * → Planner GitHub READ Bridge
    *
-   * IMPORTANT:
-   *
    * Explicit GitHub READ requests are intercepted
    * before the normal LLM Runtime.
-   *
-   * This prevents the model from answering:
-   *
-   * "I cannot access GitHub."
-   *
-   * when AIOS itself actually has the Founder
-   * GitHub Direct Bridge capability.
    */
 
   const detection =
@@ -111,7 +106,7 @@ async function executeChatPrompt(
     );
 
   /*
-   * Only READ is routed by C141.11.2-C.
+   * Only READ is routed here.
    *
    * WRITE remains under the existing Founder
    * GitHub dispatch / authorization chain.
@@ -128,15 +123,14 @@ async function executeChatPrompt(
 
     /*
      * Safety fallback:
-     *
-     * If the Bridge does not recognize the request,
      * never fabricate GitHub content.
      */
     if (
       !githubRead.detected
     ) {
       return {
-        success: false,
+        success:
+          false,
 
         content:
           locale === "ja"
@@ -179,7 +173,8 @@ async function executeChatPrompt(
       !githubRead.success
     ) {
       return {
-        success: false,
+        success:
+          false,
 
         content:
           locale === "ja"
@@ -223,11 +218,12 @@ async function executeChatPrompt(
     }
 
     /*
-     * The content below is the authoritative result
-     * returned by GitHub Direct Bridge.
+     * Authoritative result returned by
+     * GitHub Direct Bridge.
      */
     return {
-      success: true,
+      success:
+        true,
 
       content:
         githubRead.content ??
@@ -292,12 +288,8 @@ async function executeChatPrompt(
   /*
    * Existing normal AIOS Runtime path.
    *
-   * No GitHub READ request:
-   * Chat → Runtime → Provider.
-   *
-   * Locale is transport metadata and enters
-   * Runtime as a trusted field. It is NOT appended
-   * to the user prompt.
+   * Locale is trusted transport metadata.
+   * It is NOT appended to the user prompt.
    */
   return executeRuntime({
     prompt,
@@ -316,7 +308,8 @@ export async function GET(
   const response =
     NextResponse.json(
       {
-        success: true,
+        success:
+          true,
 
         service:
           "AIOS Alpha Chat API",
@@ -325,13 +318,23 @@ export async function GET(
           "online",
 
         runtime:
-          "aios-alpha",
+          APP_CONFIG.runtimeId,
+
+        runtimeStage:
+          APP_CONFIG.stage,
 
         runtimeVersion:
-          "0.4",
+          APP_CONFIG.version,
+
+        runtimeVersionLabel:
+          APP_CONFIG.fullTitle,
+
+        runtimeCodename:
+          APP_CONFIG.codename,
 
         capabilities: {
-          chat: true,
+          chat:
+            true,
 
           planner:
             true,
@@ -510,6 +513,18 @@ export async function POST(
 
           locale,
 
+          runtime:
+            APP_CONFIG.runtimeId,
+
+          runtimeStage:
+            APP_CONFIG.stage,
+
+          runtimeVersion:
+            APP_CONFIG.version,
+
+          runtimeVersionLabel:
+            APP_CONFIG.fullTitle,
+
           latencyMs:
             Date.now() -
             startedAt,
@@ -564,10 +579,19 @@ export async function POST(
             errorMessage,
 
           runtime:
-            "aios-alpha",
+            APP_CONFIG.runtimeId,
+
+          runtimeStage:
+            APP_CONFIG.stage,
 
           runtimeVersion:
-            "0.4",
+            APP_CONFIG.version,
+
+          runtimeVersionLabel:
+            APP_CONFIG.fullTitle,
+
+          runtimeCodename:
+            APP_CONFIG.codename,
 
           userId:
             identity.userId,
