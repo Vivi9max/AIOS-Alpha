@@ -18,7 +18,9 @@ import MessageList, {
 
 interface MemoryRecord {
   id: number;
-  role: "user" | "assistant";
+  role:
+    | "user"
+    | "assistant";
   content: string;
   timestamp: number;
 }
@@ -63,7 +65,10 @@ interface ProviderViewState {
   latencyMs?: number;
 }
 
-const providerLabels: Record<ProviderName, string> = {
+const providerLabels: Record<
+  ProviderName,
+  string
+> = {
   mock: "Mock",
   qwen: "Qwen",
   deepseek: "DeepSeek",
@@ -72,39 +77,40 @@ const providerLabels: Record<ProviderName, string> = {
   claude: "Claude",
 };
 
-const defaultProviderState: ProviderViewState = {
-  provider: "mock",
-  requestedProvider: "mock",
-  fallbackUsed: false,
-};
+const defaultProviderState: ProviderViewState =
+  {
+    provider: "mock",
+    requestedProvider: "mock",
+    fallbackUsed: false,
+  };
 
 const chatCopy = {
   en: {
     welcome:
       "Welcome to AIOS Alpha.\n\nAI Engine is connected.",
     restoring:
-      "Restoring conversation…",
+      "Restoring your conversation…",
     thinking:
       "AIOS is thinking…",
     connectionError:
-      "Connection failed. Please try again later.",
+      "Connection failed. Please try again shortly.",
     runtimeError:
-      "AIOS Runtime Error",
+      "AIOS Runtime error",
     unknownResponse:
-      "Unknown response",
+      "No response was returned.",
     providerFallback:
       "Provider fallback reason:",
     memoryConnected:
       "Memory connected",
     failed:
-      "Failed",
+      "failed",
   },
 
   "zh-CN": {
     welcome:
       "欢迎来到 AIOS Alpha。\n\nAI Engine 已连接。",
     restoring:
-      "正在恢复对话……",
+      "正在恢复你的对话……",
     thinking:
       "AIOS 正在思考……",
     connectionError:
@@ -112,7 +118,7 @@ const chatCopy = {
     runtimeError:
       "AIOS Runtime 错误",
     unknownResponse:
-      "未知响应",
+      "AIOS 没有返回有效响应。",
     providerFallback:
       "Provider 回退原因：",
     memoryConnected:
@@ -129,58 +135,56 @@ const chatCopy = {
     thinking:
       "AIOS が考えています…",
     connectionError:
-      "接続に失敗しました。しばらくしてから再試行してください。",
+      "接続に失敗しました。しばらくしてからもう一度お試しください。",
     runtimeError:
       "AIOS Runtime エラー",
     unknownResponse:
-      "不明な応答",
+      "AIOS から応答が返ってきませんでした。",
     providerFallback:
-      "Provider のフォールバック理由：",
+      "Provider の切り替え理由：",
     memoryConnected:
-      "Memory 接続済み",
+      "Memory に接続されています",
     failed:
       "失敗",
   },
 } as const;
 
-/**
- * C141.7.1 Runtime Context Boundary
- *
- * Refresh recovery must restore conversation data only.
- * Persisted Runtime wrappers are execution metadata and must
- * never re-enter the visible chat transcript.
- */
-function isRuntimeWrapper(content: string): boolean {
-  const raw = content.trim();
+function isRuntimeWrapper(
+  content: string
+): boolean {
+  const raw =
+    content.trim();
 
   if (!raw) {
     return false;
   }
 
   return (
-    raw.includes("你是 AIOS Runtime 的执行引擎") &&
-    raw.includes("内部执行步骤：") &&
-    raw.includes("最终回答规则：")
+    raw.includes(
+      "你是 AIOS Runtime 的执行引擎"
+    ) &&
+    raw.includes(
+      "内部执行步骤："
+    ) &&
+    raw.includes(
+      "最终回答规则："
+    )
   );
 }
 
-/**
- * Legacy wrapper sanitizer for the client boundary.
- *
- * C141.6 already sanitizes persisted memory on the server.
- * This is an additional defense-in-depth boundary so stale
- * responses or older storage snapshots cannot contaminate the
- * refreshed chat UI.
- */
 function sanitizeRestoredMessages(
   memory: MemoryRecord[]
 ): ChatMessage[] {
   return memory
     .filter(
       (item) =>
-        (item.role === "user" ||
-          item.role === "assistant") &&
-        !isRuntimeWrapper(item.content)
+        (
+          item.role === "user" ||
+          item.role === "assistant"
+        ) &&
+        !isRuntimeWrapper(
+          item.content
+        )
     )
     .map((item) => ({
       role: item.role,
@@ -211,30 +215,36 @@ export default function ChatPanel() {
     locale,
   } = useLanguage();
 
-  const copy = chatCopy[locale];
+  const copy =
+    chatCopy[locale];
 
-  const [messages, setMessages] = useState<ChatMessage[]>(
+  const [
+    messages,
+    setMessages,
+  ] = useState<ChatMessage[]>(
     []
   );
 
   const [loading, setLoading] =
     useState(false);
 
-  const [historyLoading, setHistoryLoading] =
-    useState(true);
+  const [
+    historyLoading,
+    setHistoryLoading,
+  ] = useState(true);
 
-  const [providerState, setProviderState] =
+  const [
+    providerState,
+    setProviderState,
+  ] =
     useState<ProviderViewState>(
       defaultProviderState
     );
 
   const bottomRef =
-    useRef<HTMLDivElement>(null);
-
-  const welcomeMessage: ChatMessage = {
-    role: "assistant",
-    content: copy.welcome,
-  };
+    useRef<HTMLDivElement>(
+      null
+    );
 
   useEffect(() => {
     let active = true;
@@ -249,9 +259,12 @@ export default function ChatPanel() {
             cache: "no-store",
           }),
 
-          fetch("/api/runtime/status", {
-            cache: "no-store",
-          }),
+          fetch(
+            "/api/runtime/status",
+            {
+              cache: "no-store",
+            }
+          ),
         ]);
 
         if (!memoryResponse.ok) {
@@ -264,11 +277,15 @@ export default function ChatPanel() {
           await memoryResponse.json();
 
         const memory: MemoryRecord[] =
-          Array.isArray(memoryData.items)
+          Array.isArray(
+            memoryData.items
+          )
             ? memoryData.items
             : [];
 
-        if (runtimeResponse.ok) {
+        if (
+          runtimeResponse.ok
+        ) {
           const runtimeData =
             (await runtimeResponse.json()) as RuntimeStatusResponse;
 
@@ -297,16 +314,12 @@ export default function ChatPanel() {
             setProviderState({
               provider:
                 actualProvider,
-
               requestedProvider,
-
               fallbackUsed:
                 runtime?.fallbackUsed ??
                 false,
-
               error:
                 runtime?.error,
-
               latencyMs:
                 runtime?.latencyMs,
             });
@@ -325,17 +338,31 @@ export default function ChatPanel() {
         setMessages(
           restoredMessages.length > 0
             ? restoredMessages
-            : [welcomeMessage]
+            : [
+                {
+                  role:
+                    "assistant",
+                  content:
+                    copy.welcome,
+                },
+              ]
         );
       } catch {
         if (active) {
           setMessages([
-            welcomeMessage,
+            {
+              role:
+                "assistant",
+              content:
+                copy.welcome,
+            },
           ]);
         }
       } finally {
         if (active) {
-          setHistoryLoading(false);
+          setHistoryLoading(
+            false
+          );
         }
       }
     }
@@ -345,15 +372,17 @@ export default function ChatPanel() {
     return () => {
       active = false;
     };
-  }, [locale]);
+  }, [locale, copy.welcome]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior:
-        historyLoading
-          ? "auto"
-          : "smooth",
-    });
+    bottomRef.current?.scrollIntoView(
+      {
+        behavior:
+          historyLoading
+            ? "auto"
+            : "smooth",
+      }
+    );
   }, [
     messages,
     loading,
@@ -373,16 +402,14 @@ export default function ChatPanel() {
       return;
     }
 
-    const userMessage:
-      ChatMessage = {
-      role: "user",
-      content: cleanPrompt,
-    };
-
     setMessages(
       (current) => [
         ...current,
-        userMessage,
+        {
+          role: "user",
+          content:
+            cleanPrompt,
+        },
       ]
     );
 
@@ -398,16 +425,14 @@ export default function ChatPanel() {
             headers: {
               "Content-Type":
                 "application/json",
-
               "x-aios-locale":
                 locale,
             },
 
-            body:
-              JSON.stringify({
-                prompt:
-                  cleanPrompt,
-              }),
+            body: JSON.stringify({
+              prompt:
+                cleanPrompt,
+            }),
           }
         );
 
@@ -429,16 +454,12 @@ export default function ChatPanel() {
       setProviderState({
         provider:
           actualProvider,
-
         requestedProvider,
-
         fallbackUsed:
           data.fallbackUsed ??
           false,
-
         error:
           data.error,
-
         latencyMs:
           data.latencyMs,
       });
@@ -456,7 +477,6 @@ export default function ChatPanel() {
           {
             role:
               "assistant",
-
             content:
               data.content ??
               copy.unknownResponse,
@@ -475,7 +495,6 @@ export default function ChatPanel() {
           {
             role:
               "assistant",
-
             content:
               message,
           },
@@ -503,28 +522,19 @@ export default function ChatPanel() {
 
   return (
     <section
+      key={locale}
       style={{
         minHeight:
           "calc(100vh - 165px)",
-
-        display:
-          "flex",
-
+        display: "flex",
         flexDirection:
           "column",
-
-        overflow:
-          "hidden",
-
+        overflow: "hidden",
         background:
           "#ffffff",
-
         border:
           "1px solid #e5e7eb",
-
-        borderRadius:
-          18,
-
+        borderRadius: 18,
         boxShadow:
           "0 12px 32px rgba(15, 23, 42, 0.06)",
       }}
@@ -533,7 +543,6 @@ export default function ChatPanel() {
         style={{
           padding:
             "18px 20px",
-
           borderBottom:
             "1px solid #e5e7eb",
         }}
@@ -551,14 +560,11 @@ export default function ChatPanel() {
           style={{
             margin:
               "6px 0 0",
-
             color:
               providerState.fallbackUsed
                 ? "#b45309"
                 : "#6b7280",
-
             fontSize: 13,
-
             fontWeight:
               providerState.fallbackUsed
                 ? 700
@@ -576,29 +582,19 @@ export default function ChatPanel() {
           providerState.error && (
             <div
               style={{
-                marginTop:
-                  10,
-
+                marginTop: 10,
                 padding:
                   "10px 12px",
-
                 border:
                   "1px solid #fed7aa",
-
-                borderRadius:
-                  10,
-
+                borderRadius: 10,
                 background:
                   "#fff7ed",
-
                 color:
                   "#9a3412",
-
                 fontSize: 12,
-
                 lineHeight:
                   1.55,
-
                 overflowWrap:
                   "anywhere",
               }}
@@ -614,15 +610,10 @@ export default function ChatPanel() {
       <div
         style={{
           flex: 1,
-
           minHeight: 0,
-
-          overflowY:
-            "auto",
-
+          overflowY: "auto",
           padding:
             "22px 18px",
-
           background:
             "#f8fafc",
         }}
@@ -630,12 +621,9 @@ export default function ChatPanel() {
         {historyLoading ? (
           <div
             style={{
-              padding:
-                18,
-
+              padding: 18,
               color:
                 "#6b7280",
-
               textAlign:
                 "center",
             }}
@@ -652,55 +640,36 @@ export default function ChatPanel() {
 
         {loading && (
           <div
+            aria-live="polite"
             style={{
-              display:
-                "flex",
-
+              display: "flex",
               alignItems:
                 "center",
-
-              gap:
-                10,
-
+              gap: 10,
               marginBottom:
                 18,
-
               color:
                 "#6b7280",
-
-              fontSize:
-                14,
+              fontSize: 14,
             }}
           >
             <span
               style={{
-                width:
-                  34,
-
-                height:
-                  34,
-
-                flexShrink:
-                  0,
-
+                width: 34,
+                height: 34,
+                flexShrink: 0,
                 display:
                   "flex",
-
                 alignItems:
                   "center",
-
                 justifyContent:
                   "center",
-
                 borderRadius:
                   "50%",
-
                 background:
                   "#111827",
-
                 color:
                   "#ffffff",
-
                 fontWeight:
                   800,
               }}
@@ -708,7 +677,9 @@ export default function ChatPanel() {
               AI
             </span>
 
-            {copy.thinking}
+            <span>
+              {copy.thinking}
+            </span>
           </div>
         )}
 
@@ -719,12 +690,9 @@ export default function ChatPanel() {
 
       <div
         style={{
-          padding:
-            14,
-
+          padding: 14,
           borderTop:
             "1px solid #e5e7eb",
-
           background:
             "#ffffff",
         }}
