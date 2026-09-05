@@ -45,6 +45,10 @@ import {
   getStorageMode,
 } from "@/lib/server-storage";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -138,10 +142,19 @@ export async function GET(
           return {
             runtime: {
               id:
-                "aios-alpha",
+                APP_CONFIG.runtimeId,
+
+              stage:
+                APP_CONFIG.stage,
 
               version:
-                "0.4",
+                APP_CONFIG.version,
+
+              versionLabel:
+                APP_CONFIG.fullTitle,
+
+              codename:
+                APP_CONFIG.codename,
 
               status:
                 "online" as const,
@@ -287,10 +300,19 @@ export async function GET(
 
         runtime: {
           id:
-            "aios-alpha",
+            APP_CONFIG.runtimeId,
+
+          stage:
+            APP_CONFIG.stage,
 
           version:
-            "0.4",
+            APP_CONFIG.version,
+
+          versionLabel:
+            APP_CONFIG.fullTitle,
+
+          codename:
+            APP_CONFIG.codename,
 
           status:
             "offline",
