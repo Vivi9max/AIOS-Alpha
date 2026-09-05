@@ -36,14 +36,11 @@ const inviteBannerCopy: Record<
   },
 };
 
-export default function InviteBanner() {
-  const {
-    locale,
-  } = useLanguage();
-
-  const copy =
-    inviteBannerCopy[locale];
-
+function InviteBannerContent({
+  copy,
+}: {
+  copy: InviteBannerCopy;
+}) {
   return (
     <section
       style={{
@@ -101,5 +98,19 @@ export default function InviteBanner() {
         </div>
       </div>
     </section>
+  );
+}
+
+export default function InviteBanner() {
+  const { locale } = useLanguage();
+
+  const copy =
+    inviteBannerCopy[locale];
+
+  return (
+    <InviteBannerContent
+      key={locale}
+      copy={copy}
+    />
   );
 }
