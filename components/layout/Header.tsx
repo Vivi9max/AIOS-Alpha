@@ -13,59 +13,75 @@ import {
   APP_BADGE,
   APP_CONFIG,
 } from "@/lib/config/app";
+
 import LanguageSwitcher from "@/components/i18n/LanguageSwitcher";
-import { useLanguage } from "@/components/i18n/LanguageProvider";
-import type { MessageKey } from "@/lib/i18n";
 
-interface RuntimeStatus {
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
+import type {
+  MessageKey,
+} from "@/lib/i18n";
+
+type RuntimeStatus =
+  | "checking"
+  | "online"
+  | "degraded"
+  | "offline";
+
+interface RuntimeState {
   status:
-    | "online"
-    | "offline";
+    RuntimeStatus;
 
-  provider: string;
+  provider:
+    string;
 }
 
 const pageTitles:
   Record<string, MessageKey> = {
-    "/":
-      "page.workspace",
+  "/":
+    "page.workspace",
 
-    "/workspace":
-      "page.workspace",
+  "/workspace":
+    "page.workspace",
 
-    "/dashboard":
-      "nav.dashboard",
+  "/dashboard":
+    "nav.dashboard",
 
-    "/memory":
-      "nav.memory",
+  "/memory":
+    "nav.memory",
 
-    "/tasks":
-      "nav.tasks",
+  "/tasks":
+    "nav.tasks",
 
-    "/projects":
-      "nav.projects",
+  "/projects":
+    "nav.projects",
 
-    "/settings":
-      "nav.settings",
+  "/settings":
+    "nav.settings",
 
-    "/brain":
-      "page.runtime",
+  "/brain":
+    "page.runtime",
 
-    "/release":
-      "page.release",
-  };
+  "/release":
+    "page.release",
+};
 
 const initialStatus:
-  RuntimeStatus = {
-    status:
-      "offline",
+  RuntimeState = {
+  status:
+    "checking",
 
-    provider:
-      "unknown",
-  };
+  provider:
+    "unknown",
+};
 
 export default function Header() {
-  const { t } = useLanguage();
+  const {
+    t,
+  } = useLanguage();
+
   const pathname =
     usePathname();
 
@@ -73,11 +89,15 @@ export default function Header() {
     runtime,
     setRuntime,
   ] =
-    useState<RuntimeStatus>(
+    useState<RuntimeState>(
       initialStatus
     );
 
-  const pageTitle = t(pageTitles[pathname] ?? "page.default");
+  const pageTitle =
+    t(
+      pageTitles[pathname] ??
+        "page.default"
+    );
 
   useEffect(() => {
     let active =
@@ -112,29 +132,43 @@ export default function Header() {
           return;
         }
 
+        const status =
+          data.status;
+
+        const normalizedStatus:
+          RuntimeStatus =
+          status ===
+          "online"
+            ? "online"
+            : status ===
+                "degraded"
+              ? "degraded"
+              : "offline";
+
         setRuntime({
           status:
-            data.status ===
-            "online"
-              ? "online"
-              : "offline",
+            normalizedStatus,
 
           provider:
             typeof data.provider ===
-            "string"
+              "string"
               ? data.provider
               : "unknown",
         });
       } catch {
         if (active) {
-          setRuntime(
-            initialStatus
-          );
+          setRuntime({
+            status:
+              "offline",
+
+            provider:
+              "unknown",
+          });
         }
       }
     }
 
-    loadRuntimeStatus();
+    void loadRuntimeStatus();
 
     const interval =
       window.setInterval(
@@ -152,9 +186,25 @@ export default function Header() {
     };
   }, []);
 
-  const isOnline =
+  const statusLabel =
+    runtime.status ===
+    "checking"
+      ? t("runtime.checking")
+      : runtime.status ===
+          "online"
+        ? t("runtime.online")
+        : runtime.status ===
+            "degraded"
+          ? "Degraded"
+          : t("runtime.offline");
+
+  const statusIsHealthy =
     runtime.status ===
     "online";
+
+  const statusIsChecking =
+    runtime.status ===
+    "checking";
 
   return (
     <header
@@ -311,13 +361,18 @@ export default function Header() {
                   "50%",
 
                 background:
-                  isOnline
-                    ? "#22c55e"
-                    : "#ef4444",
+                  statusIsChecking
+                    ? "#f59e0b"
+                    : statusIsHealthy
+                      ? "#22c55e"
+                      : runtime.status ===
+                          "degraded"
+                        ? "#f59e0b"
+                        : "#ef4444",
               }}
             />
 
-            {isOnline ? t("runtime.online") : t("runtime.offline")}
+            {statusLabel}
           </span>
 
           <span>
@@ -330,7 +385,8 @@ export default function Header() {
                 "capitalize",
             }}
           >
-            {t("runtime.provider")}:{" "}
+            {t("runtime.provider")}:
+            {" "}
             {runtime.provider}
           </span>
 
@@ -344,11 +400,56 @@ export default function Header() {
         </div>
       </div>
 
-      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+      <div
+        style={{
+          flexShrink:
+            0,
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          gap:
+            10,
+        }}
+      >
         <LanguageSwitcher />
+
         <div
           title={`${APP_CONFIG.stage} User`}
-          style={{ width: 44, height: 44, borderRadius: "50%", background: "#374151", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, border: "1px solid #4b5563" }}
+          style={{
+            width:
+              44,
+
+            height:
+              44,
+
+            borderRadius:
+              "50%",
+
+            background:
+              "#374151",
+
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
+            justifyContent:
+              "center",
+
+            fontWeight:
+              800,
+
+            fontSize:
+              17,
+
+            border:
+              "1px solid #4b5563",
+          }}
         >
           V
         </div>
