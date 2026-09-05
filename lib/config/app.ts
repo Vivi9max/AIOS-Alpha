@@ -1,11 +1,18 @@
 export const APP_CONFIG = {
   name: "AIOS",
-  stage: "Alpha",
-  version: "0.4",
-  codename: "Private Alpha",
 
-  runtimeId: "aios-alpha",
-  defaultProvider: "DeepSeek",
+  stage: "Alpha",
+
+  version: "0.5",
+
+  codename:
+    "Runtime & Multilingual Stabilization",
+
+  runtimeId:
+    "aios-alpha",
+
+  defaultProvider:
+    "DeepSeek",
 } as const;
 
 export const APP_NAME =
