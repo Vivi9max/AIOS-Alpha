@@ -2,6 +2,10 @@ import type {
   AIProvider,
 } from "@/lib/ai/types";
 
+import type {
+  Locale,
+} from "@/lib/i18n";
+
 import {
   APP_CONFIG,
 } from "@/lib/config/app";
@@ -31,6 +35,7 @@ import {
 
 export interface RuntimeRequest {
   prompt: string;
+  locale?: Locale;
 }
 
 export interface RuntimeResponse {
@@ -73,6 +78,8 @@ export interface RuntimeResponse {
   timestamp: number;
 
   latencyMs: number;
+
+  locale?: Locale;
 }
 
 function createRequestId(): string {
@@ -103,6 +110,9 @@ export async function executeRuntime(
   const prompt =
     request.prompt.trim();
 
+  const locale =
+    request.locale ?? "en";
+
   const startedAt =
     Date.now();
 
@@ -113,6 +123,13 @@ export async function executeRuntime(
     const latencyMs =
       timestamp -
       startedAt;
+
+    const emptyMessage =
+      locale === "ja"
+        ? "内容を入力してください。"
+        : locale === "zh-CN"
+          ? "请输入内容。"
+          : "Please enter a message.";
 
     updateProviderRuntimeStatus({
       provider:
@@ -128,7 +145,7 @@ export async function executeRuntime(
         false,
 
       error:
-        "请输入内容。",
+        emptyMessage,
 
       latencyMs,
 
@@ -157,7 +174,7 @@ export async function executeRuntime(
         [],
 
       error:
-        "请输入内容。",
+        emptyMessage,
 
       startedAt,
 
@@ -179,10 +196,10 @@ export async function executeRuntime(
         false,
 
       error:
-        "请输入内容。",
+        emptyMessage,
 
       content:
-        "请输入内容。",
+        emptyMessage,
 
       actionHandled:
         false,
@@ -198,6 +215,8 @@ export async function executeRuntime(
       timestamp,
 
       latencyMs,
+
+      locale,
     };
   }
 
@@ -209,7 +228,8 @@ export async function executeRuntime(
   try {
     const result =
       await executeRuntimePlan(
-        plan
+        plan,
+        locale,
       );
 
     const timestamp =
@@ -346,6 +366,8 @@ export async function executeRuntime(
       timestamp,
 
       latencyMs,
+
+      locale,
     };
   } catch (error) {
     const timestamp =
@@ -358,7 +380,18 @@ export async function executeRuntime(
     const errorMessage =
       error instanceof Error
         ? error.message
-        : "AIOS Runtime 未知错误";
+        : locale === "ja"
+          ? "AIOS Runtime で不明なエラーが発生しました。"
+          : locale === "zh-CN"
+            ? "AIOS Runtime 未知错误"
+            : "Unknown AIOS Runtime error.";
+
+    const unavailableMessage =
+      locale === "ja"
+        ? "AIOS Runtime は一時的に利用できません。"
+        : locale === "zh-CN"
+          ? "AIOS Runtime 暂时不可用。"
+          : "AIOS Runtime is temporarily unavailable.";
 
     updateProviderRuntimeStatus({
       provider:
@@ -442,7 +475,7 @@ export async function executeRuntime(
         errorMessage,
 
       content:
-        "AIOS Runtime 暂时不可用。",
+        unavailableMessage,
 
       actionHandled:
         false,
@@ -482,6 +515,8 @@ export async function executeRuntime(
       timestamp,
 
       latencyMs,
+
+      locale,
     };
   }
 }
