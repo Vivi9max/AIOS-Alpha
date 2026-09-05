@@ -2,8 +2,13 @@ import type {
   AIProvider,
 } from "@/lib/ai/types";
 
-import { AI_CONFIG } from "@/lib/ai/config";
-import { getActiveProvider } from "@/lib/ai/router";
+import {
+  AI_CONFIG,
+} from "@/lib/ai/config";
+
+import {
+  getActiveProvider,
+} from "@/lib/ai/router";
 
 export interface RuntimeProvider {
   id: AIProvider;
@@ -14,12 +19,43 @@ export interface RuntimeProvider {
 
 export interface ProviderRuntimeStatus {
   provider: AIProvider;
-  requestedProvider: AIProvider;
-  fallbackUsed: boolean;
-  success: boolean;
-  error?: string;
-  latencyMs?: number;
-  lastRequestAt: number | null;
+
+  requestedProvider:
+    AIProvider;
+
+  fallbackUsed:
+    boolean;
+
+  success:
+    boolean;
+
+  error?:
+    string;
+
+  latencyMs?:
+    number;
+
+  lastRequestAt:
+    number | null;
+}
+
+export type RuntimeHealthStatus =
+  | "online"
+  | "degraded"
+  | "offline";
+
+export interface RuntimeHealth {
+  status:
+    RuntimeHealthStatus;
+
+  provider:
+    RuntimeProvider;
+
+  providerRuntime:
+    ProviderRuntimeStatus;
+
+  reasons:
+    string[];
 }
 
 type ProviderManagerGlobal =
@@ -43,9 +79,10 @@ const providerNames: Record<
   claude: "Claude",
 };
 
-const providerIds = Object.keys(
-  AI_CONFIG.providers
-) as AIProvider[];
+const providerIds =
+  Object.keys(
+    AI_CONFIG.providers
+  ) as AIProvider[];
 
 function hasApiKey(
   provider: AIProvider
@@ -55,10 +92,12 @@ function hasApiKey(
 
   if (
     "apiKey" in config &&
-    typeof config.apiKey === "string"
+    typeof config.apiKey ===
+      "string"
   ) {
     return (
-      config.apiKey.trim().length > 0
+      config.apiKey.trim()
+        .length > 0
     );
   }
 
@@ -71,12 +110,20 @@ function createInitialRuntimeStatus():
     getActiveProvider();
 
   return {
-    provider: activeProvider,
+    provider:
+      activeProvider,
+
     requestedProvider:
       activeProvider,
-    fallbackUsed: false,
-    success: true,
-    lastRequestAt: null,
+
+    fallbackUsed:
+      false,
+
+    success:
+      true,
+
+    lastRequestAt:
+      null,
   };
 }
 
@@ -89,11 +136,16 @@ export function getCurrentProvider():
     AI_CONFIG.providers[current];
 
   return {
-    id: current,
+    id:
+      current,
+
     name:
       providerNames[current] ??
       current,
-    enabled: config.enabled,
+
+    enabled:
+      config.enabled,
+
     configured:
       hasApiKey(current),
   };
@@ -108,9 +160,14 @@ export function listProviders():
 
       return {
         id,
+
         name:
-          providerNames[id] ?? id,
-        enabled: config.enabled,
+          providerNames[id] ??
+          id,
+
+        enabled:
+          config.enabled,
+
         configured:
           hasApiKey(id),
       };
@@ -123,9 +180,14 @@ export function providerStatus() {
     getCurrentProvider();
 
   return {
-    current: current.id,
-    currentProvider: current,
-    providers: listProviders(),
+    current:
+      current.id,
+
+    currentProvider:
+      current,
+
+    providers:
+      listProviders(),
   };
 }
 
@@ -134,6 +196,7 @@ export function updateProviderRuntimeStatus(
 ): ProviderRuntimeStatus {
   const nextStatus = {
     ...status,
+
     error:
       status.error?.trim() ||
       undefined,
@@ -181,5 +244,71 @@ export function resetProviderRuntimeStatus():
 
   return {
     ...status,
+  };
+}
+
+export function getRuntimeHealth():
+  RuntimeHealth {
+  const provider =
+    getCurrentProvider();
+
+  const providerRuntime =
+    getProviderRuntimeStatus();
+
+  const reasons: string[] = [];
+
+  if (!provider.enabled) {
+    reasons.push(
+      "Current provider is disabled."
+    );
+  }
+
+  if (!provider.configured) {
+    reasons.push(
+      "Current provider is not configured."
+    );
+  }
+
+  if (!providerRuntime.success) {
+    reasons.push(
+      providerRuntime.error ??
+        "Last provider runtime request failed."
+    );
+  }
+
+  if (providerRuntime.fallbackUsed) {
+    reasons.push(
+      "Runtime is using a fallback provider."
+    );
+  }
+
+  let status:
+    RuntimeHealthStatus =
+    "online";
+
+  if (
+    !providerRuntime.success &&
+    !providerRuntime.fallbackUsed
+  ) {
+    status =
+      "offline";
+  } else if (
+    !provider.configured ||
+    !provider.enabled ||
+    providerRuntime.fallbackUsed ||
+    !providerRuntime.success
+  ) {
+    status =
+      "degraded";
+  }
+
+  return {
+    status,
+
+    provider,
+
+    providerRuntime,
+
+    reasons,
   };
 }
