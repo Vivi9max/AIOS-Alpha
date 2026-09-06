@@ -10,12 +10,12 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 import CoreVerificationPanel from "./CoreVerificationPanel";
-import AutonomousLoopRegressionPanel from "./AutonomousLoopRegressionPanel";
+import AutonomousLoopRegressionPanel from "./AutonomousLoopRegressionPanel";useLanguage,
 
 import {
   useLanguage,
-} from "@/lib/i18n";
-
+} from "@/components/i18n/LanguageProvider";
+  
 import {
   APP_CONFIG,
 } from "@/lib/config/app";
