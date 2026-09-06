@@ -9,21 +9,45 @@ import {
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
-import CoreVerificationPanel from "./CoreVerificationPanel";
-import AutonomousLoopRegressionPanel from "./AutonomousLoopRegressionPanel";useLanguage,
 
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
-  
+
 import {
   APP_CONFIG,
 } from "@/lib/config/app";
+
+import CoreVerificationPanel from "./CoreVerificationPanel";
+
+import PlannerHealthPanel from "./PlannerHealthPanel";
+
+import AutonomousLoopRegressionPanel from "./AutonomousLoopRegressionPanel";
 
 type RuntimeHealthStatus =
   | "online"
   | "degraded"
   | "offline";
+
+interface RuntimeModuleStatus {
+  id: string;
+  name: string;
+  status:
+    | "ready"
+    | "degraded"
+    | "offline";
+  description?: string;
+}
+
+interface RuntimeProviderStatus {
+  name: string;
+  configured: boolean;
+  enabled: boolean;
+  success: boolean;
+  latencyMs: number | null;
+  lastRunAt: number | null;
+  error: string | null;
+}
 
 interface RuntimeStatus {
   success: boolean;
@@ -32,7 +56,7 @@ interface RuntimeStatus {
     id: string;
     stage: string;
     version: string;
-    versionLabel?: string;
+    versionLabel: string;
     codename: string;
   };
 
@@ -40,68 +64,37 @@ interface RuntimeStatus {
 
   provider: string;
 
-  currentProvider?: string;
-
-  providers?: string[];
-
   memoryCount: number;
 
   timestamp: number;
 
-  providerRuntime?: {
-    provider: string;
-    status:
-      | "ready"
-      | "unconfigured"
-      | "failed";
-    lastLatencyMs:
-      | number
-      | null;
-    lastSuccessAt:
-      | number
-      | null;
-    lastFailureAt:
-      | number
-      | null;
-    lastError:
-      | string
-      | null;
-  };
+  providerRuntime?: RuntimeProviderStatus;
 
   health?: {
-    status: RuntimeHealthStatus;
     reasons: string[];
   };
 
-  modules?: {
-    chat: boolean;
-    memory: boolean;
-    planner: boolean;
-    execution: boolean;
-  };
+  modules?: RuntimeModuleStatus[];
 }
 
 function formatTime(
   value: number | null | undefined,
 ): string {
   if (!value) {
-    return "—";
+    return "--";
   }
 
   try {
-    return new Date(
-      value,
-    ).toLocaleString();
+    return new Date(value).toLocaleString();
   } catch {
-    return "—";
+    return "--";
   }
 }
 
 export default function RuntimePage() {
   const {
     t,
-  } =
-    useLanguage();
+  } = useLanguage();
 
   const [
     data,
@@ -121,15 +114,13 @@ export default function RuntimePage() {
     error,
     setError,
   ] =
-    useState<string | null>(
-      null,
-    );
+    useState(false);
 
-  const load =
+  const loadStatus =
     useCallback(
       async () => {
         setLoading(true);
-        setError(null);
+        setError(false);
 
         try {
           const response =
@@ -141,239 +132,200 @@ export default function RuntimePage() {
               },
             );
 
+          if (!response.ok) {
+            throw new Error(
+              "Runtime status request failed.",
+            );
+          }
+
           const result =
             (await response.json()) as
               RuntimeStatus;
 
-          if (
-            !response.ok &&
-            !result
-          ) {
-            throw new Error(
-              t(
-                "runtime.loadError",
-              ),
-            );
-          }
-
-          setData(
-            result,
-          );
-        } catch (
-          caught
-        ) {
-          setError(
-            caught instanceof
-              Error
-              ? caught.message
-              : t(
-                  "runtime.loadError",
-                ),
-          );
+          setData(result);
+        } catch {
+          setData(null);
+          setError(true);
         } finally {
           setLoading(false);
         }
       },
-      [t],
+      [],
     );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadStatus();
 
-  const healthStatus =
-    data?.health?.status ??
+    const interval =
+      window.setInterval(
+        () => {
+          void loadStatus();
+        },
+        30000,
+      );
+
+    return () => {
+      window.clearInterval(
+        interval,
+      );
+    };
+  }, [loadStatus]);
+
+  const runtimeStatus =
     data?.status ??
     "offline";
 
-  const healthReasons =
-    data?.health?.reasons ??
-    [];
-
-  const providerRuntime =
-    data?.providerRuntime;
-
-  const moduleState =
-    data?.modules;
+  const statusLabel =
+    loading
+      ? t(
+          "runtime.checking",
+        )
+      : runtimeStatus ===
+          "online"
+        ? t(
+            "runtime.success",
+          )
+        : runtimeStatus ===
+            "degraded"
+          ? "Degraded"
+          : t(
+              "runtime.loadError",
+            );
 
   return (
     <WorkspaceShell>
       <main
         style={{
-          maxWidth:
-            1180,
-
+          maxWidth: 1200,
           margin:
             "0 auto",
-
           padding:
-            "28px 20px 60px",
+            "32px 20px 60px",
         }}
       >
-        <header
+        <section
           style={{
-            display:
-              "flex",
-
-            justifyContent:
-              "space-between",
-
-            alignItems:
-              "flex-start",
-
-            gap:
-              20,
-
-            flexWrap:
-              "wrap",
+            marginBottom: 24,
           }}
         >
-          <div>
-            <div
-              style={{
-                display:
-                  "inline-flex",
-
-                alignItems:
-                  "center",
-
-                padding:
-                  "5px 9px",
-
-                borderRadius:
-                  999,
-
-                background:
-                  "#f1f5f9",
-
-                color:
-                  "#475569",
-
-                fontSize:
-                  11,
-
-                fontWeight:
-                  900,
-
-                letterSpacing:
-                  "0.08em",
-              }}
-            >
-              {APP_CONFIG.badge}
-            </div>
-
-            <h1
-              style={{
-                margin:
-                  "12px 0 0",
-
-                fontSize:
-                  38,
-
-                lineHeight:
-                  1.1,
-              }}
-            >
-              {t(
-                "runtime.title",
-              )}
-            </h1>
-
-            <p
-              style={{
-                maxWidth:
-                  720,
-
-                margin:
-                  "10px 0 0",
-
-                color:
-                  "#64748b",
-
-                lineHeight:
-                  1.7,
-              }}
-            >
-              {t(
-                "runtime.description",
-              )}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              void load()
-            }
-            disabled={
-              loading
-            }
+          <div
             style={{
-              minHeight:
-                42,
-
-              padding:
-                "0 16px",
-
-              border:
-                0,
-
-              borderRadius:
-                12,
-
-              background:
-                "#111827",
-
-              color:
-                "#ffffff",
-
-              fontWeight:
-                800,
-
-              cursor:
-                loading
-                  ? "wait"
-                  : "pointer",
-
-              opacity:
-                loading
-                  ? 0.7
-                  : 1,
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
+              gap: 16,
+              flexWrap:
+                "wrap",
             }}
           >
-            {loading
-              ? t(
-                  "runtime.checking",
-                )
-              : t(
-                  "runtime.refresh",
+            <div>
+              <div
+                style={{
+                  color:
+                    "#64748b",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  letterSpacing:
+                    "0.08em",
+                  textTransform:
+                    "uppercase",
+                }}
+              >
+                {APP_CONFIG.badge}
+              </div>
+
+              <h1
+                style={{
+                  margin:
+                    "8px 0 0",
+                  fontSize: 36,
+                  lineHeight:
+                    1.1,
+                }}
+              >
+                {t(
+                  "runtime.title",
                 )}
-          </button>
-        </header>
+              </h1>
+
+              <p
+                style={{
+                  margin:
+                    "10px 0 0",
+                  maxWidth: 760,
+                  color:
+                    "#64748b",
+                  lineHeight:
+                    1.7,
+                }}
+              >
+                {t(
+                  "runtime.description",
+                )}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                void loadStatus()
+              }
+              disabled={loading}
+              style={{
+                minHeight: 42,
+                padding:
+                  "0 16px",
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius: 12,
+                background:
+                  "#ffffff",
+                color:
+                  "#0f172a",
+                fontWeight: 800,
+                cursor:
+                  loading
+                    ? "wait"
+                    : "pointer",
+                opacity:
+                  loading
+                    ? 0.65
+                    : 1,
+              }}
+            >
+              {loading
+                ? t(
+                    "runtime.checking",
+                  )
+                : t(
+                    "runtime.refresh",
+                  )}
+            </button>
+          </div>
+        </section>
 
         {error && (
           <section
             style={{
-              marginTop:
-                18,
-
-              padding:
-                16,
-
-              borderRadius:
-                16,
-
-              background:
-                "#fef2f2",
-
+              marginBottom: 18,
+              padding: 16,
+              borderRadius: 16,
               border:
                 "1px solid #fecaca",
-
+              background:
+                "#fef2f2",
               color:
                 "#991b1b",
+              lineHeight:
+                1.6,
             }}
           >
-            {error}
+            {t(
+              "runtime.loadError",
+            )}
           </section>
         )}
 
@@ -381,276 +333,280 @@ export default function RuntimePage() {
           style={{
             display:
               "grid",
-
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(220px, 1fr))",
-
-            gap:
-              12,
-
-            marginTop:
-              20,
+              "repeat(4, minmax(0, 1fr))",
+            gap: 12,
+            marginBottom: 18,
           }}
         >
-          <StatusCard
+          <RuntimeCard
             label="Runtime Status"
             value={
-              loading
-                ? t(
-                    "runtime.checking",
-                  )
-                : healthStatus.toUpperCase()
+              statusLabel
             }
-            detail={
-              healthReasons.length >
-              0
-                ? healthReasons[0]
-                : t(
-                    "runtime.success",
-                  )
+            description={
+              data?.health
+                ?.reasons
+                ?.join(" ") ||
+              APP_CONFIG
+                .codename
             }
           />
 
-          <StatusCard
+          <RuntimeCard
             label="Provider"
             value={
-              data?.currentProvider ??
               data?.provider ??
-              "—"
+              "--"
             }
-            detail={
-              providerRuntime
-                ? providerRuntime.status
-                : "—"
+            description={
+              data?.providerRuntime
+                ?.configured
+                ? "Provider configured"
+                : "Provider configuration not confirmed"
             }
           />
 
-          <StatusCard
+          <RuntimeCard
             label="Memory"
             value={
               data
                 ? String(
                     data.memoryCount,
                   )
-                : "—"
+                : "--"
             }
-            detail={t(
+            description={t(
               "runtime.memoryNote",
             )}
           />
 
-          <StatusCard
+          <RuntimeCard
             label="Latency"
             value={
-              providerRuntime
-                ?.lastLatencyMs !==
-              null &&
-              providerRuntime
-                ?.lastLatencyMs !==
-                undefined
-                ? `${providerRuntime.lastLatencyMs} ms`
-                : "—"
+              data?.providerRuntime
+                ?.latencyMs !=
+              null
+                ? `${data.providerRuntime.latencyMs} ms`
+                : "--"
             }
-            detail={t(
+            description={t(
               "runtime.latencyNote",
             )}
           />
-
-          <StatusCard
-            label="Last Run"
-            value={
-              formatTime(
-                providerRuntime
-                  ?.lastSuccessAt,
-              )
-            }
-            detail={
-              providerRuntime
-                ?.lastError ??
-              t(
-                "runtime.noRuns",
-              )
-            }
-          />
         </section>
-
-        <section
-          style={{
-            marginTop:
-              20,
-
-            padding:
-              20,
-
-            borderRadius:
-              20,
-
-            border:
-              "1px solid #e5e7eb",
-
-            background:
-              "#ffffff",
-          }}
-        >
-          <div
-            style={{
-              display:
-                "flex",
-
-              justifyContent:
-                "space-between",
-
-              alignItems:
-                "center",
-
-              gap:
-                12,
-
-              flexWrap:
-                "wrap",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin:
-                    0,
-
-                  color:
-                    "#64748b",
-
-                  fontSize:
-                    12,
-
-                  fontWeight:
-                    900,
-
-                  letterSpacing:
-                    "0.08em",
-                }}
-              >
-                RUNTIME MODULES
-              </p>
-
-              <h2
-                style={{
-                  margin:
-                    "6px 0 0",
-
-                  fontSize:
-                    24,
-                }}
-              >
-                {APP_CONFIG.fullTitle}
-              </h2>
-            </div>
-
-            <div
-              style={{
-                color:
-                  "#64748b",
-
-                fontSize:
-                  13,
-              }}
-            >
-              {APP_CONFIG.codename}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display:
-                "grid",
-
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(160px, 1fr))",
-
-              gap:
-                10,
-
-              marginTop:
-                18,
-            }}
-          >
-            <ModuleCard
-              label="Chat"
-              enabled={
-                moduleState?.chat ??
-                true
-              }
-            />
-
-            <ModuleCard
-              label="Memory"
-              enabled={
-                moduleState?.memory ??
-                true
-              }
-            />
-
-            <ModuleCard
-              label="Planner"
-              enabled={
-                moduleState?.planner ??
-                true
-              }
-            />
-
-            <ModuleCard
-              label="Execution"
-              enabled={
-                moduleState?.execution ??
-                true
-              }
-            />
-          </div>
-        </section>
-
-        <CoreVerificationPanel />
-
-        <AutonomousLoopRegressionPanel />
 
         <section
           style={{
             display:
               "grid",
-
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-
-            gap:
-              12,
-
-            marginTop:
-              18,
+              "repeat(2, minmax(0, 1fr))",
+            gap: 12,
+            marginBottom: 18,
           }}
         >
-          <NavigationCard
-            href="/planner"
-            title={t(
-              "runtime.openPlanner",
+          <RuntimeCard
+            label="Last Provider Run"
+            value={formatTime(
+              data?.providerRuntime
+                ?.lastRunAt,
             )}
+            description={
+              data?.providerRuntime
+                ?.error ??
+              t(
+                "runtime.noRuns",
+              )
+            }
+          />
+
+          <RuntimeCard
+            label="Runtime Version"
+            value={
+              data?.runtime
+                ?.versionLabel ??
+              APP_CONFIG
+                .version
+            }
+            description={
+              data?.runtime
+                ?.codename ??
+              APP_CONFIG
+                .codename
+            }
+          />
+        </section>
+
+        {data?.modules &&
+          data.modules.length >
+            0 && (
+            <section
+              style={{
+                marginBottom: 18,
+                padding: 20,
+                borderRadius: 20,
+                border:
+                  "1px solid #e5e7eb",
+                background:
+                  "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: 14,
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    color:
+                      "#64748b",
+                    fontSize: 12,
+                    fontWeight: 900,
+                    letterSpacing:
+                      "0.08em",
+                  }}
+                >
+                  RUNTIME MODULES
+                </p>
+
+                <h2
+                  style={{
+                    margin:
+                      "6px 0 0",
+                    fontSize: 24,
+                  }}
+                >
+                  Runtime Modules
+                </h2>
+              </div>
+
+              <div
+                style={{
+                  display:
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {data.modules.map(
+                  (module) => (
+                    <div
+                      key={
+                        module.id
+                      }
+                      style={{
+                        padding: 14,
+                        borderRadius: 14,
+                        background:
+                          "#f8fafc",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap: 10,
+                        }}
+                      >
+                        <strong>
+                          {
+                            module.name
+                          }
+                        </strong>
+
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {
+                            module.status
+                          }
+                        </span>
+                      </div>
+
+                      {module.description && (
+                        <p
+                          style={{
+                            margin:
+                              "7px 0 0",
+                            color:
+                              "#64748b",
+                            fontSize: 13,
+                            lineHeight:
+                              1.6,
+                          }}
+                        >
+                          {
+                            module.description
+                          }
+                        </p>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            </section>
+          )}
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <CoreVerificationPanel />
+        </section>
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <PlannerHealthPanel />
+        </section>
+
+        <section
+          style={{
+            marginBottom: 18,
+          }}
+        >
+          <AutonomousLoopRegressionPanel />
+        </section>
+
+        <section
+          style={{
+            display:
+              "grid",
+            gridTemplateColumns:
+              "repeat(3, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
+          <RuntimeLink
+            href="/planner"
+            title="Planner"
             description={t(
               "runtime.openPlannerDescription",
             )}
           />
 
-          <NavigationCard
+          <RuntimeLink
             href="/brain"
-            title={t(
-              "runtime.openConsole",
-            )}
+            title="Brain"
             description={t(
               "runtime.openConsoleDescription",
             )}
           />
 
-          <NavigationCard
+          <RuntimeLink
             href="/runtime/trace"
-            title={t(
-              "runtime.openTrace",
-            )}
+            title="Runtime Trace"
             description={t(
               "runtime.openTraceDescription",
             )}
@@ -661,44 +617,37 @@ export default function RuntimePage() {
   );
 }
 
-function StatusCard({
+function RuntimeCard({
   label,
   value,
-  detail,
+  description,
 }: {
   label: string;
   value: string;
-  detail: string;
+  description: string;
 }) {
   return (
-    <section
+    <div
       style={{
-        padding:
-          18,
-
-        borderRadius:
-          18,
-
+        padding: 18,
+        borderRadius: 18,
         border:
           "1px solid #e5e7eb",
-
         background:
           "#ffffff",
+        minWidth: 0,
       }}
     >
       <div
         style={{
           color:
             "#64748b",
-
-          fontSize:
-            11,
-
-          fontWeight:
-            900,
-
+          fontSize: 11,
+          fontWeight: 900,
           letterSpacing:
             "0.06em",
+          textTransform:
+            "uppercase",
         }}
       >
         {label}
@@ -706,14 +655,11 @@ function StatusCard({
 
       <div
         style={{
-          marginTop:
-            8,
-
-          fontSize:
-            22,
-
-          fontWeight:
-            850,
+          marginTop: 7,
+          fontSize: 21,
+          fontWeight: 900,
+          overflowWrap:
+            "anywhere",
         }}
       >
         {value}
@@ -721,83 +667,21 @@ function StatusCard({
 
       <div
         style={{
-          marginTop:
-            6,
-
+          marginTop: 7,
           color:
             "#64748b",
-
-          fontSize:
-            12,
-
+          fontSize: 12,
           lineHeight:
-            1.5,
+            1.55,
         }}
       >
-        {detail}
-      </div>
-    </section>
-  );
-}
-
-function ModuleCard({
-  label,
-  enabled,
-}: {
-  label: string;
-  enabled: boolean;
-}) {
-  return (
-    <div
-      style={{
-        padding:
-          14,
-
-        borderRadius:
-          14,
-
-        background:
-          "#f8fafc",
-
-        border:
-          "1px solid #f1f5f9",
-      }}
-    >
-      <div
-        style={{
-          fontWeight:
-            800,
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          marginTop:
-            5,
-
-          color:
-            enabled
-              ? "#166534"
-              : "#991b1b",
-
-          fontSize:
-            12,
-
-          fontWeight:
-            800,
-        }}
-      >
-        {enabled
-          ? "READY"
-          : "OFFLINE"}
+        {description}
       </div>
     </div>
   );
 }
 
-function NavigationCard({
+function RuntimeLink({
   href,
   title,
   description,
@@ -812,27 +696,23 @@ function NavigationCard({
       style={{
         display:
           "block",
-
-        padding:
-          18,
-
-        borderRadius:
-          18,
-
+        padding: 18,
+        borderRadius: 18,
         border:
           "1px solid #e5e7eb",
-
         background:
           "#ffffff",
-
         color:
-          "inherit",
-
+          "#0f172a",
         textDecoration:
           "none",
       }}
     >
-      <strong>
+      <strong
+        style={{
+          fontSize: 17,
+        }}
+      >
         {title}
       </strong>
 
@@ -840,15 +720,11 @@ function NavigationCard({
         style={{
           margin:
             "7px 0 0",
-
           color:
             "#64748b",
-
+          fontSize: 13,
           lineHeight:
             1.6,
-
-          fontSize:
-            13,
         }}
       >
         {description}
