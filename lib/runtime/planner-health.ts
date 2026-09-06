@@ -40,9 +40,11 @@ export interface PlannerHealthResult {
 
   planner: {
     outcomes: number;
-    pendingOutcomes: number;
+    plannedOutcomes: number;
     activeOutcomes: number;
+    blockedOutcomes: number;
     completedOutcomes: number;
+    archivedOutcomes: number;
     totalTasks: number;
     todoTasks: number;
     doingTasks: number;
@@ -71,10 +73,18 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
       listPersistentTasks(),
     ]);
 
-    const pendingOutcomes =
+    /*
+     * OutcomeStatus is intentionally evaluated against
+     * the real Outcome contract:
+     *
+     * planned | active | blocked | completed | archived
+     *
+     * Do not use task states here.
+     */
+    const plannedOutcomes =
       outcomes.filter(
         (item) =>
-          item.status === "pending",
+          item.status === "planned",
       ).length;
 
     const activeOutcomes =
@@ -83,12 +93,29 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
           item.status === "active",
       ).length;
 
+    const blockedOutcomes =
+      outcomes.filter(
+        (item) =>
+          item.status === "blocked",
+      ).length;
+
     const completedOutcomes =
       outcomes.filter(
         (item) =>
           item.status === "completed",
       ).length;
 
+    const archivedOutcomes =
+      outcomes.filter(
+        (item) =>
+          item.status === "archived",
+      ).length;
+
+    /*
+     * Persistent task state is a separate contract:
+     *
+     * todo | doing | done
+     */
     const todoTasks =
       tasks.filter(
         (item) =>
@@ -109,10 +136,19 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
 
     const checks: PlannerHealthCheck[] = [];
 
+    /*
+     * Every real OutcomeStatus must belong to exactly
+     * one of the known states.
+     */
+    const classifiedOutcomes =
+      plannedOutcomes +
+      activeOutcomes +
+      blockedOutcomes +
+      completedOutcomes +
+      archivedOutcomes;
+
     const outcomeStateValid =
-      pendingOutcomes +
-        activeOutcomes +
-        completedOutcomes <=
+      classifiedOutcomes ===
       outcomes.length;
 
     pushCheck(
@@ -128,29 +164,42 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
 
         message:
           outcomeStateValid
-            ? "Planner outcome states are structurally valid."
-            : "Planner contains outcomes with invalid or unknown states.",
+            ? "Planner outcome states are fully classified."
+            : "Planner contains outcomes with an unknown state.",
 
         details: {
           total:
             outcomes.length,
 
-          pending:
-            pendingOutcomes,
+          planned:
+            plannedOutcomes,
 
           active:
             activeOutcomes,
 
+          blocked:
+            blockedOutcomes,
+
           completed:
             completedOutcomes,
+
+          archived:
+            archivedOutcomes,
         },
       },
     );
 
-    const taskStateValid =
+    /*
+     * Every persistent task must belong to exactly
+     * one of the known task states.
+     */
+    const classifiedTasks =
       todoTasks +
-        doingTasks +
-        doneTasks ===
+      doingTasks +
+      doneTasks;
+
+    const taskStateValid =
+      classifiedTasks ===
       tasks.length;
 
     pushCheck(
@@ -185,6 +234,10 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
       },
     );
 
+    /*
+     * The current execution contract allows at most
+     * one task to be actively executing at a time.
+     */
     const doingTaskContract =
       doingTasks <= 1;
 
@@ -214,7 +267,12 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
       outcomes.length === 0 &&
       tasks.length === 0;
 
+    /*
+     * Work is considered active when the planner has
+     * planned/active outcomes or queued/executing tasks.
+     */
     const activeWork =
+      plannedOutcomes > 0 ||
       activeOutcomes > 0 ||
       todoTasks > 0 ||
       doingTasks > 0;
@@ -242,10 +300,19 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
         },
       );
     } else {
+      /*
+       * Queued work is valid when there is either a planned
+       * or active outcome, or when there is already an
+       * executing task.
+       *
+       * A standalone todo queue is reported as a warning
+       * rather than a hard failure because task materialization
+       * and execution may legitimately be between stages.
+       */
       const activeWorkConsistent =
+        plannedOutcomes > 0 ||
         activeOutcomes > 0 ||
-        todoTasks === 0 &&
-          doingTasks === 0;
+        doingTasks > 0;
 
       pushCheck(
         checks,
@@ -260,11 +327,15 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
 
           message:
             activeWorkConsistent
-              ? "Planner contains a consistent active or completed workload."
+              ? "Planner contains a consistent active workload."
               : "Planner contains queued work without an active outcome.",
 
           details: {
+            plannedOutcomes,
             activeOutcomes,
+            blockedOutcomes,
+            completedOutcomes,
+            archivedOutcomes,
             todoTasks,
             doingTasks,
             doneTasks,
@@ -337,11 +408,15 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
         outcomes:
           outcomes.length,
 
-        pendingOutcomes,
+        plannedOutcomes,
 
         activeOutcomes,
 
+        blockedOutcomes,
+
         completedOutcomes,
+
+        archivedOutcomes,
 
         totalTasks:
           tasks.length,
@@ -377,7 +452,6 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
             "fail",
 
           message,
-
         },
       ],
 
@@ -390,9 +464,11 @@ export async function verifyPlannerHealth(): Promise<PlannerHealthResult> {
 
       planner: {
         outcomes: 0,
-        pendingOutcomes: 0,
+        plannedOutcomes: 0,
         activeOutcomes: 0,
+        blockedOutcomes: 0,
         completedOutcomes: 0,
+        archivedOutcomes: 0,
         totalTasks: 0,
         todoTasks: 0,
         doingTasks: 0,
