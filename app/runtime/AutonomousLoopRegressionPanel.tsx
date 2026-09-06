@@ -78,12 +78,17 @@ export default function AutonomousLoopRegressionPanel() {
   ] =
     useState(true);
 
+  const [
+    error,
+    setError,
+  ] =
+    useState(false);
+
   const load =
     useCallback(
       async () => {
-        setLoading(
-          true,
-        );
+        setLoading(true);
+        setError(false);
 
         try {
           const response =
@@ -99,17 +104,21 @@ export default function AutonomousLoopRegressionPanel() {
             (await response.json()) as
               RegressionResult;
 
-          setData(
-            result,
-          );
+          if (
+            !response.ok ||
+            !result
+          ) {
+            throw new Error(
+              "Regression verification failed.",
+            );
+          }
+
+          setData(result);
         } catch {
-          setData(
-            null,
-          );
+          setData(null);
+          setError(true);
         } finally {
-          setLoading(
-            false,
-          );
+          setLoading(false);
         }
       },
       [],
@@ -122,52 +131,30 @@ export default function AutonomousLoopRegressionPanel() {
   return (
     <section
       style={{
-        marginTop:
-          18,
-
-        padding:
-          20,
-
-        borderRadius:
-          20,
-
+        marginTop: 18,
+        padding: 20,
+        borderRadius: 20,
         border:
           "1px solid #e5e7eb",
-
-        background:
-          "#ffffff",
+        background: "#ffffff",
       }}
     >
       <div
         style={{
-          display:
-            "flex",
-
+          display: "flex",
           justifyContent:
             "space-between",
-
-          alignItems:
-            "center",
-
-          gap:
-            14,
+          alignItems: "center",
+          gap: 14,
         }}
       >
         <div>
           <p
             style={{
-              margin:
-                0,
-
-              color:
-                "#64748b",
-
-              fontSize:
-                12,
-
-              fontWeight:
-                900,
-
+              margin: 0,
+              color: "#64748b",
+              fontSize: 12,
+              fontWeight: 900,
               letterSpacing:
                 "0.08em",
             }}
@@ -179,9 +166,7 @@ export default function AutonomousLoopRegressionPanel() {
             style={{
               margin:
                 "6px 0 0",
-
-              fontSize:
-                28,
+              fontSize: 28,
             }}
           >
             {loading
@@ -205,21 +190,31 @@ export default function AutonomousLoopRegressionPanel() {
         )}
       </div>
 
+      {error && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 14,
+            background: "#fef2f2",
+            color: "#991b1b",
+            lineHeight: 1.6,
+          }}
+        >
+          Unable to complete autonomous
+          loop regression verification.
+        </div>
+      )}
+
       {data && (
         <>
           <div
             style={{
-              display:
-                "grid",
-
+              display: "grid",
               gridTemplateColumns:
                 "repeat(3, minmax(0, 1fr))",
-
-              gap:
-                10,
-
-              marginTop:
-                16,
+              gap: 10,
+              marginTop: 16,
             }}
           >
             <Metric
@@ -235,50 +230,54 @@ export default function AutonomousLoopRegressionPanel() {
               value={
                 data.summary
                   .warnings
-              />
+              }
+            />
 
             <Metric
               label="Failed"
               value={
                 data.summary
                   .failed
-              />
+              }
+            />
           </div>
 
           <div
             style={{
-              marginTop:
-                16,
+              marginTop: 16,
             }}
           >
             {data.checks.map(
               (check) => (
                 <div
-                  key={
-                    check.id
-                  }
+                  key={check.id}
                   style={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
-                    gap:
-                      12,
-
+                    alignItems:
+                      "flex-start",
+                    gap: 12,
                     padding:
                       "10px 0",
-
                     borderBottom:
                       "1px solid #f1f5f9",
                   }}
                 >
-                  <span>
+                  <span
+                    style={{
+                      lineHeight: 1.5,
+                    }}
+                  >
                     {check.message}
                   </span>
 
-                  <strong>
+                  <strong
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 11,
+                    }}
+                  >
                     {check.status.toUpperCase()}
                   </strong>
                 </div>
@@ -288,17 +287,10 @@ export default function AutonomousLoopRegressionPanel() {
 
           <div
             style={{
-              marginTop:
-                18,
-
-              padding:
-                15,
-
-              borderRadius:
-                15,
-
-              background:
-                "#f8fafc",
+              marginTop: 18,
+              padding: 15,
+              borderRadius: 15,
+              background: "#f8fafc",
             }}
           >
             <strong>
@@ -309,12 +301,8 @@ export default function AutonomousLoopRegressionPanel() {
               style={{
                 margin:
                   "8px 0 0",
-
-                color:
-                  "#475569",
-
-                lineHeight:
-                  1.6,
+                color: "#475569",
+                lineHeight: 1.6,
               }}
             >
               Outcomes:{" "}
@@ -348,15 +336,9 @@ export default function AutonomousLoopRegressionPanel() {
 
           <div
             style={{
-              marginTop:
-                12,
-
-              padding:
-                15,
-
-              borderRadius:
-                15,
-
+              marginTop: 12,
+              padding: 15,
+              borderRadius: 15,
               background:
                 data.autonomy.ready
                   ? "#f0fdf4"
@@ -371,9 +353,7 @@ export default function AutonomousLoopRegressionPanel() {
               style={{
                 margin:
                   "8px 0 0",
-
-                lineHeight:
-                  1.6,
+                lineHeight: 1.6,
               }}
             >
               Level:{" "}
@@ -388,97 +368,134 @@ export default function AutonomousLoopRegressionPanel() {
                 : "NO"}
             </p>
 
-            {data.autonomy.candidateTask && (
+            {data.autonomy
+              .candidateTask && (
               <p
                 style={{
                   margin:
                     "8px 0 0",
-
-                  color:
-                    "#475569",
+                  color: "#475569",
                 }}
               >
                 Candidate:{" "}
-                {data.autonomy
-                  .candidateTask
-                  .title}
+                {
+                  data.autonomy
+                    .candidateTask
+                    .title
+                }
               </p>
             )}
 
-            {data.autonomy.blockers.length >
+            {data.autonomy
+              .blockers.length >
               0 && (
-              <ul
+              <div
                 style={{
-                  margin:
-                    "8px 0 0",
-
-                  paddingLeft:
-                    20,
-
-                  color:
-                    "#92400e",
+                  marginTop: 10,
                 }}
               >
-                {data.autonomy.blockers.map(
-                  (blocker) => (
-                    <li
-                      key={
-                        blocker
-                      }
-                    >
-                      {blocker}
-                    </li>
-                  ),
-                )}
-              </ul>
+                <strong>
+                  Blockers
+                </strong>
+
+                <ul
+                  style={{
+                    margin:
+                      "8px 0 0",
+                    paddingLeft: 20,
+                    color:
+                      "#92400e",
+                  }}
+                >
+                  {data.autonomy.blockers.map(
+                    (blocker) => (
+                      <li
+                        key={blocker}
+                        style={{
+                          marginBottom: 4,
+                        }}
+                      >
+                        {blocker}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {data.autonomy
+              .recommendations.length >
+              0 && (
+              <div
+                style={{
+                  marginTop: 10,
+                }}
+              >
+                <strong>
+                  Recommendations
+                </strong>
+
+                <ul
+                  style={{
+                    margin:
+                      "8px 0 0",
+                    paddingLeft: 20,
+                    color:
+                      "#475569",
+                  }}
+                >
+                  {data.autonomy.recommendations.map(
+                    (recommendation) => (
+                      <li
+                        key={
+                          recommendation
+                        }
+                        style={{
+                          marginBottom: 4,
+                        }}
+                      >
+                        {
+                          recommendation
+                        }
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </div>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              void load()
-            }
-            disabled={
-              loading
-            }
-            style={{
-              marginTop:
-                16,
-
-              minHeight:
-                42,
-
-              padding:
-                "0 16px",
-
-              border:
-                0,
-
-              borderRadius:
-                12,
-
-              background:
-                "#111827",
-
-              color:
-                "#ffffff",
-
-              fontWeight:
-                800,
-
-              cursor:
-                loading
-                  ? "wait"
-                  : "pointer",
-            }}
-          >
-            {loading
-              ? "Verifying..."
-              : "Run Regression Again"}
-          </button>
         </>
       )}
+
+      <button
+        type="button"
+        onClick={() =>
+          void load()
+        }
+        disabled={loading}
+        style={{
+          marginTop: 16,
+          minHeight: 42,
+          padding: "0 16px",
+          border: 0,
+          borderRadius: 12,
+          background: "#111827",
+          color: "#ffffff",
+          fontWeight: 800,
+          cursor:
+            loading
+              ? "wait"
+              : "pointer",
+          opacity:
+            loading
+              ? 0.7
+              : 1,
+        }}
+      >
+        {loading
+          ? "Verifying..."
+          : "Run Regression Again"}
+      </button>
     </section>
   );
 }
@@ -493,26 +510,16 @@ function Metric({
   return (
     <div
       style={{
-        padding:
-          12,
-
-        borderRadius:
-          13,
-
-        background:
-          "#f8fafc",
+        padding: 12,
+        borderRadius: 13,
+        background: "#f8fafc",
       }}
     >
       <div
         style={{
-          color:
-            "#64748b",
-
-          fontSize:
-            11,
-
-          fontWeight:
-            800,
+          color: "#64748b",
+          fontSize: 11,
+          fontWeight: 800,
         }}
       >
         {label}
@@ -520,14 +527,9 @@ function Metric({
 
       <strong
         style={{
-          display:
-            "block",
-
-          marginTop:
-            4,
-
-          fontSize:
-            22,
+          display: "block",
+          marginTop: 4,
+          fontSize: 22,
         }}
       >
         {value}
