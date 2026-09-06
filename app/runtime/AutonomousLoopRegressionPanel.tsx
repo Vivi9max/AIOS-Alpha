@@ -61,6 +61,8 @@ interface RegressionResult {
       description: string;
     } | null;
   };
+
+  timestamp?: number;
 }
 
 export default function AutonomousLoopRegressionPanel() {
@@ -104,16 +106,25 @@ export default function AutonomousLoopRegressionPanel() {
             (await response.json()) as
               RegressionResult;
 
-          if (
-            !response.ok ||
-            !result
-          ) {
+          if (!result) {
             throw new Error(
-              "Regression verification failed.",
+              "Regression verification returned no result.",
             );
           }
 
+          /*
+           * Important:
+           * A regression result with status 503 can still
+           * contain the complete diagnostic payload.
+           *
+           * Do not discard it merely because response.ok
+           * is false.
+           */
           setData(result);
+
+          if (!response.ok) {
+            setError(true);
+          }
         } catch {
           setData(null);
           setError(true);
@@ -131,30 +142,55 @@ export default function AutonomousLoopRegressionPanel() {
   return (
     <section
       style={{
-        marginTop: 18,
-        padding: 20,
-        borderRadius: 20,
+        marginTop:
+          18,
+
+        padding:
+          20,
+
+        borderRadius:
+          20,
+
         border:
           "1px solid #e5e7eb",
-        background: "#ffffff",
+
+        background:
+          "#ffffff",
       }}
     >
       <div
         style={{
-          display: "flex",
+          display:
+            "flex",
+
           justifyContent:
             "space-between",
-          alignItems: "center",
-          gap: 14,
+
+          alignItems:
+            "center",
+
+          gap:
+            14,
+
+          flexWrap:
+            "wrap",
         }}
       >
         <div>
           <p
             style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 12,
-              fontWeight: 900,
+              margin:
+                0,
+
+              color:
+                "#64748b",
+
+              fontSize:
+                12,
+
+              fontWeight:
+                900,
+
               letterSpacing:
                 "0.08em",
             }}
@@ -166,7 +202,9 @@ export default function AutonomousLoopRegressionPanel() {
             style={{
               margin:
                 "6px 0 0",
-              fontSize: 28,
+
+              fontSize:
+                28,
             }}
           >
             {loading
@@ -190,15 +228,60 @@ export default function AutonomousLoopRegressionPanel() {
         )}
       </div>
 
-      {error && (
+      {error && data && (
         <div
           style={{
-            marginTop: 16,
-            padding: 14,
-            borderRadius: 14,
-            background: "#fef2f2",
-            color: "#991b1b",
-            lineHeight: 1.6,
+            marginTop:
+              16,
+
+            padding:
+              14,
+
+            borderRadius:
+              14,
+
+            background:
+              "#fffbeb",
+
+            border:
+              "1px solid #fde68a",
+
+            color:
+              "#92400e",
+
+            lineHeight:
+              1.6,
+          }}
+        >
+          Regression verification returned
+          a non-success HTTP status. The
+          diagnostic result is shown below.
+        </div>
+      )}
+
+      {error && !data && (
+        <div
+          style={{
+            marginTop:
+              16,
+
+            padding:
+              14,
+
+            borderRadius:
+              14,
+
+            background:
+              "#fef2f2",
+
+            border:
+              "1px solid #fecaca",
+
+            color:
+              "#991b1b",
+
+            lineHeight:
+              1.6,
           }}
         >
           Unable to complete autonomous
@@ -210,11 +293,17 @@ export default function AutonomousLoopRegressionPanel() {
         <>
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
+
               gridTemplateColumns:
                 "repeat(3, minmax(0, 1fr))",
-              gap: 10,
-              marginTop: 16,
+
+              gap:
+                10,
+
+              marginTop:
+                16,
             }}
           >
             <Metric
@@ -244,41 +333,60 @@ export default function AutonomousLoopRegressionPanel() {
 
           <div
             style={{
-              marginTop: 16,
+              marginTop:
+                16,
             }}
           >
             {data.checks.map(
               (check) => (
                 <div
-                  key={check.id}
+                  key={
+                    check.id
+                  }
                   style={{
-                    display: "flex",
+                    display:
+                      "flex",
+
                     justifyContent:
                       "space-between",
+
                     alignItems:
                       "flex-start",
-                    gap: 12,
+
+                    gap:
+                      12,
+
                     padding:
                       "10px 0",
+
                     borderBottom:
                       "1px solid #f1f5f9",
                   }}
                 >
                   <span
                     style={{
-                      lineHeight: 1.5,
+                      lineHeight:
+                        1.5,
                     }}
                   >
-                    {check.message}
+                    {
+                      check.message
+                    }
                   </span>
 
                   <strong
                     style={{
-                      flexShrink: 0,
-                      fontSize: 11,
+                      flexShrink:
+                        0,
+
+                      fontSize:
+                        11,
                     }}
                   >
-                    {check.status.toUpperCase()}
+                    {
+                      check.status
+                        .toUpperCase()
+                    }
                   </strong>
                 </div>
               ),
@@ -287,10 +395,17 @@ export default function AutonomousLoopRegressionPanel() {
 
           <div
             style={{
-              marginTop: 18,
-              padding: 15,
-              borderRadius: 15,
-              background: "#f8fafc",
+              marginTop:
+                18,
+
+              padding:
+                15,
+
+              borderRadius:
+                15,
+
+              background:
+                "#f8fafc",
             }}
           >
             <strong>
@@ -301,44 +416,78 @@ export default function AutonomousLoopRegressionPanel() {
               style={{
                 margin:
                   "8px 0 0",
-                color: "#475569",
-                lineHeight: 1.6,
+
+                color:
+                  "#475569",
+
+                lineHeight:
+                  1.6,
               }}
             >
               Outcomes:{" "}
-              {data.planner.outcomes}
+              {
+                data.planner
+                  .outcomes
+              }
               {" · "}
               Active:{" "}
-              {data.planner.activeOutcomes}
+              {
+                data.planner
+                  .activeOutcomes
+              }
               {" · "}
               Todo:{" "}
-              {data.planner.todoTasks}
+              {
+                data.planner
+                  .todoTasks
+              }
               {" · "}
               Doing:{" "}
-              {data.planner.doingTasks}
+              {
+                data.planner
+                  .doingTasks
+              }
               {" · "}
               Done:{" "}
-              {data.planner.doneTasks}
+              {
+                data.planner
+                  .doneTasks
+              }
               <br />
               Recent runs:{" "}
-              {data.execution.recentRuns}
+              {
+                data.execution
+                  .recentRuns
+              }
               {" · "}
               Failures:{" "}
-              {data.execution.recentFailures}
+              {
+                data.execution
+                  .recentFailures
+              }
               {" · "}
               Success rate:{" "}
-              {data.execution.successRate ===
-              null
-                ? "—"
-                : `${data.execution.successRate}%`}
+              {
+                data.execution
+                  .successRate ===
+                null
+                  ? "—"
+                  : `${data.execution.successRate}%`
+              }
             </p>
           </div>
 
           <div
             style={{
-              marginTop: 12,
-              padding: 15,
-              borderRadius: 15,
+              marginTop:
+                12,
+
+              padding:
+                15,
+
+              borderRadius:
+                15,
+
               background:
                 data.autonomy.ready
                   ? "#f0fdf4"
@@ -353,19 +502,30 @@ export default function AutonomousLoopRegressionPanel() {
               style={{
                 margin:
                   "8px 0 0",
-                lineHeight: 1.6,
+
+                lineHeight:
+                  1.6,
               }}
             >
               Level:{" "}
-              {data.autonomy.level}
+              {
+                data.autonomy
+                  .level
+              }
               {" · "}
               Decision:{" "}
-              {data.autonomy.decision}
+              {
+                data.autonomy
+                  .decision
+              }
               {" · "}
               Ready:{" "}
-              {data.autonomy.ready
-                ? "YES"
-                : "NO"}
+              {
+                data.autonomy
+                  .ready
+                  ? "YES"
+                  : "NO"
+              }
             </p>
 
             {data.autonomy
@@ -374,7 +534,9 @@ export default function AutonomousLoopRegressionPanel() {
                 style={{
                   margin:
                     "8px 0 0",
-                  color: "#475569",
+
+                  color:
+                    "#475569",
                 }}
               >
                 Candidate:{" "}
@@ -391,7 +553,8 @@ export default function AutonomousLoopRegressionPanel() {
               0 && (
               <div
                 style={{
-                  marginTop: 10,
+                  marginTop:
+                    10,
                 }}
               >
                 <strong>
@@ -402,33 +565,46 @@ export default function AutonomousLoopRegressionPanel() {
                   style={{
                     margin:
                       "8px 0 0",
-                    paddingLeft: 20,
+
+                    paddingLeft:
+                      20,
+
                     color:
                       "#92400e",
                   }}
                 >
-                  {data.autonomy.blockers.map(
-                    (blocker) => (
-                      <li
-                        key={blocker}
-                        style={{
-                          marginBottom: 4,
-                        }}
-                      >
-                        {blocker}
-                      </li>
-                    ),
-                  )}
+                  {data.autonomy
+                    .blockers.map(
+                      (
+                        blocker,
+                      ) => (
+                        <li
+                          key={
+                            blocker
+                          }
+                          style={{
+                            marginBottom:
+                              4,
+                          }}
+                        >
+                          {
+                            blocker
+                          }
+                        </li>
+                      ),
+                    )}
                 </ul>
               </div>
             )}
 
             {data.autonomy
-              .recommendations.length >
+              .recommendations
+              .length >
               0 && (
               <div
                 style={{
-                  marginTop: 10,
+                  marginTop:
+                    10,
                 }}
               >
                 <strong>
@@ -439,27 +615,35 @@ export default function AutonomousLoopRegressionPanel() {
                   style={{
                     margin:
                       "8px 0 0",
-                    paddingLeft: 20,
+
+                    paddingLeft:
+                      20,
+
                     color:
                       "#475569",
                   }}
                 >
-                  {data.autonomy.recommendations.map(
-                    (recommendation) => (
-                      <li
-                        key={
-                          recommendation
-                        }
-                        style={{
-                          marginBottom: 4,
-                        }}
-                      >
-                        {
-                          recommendation
-                        }
-                      </li>
-                    ),
-                  )}
+                  {data.autonomy
+                    .recommendations
+                    .map(
+                      (
+                        recommendation,
+                      ) => (
+                        <li
+                          key={
+                            recommendation
+                          }
+                          style={{
+                            marginBottom:
+                              4,
+                          }}
+                        >
+                          {
+                            recommendation
+                          }
+                        </li>
+                      ),
+                    )}
                 </ul>
               </div>
             )}
@@ -472,20 +656,39 @@ export default function AutonomousLoopRegressionPanel() {
         onClick={() =>
           void load()
         }
-        disabled={loading}
+        disabled={
+          loading
+        }
         style={{
-          marginTop: 16,
-          minHeight: 42,
-          padding: "0 16px",
-          border: 0,
-          borderRadius: 12,
-          background: "#111827",
-          color: "#ffffff",
-          fontWeight: 800,
+          marginTop:
+            16,
+
+          minHeight:
+            42,
+
+          padding:
+            "0 16px",
+
+          border:
+            0,
+
+          borderRadius:
+            12,
+
+          background:
+            "#111827",
+
+          color:
+            "#ffffff",
+
+          fontWeight:
+            800,
+
           cursor:
             loading
               ? "wait"
               : "pointer",
+
           opacity:
             loading
               ? 0.7
@@ -510,16 +713,26 @@ function Metric({
   return (
     <div
       style={{
-        padding: 12,
-        borderRadius: 13,
-        background: "#f8fafc",
+        padding:
+          12,
+
+        borderRadius:
+          13,
+
+        background:
+          "#f8fafc",
       }}
     >
       <div
         style={{
-          color: "#64748b",
-          fontSize: 11,
-          fontWeight: 800,
+          color:
+            "#64748b",
+
+          fontSize:
+            11,
+
+          fontWeight:
+            800,
         }}
       >
         {label}
@@ -527,9 +740,14 @@ function Metric({
 
       <strong
         style={{
-          display: "block",
-          marginTop: 4,
-          fontSize: 22,
+          display:
+            "block",
+
+          marginTop:
+            4,
+
+          fontSize:
+            22,
         }}
       >
         {value}
