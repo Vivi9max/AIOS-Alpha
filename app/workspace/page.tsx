@@ -5,10 +5,17 @@ import InviteBanner from "@/components/alpha/InviteBanner";
 import FeedbackButton from "@/components/alpha/FeedbackButton";
 import WorkspaceOverview from "@/components/workspace/WorkspaceOverview";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
-import { useLanguage } from "@/components/i18n/LanguageProvider";
+import SystemVerificationPanel from "@/components/runtime/SystemVerificationPanel";
+
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
 
 export default function WorkspacePage() {
-  const { t } = useLanguage();
+  const {
+    t,
+  } = useLanguage();
+
   return (
     <WorkspaceShell>
       <main
@@ -40,6 +47,8 @@ export default function WorkspacePage() {
 
         <WorkspaceOverview />
 
+        <SystemVerificationPanel />
+
         <section
           id="aios-chat"
           style={{
@@ -65,7 +74,9 @@ export default function WorkspacePage() {
                   18,
               }}
             >
-              {t("workspace.chatTitle")}
+              {t(
+                "workspace.chatTitle",
+              )}
             </h2>
 
             <p
@@ -80,7 +91,9 @@ export default function WorkspacePage() {
                   13,
               }}
             >
-              {t("workspace.chatDescription")}
+              {t(
+                "workspace.chatDescription",
+              )}
             </p>
           </div>
 
