@@ -36,47 +36,80 @@ export default function LanguageProvider({
   const [locale, setLocaleState] =
     useState<Locale>(DEFAULT_LOCALE);
 
-  const [ready, setReady] =
-    useState(false);
-
   useEffect(() => {
-    const stored =
-      window.localStorage.getItem(
-        LOCALE_STORAGE_KEY,
-      );
+    let initialLocale =
+      DEFAULT_LOCALE;
 
-    const initialLocale = isLocale(stored)
-      ? stored
-      : detectLocale(window.navigator.language);
+    try {
+      const stored =
+        window.localStorage.getItem(
+          LOCALE_STORAGE_KEY,
+        );
 
-    setLocaleState(initialLocale);
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) {
-      return;
+      if (isLocale(stored)) {
+        initialLocale = stored;
+      } else {
+        initialLocale = detectLocale(
+          window.navigator.language,
+        );
+      }
+    } catch {
+      initialLocale =
+        DEFAULT_LOCALE;
     }
 
-    document.documentElement.lang = locale;
-
-    window.localStorage.setItem(
-      LOCALE_STORAGE_KEY,
-      locale,
+    setLocaleState(
+      initialLocale,
     );
-  }, [locale, ready]);
 
-  const setLocale = useCallback(
-    (nextLocale: Locale) => {
-      setLocaleState(nextLocale);
+    try {
+      document.documentElement.lang =
+        initialLocale;
 
       window.localStorage.setItem(
         LOCALE_STORAGE_KEY,
+        initialLocale,
+      );
+    } catch {
+      // Locale persistence is optional.
+      // Rendering must never fail because
+      // storage or document access is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      document.documentElement.lang =
+        locale;
+
+      window.localStorage.setItem(
+        LOCALE_STORAGE_KEY,
+        locale,
+      );
+    } catch {
+      // Keep the application usable even
+      // when browser persistence is unavailable.
+    }
+  }, [locale]);
+
+  const setLocale = useCallback(
+    (nextLocale: Locale) => {
+      setLocaleState(
         nextLocale,
       );
 
-      document.documentElement.lang =
-        nextLocale;
+      try {
+        window.localStorage.setItem(
+          LOCALE_STORAGE_KEY,
+          nextLocale,
+        );
+
+        document.documentElement.lang =
+          nextLocale;
+      } catch {
+        // Locale state remains valid even
+        // if persistence is unavailable.
+      }
     },
     [],
   );
@@ -87,17 +120,33 @@ export default function LanguageProvider({
         locale,
         setLocale,
         t: (key) =>
-          translate(locale, key),
+          translate(
+            locale,
+            key,
+          ),
       }),
-      [locale, setLocale],
+      [
+        locale,
+        setLocale,
+      ],
     );
 
-  if (!ready) {
-    return null;
-  }
-
+  /*
+   * Never return null while waiting for
+   * browser-side locale detection.
+   *
+   * The application must render immediately
+   * with DEFAULT_LOCALE and then switch to
+   * the detected/stored locale after mount.
+   *
+   * This prevents a global white screen when
+   * hydration, localStorage, or browser locale
+   * detection is delayed or unavailable.
+   */
   return (
-    <LanguageContext.Provider value={value}>
+    <LanguageContext.Provider
+      value={value}
+    >
       {children}
     </LanguageContext.Provider>
   );
@@ -105,7 +154,9 @@ export default function LanguageProvider({
 
 export function useLanguage(): LanguageContextValue {
   const context =
-    useContext(LanguageContext);
+    useContext(
+      LanguageContext,
+    );
 
   if (!context) {
     throw new Error(
