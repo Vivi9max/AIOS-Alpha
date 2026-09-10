@@ -4,8 +4,20 @@ import { useState } from "react";
 
 type Result = Record<string, unknown>;
 
+type OutcomeRecord = {
+  id: string;
+  title: string;
+  status?: string;
+};
+
 const VERIFICATION_TITLE =
   "C142.11 Autonomous Runtime Closed-Loop Verification";
+
+async function readJson(
+  response: Response,
+): Promise<Result> {
+  return (await response.json()) as Result;
+}
 
 export default function FounderEvolutionVerification() {
   const [accessKey, setAccessKey] = useState("");
@@ -27,13 +39,12 @@ export default function FounderEvolutionVerification() {
 
     try {
       /*
-       * Step 1:
-       * Create one explicit Founder-approved Outcome.
+       * C142.11.2
        *
-       * The Outcome is the authorization boundary for autonomous work.
-       * AIOS must not invent an unrelated autonomous objective.
+       * Step 1:
+       * Create or locate the explicit Founder-approved Outcome.
        */
-      const outcomeResponse = await fetch(
+      const createResponse = await fetch(
         "/api/outcomes",
         {
           method: "POST",
@@ -66,30 +77,115 @@ export default function FounderEvolutionVerification() {
         },
       );
 
-      const outcomeData =
-        (await outcomeResponse.json()) as Result;
+      const createData =
+        await readJson(createResponse);
+
+      let outcomeId =
+        typeof createData.outcome === "object" &&
+        createData.outcome !== null &&
+        typeof (
+          createData.outcome as {
+            id?: unknown;
+          }
+        ).id === "string"
+          ? (
+              createData.outcome as {
+                id: string;
+              }
+            ).id
+          : "";
 
       /*
-       * A duplicate is safe here:
-       * the existing Outcome remains the user's verification target.
+       * If the Outcome already exists, locate the existing
+       * Founder verification Outcome instead of creating another one.
        */
       if (
-        !outcomeResponse.ok &&
-        outcomeData.code !== "DUPLICATE_OUTCOME"
+        !createResponse.ok &&
+        createData.code === "DUPLICATE_OUTCOME"
       ) {
+        const listResponse = await fetch(
+          "/api/outcomes",
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              Accept: "application/json",
+            },
+          },
+        );
+
+        const listData =
+          await readJson(listResponse);
+
+        const outcomes =
+          Array.isArray(listData.outcomes)
+            ? (listData.outcomes as OutcomeRecord[])
+            : [];
+
+        const existing = outcomes.find(
+          (outcome) =>
+            outcome.title ===
+            VERIFICATION_TITLE,
+        );
+
+        if (existing) {
+          outcomeId = existing.id;
+        }
+      }
+
+      if (!outcomeId) {
         throw new Error(
-          typeof outcomeData.error === "string"
-            ? outcomeData.error
-            : "Verification Outcome creation failed.",
+          typeof createData.error === "string"
+            ? createData.error
+            : "Unable to resolve verification Outcome.",
         );
       }
 
       /*
        * Step 2:
-       * Trigger exactly one Founder-authorized Evolution Heartbeat.
        *
-       * The secret is sent only as an Authorization header.
-       * It is never placed in the URL.
+       * Work Queue only materializes autonomous work from
+       * an ACTIVE Outcome.
+       *
+       * The previous C142.11.2 test left the newly created
+       * Outcome in PLANNED state, so Heartbeat correctly
+       * remained idle.
+       *
+       * Explicitly activate the Founder-approved Outcome
+       * before triggering autonomous execution.
+       */
+      const activateResponse = await fetch(
+        "/api/outcomes",
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            id: outcomeId,
+            status: "active",
+          }),
+        },
+      );
+
+      const activateData =
+        await readJson(activateResponse);
+
+      if (!activateResponse.ok) {
+        throw new Error(
+          typeof activateData.error === "string"
+            ? activateData.error
+            : "Failed to activate verification Outcome.",
+        );
+      }
+
+      /*
+       * Step 3:
+       *
+       * Trigger exactly ONE Founder-authorized
+       * Evolution Heartbeat.
        */
       const heartbeatResponse = await fetch(
         "/api/founder/evolution-heartbeat",
@@ -104,7 +200,7 @@ export default function FounderEvolutionVerification() {
       );
 
       const heartbeatData =
-        (await heartbeatResponse.json()) as Result;
+        await readJson(heartbeatResponse);
 
       if (!heartbeatResponse.ok) {
         throw new Error(
@@ -115,9 +211,10 @@ export default function FounderEvolutionVerification() {
       }
 
       /*
-       * Step 3:
-       * Read the actual persisted Outcome/Task state
-       * after the heartbeat completes.
+       * Step 4:
+       *
+       * Read the real persisted Outcome state
+       * after Heartbeat has completed.
        */
       const stateResponse = await fetch(
         "/api/outcomes",
@@ -131,11 +228,15 @@ export default function FounderEvolutionVerification() {
       );
 
       const stateData =
-        (await stateResponse.json()) as Result;
+        await readJson(stateResponse);
 
       setResult({
-        outcomePreparation: outcomeData,
+        outcomePreparation: createData,
+
+        outcomeActivation: activateData,
+
         heartbeat: heartbeatData,
+
         persistedState: stateData,
       });
     } catch (requestError) {
@@ -226,9 +327,9 @@ export default function FounderEvolutionVerification() {
           {VERIFICATION_TITLE}
           <br />
           <br />
-          <strong>Expected boundary</strong>
+          <strong>Execution boundary</strong>
           <br />
-          One Outcome → one pending Milestone →
+          One active Outcome → one pending Milestone →
           one Task → one bounded execution.
         </div>
 
