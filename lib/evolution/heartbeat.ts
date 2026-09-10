@@ -27,6 +27,10 @@ import {
   runAutonomousTaskLifecycle,
 } from "@/lib/runtime/autonomous-task-lifecycle";
 
+import {
+  ensureAutonomousWorkQueue,
+} from "@/lib/evolution/work-queue";
+
 export type EvolutionPriority =
   | "low"
   | "medium"
@@ -307,8 +311,8 @@ export async function runEvolutionHeartbeat(
 
       const [
         memory,
-        outcomes,
-        tasks,
+        initialOutcomes,
+        initialTasks,
         storageHealth,
       ] =
         await Promise.all([
@@ -317,6 +321,57 @@ export async function runEvolutionHeartbeat(
           listPersistentTasks(),
           getStorageHealth(),
         ]);
+
+      /*
+       * C142.11
+       *
+       * Heartbeat is now connected to the bounded
+       * autonomous work queue.
+       *
+       * The queue:
+       * - preserves existing doing/todo work
+       * - reconciles completed milestones
+       * - materializes at most one next milestone
+       * - never creates a new Outcome
+       *
+       * Persistent storage must be healthy before
+       * the queue is allowed to materialize new work.
+       */
+      const workQueue =
+        storageHealth.success
+          ? await ensureAutonomousWorkQueue()
+          : {
+              status: "idle" as const,
+              taskId: null,
+              taskTitle: null,
+              outcomeId: null,
+              milestoneId: null,
+              created: false,
+              message:
+                "Autonomous work queue was not materialized because persistent storage is unhealthy.",
+            };
+
+      /*
+       * Refresh planner state after queue reconciliation/materialization.
+       *
+       * This is important because the queue may have:
+       * - completed an old milestone
+       * - created the next task
+       * - linked the task to an Outcome
+       */
+      const [
+        outcomes,
+        tasks,
+      ] =
+        workQueue.created
+          ? await Promise.all([
+              listOutcomes(),
+              listPersistentTasks(),
+            ])
+          : [
+              initialOutcomes,
+              initialTasks,
+            ];
 
       const recent =
         memory.filter(
@@ -494,22 +549,16 @@ export async function runEvolutionHeartbeat(
       );
 
       /*
-       * C142.10.3
+       * C142.10.3 + C142.11
        *
-       * Heartbeat becomes an execution bridge.
+       * Heartbeat is the execution bridge.
        *
-       * The heartbeat may dispatch at most one todo task.
-       * Automatic execution is intentionally denied when:
+       * The work queue provides the next bounded task.
+       * The autonomous lifecycle performs the final
+       * Safety Gate and verification.
        *
-       * 1. storage is unhealthy
-       * 2. recent failures exist
-       * 3. another task is doing
-       * 4. there is no active outcome
-       * 5. there is no todo task
-       *
-       * The lifecycle itself performs the final Safety Gate check.
+       * At most ONE task may be dispatched per heartbeat.
        */
-
       const eligibleForAutonomousExecution =
         storageHealth.success &&
         recentFailures === 0 &&
@@ -537,12 +586,25 @@ export async function runEvolutionHeartbeat(
       if (
         eligibleForAutonomousExecution
       ) {
+        /*
+         * Prefer the task selected/materialized by
+         * C142.11 work queue.
+         *
+         * If the queue was a no-op because an existing
+         * todo already existed, find that task normally.
+         */
         const candidate =
-          tasks.find(
-            (task) =>
-              task.status ===
-              "todo",
-          );
+          workQueue.taskId
+            ? tasks.find(
+                (task) =>
+                  task.id ===
+                  workQueue.taskId,
+              )
+            : tasks.find(
+                (task) =>
+                  task.status ===
+                  "todo",
+              );
 
         if (candidate) {
           autonomousExecution =
@@ -553,7 +615,8 @@ export async function runEvolutionHeartbeat(
               status: "failed",
               taskId:
                 candidate.id,
-              outcomeId: null,
+              outcomeId:
+                workQueue.outcomeId,
               lifecycleId: null,
               message:
                 "Autonomous task dispatch started.",
@@ -608,7 +671,8 @@ export async function runEvolutionHeartbeat(
                 status: "failed",
                 taskId:
                   candidate.id,
-                outcomeId: null,
+                outcomeId:
+                  workQueue.outcomeId,
                 lifecycleId: null,
                 message:
                   error instanceof
@@ -633,14 +697,16 @@ export async function runEvolutionHeartbeat(
             ? "Investigate and recover failed executions before increasing autonomy."
             : !storageHealth.success
               ? "Restore persistent storage health before autonomous execution."
-              : planner.activeOutcomes >
-                    0 &&
-                  planner.todoTasks >
-                    0 &&
-                  planner.doingTasks ===
-                    0
-                ? "A Planner task is eligible for the next bounded autonomous heartbeat execution."
-                : "Observe execution, consolidate memory, and wait for the next verified opportunity.";
+              : workQueue.created
+                ? "The autonomous work queue materialized the next verified Outcome milestone. The task is eligible for bounded execution."
+                : planner.activeOutcomes >
+                      0 &&
+                    planner.todoTasks >
+                      0 &&
+                    planner.doingTasks ===
+                      0
+                  ? "A Planner task is eligible for the next bounded autonomous heartbeat execution."
+                  : "Observe execution, consolidate memory, and wait for the next verified opportunity.";
 
       const result: EvolutionHeartbeatResult =
         {
