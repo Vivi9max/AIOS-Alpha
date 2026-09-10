@@ -7,22 +7,6 @@ import {
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
 
-import {
-  runWithUserContext,
-} from "@/lib/runtime/request-context";
-
-import {
-  runAutonomousTaskLifecycle,
-} from "@/lib/runtime/autonomous-task-lifecycle";
-
-import {
-  listPersistentTasks,
-} from "@/lib/task/server-store";
-
-import {
-  listOutcomes,
-} from "@/lib/outcome/store";
-
 export const dynamic =
   "force-dynamic";
 
@@ -48,105 +32,26 @@ function jsonResponse(
 }
 
 /**
- * Runtime verification endpoint.
+ * C142.11
  *
- * GET:
- * Read-only health/state inspection.
- * It MUST NOT execute an autonomous task.
+ * Autonomous Runtime verification route.
  *
- * POST:
- * Execute exactly one bounded autonomous lifecycle
- * through the existing Safety Gate and verification path.
+ * IMPORTANT:
+ * - GET must remain dependency-light.
+ * - GET must never execute autonomous work.
+ * - Heavy Runtime / Storage modules are loaded lazily.
+ *
+ * This prevents an import-time Runtime/Storage failure
+ * from making the verification endpoint appear blank.
  */
+
 export async function GET(
   request: NextRequest,
 ) {
-  const identity =
-    resolveAlphaIdentity(
-      request,
-    );
-
   try {
-    const state =
-      await runWithUserContext(
-        identity.userId,
-        async () => {
-          const [
-            tasks,
-            outcomes,
-          ] = await Promise.all([
-            listPersistentTasks(),
-            listOutcomes(),
-          ]);
-
-          const doing =
-            tasks.filter(
-              (task) =>
-                task.status ===
-                "doing",
-            );
-
-          const todo =
-            tasks.filter(
-              (task) =>
-                task.status ===
-                "todo",
-            );
-
-          const done =
-            tasks.filter(
-              (task) =>
-                task.status ===
-                "done",
-            );
-
-          const activeOutcomes =
-            outcomes.filter(
-              (outcome) =>
-                outcome.status ===
-                  "active" ||
-                outcome.status ===
-                  "blocked",
-            );
-
-          return {
-            tasks: {
-              total:
-                tasks.length,
-              doing:
-                doing.length,
-              todo:
-                todo.length,
-              done:
-                done.length,
-            },
-
-            outcomes: {
-              total:
-                outcomes.length,
-              active:
-                activeOutcomes.length,
-            },
-
-            safetyBoundary: {
-              singleDoingTask:
-                doing.length <= 1,
-              currentlyBusy:
-                doing.length > 0,
-            },
-
-            autonomousExecution: {
-              endpoint:
-                "/api/runtime/autonomous-task",
-              method:
-                "POST",
-              bounded:
-                true,
-              verification:
-                "autonomous-loop-regression",
-            },
-          };
-        },
+    const identity =
+      resolveAlphaIdentity(
+        request,
       );
 
     return jsonResponse({
@@ -156,19 +61,34 @@ export async function GET(
         "AIOS Autonomous Runtime",
 
       status:
-        "ready",
+        "online",
 
       mode:
         "read-only",
 
-      identity: {
-        userId:
-          identity.userId,
-        isolated:
-          true,
-      },
+      probe:
+        "C142.11_RUNTIME_ROUTE",
 
-      state,
+      method:
+        "GET",
+
+      execution:
+        {
+          executed:
+            false,
+
+          bounded:
+            true,
+        },
+
+      identity:
+        {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
 
       timestamp:
         Date.now(),
@@ -176,28 +96,25 @@ export async function GET(
   } catch (error) {
     return jsonResponse(
       {
-        success: false,
+        success:
+          false,
 
         service:
           "AIOS Autonomous Runtime",
 
         status:
-          "error",
+          "route-error",
 
         mode:
           "read-only",
 
+        probe:
+          "C142.11_RUNTIME_ROUTE",
+
         error:
           error instanceof Error
             ? error.message
-            : "Autonomous runtime state inspection failed.",
-
-        identity: {
-          userId:
-            identity.userId,
-          isolated:
-            true,
-        },
+            : "Runtime route initialization failed.",
 
         timestamp:
           Date.now(),
@@ -210,12 +127,12 @@ export async function GET(
 export async function POST(
   request: NextRequest,
 ) {
-  const identity =
-    resolveAlphaIdentity(
-      request,
-    );
-
   try {
+    const identity =
+      resolveAlphaIdentity(
+        request,
+      );
+
     let body:
       | Record<string, unknown>
       | null =
@@ -231,6 +148,24 @@ export async function POST(
       body =
         null;
     }
+
+    /*
+     * Lazy imports:
+     *
+     * These modules are intentionally NOT loaded
+     * while the GET verification route starts.
+     */
+    const [
+      { runWithUserContext },
+      { runAutonomousTaskLifecycle },
+    ] = await Promise.all([
+      import(
+        "@/lib/runtime/request-context"
+      ),
+      import(
+        "@/lib/runtime/autonomous-task-lifecycle"
+      ),
+    ]);
 
     const result =
       await runWithUserContext(
@@ -273,16 +208,20 @@ export async function POST(
         success:
           result.success,
 
+        service:
+          "AIOS Autonomous Runtime",
+
         lifecycle:
           result,
 
-        identity: {
-          userId:
-            identity.userId,
+        identity:
+          {
+            userId:
+              identity.userId,
 
-          isolated:
-            true,
-        },
+            isolated:
+              true,
+          },
 
         timestamp:
           Date.now(),
@@ -292,20 +231,42 @@ export async function POST(
   } catch (error) {
     return jsonResponse(
       {
-        success: false,
+        success:
+          false,
+
+        service:
+          "AIOS Autonomous Runtime",
+
+        status:
+          "error",
 
         error:
           error instanceof Error
             ? error.message
             : "Autonomous task lifecycle failed.",
 
-        identity: {
-          userId:
-            identity.userId,
+        identity:
+          (() => {
+            try {
+              const identity =
+                resolveAlphaIdentity(
+                  request,
+                );
 
-          isolated:
-            true,
-        },
+              return {
+                userId:
+                  identity.userId,
+
+                isolated:
+                  true,
+              };
+            } catch {
+              return {
+                isolated:
+                  true,
+              };
+            }
+          })(),
 
         timestamp:
           Date.now(),
