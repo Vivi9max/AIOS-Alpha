@@ -77,51 +77,35 @@ function normalizeText(
   return value.trim().slice(0, maxLength);
 }
 
-/**
- * C142.10
- *
- * Establishes the first bounded end-to-end autonomous task lifecycle:
- *
- * CREATE OUTCOME
- * -> CREATE TODO TASK
- * -> SAFETY GATE
- * -> DOING
- * -> EXECUTE
- * -> VERIFY
- * -> DONE
- * -> EVIDENCE
- * -> COMPLETE OUTCOME
- *
- * The execution adapter used by this first lifecycle is the existing
- * Autonomous Loop Regression. This is intentionally deterministic and
- * bounded; it does not execute arbitrary code.
- */
+function gateSnapshot(
+  gate: Awaited<
+    ReturnType<typeof evaluateAutonomyGate>
+  >,
+) {
+  return {
+    ready: gate.ready,
+    level: gate.level,
+    decision: gate.decision,
+    blockers: gate.blockers,
+  };
+}
+
 export async function runAutonomousTaskLifecycle(
   input: AutonomousTaskLifecycleInput = {},
 ): Promise<AutonomousTaskLifecycleResult> {
-  const timestamp = Date.now();
   const lifecycleId = createLifecycleId();
 
   const title =
-    normalizeText(
-      input.title,
-      200,
-    ) ||
+    normalizeText(input.title, 200) ||
     "AIOS Autonomous Runtime Lifecycle";
 
   const description =
-    normalizeText(
-      input.description,
-      2000,
-    ) ||
-    "Bounded autonomous lifecycle verification task.";
+    normalizeText(input.description, 2000) ||
+    "Bounded autonomous lifecycle execution task.";
 
   const successCriteria =
-    normalizeText(
-      input.successCriteria,
-      1000,
-    ) ||
-    "Planner creates a task, Safety Gate permits exactly one execution, runtime executes it, verification passes, evidence is recorded, and the task is completed.";
+    normalizeText(input.successCriteria, 1000) ||
+    "AIOS creates one Outcome and one Task, passes the Safety Gate, executes one bounded runtime operation, verifies the result, records evidence, and completes the task.";
 
   let outcomeId: string | null = null;
   let taskId: string | null = null;
@@ -136,23 +120,19 @@ export async function runAutonomousTaskLifecycle(
       );
 
     if (existingDoing.length > 0) {
-      const gate = await evaluateAutonomyGate();
+      const gate =
+        await evaluateAutonomyGate();
 
       return {
         success: false,
         status: "blocked",
         lifecycleId,
         message:
-          "An autonomous task is already running. C142.10 preserves the single-doing-task safety boundary.",
+          "An autonomous task is already running. The single-doing-task safety boundary is active.",
         outcomeId: null,
         taskId: null,
         evidenceId: null,
-        gate: {
-          ready: gate.ready,
-          level: gate.level,
-          decision: gate.decision,
-          blockers: gate.blockers,
-        },
+        gate: gateSnapshot(gate),
         execution: {
           started: false,
           completed: false,
@@ -172,7 +152,7 @@ export async function runAutonomousTaskLifecycle(
           {
             title: "Execute and verify",
             description:
-              "Run one bounded autonomous runtime execution and verify the resulting evidence.",
+              "Execute one bounded runtime operation and verify its result.",
           },
         ],
       });
@@ -195,75 +175,87 @@ export async function runAutonomousTaskLifecycle(
       },
     );
 
-    const initialTasks =
+    /*
+     * Re-read the real persisted state before execution.
+     * The gate must evaluate the state that actually exists,
+     * not the state that was assumed immediately after creation.
+     */
+    const gate =
+      await evaluateAutonomyGate();
+
+    const persistedTasks =
       await listPersistentTasks();
 
-    const initialGate =
-      await evaluateAutonomyGate();
+    const currentTask =
+      persistedTasks.find(
+        (item) => item.id === task.id,
+      );
 
     await appendExecutionLedger({
       action: "task-create",
       decision:
-        initialGate.ready
+        gate.ready
           ? "allowed"
           : "blocked",
-      mode: "observation",
+      mode: "baseline",
       code:
-        initialGate.ready
+        gate.ready
           ? null
           : "AUTONOMY_GATE_NOT_READY",
       message:
-        initialGate.ready
-          ? "C142.10 created an autonomous lifecycle task and the Safety Gate permits execution."
-          : "C142.10 created an autonomous lifecycle task, but the Safety Gate does not yet permit execution.",
+        gate.ready
+          ? "C142.10 created a task and the Safety Gate permits one bounded execution."
+          : "C142.10 created a task, but the Safety Gate does not permit execution.",
       taskId: task.id,
       taskTitle: task.title,
       outcomeId: outcome.id,
       maxConcurrentTasks: 1,
       doingCount:
-        initialTasks.filter(
+        persistedTasks.filter(
           (item) => item.status === "doing",
         ).length,
     });
 
-    if (!initialGate.ready) {
-      await addAndSaveExecutionMemory({
-        eventType: "planner-inspected",
-        source: "runtime",
-        title: "Autonomous lifecycle blocked by Safety Gate",
-        summary:
-          initialGate.blockers.join(" ") ||
-          "Safety Gate did not permit execution.",
-        outcome,
-        task,
-        outcomeId: outcome.id,
-        taskId: task.id,
-        metadata: {
-          lifecycleId,
-          gateDecision:
-            initialGate.decision,
-          gateLevel:
-            initialGate.level,
+    if (!gate.ready) {
+      const evidence =
+        await addAndSaveExecutionMemory({
+          eventType: "planner-inspected",
+          source: "runtime",
+          title:
+            "Autonomous lifecycle blocked by Safety Gate",
+          summary:
+            gate.blockers.join(" ") ||
+            "Safety Gate did not permit execution.",
+          outcome,
+          task: currentTask ?? task,
+          outcomeId: outcome.id,
+          taskId: task.id,
+          metadata: {
+            lifecycleId,
+            gateDecision: gate.decision,
+            gateLevel: gate.level,
+          },
+          success: false,
+        });
+
+      await updateOutcome(
+        outcome.id,
+        {
+          status: "blocked",
         },
-        success: false,
-      });
+      );
 
       return {
         success: false,
         status: "blocked",
         lifecycleId,
         message:
-          initialGate.blockers.join(" ") ||
+          gate.blockers.join(" ") ||
           "Safety Gate did not permit autonomous execution.",
         outcomeId: outcome.id,
         taskId: task.id,
-        evidenceId: null,
-        gate: {
-          ready: initialGate.ready,
-          level: initialGate.level,
-          decision: initialGate.decision,
-          blockers: initialGate.blockers,
-        },
+        evidenceId: evidence.id,
+        gate: gateSnapshot(gate),
         execution: {
           started: false,
           completed: false,
@@ -290,9 +282,9 @@ export async function runAutonomousTaskLifecycle(
     await appendExecutionLedger({
       action: "task-start",
       decision: "allowed",
-      mode: "autonomous",
+      mode: "baseline",
       message:
-        "C142.10 Safety Gate permitted exactly one autonomous task to start.",
+        "Safety Gate permitted one autonomous task to start.",
       taskId: started.id,
       taskTitle: started.title,
       outcomeId: outcome.id,
@@ -303,17 +295,18 @@ export async function runAutonomousTaskLifecycle(
     await addAndSaveExecutionMemory({
       eventType: "task-started",
       source: "runtime",
-      title: "Autonomous task started",
+      title:
+        "Autonomous task started",
       summary:
-        "Safety Gate permitted one bounded autonomous task.",
+        "One bounded autonomous task entered the doing state after Safety Gate approval.",
       outcome,
       task: started,
       outcomeId: outcome.id,
       taskId: started.id,
       metadata: {
         lifecycleId,
-        decision:
-          initialGate.decision,
+        gateDecision: gate.decision,
+        gateLevel: gate.level,
       },
       success: true,
     });
@@ -332,10 +325,11 @@ export async function runAutonomousTaskLifecycle(
       verification.success &&
       verification.status !== "failed";
 
-    const completedTasksBefore =
-      (
-        await listPersistentTasks()
-      ).filter(
+    const currentTasks =
+      await listPersistentTasks();
+
+    const completedTaskCount =
+      currentTasks.filter(
         (item) =>
           item.status === "done",
       ).length;
@@ -348,13 +342,21 @@ export async function runAutonomousTaskLifecycle(
         },
       );
 
+      await updateOutcome(
+        outcome.id,
+        {
+          status: "blocked",
+        },
+      );
+
       await appendExecutionLedger({
         action: "task-update",
         decision: "allowed",
-        mode: "autonomous",
-        code: "AUTONOMOUS_EXECUTION_VERIFICATION_FAILED",
+        mode: "baseline",
+        code:
+          "AUTONOMOUS_EXECUTION_VERIFICATION_FAILED",
         message:
-          "Autonomous execution completed but verification did not pass.",
+          "Bounded autonomous execution completed, but verification did not pass. Task was not marked done.",
         taskId: started.id,
         taskTitle: started.title,
         outcomeId: outcome.id,
@@ -362,7 +364,7 @@ export async function runAutonomousTaskLifecycle(
         doingCount: 0,
       });
 
-      const failedEvidence =
+      const evidence =
         await addAndSaveExecutionMemory({
           eventType: "execution-failed",
           source: "runtime",
@@ -376,8 +378,7 @@ export async function runAutonomousTaskLifecycle(
           taskId: started.id,
           latencyMs:
             executionLatency,
-          completedTaskCount:
-            completedTasksBefore,
+          completedTaskCount,
           remainingTaskCount: 1,
           queueSize: 1,
           metadata: {
@@ -390,13 +391,6 @@ export async function runAutonomousTaskLifecycle(
           success: false,
         });
 
-      await updateOutcome(
-        outcome.id,
-        {
-          status: "blocked",
-        },
-      );
-
       return {
         success: false,
         status: "failed",
@@ -405,13 +399,8 @@ export async function runAutonomousTaskLifecycle(
           "Autonomous execution completed, but verification failed. The task was not marked done.",
         outcomeId: outcome.id,
         taskId: started.id,
-        evidenceId: failedEvidence.id,
-        gate: {
-          ready: initialGate.ready,
-          level: initialGate.level,
-          decision: initialGate.decision,
-          blockers: initialGate.blockers,
-        },
+        evidenceId: evidence.id,
+        gate: gateSnapshot(gate),
         execution: {
           started: true,
           completed: false,
@@ -441,15 +430,16 @@ export async function runAutonomousTaskLifecycle(
         {
           status: "completed",
           progress: 100,
+          taskIds: [completed.id],
         },
       );
 
     await appendExecutionLedger({
       action: "task-complete",
       decision: "allowed",
-      mode: "autonomous",
+      mode: "baseline",
       message:
-        "C142.10 autonomous task completed after bounded execution and verification.",
+        "Autonomous task completed after bounded execution and verification.",
       taskId: completed.id,
       taskTitle: completed.title,
       outcomeId: outcome.id,
@@ -473,7 +463,7 @@ export async function runAutonomousTaskLifecycle(
         latencyMs:
           executionLatency,
         completedTaskCount:
-          completedTasksBefore + 1,
+          completedTaskCount + 1,
         remainingTaskCount: 0,
         queueSize: 0,
         metadata: {
@@ -495,12 +485,7 @@ export async function runAutonomousTaskLifecycle(
       outcomeId: outcome.id,
       taskId: completed.id,
       evidenceId: evidence.id,
-      gate: {
-        ready: initialGate.ready,
-        level: initialGate.level,
-        decision: initialGate.decision,
-        blockers: initialGate.blockers,
-      },
+      gate: gateSnapshot(gate),
       execution: {
         started: true,
         completed: true,
@@ -552,9 +537,7 @@ export async function runAutonomousTaskLifecycle(
         ready: false,
         level: "blocked",
         decision: "hold",
-        blockers: [
-          message,
-        ],
+        blockers: [message],
       },
       execution: {
         started: Boolean(taskId),
