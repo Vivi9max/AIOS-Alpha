@@ -9,6 +9,7 @@ import {
 
 import {
   createPersistentTask,
+  findDuplicateActiveTask,
   listPersistentTasks,
   updatePersistentTask,
 } from "@/lib/task/server-store";
@@ -142,6 +143,29 @@ export async function runAutonomousTaskLifecycle(
       };
     }
 
+    /*
+     * C142.10.2
+     *
+     * Reuse an existing unfinished lifecycle task when possible.
+     *
+     * A blocked or failed lifecycle intentionally leaves its Task in
+     * "todo" so that the next autonomous cycle can retry it. The previous
+     * implementation attempted to create a new Task on every lifecycle
+     * invocation, which could then fail with DUPLICATE_TASK and prevent
+     * autonomous retry.
+     */
+    const existingTask =
+      await findDuplicateActiveTask(title);
+
+    const task =
+      existingTask ??
+      (await createPersistentTask(
+        title,
+        description,
+      ));
+
+    taskId = task.id;
+
     const outcome =
       await createOutcome({
         title,
@@ -158,14 +182,6 @@ export async function runAutonomousTaskLifecycle(
       });
 
     outcomeId = outcome.id;
-
-    const task =
-      await createPersistentTask(
-        title,
-        description,
-      );
-
-    taskId = task.id;
 
     await updateOutcome(
       outcome.id,
@@ -203,9 +219,17 @@ export async function runAutonomousTaskLifecycle(
           ? null
           : "AUTONOMY_GATE_NOT_READY",
       message:
-        gate.ready
-          ? "C142.10 created a task and the Safety Gate permits one bounded execution."
-          : "C142.10 created a task, but the Safety Gate does not permit execution.",
+        existingTask
+          ? (
+              gate.ready
+                ? "C142.10.2 reused an existing unfinished task and the Safety Gate permits one bounded execution."
+                : "C142.10.2 reused an existing unfinished task, but the Safety Gate does not permit execution."
+            )
+          : (
+              gate.ready
+                ? "C142.10.2 created a task and the Safety Gate permits one bounded execution."
+                : "C142.10.2 created a task, but the Safety Gate does not permit execution."
+            ),
       taskId: task.id,
       taskTitle: task.title,
       outcomeId: outcome.id,
@@ -232,6 +256,8 @@ export async function runAutonomousTaskLifecycle(
           taskId: task.id,
           metadata: {
             lifecycleId,
+            reusedExistingTask:
+              Boolean(existingTask),
             gateDecision: gate.decision,
             gateLevel: gate.level,
           },
@@ -305,6 +331,8 @@ export async function runAutonomousTaskLifecycle(
       taskId: started.id,
       metadata: {
         lifecycleId,
+        reusedExistingTask:
+          Boolean(existingTask),
         gateDecision: gate.decision,
         gateLevel: gate.level,
       },
@@ -356,7 +384,7 @@ export async function runAutonomousTaskLifecycle(
         code:
           "AUTONOMOUS_EXECUTION_VERIFICATION_FAILED",
         message:
-          "Bounded autonomous execution completed, but verification did not pass. Task was not marked done.",
+          "Bounded autonomous execution completed, but verification did not pass. Task was returned to todo for a future autonomous retry.",
         taskId: started.id,
         taskTitle: started.title,
         outcomeId: outcome.id,
@@ -371,7 +399,7 @@ export async function runAutonomousTaskLifecycle(
           title:
             "Autonomous lifecycle verification failed",
           summary:
-            "The bounded execution completed, but Autonomous Loop Regression did not pass.",
+            "The bounded execution completed, but Autonomous Loop Regression did not pass. The task remains available for a future autonomous retry.",
           outcome,
           task: started,
           outcomeId: outcome.id,
@@ -383,6 +411,8 @@ export async function runAutonomousTaskLifecycle(
           queueSize: 1,
           metadata: {
             lifecycleId,
+            reusedExistingTask:
+              Boolean(existingTask),
             regressionStatus:
               verification.status,
             regressionScore:
@@ -396,7 +426,7 @@ export async function runAutonomousTaskLifecycle(
         status: "failed",
         lifecycleId,
         message:
-          "Autonomous execution completed, but verification failed. The task was not marked done.",
+          "Autonomous execution completed, but verification failed. The task remains available for a future autonomous retry.",
         outcomeId: outcome.id,
         taskId: started.id,
         evidenceId: evidence.id,
@@ -454,7 +484,7 @@ export async function runAutonomousTaskLifecycle(
         title:
           "Autonomous lifecycle completed",
         summary:
-          "AIOS created an Outcome and Task, passed the Safety Gate, executed one bounded runtime operation, verified it, completed the Task, and completed the Outcome.",
+          "AIOS created or reused an unfinished Task, passed the Safety Gate, executed one bounded runtime operation, verified it, completed the Task, and completed the Outcome.",
         outcome:
           finalOutcome ?? outcome,
         task: completed,
@@ -468,6 +498,8 @@ export async function runAutonomousTaskLifecycle(
         queueSize: 0,
         metadata: {
           lifecycleId,
+          reusedExistingTask:
+            Boolean(existingTask),
           verificationStatus:
             verification.status,
           verificationScore:
