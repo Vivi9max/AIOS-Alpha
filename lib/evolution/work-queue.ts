@@ -41,11 +41,12 @@ function findTaskById(
 }
 
 /**
- * C142.11 — Bounded Autonomous Work Queue
+ * C142.11.4 — Bounded Autonomous Work Queue
  *
  * Purpose:
  * - provide Heartbeat with exactly one valid next work item
  * - continue an already active Outcome
+ * - materialize the currently active Milestone
  * - never invent arbitrary autonomous work
  * - preserve the single-doing-task boundary
  * - advance completed milestones before materializing the next one
@@ -55,12 +56,10 @@ function findTaskById(
  * 1. existing doing task
  * 2. existing todo task
  * 3. completed linked milestone -> mark completed
- * 4. next pending milestone -> materialize one task
+ * 4. active/pending unmaterialized milestone -> materialize one task
  * 5. otherwise idle
  *
  * This deliberately does NOT create a new Outcome.
- * A future evolution layer may propose new Outcomes from
- * verified evidence, explicit commercial objectives, or user intent.
  */
 export async function ensureAutonomousWorkQueue(): Promise<
   AutonomousWorkQueueResult
@@ -145,9 +144,6 @@ export async function ensureAutonomousWorkQueue(): Promise<
    *
    * A milestone may have been materialized by a previous queue cycle
    * and its task may subsequently have completed.
-   *
-   * The queue therefore closes completed milestone -> task relationships
-   * before selecting the next pending milestone.
    */
   for (const outcome of activeOutcomes) {
     for (const milestone of outcome.milestones) {
@@ -192,13 +188,10 @@ export async function ensureAutonomousWorkQueue(): Promise<
   }
 
   /*
-   * Refresh task state after milestone reconciliation.
+   * Refresh persisted state after milestone reconciliation.
    */
   tasks = await listPersistentTasks();
 
-  /*
-   * Refresh outcomes as milestone statuses may have changed.
-   */
   const refreshedOutcomes =
     await listOutcomes();
 
@@ -216,12 +209,17 @@ export async function ensureAutonomousWorkQueue(): Promise<
 
   for (const activeOutcome of refreshedActiveOutcomes) {
     /*
-     * Select strictly the earliest unmaterialized pending milestone.
+     * IMPORTANT:
      *
-     * Ordering is deterministic and bounded:
-     * exactly ONE milestone becomes a task per queue invocation.
+     * The Outcome store intentionally creates the first Milestone
+     * with status "active" and later Milestones with status "pending".
+     *
+     * Therefore both "active" and "pending" are valid states here,
+     * provided the milestone has not yet been materialized into a Task.
+     *
+     * This is the C142.11.4 correction.
      */
-    const pendingMilestone = [
+    const nextMilestone = [
       ...activeOutcome.milestones,
     ]
       .sort(
@@ -231,16 +229,19 @@ export async function ensureAutonomousWorkQueue(): Promise<
       )
       .find(
         (milestone) =>
-          milestone.status === "pending" &&
+          (
+            milestone.status === "active" ||
+            milestone.status === "pending"
+          ) &&
           milestone.taskIds.length === 0,
       );
 
-    if (!pendingMilestone) {
+    if (!nextMilestone) {
       continue;
     }
 
     const taskTitle =
-      pendingMilestone.title.trim();
+      nextMilestone.title.trim();
 
     if (!taskTitle) {
       continue;
@@ -259,12 +260,12 @@ export async function ensureAutonomousWorkQueue(): Promise<
       (await createPersistentTask(
         taskTitle,
         [
-          pendingMilestone.description,
+          nextMilestone.description,
           "",
           `Outcome: ${activeOutcome.title}`,
           `Outcome ID: ${activeOutcome.id}`,
-          `Milestone ID: ${pendingMilestone.id}`,
-          `Execution order: ${pendingMilestone.order}`,
+          `Milestone ID: ${nextMilestone.id}`,
+          `Execution order: ${nextMilestone.order}`,
           activeOutcome.successCriteria
             ? `Success criteria: ${activeOutcome.successCriteria}`
             : "",
@@ -274,14 +275,11 @@ export async function ensureAutonomousWorkQueue(): Promise<
       ));
 
     /*
-     * Link the milestone to exactly one persistent task.
-     *
-     * Do not append multiple task IDs for one milestone.
-     * This keeps milestone -> execution deterministic.
+     * Bind exactly one Task to this Milestone.
      */
     await updateOutcomeMilestone(
       activeOutcome.id,
-      pendingMilestone.id,
+      nextMilestone.id,
       {
         taskIds: [
           task.id,
@@ -291,7 +289,7 @@ export async function ensureAutonomousWorkQueue(): Promise<
     );
 
     /*
-     * Keep the Outcome's aggregate task index synchronized.
+     * Keep Outcome aggregate task index synchronized.
      */
     await updateOutcome(
       activeOutcome.id,
@@ -312,25 +310,16 @@ export async function ensureAutonomousWorkQueue(): Promise<
       taskTitle: task.title,
       outcomeId: activeOutcome.id,
       milestoneId:
-        pendingMilestone.id,
+        nextMilestone.id,
       created:
         duplicate === null,
       message:
         duplicate !== null
-          ? "A pending milestone was linked to an existing unfinished task."
-          : "One pending Outcome milestone was materialized into the autonomous work queue.",
+          ? "An active or pending milestone was linked to an existing unfinished task."
+          : "One active or pending Outcome milestone was materialized into the autonomous work queue.",
     };
   }
 
-  /*
-   * All active Outcomes are either:
-   * - waiting on existing work
-   * - fully materialized
-   * - fully completed
-   * - or have no valid pending milestone.
-   *
-   * Do not invent work.
-   */
   return {
     status: "idle",
     taskId: null,
@@ -341,6 +330,6 @@ export async function ensureAutonomousWorkQueue(): Promise<
     milestoneId: null,
     created: false,
     message:
-      "The active Outcomes have no unmaterialized pending milestone. AIOS will wait instead of inventing new work.",
+      "The active Outcomes have no unmaterialized active or pending milestone. AIOS will wait instead of inventing new work.",
   };
 }
