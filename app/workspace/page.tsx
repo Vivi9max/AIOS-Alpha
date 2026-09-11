@@ -1,107 +1,66 @@
 "use client";
 
 import ChatPanel from "@/components/chat/ChatPanel";
-import InviteBanner from "@/components/alpha/InviteBanner";
 import FeedbackButton from "@/components/alpha/FeedbackButton";
-import WorkspaceOverview from "@/components/workspace/WorkspaceOverview";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
-import SystemVerificationPanel from "@/components/runtime/SystemVerificationPanel";
 
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
 
 export default function WorkspacePage() {
-  const {
-    t,
-  } = useLanguage();
+  const { t } = useLanguage();
 
   return (
     <WorkspaceShell>
       <main
         style={{
-          width:
-            "100%",
-
-          maxWidth:
-            960,
-
-          margin:
-            "0 auto",
-
-          padding:
-            "20px",
-
-          boxSizing:
-            "border-box",
+          width: "100%",
+          maxWidth: 920,
+          margin: "0 auto",
+          padding: "16px",
+          boxSizing: "border-box",
         }}
       >
-        <div
-          style={{
-            marginBottom:
-              18,
-          }}
-        >
-          <InviteBanner />
-        </div>
-
-        <WorkspaceOverview />
-
-        <SystemVerificationPanel />
-
         <section
-          id="aios-chat"
           style={{
-            marginTop:
-              22,
+            marginBottom: 16,
+            padding: "18px 4px 4px",
           }}
         >
-          <div
+          <h1
             style={{
-              marginBottom:
-                10,
+              margin: 0,
+              color: "#0f172a",
+              fontSize: 26,
+              lineHeight: 1.25,
+              fontWeight: 800,
             }}
           >
-            <h2
-              style={{
-                margin:
-                  0,
+            AIOS
+          </h1>
 
-                color:
-                  "#0f172a",
+          <p
+            style={{
+              margin: "7px 0 0",
+              color: "#64748b",
+              fontSize: 14,
+              lineHeight: 1.6,
+            }}
+          >
+            {t("workspace.chatDescription")}
+          </p>
+        </section>
 
-                fontSize:
-                  18,
-              }}
-            >
-              {t(
-                "workspace.chatTitle",
-              )}
-            </h2>
-
-            <p
-              style={{
-                margin:
-                  "5px 0 0",
-
-                color:
-                  "#64748b",
-
-                fontSize:
-                  13,
-              }}
-            >
-              {t(
-                "workspace.chatDescription",
-              )}
-            </p>
-          </div>
-
+        <section id="aios-chat">
           <ChatPanel />
         </section>
 
         <div
           id="feedback"
+          style={{
+            marginTop: 14,
+          }}
         >
           <FeedbackButton />
         </div>
