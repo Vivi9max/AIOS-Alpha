@@ -20,8 +20,11 @@ import {
 
 import {
   listEvolutionTargets,
-  ensureAutonomousWorkQueue,
 } from "@/lib/evolution/heartbeat";
+
+import {
+  ensureAutonomousWorkQueue,
+} from "@/lib/evolution/work-queue";
 
 import {
   listOutcomes,
@@ -155,23 +158,28 @@ export async function POST(
 
           return {
             queue,
+
             before: {
               outcomes:
                 beforeOutcomes.length,
+
               activeOutcomes:
                 beforeOutcomes.filter(
                   (outcome) =>
                     outcome.status ===
                     "active",
                 ).length,
+
               tasks:
                 beforeTasks.length,
+
               todoTasks:
                 beforeTasks.filter(
                   (task) =>
                     task.status ===
                     "todo",
                 ).length,
+
               doingTasks:
                 beforeTasks.filter(
                   (task) =>
@@ -179,23 +187,28 @@ export async function POST(
                     "doing",
                 ).length,
             },
+
             after: {
               outcomes:
                 afterOutcomes.length,
+
               activeOutcomes:
                 afterOutcomes.filter(
                   (outcome) =>
                     outcome.status ===
                     "active",
                 ).length,
+
               tasks:
                 afterTasks.length,
+
               todoTasks:
                 afterTasks.filter(
                   (task) =>
                     task.status ===
                     "todo",
                 ).length,
+
               doingTasks:
                 afterTasks.filter(
                   (task) =>
@@ -203,6 +216,7 @@ export async function POST(
                     "doing",
                 ).length,
             },
+
             persistedTask:
               queue.taskId
                 ? afterTasks.find(
@@ -211,6 +225,7 @@ export async function POST(
                       queue.taskId,
                   ) ?? null
                 : null,
+
             persistedOutcome:
               queue.outcomeId
                 ? afterOutcomes.find(
@@ -230,17 +245,21 @@ export async function POST(
       status: "verified",
       mode:
         "founder-manual-queue-verification",
+
       identity: {
         userId:
           identity.userId,
         isolated: true,
       },
+
       target: {
         registered: true,
         targetCount:
           targets.length,
       },
+
       verification: result,
+
       durationMs:
         Date.now() - startedAt,
     });
