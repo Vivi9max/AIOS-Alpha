@@ -4,7 +4,9 @@ import {
 
 import {
   createOutcome,
+  getOutcome,
   updateOutcome,
+  updateOutcomeMilestone,
 } from "@/lib/outcome/store";
 
 import {
@@ -39,17 +41,20 @@ export interface AutonomousTaskLifecycleResult {
   outcomeId: string | null;
   taskId: string | null;
   evidenceId: string | null;
+
   gate: {
     ready: boolean;
     level: string;
     decision: string;
     blockers: string[];
   };
+
   execution: {
     started: boolean;
     completed: boolean;
     verificationPassed: boolean;
   };
+
   timestamp: number;
 }
 
@@ -57,6 +62,17 @@ export interface AutonomousTaskLifecycleInput {
   title?: string;
   description?: string;
   successCriteria?: string;
+
+  /*
+   * C142.11.5
+   *
+   * When the Work Queue has already materialized the Task,
+   * Lifecycle must continue that existing Outcome/Milestone
+   * instead of creating a second Outcome.
+   */
+  taskId?: string;
+  outcomeId?: string;
+  milestoneId?: string;
 }
 
 function createLifecycleId(): string {
@@ -106,21 +122,35 @@ export async function runAutonomousTaskLifecycle(
 
   const successCriteria =
     normalizeText(input.successCriteria, 1000) ||
-    "AIOS creates one Outcome and one Task, passes the Safety Gate, executes one bounded runtime operation, verifies the result, records evidence, and completes the task.";
+    "AIOS executes one bounded runtime operation, verifies the result, records evidence, and completes the linked work item only when verification passes.";
 
-  let outcomeId: string | null = null;
-  let taskId: string | null = null;
+  let outcomeId: string | null =
+    normalizeText(input.outcomeId, 200);
+
+  let taskId: string | null =
+    normalizeText(input.taskId, 200);
+
+  const milestoneId: string | null =
+    normalizeText(input.milestoneId, 200);
 
   try {
+    /*
+     * ------------------------------------------------------------
+     * 1. Resolve the real persisted Task
+     * ------------------------------------------------------------
+     */
+
     const existingTasks =
       await listPersistentTasks();
 
     const existingDoing =
-      existingTasks.filter(
-        (task) => task.status === "doing",
+      existingTasks.find(
+        (task) =>
+          task.status === "doing" &&
+          task.id !== taskId,
       );
 
-    if (existingDoing.length > 0) {
+    if (existingDoing) {
       const gate =
         await evaluateAutonomyGate();
 
@@ -130,8 +160,8 @@ export async function runAutonomousTaskLifecycle(
         lifecycleId,
         message:
           "An autonomous task is already running. The single-doing-task safety boundary is active.",
-        outcomeId: null,
-        taskId: null,
+        outcomeId,
+        taskId,
         evidenceId: null,
         gate: gateSnapshot(gate),
         execution: {
@@ -143,59 +173,148 @@ export async function runAutonomousTaskLifecycle(
       };
     }
 
+    let task =
+      taskId
+        ? (
+            existingTasks.find(
+              (item) =>
+                item.id === taskId,
+            ) ?? null
+          )
+        : null;
+
     /*
-     * C142.10.2
-     *
-     * Reuse an existing unfinished lifecycle task when possible.
-     *
-     * A blocked or failed lifecycle intentionally leaves its Task in
-     * "todo" so that the next autonomous cycle can retry it. The previous
-     * implementation attempted to create a new Task on every lifecycle
-     * invocation, which could then fail with DUPLICATE_TASK and prevent
-     * autonomous retry.
+     * Backward-compatible fallback:
+     * if Lifecycle is invoked without Queue lineage,
+     * reuse/create a Task as before.
      */
-    const existingTask =
-      await findDuplicateActiveTask(title);
+    if (!task) {
+      const duplicate =
+        await findDuplicateActiveTask(
+          title,
+        );
 
-    const task =
-      existingTask ??
-      (await createPersistentTask(
-        title,
-        description,
-      ));
+      task =
+        duplicate ??
+        (await createPersistentTask(
+          title,
+          description,
+        ));
 
-    taskId = task.id;
+      taskId = task.id;
+    }
 
-    const outcome =
-      await createOutcome({
-        title,
-        description,
-        successCriteria,
-        priority: "normal",
-        milestones: [
+    /*
+     * ------------------------------------------------------------
+     * 2. Resolve existing Outcome
+     * ------------------------------------------------------------
+     *
+     * C142.11.5:
+     *
+     * Queue-created work MUST reuse its Outcome.
+     *
+     * Only legacy/direct Lifecycle calls without outcomeId
+     * may create an Outcome.
+     */
+
+    let outcome =
+      outcomeId
+        ? await getOutcome(
+            outcomeId,
+          )
+        : null;
+
+    if (!outcome) {
+      /*
+       * Legacy/direct invocation path.
+       *
+       * This preserves the existing Runtime API while preventing
+       * Queue → Lifecycle from creating duplicate Outcomes.
+       */
+      outcome =
+        await createOutcome({
+          title,
+          description,
+          successCriteria,
+          priority: "normal",
+          milestones: [
+            {
+              title:
+                "Execute and verify",
+              description:
+                "Execute one bounded runtime operation and verify its result.",
+            },
+          ],
+        });
+
+      outcomeId =
+        outcome.id;
+
+      await updateOutcome(
+        outcome.id,
+        {
+          status: "active",
+          taskIds: [
+            task.id,
+          ],
+        },
+      );
+
+      /*
+       * If a direct lifecycle created its own Outcome,
+       * bind its first milestone to the Task.
+       */
+      const firstMilestone =
+        outcome.milestones[0];
+
+      if (firstMilestone) {
+        await updateOutcomeMilestone(
+          outcome.id,
+          firstMilestone.id,
           {
-            title: "Execute and verify",
-            description:
-              "Execute one bounded runtime operation and verify its result.",
+            status: "active",
+            taskIds: [
+              task.id,
+            ],
           },
-        ],
-      });
+        );
+      }
 
-    outcomeId = outcome.id;
+      outcome =
+        (await getOutcome(
+          outcome.id,
+        )) ?? outcome;
+    } else {
+      /*
+       * Queue lineage path.
+       *
+       * Never create another Outcome.
+       */
+      await updateOutcome(
+        outcome.id,
+        {
+          status: "active",
+          taskIds: Array.from(
+            new Set([
+              ...outcome.taskIds,
+              task.id,
+            ]),
+          ),
+        },
+      );
 
-    await updateOutcome(
-      outcome.id,
-      {
-        status: "active",
-        taskIds: [task.id],
-      },
-    );
+      outcome =
+        (await getOutcome(
+          outcome.id,
+        )) ?? outcome;
+    }
 
     /*
-     * Re-read the real persisted state before execution.
-     * The gate must evaluate the state that actually exists,
-     * not the state that was assumed immediately after creation.
+     * ------------------------------------------------------------
+     * 3. Re-read persisted state before Safety Gate
+     * ------------------------------------------------------------
      */
+
     const gate =
       await evaluateAutonomyGate();
 
@@ -204,7 +323,8 @@ export async function runAutonomousTaskLifecycle(
 
     const currentTask =
       persistedTasks.find(
-        (item) => item.id === task.id,
+        (item) =>
+          item.id === task.id,
       );
 
     await appendExecutionLedger({
@@ -219,31 +339,30 @@ export async function runAutonomousTaskLifecycle(
           ? null
           : "AUTONOMY_GATE_NOT_READY",
       message:
-        existingTask
-          ? (
-              gate.ready
-                ? "C142.10.2 reused an existing unfinished task and the Safety Gate permits one bounded execution."
-                : "C142.10.2 reused an existing unfinished task, but the Safety Gate does not permit execution."
-            )
-          : (
-              gate.ready
-                ? "C142.10.2 created a task and the Safety Gate permits one bounded execution."
-                : "C142.10.2 created a task, but the Safety Gate does not permit execution."
-            ),
-      taskId: task.id,
-      taskTitle: task.title,
-      outcomeId: outcome.id,
+        outcomeId ===
+          input.outcomeId
+          ? "C142.11.5 continued an existing Queue Outcome without creating a duplicate Outcome."
+          : "Autonomous lifecycle resolved its execution lineage.",
+      taskId:
+        task.id,
+      taskTitle:
+        task.title,
+      outcomeId:
+        outcome.id,
       maxConcurrentTasks: 1,
       doingCount:
         persistedTasks.filter(
-          (item) => item.status === "doing",
+          (item) =>
+            item.status ===
+            "doing",
         ).length,
     });
 
     if (!gate.ready) {
       const evidence =
         await addAndSaveExecutionMemory({
-          eventType: "planner-inspected",
+          eventType:
+            "planner-inspected",
           source: "runtime",
           title:
             "Autonomous lifecycle blocked by Safety Gate",
@@ -251,18 +370,34 @@ export async function runAutonomousTaskLifecycle(
             gate.blockers.join(" ") ||
             "Safety Gate did not permit execution.",
           outcome,
-          task: currentTask ?? task,
-          outcomeId: outcome.id,
-          taskId: task.id,
+          task:
+            currentTask ??
+            task,
+          outcomeId:
+            outcome.id,
+          taskId:
+            task.id,
           metadata: {
             lifecycleId,
-            reusedExistingTask:
-              Boolean(existingTask),
-            gateDecision: gate.decision,
-            gateLevel: gate.level,
+            queueLineage:
+              Boolean(
+                input.outcomeId,
+              ),
+            milestoneId,
+            gateDecision:
+              gate.decision,
+            gateLevel:
+              gate.level,
           },
           success: false,
         });
+
+      await updatePersistentTask(
+        task.id,
+        {
+          status: "todo",
+        },
+      );
 
       await updateOutcome(
         outcome.id,
@@ -278,10 +413,14 @@ export async function runAutonomousTaskLifecycle(
         message:
           gate.blockers.join(" ") ||
           "Safety Gate did not permit autonomous execution.",
-        outcomeId: outcome.id,
-        taskId: task.id,
-        evidenceId: evidence.id,
-        gate: gateSnapshot(gate),
+        outcomeId:
+          outcome.id,
+        taskId:
+          task.id,
+        evidenceId:
+          evidence.id,
+        gate:
+          gateSnapshot(gate),
         execution: {
           started: false,
           completed: false,
@@ -290,6 +429,12 @@ export async function runAutonomousTaskLifecycle(
         timestamp: Date.now(),
       };
     }
+
+    /*
+     * ------------------------------------------------------------
+     * 4. Start Task
+     * ------------------------------------------------------------
+     */
 
     const started =
       await updatePersistentTask(
@@ -311,15 +456,19 @@ export async function runAutonomousTaskLifecycle(
       mode: "baseline",
       message:
         "Safety Gate permitted one autonomous task to start.",
-      taskId: started.id,
-      taskTitle: started.title,
-      outcomeId: outcome.id,
+      taskId:
+        started.id,
+      taskTitle:
+        started.title,
+      outcomeId:
+        outcome.id,
       maxConcurrentTasks: 1,
       doingCount: 1,
     });
 
     await addAndSaveExecutionMemory({
-      eventType: "task-started",
+      eventType:
+        "task-started",
       source: "runtime",
       title:
         "Autonomous task started",
@@ -327,17 +476,30 @@ export async function runAutonomousTaskLifecycle(
         "One bounded autonomous task entered the doing state after Safety Gate approval.",
       outcome,
       task: started,
-      outcomeId: outcome.id,
-      taskId: started.id,
+      outcomeId:
+        outcome.id,
+      taskId:
+        started.id,
       metadata: {
         lifecycleId,
-        reusedExistingTask:
-          Boolean(existingTask),
-        gateDecision: gate.decision,
-        gateLevel: gate.level,
+        queueLineage:
+          Boolean(
+            input.outcomeId,
+          ),
+        milestoneId,
+        gateDecision:
+          gate.decision,
+        gateLevel:
+          gate.level,
       },
       success: true,
     });
+
+    /*
+     * ------------------------------------------------------------
+     * 5. Execute + Verify
+     * ------------------------------------------------------------
+     */
 
     const executionStartedAt =
       Date.now();
@@ -351,7 +513,8 @@ export async function runAutonomousTaskLifecycle(
 
     const verificationPassed =
       verification.success &&
-      verification.status !== "failed";
+      verification.status !==
+        "failed";
 
     const currentTasks =
       await listPersistentTasks();
@@ -359,8 +522,15 @@ export async function runAutonomousTaskLifecycle(
     const completedTaskCount =
       currentTasks.filter(
         (item) =>
-          item.status === "done",
+          item.status ===
+          "done",
       ).length;
+
+    /*
+     * ------------------------------------------------------------
+     * 6. Verification failure
+     * ------------------------------------------------------------
+     */
 
     if (!verificationPassed) {
       await updatePersistentTask(
@@ -384,26 +554,32 @@ export async function runAutonomousTaskLifecycle(
         code:
           "AUTONOMOUS_EXECUTION_VERIFICATION_FAILED",
         message:
-          "Bounded autonomous execution completed, but verification did not pass. Task was returned to todo for a future autonomous retry.",
-        taskId: started.id,
-        taskTitle: started.title,
-        outcomeId: outcome.id,
+          "Bounded autonomous execution completed, but verification did not pass. Task remains available for a future retry.",
+        taskId:
+          started.id,
+        taskTitle:
+          started.title,
+        outcomeId:
+          outcome.id,
         maxConcurrentTasks: 1,
         doingCount: 0,
       });
 
       const evidence =
         await addAndSaveExecutionMemory({
-          eventType: "execution-failed",
+          eventType:
+            "execution-failed",
           source: "runtime",
           title:
             "Autonomous lifecycle verification failed",
           summary:
-            "The bounded execution completed, but Autonomous Loop Regression did not pass. The task remains available for a future autonomous retry.",
+            "Bounded execution completed, but Autonomous Loop Regression did not pass.",
           outcome,
           task: started,
-          outcomeId: outcome.id,
-          taskId: started.id,
+          outcomeId:
+            outcome.id,
+          taskId:
+            started.id,
           latencyMs:
             executionLatency,
           completedTaskCount,
@@ -411,8 +587,11 @@ export async function runAutonomousTaskLifecycle(
           queueSize: 1,
           metadata: {
             lifecycleId,
-            reusedExistingTask:
-              Boolean(existingTask),
+            queueLineage:
+              Boolean(
+                input.outcomeId,
+              ),
+            milestoneId,
             regressionStatus:
               verification.status,
             regressionScore:
@@ -427,10 +606,14 @@ export async function runAutonomousTaskLifecycle(
         lifecycleId,
         message:
           "Autonomous execution completed, but verification failed. The task remains available for a future autonomous retry.",
-        outcomeId: outcome.id,
-        taskId: started.id,
-        evidenceId: evidence.id,
-        gate: gateSnapshot(gate),
+        outcomeId:
+          outcome.id,
+        taskId:
+          started.id,
+        evidenceId:
+          evidence.id,
+        gate:
+          gateSnapshot(gate),
         execution: {
           started: true,
           completed: false,
@@ -439,6 +622,12 @@ export async function runAutonomousTaskLifecycle(
         timestamp: Date.now(),
       };
     }
+
+    /*
+     * ------------------------------------------------------------
+     * 7. Complete Task
+     * ------------------------------------------------------------
+     */
 
     const completed =
       await updatePersistentTask(
@@ -454,15 +643,84 @@ export async function runAutonomousTaskLifecycle(
       );
     }
 
-    const finalOutcome =
-      await updateOutcome(
+    /*
+     * ------------------------------------------------------------
+     * 8. Complete Milestone
+     * ------------------------------------------------------------
+     */
+
+    let finalOutcome =
+      await getOutcome(
         outcome.id,
-        {
-          status: "completed",
-          progress: 100,
-          taskIds: [completed.id],
-        },
       );
+
+    const linkedMilestone =
+      milestoneId
+        ? finalOutcome?.milestones.find(
+            (milestone) =>
+              milestone.id ===
+              milestoneId,
+          )
+        : finalOutcome?.milestones.find(
+            (milestone) =>
+              milestone.taskIds.includes(
+                completed.id,
+              ),
+          );
+
+    if (linkedMilestone) {
+      finalOutcome =
+        (await updateOutcomeMilestone(
+          outcome.id,
+          linkedMilestone.id,
+          {
+            status:
+              "completed",
+            taskIds: [
+              completed.id,
+            ],
+          },
+        )) ??
+        finalOutcome;
+    } else {
+      /*
+       * Defensive fallback for direct Lifecycle invocation.
+       */
+      const fallbackMilestone =
+        finalOutcome?.milestones.find(
+          (milestone) =>
+            milestone.status ===
+              "active" &&
+            milestone.taskIds.length ===
+              0,
+        );
+
+      if (fallbackMilestone) {
+        finalOutcome =
+          (await updateOutcomeMilestone(
+            outcome.id,
+            fallbackMilestone.id,
+            {
+              status:
+                "completed",
+              taskIds: [
+                completed.id,
+              ],
+            },
+          )) ??
+          finalOutcome;
+      }
+    }
+
+    /*
+     * updateOutcomeMilestone automatically advances Outcome
+     * progress/status when all milestones are complete.
+     */
+    finalOutcome =
+      (await getOutcome(
+        outcome.id,
+      )) ??
+      finalOutcome;
 
     await appendExecutionLedger({
       action: "task-complete",
@@ -470,26 +728,33 @@ export async function runAutonomousTaskLifecycle(
       mode: "baseline",
       message:
         "Autonomous task completed after bounded execution and verification.",
-      taskId: completed.id,
-      taskTitle: completed.title,
-      outcomeId: outcome.id,
+      taskId:
+        completed.id,
+      taskTitle:
+        completed.title,
+      outcomeId:
+        outcome.id,
       maxConcurrentTasks: 1,
       doingCount: 0,
     });
 
     const evidence =
       await addAndSaveExecutionMemory({
-        eventType: "execution-synced",
+        eventType:
+          "execution-synced",
         source: "runtime",
         title:
           "Autonomous lifecycle completed",
         summary:
-          "AIOS created or reused an unfinished Task, passed the Safety Gate, executed one bounded runtime operation, verified it, completed the Task, and completed the Outcome.",
+          "AIOS continued one existing Outcome lineage, executed one bounded runtime operation, verified it, completed the Task, and synchronized the linked Milestone and Outcome.",
         outcome:
-          finalOutcome ?? outcome,
+          finalOutcome ??
+          outcome,
         task: completed,
-        outcomeId: outcome.id,
-        taskId: completed.id,
+        outcomeId:
+          outcome.id,
+        taskId:
+          completed.id,
         latencyMs:
           executionLatency,
         completedTaskCount:
@@ -498,8 +763,13 @@ export async function runAutonomousTaskLifecycle(
         queueSize: 0,
         metadata: {
           lifecycleId,
-          reusedExistingTask:
-            Boolean(existingTask),
+          queueLineage:
+            Boolean(
+              input.outcomeId,
+            ),
+          milestoneId:
+            linkedMilestone?.id ??
+            null,
           verificationStatus:
             verification.status,
           verificationScore:
@@ -513,11 +783,15 @@ export async function runAutonomousTaskLifecycle(
       status: "completed",
       lifecycleId,
       message:
-        "C142.10 autonomous task lifecycle completed successfully.",
-      outcomeId: outcome.id,
-      taskId: completed.id,
-      evidenceId: evidence.id,
-      gate: gateSnapshot(gate),
+        "C142.11.5 autonomous task lifecycle completed without creating a duplicate Outcome.",
+      outcomeId:
+        outcome.id,
+      taskId:
+        completed.id,
+      evidenceId:
+        evidence.id,
+      gate:
+        gateSnapshot(gate),
       execution: {
         started: true,
         completed: true,
@@ -540,7 +814,7 @@ export async function runAutonomousTaskLifecycle(
           },
         );
       } catch {
-        // Preserve the original lifecycle error.
+        // Preserve original lifecycle error.
       }
     }
 
@@ -553,7 +827,7 @@ export async function runAutonomousTaskLifecycle(
           },
         );
       } catch {
-        // Preserve the original lifecycle error.
+        // Preserve original lifecycle error.
       }
     }
 
@@ -569,10 +843,13 @@ export async function runAutonomousTaskLifecycle(
         ready: false,
         level: "blocked",
         decision: "hold",
-        blockers: [message],
+        blockers: [
+          message,
+        ],
       },
       execution: {
-        started: Boolean(taskId),
+        started:
+          Boolean(taskId),
         completed: false,
         verificationPassed: false,
       },
