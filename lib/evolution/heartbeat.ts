@@ -120,6 +120,52 @@ function makeId(
     .slice(2, 8)}`;
 }
 
+/**
+ * Resolve the persistent Outcome/Milestone lineage
+ * for an existing Task.
+ *
+ * This is important when the Work Queue returns an
+ * already-existing todo/doing Task instead of creating
+ * a new Task during the current heartbeat.
+ *
+ * Lineage:
+ *
+ * Outcome
+ *   -> Milestone
+ *      -> Task
+ */
+function resolveTaskLineage(
+  taskId: string,
+  outcomes: Awaited<
+    ReturnType<typeof listOutcomes>
+  >,
+): {
+  outcomeId: string | null;
+  milestoneId: string | null;
+} {
+  for (const outcome of outcomes) {
+    for (const milestone of outcome.milestones) {
+      if (
+        milestone.taskIds.includes(
+          taskId,
+        )
+      ) {
+        return {
+          outcomeId:
+            outcome.id,
+          milestoneId:
+            milestone.id,
+        };
+      }
+    }
+  }
+
+  return {
+    outcomeId: null,
+    milestoneId: null,
+  };
+}
+
 function buildInsights(
   userId: string,
   memory: Awaited<
@@ -325,17 +371,19 @@ export async function runEvolutionHeartbeat(
       /*
        * C142.11
        *
-       * Heartbeat is now connected to the bounded
+       * Heartbeat is connected to the bounded
        * autonomous work queue.
        *
-       * The queue:
-       * - preserves existing doing/todo work
-       * - reconciles completed milestones
-       * - materializes at most one next milestone
-       * - never creates a new Outcome
+       * Queue guarantees:
+       *
+       * - preserve existing doing task
+       * - preserve existing todo task
+       * - reconcile completed milestones
+       * - materialize at most one next milestone
+       * - never create a new Outcome
        *
        * Persistent storage must be healthy before
-       * the queue is allowed to materialize new work.
+       * autonomous work is materialized.
        */
       const workQueue =
         storageHealth.success
@@ -352,12 +400,8 @@ export async function runEvolutionHeartbeat(
             };
 
       /*
-       * Refresh planner state after queue reconciliation/materialization.
-       *
-       * This is important because the queue may have:
-       * - completed an old milestone
-       * - created the next task
-       * - linked the task to an Outcome
+       * Refresh planner state after queue
+       * reconciliation/materialization.
        */
       const [
         outcomes,
@@ -549,15 +593,36 @@ export async function runEvolutionHeartbeat(
       );
 
       /*
-       * C142.10.3 + C142.11
+       * C142.10.3 + C142.11.5
        *
        * Heartbeat is the execution bridge.
        *
-       * The work queue provides the next bounded task.
-       * The autonomous lifecycle performs the final
-       * Safety Gate and verification.
+       * Work Queue:
+       *   Outcome -> Milestone -> Task
        *
-       * At most ONE task may be dispatched per heartbeat.
+       * Lifecycle:
+       *   Task -> Safety Gate -> Runtime
+       *   -> Verification -> Evidence -> Done
+       *
+       * IMPORTANT:
+       *
+       * The Queue already owns the Outcome/Milestone
+       * lineage. Heartbeat MUST pass that lineage
+       * into Lifecycle.
+       *
+       * This prevents:
+       *
+       * Outcome A
+       *   -> Milestone A
+       *      -> Task A
+       *
+       * from becoming:
+       *
+       * Outcome A
+       *   -> Task A
+       *
+       * Outcome B   <-- duplicate
+       *   -> Task A
        */
       const eligibleForAutonomousExecution =
         storageHealth.success &&
@@ -587,11 +652,11 @@ export async function runEvolutionHeartbeat(
         eligibleForAutonomousExecution
       ) {
         /*
-         * Prefer the task selected/materialized by
-         * C142.11 work queue.
+         * Prefer the Task selected/materialized
+         * by the Work Queue.
          *
-         * If the queue was a no-op because an existing
-         * todo already existed, find that task normally.
+         * If Queue returned an existing todo Task,
+         * preserve it rather than creating another Task.
          */
         const candidate =
           workQueue.taskId
@@ -607,6 +672,33 @@ export async function runEvolutionHeartbeat(
               );
 
         if (candidate) {
+          /*
+           * ------------------------------------------------------
+           * Resolve Queue lineage
+           * ------------------------------------------------------
+           *
+           * First use the lineage explicitly returned by
+           * the Work Queue.
+           *
+           * If the Queue reused an existing Task and therefore
+           * returned null lineage, resolve it from:
+           *
+           * Outcome -> Milestone -> taskIds
+           */
+          const resolvedLineage =
+            resolveTaskLineage(
+              candidate.id,
+              outcomes,
+            );
+
+          const lineageOutcomeId =
+            workQueue.outcomeId ??
+            resolvedLineage.outcomeId;
+
+          const lineageMilestoneId =
+            workQueue.milestoneId ??
+            resolvedLineage.milestoneId;
+
           autonomousExecution =
             {
               attempted: true,
@@ -616,13 +708,22 @@ export async function runEvolutionHeartbeat(
               taskId:
                 candidate.id,
               outcomeId:
-                workQueue.outcomeId,
+                lineageOutcomeId,
               lifecycleId: null,
               message:
                 "Autonomous task dispatch started.",
             };
 
           try {
+            /*
+             * C142.11.5
+             *
+             * Pass the actual Queue lineage into
+             * Autonomous Lifecycle.
+             *
+             * If outcomeId exists, Lifecycle MUST reuse
+             * that Outcome instead of creating another one.
+             */
             const lifecycle =
               await runAutonomousTaskLifecycle(
                 {
@@ -634,12 +735,24 @@ export async function runEvolutionHeartbeat(
 
                   successCriteria:
                     "Execute the bounded Planner task, verify the result, record evidence, and complete the task only when verification passes.",
+
+                  taskId:
+                    candidate.id,
+
+                  outcomeId:
+                    lineageOutcomeId ??
+                    undefined,
+
+                  milestoneId:
+                    lineageMilestoneId ??
+                    undefined,
                 },
               );
 
             autonomousExecution =
               {
                 attempted: true,
+
                 executed:
                   lifecycle.execution
                     .started,
@@ -672,7 +785,7 @@ export async function runEvolutionHeartbeat(
                 taskId:
                   candidate.id,
                 outcomeId:
-                  workQueue.outcomeId,
+                  lineageOutcomeId,
                 lifecycleId: null,
                 message:
                   error instanceof
