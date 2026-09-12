@@ -1,3 +1,5 @@
+// app/api/chat/route.ts
+
 import {
   NextRequest,
   NextResponse,
@@ -93,10 +95,10 @@ function webUnavailableMessage(
   }
 
   if (locale === "zh-CN") {
-    return "当前请求需要实时外部信息，但 Web Intelligence 暂时无法取得可靠数据。为避免使用过期信息猜测，AIOS 已停止本次分析。";
+    return "当前请求需要实时外部信息，但 Web Intelligence 暂时无法取得经过验证的可靠数据。为避免使用过期或单一来源信息猜测，AIOS 已停止本次分析。";
   }
 
-  return "This request requires live external information, but Web Intelligence could not retrieve reliable data. AIOS stopped instead of guessing with stale information.";
+  return "This request requires live external information, but Web Intelligence could not retrieve sufficiently verified evidence. AIOS stopped instead of guessing with stale or weakly supported information.";
 }
 
 async function executeChatPrompt(
@@ -264,38 +266,62 @@ async function executeChatPrompt(
       );
 
     /*
-     * Safety rule:
+     * C143.4 Verification Gate
      *
-     * If current external information is required
-     * but Web Intelligence fails, do not silently
-     * fall back to model memory.
+     * `success` means usable evidence exists.
+     * `verified` means the evidence passes the
+     * minimum multi-source verification threshold.
+     *
+     * When live information is required,
+     * Runtime must NOT continue unless the
+     * external evidence is verified.
      */
 
-    if (!webContext.success) {
+    if (
+      !webContext.success ||
+      !webContext.verified
+    ) {
       return {
         success: false,
+
         content:
           webUnavailableMessage(
             locale,
           ),
+
         error:
           webContext.error ??
-          "WEB_INTELLIGENCE_FAILED",
+          (
+            webContext.success
+              ? "Web Intelligence returned evidence but it did not pass multi-source verification."
+              : "WEB_INTELLIGENCE_FAILED"
+          ),
+
         code:
-          "WEB_INTELLIGENCE_FAILED",
+          webContext.success
+            ? "WEB_INTELLIGENCE_UNVERIFIED"
+            : "WEB_INTELLIGENCE_FAILED",
+
         execution: {
           provider:
             "web-intelligence",
+
           capabilityTrace: [
             "chat",
             "web-intelligence",
+            "web-verification-gate",
           ],
+
           webIntelligence: {
             required: true,
-            success: false,
-            verified: false,
-            sourceCount: 0,
-            sourceHosts: [],
+            success:
+              webContext.success,
+            verified:
+              webContext.verified,
+            sourceCount:
+              webContext.sourceCount,
+            sourceHosts:
+              webContext.sourceHosts,
           },
         },
       };
@@ -307,7 +333,9 @@ async function executeChatPrompt(
    *
    * Locale remains trusted transport metadata.
    * It is never appended to the user's prompt.
-   * Web evidence is passed separately into Runtime.
+   *
+   * Verified web evidence is passed separately
+   * into Runtime.
    */
 
   return executeRuntime({
@@ -483,13 +511,6 @@ export async function POST(
           ),
       );
 
-    /*
-     * The chat execution path is a union:
-     * RuntimeResponse does not expose `code`,
-     * while GitHub/Web Intelligence branches do.
-     *
-     * Narrow structurally before reading it.
-     */
     const resultCode =
       "code" in result
         ? result.code
@@ -522,7 +543,9 @@ export async function POST(
             result.success
               ? 200
               : resultCode ===
-                  "WEB_INTELLIGENCE_FAILED"
+                  "WEB_INTELLIGENCE_FAILED" ||
+                resultCode ===
+                  "WEB_INTELLIGENCE_UNVERIFIED"
                 ? 503
                 : 500,
           headers: {
