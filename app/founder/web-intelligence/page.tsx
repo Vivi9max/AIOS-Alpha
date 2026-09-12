@@ -14,15 +14,21 @@ type RegressionResponse = {
   runtimeVersion?: string;
   timestamp?: number;
   latencyMs?: number;
-  regression?: {
+  stage?: string;
+  prompt?: string;
+  checks?: {
+    apiKeyConfigured?: boolean;
     intentDetected?: boolean;
-    evidenceSuccess?: boolean;
-    evidenceVerified?: boolean;
-    sourceCount?: number;
-    sourceHosts?: string[];
-    independentDomainCount?: number;
-    independentDomains?: string[];
+    evidenceReturned?: boolean;
+    minimumEvidence?: boolean;
+    independentDomains?: boolean;
+    verified?: boolean;
+    finalRegressionPass?: boolean;
   };
+  sourceCount?: number;
+  sourceHosts?: string[];
+  sourceDomains?: string[];
+  evidence?: unknown[];
 };
 
 export default function FounderWebIntelligencePage() {
@@ -89,13 +95,14 @@ export default function FounderWebIntelligencePage() {
     }
   }
 
+  const checks = result?.checks;
+
   const passed =
     result?.success === true &&
     result?.verified === true &&
+    checks?.finalRegressionPass === true &&
     result?.code ===
       "C143_6_WEB_INTELLIGENCE_REGRESSION_PASS";
-
-  const regression = result?.regression;
 
   return (
     <main
@@ -173,8 +180,9 @@ export default function FounderWebIntelligencePage() {
               lineHeight: 1.6,
             }}
           >
-            页面自动使用当前 Founder Console 会话中的 Access
-            Key。不会要求再次输入，也不会在页面中显示密钥。
+            页面自动使用当前 Founder Console
+            会话中的 Access Key。不会要求再次输入，
+            也不会在页面中显示密钥。
           </p>
 
           <button
@@ -267,9 +275,18 @@ export default function FounderWebIntelligencePage() {
               }}
             >
               <ResultRow
+                label="API Key"
+                value={
+                  checks?.apiKeyConfigured === true
+                    ? "PASSED"
+                    : "FAILED"
+                }
+              />
+
+              <ResultRow
                 label="Intent Detection"
                 value={
-                  regression?.intentDetected === true
+                  checks?.intentDetected === true
                     ? "PASSED"
                     : "FAILED"
                 }
@@ -278,17 +295,44 @@ export default function FounderWebIntelligencePage() {
               <ResultRow
                 label="Brave Evidence"
                 value={
-                  regression?.evidenceSuccess === true
+                  checks?.evidenceReturned === true
                     ? "PASSED"
                     : "FAILED"
                 }
               />
 
               <ResultRow
-                label="Multi-source Verification"
+                label="Minimum Evidence"
                 value={
-                  regression?.evidenceVerified === true
+                  checks?.minimumEvidence === true
                     ? "PASSED"
+                    : "FAILED"
+                }
+              />
+
+              <ResultRow
+                label="Independent Domains"
+                value={
+                  checks?.independentDomains === true
+                    ? "PASSED"
+                    : "FAILED"
+                }
+              />
+
+              <ResultRow
+                label="Verification"
+                value={
+                  checks?.verified === true
+                    ? "VERIFIED"
+                    : "NOT VERIFIED"
+                }
+              />
+
+              <ResultRow
+                label="Final Regression"
+                value={
+                  checks?.finalRegressionPass === true
+                    ? "PASS"
                     : "FAILED"
                 }
               />
@@ -296,24 +340,15 @@ export default function FounderWebIntelligencePage() {
               <ResultRow
                 label="Evidence Sources"
                 value={String(
-                  regression?.sourceCount ?? 0,
+                  result.sourceCount ?? 0,
                 )}
               />
 
               <ResultRow
                 label="Independent Domains"
                 value={String(
-                  regression?.independentDomainCount ?? 0,
+                  result.sourceDomains?.length ?? 0,
                 )}
-              />
-
-              <ResultRow
-                label="Verification"
-                value={
-                  result.verified === true
-                    ? "VERIFIED"
-                    : "NOT VERIFIED"
-                }
               />
 
               <ResultRow
@@ -333,10 +368,8 @@ export default function FounderWebIntelligencePage() {
               />
             </div>
 
-            {(
-              regression?.sourceHosts?.length ??
-              0
-            ) > 0 && (
+            {(result.sourceHosts?.length ?? 0) >
+              0 && (
               <div
                 style={{
                   marginTop: 18,
@@ -363,7 +396,7 @@ export default function FounderWebIntelligencePage() {
                     gap: 7,
                   }}
                 >
-                  {regression?.sourceHosts?.map(
+                  {result.sourceHosts?.map(
                     (host) => (
                       <span
                         key={host}
