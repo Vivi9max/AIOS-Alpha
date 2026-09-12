@@ -1,6 +1,12 @@
 import {
   getCommercialObjective,
+  updateCommercialObjective,
 } from "@/lib/commercial/operating-layer";
+
+import {
+  getOutcome,
+  updateOutcome,
+} from "@/lib/outcome/store";
 
 import {
   listPersistentTasks,
@@ -21,13 +27,10 @@ export interface CommercialGap {
   revenueGap: number;
   customerGap: number;
   costVariance: number;
-
   revenueProgress: number;
   customerProgress: number;
-
   action: CommercialNextAction;
   priority: "normal" | "high" | "critical";
-
   reason: string;
 }
 
@@ -38,12 +41,13 @@ export interface CommercialNextActionResult {
   taskId: string;
   reused: boolean;
   gap: CommercialGap;
+  linked: boolean;
+  outcomeId: string | null;
+  milestoneId: string | null;
   timestamp: number;
 }
 
-function normalizeMoney(
-  value: number,
-): number {
+function normalizeMoney(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
   }
@@ -64,9 +68,7 @@ function calculateProgress(
 
   return Math.min(
     100,
-    Math.round(
-      (actual / target) * 100,
-    ),
+    Math.round((actual / target) * 100),
   );
 }
 
@@ -105,9 +107,7 @@ function resolveAction(
     };
   }
 
-  if (
-    stage === "acquisition"
-  ) {
+  if (stage === "acquisition") {
     return {
       action: "acquire",
       priority:
@@ -119,9 +119,7 @@ function resolveAction(
     };
   }
 
-  if (
-    stage === "conversion"
-  ) {
+  if (stage === "conversion") {
     return {
       action: "convert",
       priority:
@@ -133,9 +131,7 @@ function resolveAction(
     };
   }
 
-  if (
-    stage === "delivery"
-  ) {
+  if (stage === "delivery") {
     return {
       action: "deliver",
       priority: "high",
@@ -144,9 +140,7 @@ function resolveAction(
     };
   }
 
-  if (
-    stage === "retention"
-  ) {
+  if (stage === "retention") {
     return {
       action: "retain",
       priority:
@@ -158,9 +152,7 @@ function resolveAction(
     };
   }
 
-  if (
-    stage === "scaling"
-  ) {
+  if (stage === "scaling") {
     return {
       action: "scale",
       priority:
@@ -316,6 +308,141 @@ export async function getCommercialGap(
   };
 }
 
+async function linkTaskToCommercialLoop(
+  objectiveId: string,
+  taskId: string,
+): Promise<{
+  outcomeId: string | null;
+  milestoneId: string | null;
+}> {
+  const objective =
+    await getCommercialObjective(
+      objectiveId,
+    );
+
+  if (!objective) {
+    throw new Error(
+      "COMMERCIAL_OBJECTIVE_NOT_FOUND",
+    );
+  }
+
+  if (!objective.outcomeId) {
+    throw new Error(
+      "COMMERCIAL_OUTCOME_NOT_LINKED",
+    );
+  }
+
+  const outcome =
+    await getOutcome(
+      objective.outcomeId,
+    );
+
+  if (!outcome) {
+    throw new Error(
+      "COMMERCIAL_OUTCOME_NOT_FOUND",
+    );
+  }
+
+  const existingOutcomeTask =
+    outcome.taskIds.includes(
+      taskId,
+    );
+
+  const milestone =
+    outcome.milestones.find(
+      (item) =>
+        item.status === "active",
+    ) ??
+    outcome.milestones.find(
+      (item) =>
+        item.status === "pending",
+    ) ??
+    outcome.milestones[0];
+
+  const nextOutcomeTaskIds =
+    existingOutcomeTask
+      ? outcome.taskIds
+      : [
+          ...outcome.taskIds,
+          taskId,
+        ];
+
+  let updatedOutcome = outcome;
+
+  if (
+    !existingOutcomeTask ||
+    (
+      milestone &&
+      !milestone.taskIds.includes(
+        taskId,
+      )
+    )
+  ) {
+    const milestoneIds =
+      new Set(
+        milestone
+          ? [
+              ...milestone.taskIds,
+              taskId,
+            ]
+          : [],
+      );
+
+    updatedOutcome =
+      await updateOutcome(
+        outcome.id,
+        {
+          taskIds:
+            nextOutcomeTaskIds,
+        },
+      ) ??
+      outcome;
+
+    if (milestone) {
+      const {
+        updateOutcomeMilestone,
+      } = await import(
+        "@/lib/outcome/store"
+      );
+
+      updatedOutcome =
+        await updateOutcomeMilestone(
+          updatedOutcome.id,
+          milestone.id,
+          {
+            taskIds:
+              Array.from(
+                milestoneIds,
+              ),
+          },
+        ) ??
+        updatedOutcome;
+    }
+  }
+
+  const updatedObjective =
+    await updateCommercialObjective(
+      objective.id,
+      {
+        taskId,
+      },
+    );
+
+  if (!updatedObjective) {
+    throw new Error(
+      "COMMERCIAL_OBJECTIVE_TASK_LINK_FAILED",
+    );
+  }
+
+  return {
+    outcomeId:
+      updatedOutcome.id,
+    milestoneId:
+      milestone?.id ??
+      null,
+  };
+}
+
 export async function ensureCommercialNextAction(
   objectiveId: string,
 ): Promise<CommercialNextActionResult> {
@@ -352,6 +479,12 @@ export async function ensureCommercialNextAction(
     );
 
   if (existing) {
+    const links =
+      await linkTaskToCommercialLoop(
+        objectiveId,
+        existing.id,
+      );
+
     return {
       success: true,
       objectiveId,
@@ -359,6 +492,11 @@ export async function ensureCommercialNextAction(
       taskId: existing.id,
       reused: true,
       gap,
+      linked: true,
+      outcomeId:
+        links.outcomeId,
+      milestoneId:
+        links.milestoneId,
       timestamp: Date.now(),
     };
   }
@@ -372,6 +510,12 @@ export async function ensureCommercialNextAction(
       ),
     );
 
+  const links =
+    await linkTaskToCommercialLoop(
+      objectiveId,
+      task.id,
+    );
+
   return {
     success: true,
     objectiveId,
@@ -379,6 +523,11 @@ export async function ensureCommercialNextAction(
     taskId: task.id,
     reused: false,
     gap,
+    linked: true,
+    outcomeId:
+      links.outcomeId,
+    milestoneId:
+      links.milestoneId,
     timestamp: Date.now(),
   };
 }
