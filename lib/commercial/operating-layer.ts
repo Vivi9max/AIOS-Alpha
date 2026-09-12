@@ -168,8 +168,18 @@ function normalizeCurrency(
       8,
     ).toUpperCase();
 
+  function normalizeCurrency(
+  value: unknown,
+): string {
+  const currency =
+    normalizeText(
+      value,
+      16,
+    ).toUpperCase();
+
   return (
-    currency || "USD"
+    currency ||
+    "UNSPECIFIED"
   );
 }
 
