@@ -13,6 +13,10 @@ import {
   createPersistentTask,
 } from "@/lib/task/server-store";
 
+import type {
+  Locale,
+} from "@/lib/i18n";
+
 export type CommercialNextAction =
   | "validate"
   | "acquire"
@@ -30,7 +34,10 @@ export interface CommercialGap {
   revenueProgress: number;
   customerProgress: number;
   action: CommercialNextAction;
-  priority: "normal" | "high" | "critical";
+  priority:
+    | "normal"
+    | "high"
+    | "critical";
   reason: string;
 }
 
@@ -47,7 +54,9 @@ export interface CommercialNextActionResult {
   timestamp: number;
 }
 
-function normalizeMoney(value: number): number {
+function normalizeMoney(
+  value: number,
+): number {
   if (!Number.isFinite(value)) {
     return 0;
   }
@@ -68,8 +77,106 @@ function calculateProgress(
 
   return Math.min(
     100,
-    Math.round((actual / target) * 100),
+    Math.round(
+      (actual / target) * 100,
+    ),
   );
+}
+
+function localizedReason(
+  key:
+    | "completed"
+    | "validation"
+    | "acquisition"
+    | "conversion"
+    | "delivery"
+    | "retention"
+    | "scaling"
+    | "revenue-conversion"
+    | "customer-gap",
+  locale: Locale,
+): string {
+  if (locale === "zh-CN") {
+    const reasons: Record<
+      typeof key,
+      string
+    > = {
+      completed:
+        "收入和客户目标均已达到。",
+      validation:
+        "当前商业目标仍需要经过验证的市场信号。",
+      acquisition:
+        "当前主要瓶颈是获取符合条件的客户需求。",
+      conversion:
+        "已经存在客户需求，但可验证收入仍低于目标。",
+      delivery:
+        "在进入留存或规模化之前，需要先完成商业价值交付。",
+      retention:
+        "当前下一步商业增长点是客户留存和复购价值。",
+      scaling:
+        "需求已经得到验证，当前需要进入可规模化执行。",
+      "revenue-conversion":
+        "客户进展领先于收入进展，因此当前主要缺口是成交转化。",
+      "customer-gap":
+        "客户进展仍然是当前最主要的可衡量商业缺口。",
+    };
+
+    return reasons[key];
+  }
+
+  if (locale === "ja") {
+    const reasons: Record<
+      typeof key,
+      string
+    > = {
+      completed:
+        "収益目標と顧客目標の両方を達成しました。",
+      validation:
+        "現在の商業目標には、検証済みの市場シグナルがまだ必要です。",
+      acquisition:
+        "現在の主なボトルネックは、適切な顧客需要を獲得することです。",
+      conversion:
+        "顧客需要はありますが、検証可能な収益がまだ目標を下回っています。",
+      delivery:
+        "リテンションやスケールの前に、商業価値を提供する必要があります。",
+      retention:
+        "次の商業的な成長ポイントは、顧客維持とリピート価値です。",
+      scaling:
+        "需要は検証済みであり、現在はスケール可能な実行が必要です。",
+      "revenue-conversion":
+        "顧客の進捗が収益の進捗を上回っているため、現在の主なギャップはコンバージョンです。",
+      "customer-gap":
+        "顧客進捗が依然として最大の測定可能な商業ギャップです。",
+    };
+
+    return reasons[key];
+  }
+
+  const reasons: Record<
+    typeof key,
+    string
+  > = {
+    completed:
+      "Revenue and customer targets have been reached.",
+    validation:
+      "The commercial objective still requires a verified market signal.",
+    acquisition:
+      "The current bottleneck is generating qualified customer demand.",
+    conversion:
+      "Demand exists but measurable revenue remains below target.",
+    delivery:
+      "Commercial value must be delivered before retention or scaling.",
+    retention:
+      "The next commercial leverage point is retention and repeat value.",
+    scaling:
+      "The objective has validated demand and now requires scalable execution.",
+    "revenue-conversion":
+      "Customer progress is ahead of revenue progress, so conversion is the current gap.",
+    "customer-gap":
+      "Customer progress remains the primary measurable commercial gap.",
+  };
+
+  return reasons[key];
 }
 
 function resolveAction(
@@ -78,9 +185,13 @@ function resolveAction(
   customerGap: number,
   revenueProgress: number,
   customerProgress: number,
+  locale: Locale,
 ): {
   action: CommercialNextAction;
-  priority: "normal" | "high" | "critical";
+  priority:
+    | "normal"
+    | "high"
+    | "critical";
   reason: string;
 } {
   if (
@@ -91,7 +202,10 @@ function resolveAction(
       action: "complete",
       priority: "normal",
       reason:
-        "Revenue and customer targets have been reached.",
+        localizedReason(
+          "completed",
+          locale,
+        ),
     };
   }
 
@@ -103,11 +217,16 @@ function resolveAction(
       action: "validate",
       priority: "high",
       reason:
-        "The commercial objective still requires a verified market signal.",
+        localizedReason(
+          "validation",
+          locale,
+        ),
     };
   }
 
-  if (stage === "acquisition") {
+  if (
+    stage === "acquisition"
+  ) {
     return {
       action: "acquire",
       priority:
@@ -115,11 +234,16 @@ function resolveAction(
           ? "high"
           : "normal",
       reason:
-        "The current bottleneck is generating qualified customer demand.",
+        localizedReason(
+          "acquisition",
+          locale,
+        ),
     };
   }
 
-  if (stage === "conversion") {
+  if (
+    stage === "conversion"
+  ) {
     return {
       action: "convert",
       priority:
@@ -127,20 +251,30 @@ function resolveAction(
           ? "high"
           : "normal",
       reason:
-        "Demand exists but measurable revenue remains below target.",
+        localizedReason(
+          "conversion",
+          locale,
+        ),
     };
   }
 
-  if (stage === "delivery") {
+  if (
+    stage === "delivery"
+  ) {
     return {
       action: "deliver",
       priority: "high",
       reason:
-        "Commercial value must be delivered before retention or scaling.",
+        localizedReason(
+          "delivery",
+          locale,
+        ),
     };
   }
 
-  if (stage === "retention") {
+  if (
+    stage === "retention"
+  ) {
     return {
       action: "retain",
       priority:
@@ -148,11 +282,16 @@ function resolveAction(
           ? "high"
           : "normal",
       reason:
-        "The next commercial leverage point is retention and repeat value.",
+        localizedReason(
+          "retention",
+          locale,
+        ),
     };
   }
 
-  if (stage === "scaling") {
+  if (
+    stage === "scaling"
+  ) {
     return {
       action: "scale",
       priority:
@@ -160,19 +299,26 @@ function resolveAction(
           ? "high"
           : "normal",
       reason:
-        "The objective has validated demand and now requires scalable execution.",
+        localizedReason(
+          "scaling",
+          locale,
+        ),
     };
   }
 
   if (
     revenueGap > 0 &&
-    revenueProgress < customerProgress
+    revenueProgress <
+      customerProgress
   ) {
     return {
       action: "convert",
       priority: "high",
       reason:
-        "Customer progress is ahead of revenue progress, so conversion is the current gap.",
+        localizedReason(
+          "revenue-conversion",
+          locale,
+        ),
     };
   }
 
@@ -183,7 +329,10 @@ function resolveAction(
         ? "high"
         : "normal",
     reason:
-      "Customer progress remains the primary measurable commercial gap.",
+      localizedReason(
+        "customer-gap",
+        locale,
+      ),
   };
 }
 
@@ -237,6 +386,7 @@ function buildTaskDescription(
 
 export async function getCommercialGap(
   objectiveId: string,
+  locale: Locale = "en",
 ): Promise<CommercialGap> {
   const objective =
     await getCommercialObjective(
@@ -293,6 +443,7 @@ export async function getCommercialGap(
       customerGap,
       revenueProgress,
       customerProgress,
+      locale,
     );
 
   return {
@@ -302,9 +453,12 @@ export async function getCommercialGap(
     costVariance,
     revenueProgress,
     customerProgress,
-    action: resolved.action,
-    priority: resolved.priority,
-    reason: resolved.reason,
+    action:
+      resolved.action,
+    priority:
+      resolved.priority,
+    reason:
+      resolved.reason,
   };
 }
 
@@ -351,11 +505,13 @@ async function linkTaskToCommercialLoop(
   const milestone =
     outcome.milestones.find(
       (item) =>
-        item.status === "active",
+        item.status ===
+        "active",
     ) ??
     outcome.milestones.find(
       (item) =>
-        item.status === "pending",
+        item.status ===
+        "pending",
     ) ??
     outcome.milestones[0];
 
@@ -367,7 +523,8 @@ async function linkTaskToCommercialLoop(
           taskId,
         ];
 
-  let updatedOutcome = outcome;
+  let updatedOutcome =
+    outcome;
 
   if (
     !existingOutcomeTask ||
@@ -445,6 +602,7 @@ async function linkTaskToCommercialLoop(
 
 export async function ensureCommercialNextAction(
   objectiveId: string,
+  locale: Locale = "en",
 ): Promise<CommercialNextActionResult> {
   const objective =
     await getCommercialObjective(
@@ -460,6 +618,7 @@ export async function ensureCommercialNextAction(
   const gap =
     await getCommercialGap(
       objectiveId,
+      locale,
     );
 
   const tasks =
@@ -475,7 +634,8 @@ export async function ensureCommercialNextAction(
     tasks.find(
       (task) =>
         task.status !== "done" &&
-        task.title === taskTitle,
+        task.title ===
+          taskTitle,
     );
 
   if (existing) {
@@ -488,8 +648,10 @@ export async function ensureCommercialNextAction(
     return {
       success: true,
       objectiveId,
-      action: gap.action,
-      taskId: existing.id,
+      action:
+        gap.action,
+      taskId:
+        existing.id,
       reused: true,
       gap,
       linked: true,
@@ -497,7 +659,8 @@ export async function ensureCommercialNextAction(
         links.outcomeId,
       milestoneId:
         links.milestoneId,
-      timestamp: Date.now(),
+      timestamp:
+        Date.now(),
     };
   }
 
@@ -519,8 +682,10 @@ export async function ensureCommercialNextAction(
   return {
     success: true,
     objectiveId,
-    action: gap.action,
-    taskId: task.id,
+    action:
+      gap.action,
+    taskId:
+      task.id,
     reused: false,
     gap,
     linked: true,
@@ -528,6 +693,7 @@ export async function ensureCommercialNextAction(
       links.outcomeId,
     milestoneId:
       links.milestoneId,
-    timestamp: Date.now(),
+    timestamp:
+      Date.now(),
   };
 }
