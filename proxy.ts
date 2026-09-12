@@ -18,26 +18,37 @@ const PUBLIC_PATHS = [
 
   // Vercel Cron / Evolution Runtime
   "/api/evolution/heartbeat",
+
+  /*
+   * Founder-only Web Intelligence verification.
+   *
+   * This route must reach its own handler so it
+   * can authenticate with FOUNDER_ACCESS_KEY.
+   *
+   * It does NOT grant ordinary users access because
+   * authentication is enforced inside the route.
+   */
+  "/api/founder/web-intelligence/verify",
 ];
 
 function isPublicPath(
-  pathname: string
+  pathname: string,
 ): boolean {
   return PUBLIC_PATHS.some(
     (path) =>
       pathname === path ||
       pathname.startsWith(
-        `${path}/`
-      )
+        `${path}/`,
+      ),
   );
 }
 
 function isPublicAsset(
-  pathname: string
+  pathname: string,
 ): boolean {
   return (
     pathname.startsWith(
-      "/_next/"
+      "/_next/",
     ) ||
     pathname ===
       "/favicon.ico" ||
@@ -46,24 +57,24 @@ function isPublicAsset(
     pathname ===
       "/apple-touch-icon-precomposed.png" ||
     /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/.test(
-      pathname
+      pathname,
     )
   );
 }
 
 export function proxy(
-  request: NextRequest
+  request: NextRequest,
 ) {
   const pathname =
     request.nextUrl.pathname;
 
   /*
-   * Public routes and protected
-   * system-runtime routes are allowed
-   * to reach their own route handlers.
+   * Public routes and explicitly protected
+   * system routes are allowed to reach their
+   * own route handlers.
    *
-   * Runtime authentication must be
-   * handled by the route itself.
+   * Authentication for protected system routes
+   * must be handled by the route itself.
    */
   if (
     isPublicPath(pathname) ||
@@ -74,7 +85,7 @@ export function proxy(
 
   const access =
     request.cookies.get(
-      ACCESS_COOKIE
+      ACCESS_COOKIE,
     )?.value;
 
   if (
@@ -86,7 +97,7 @@ export function proxy(
 
   if (
     pathname.startsWith(
-      "/api/"
+      "/api/",
     )
   ) {
     return NextResponse.json(
@@ -115,7 +126,7 @@ export function proxy(
           "Content-Type":
             "application/json; charset=utf-8",
         },
-      }
+      },
     );
   }
 
@@ -127,11 +138,11 @@ export function proxy(
 
   alphaUrl.searchParams.set(
     "from",
-    pathname
+    pathname,
   );
 
   return NextResponse.redirect(
-    alphaUrl
+    alphaUrl,
   );
 }
 
