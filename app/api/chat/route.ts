@@ -40,6 +40,23 @@ import {
   retrieveWebEvidence,
 } from "@/lib/web-intelligence";
 
+import {
+  createCommercialObjective,
+  listCommercialObjectives,
+} from "@/lib/commercial/operating-layer";
+
+import {
+  ensureCommercialOperatingLoop,
+} from "@/lib/commercial/operating-loop";
+
+import {
+  ensureCommercialNextAction,
+} from "@/lib/commercial/gap-engine";
+
+import {
+  detectCommercialChatIntent,
+} from "@/lib/commercial/chat-intent";
+
 export const dynamic =
   "force-dynamic";
 
@@ -105,6 +122,216 @@ async function executeChatPrompt(
   prompt: string,
   locale: Locale,
 ) {
+  /*
+   * C143.17
+   *
+   * Explicit commercial-objective requests entered
+   * through Chat are connected to the existing
+   * Commercial Operating Layer.
+   *
+   * This creates:
+   *
+   * Chat
+   *   ↓
+   * Commercial Objective
+   *   ↓
+   * Outcome
+   *   ↓
+   * Milestone
+   *   ↓
+   * Task
+   *   ↓
+   * Gap Engine
+   *   ↓
+   * Next Action
+   *
+   * IMPORTANT:
+   *
+   * Creating a commercial objective does NOT execute
+   * Runtime automatically.
+   *
+   * Runtime execution remains an explicit next step.
+   *
+   * Runtime success is never treated as commercial
+   * success. Revenue, customers, and costs must only
+   * be updated through the verified commercial result
+   * path.
+   */
+
+  const commercialIntent =
+    detectCommercialChatIntent(
+      prompt,
+      locale,
+    );
+
+  if (
+    commercialIntent.detected
+  ) {
+    const existingObjectives =
+      await listCommercialObjectives();
+
+    /*
+     * Reuse an existing active/planned objective
+     * with the same title instead of creating duplicate
+     * commercial operating loops from repeated Chat input.
+     */
+    const existing =
+      existingObjectives.find(
+        (item) =>
+          item.title.toLowerCase() ===
+            commercialIntent.title.toLowerCase() &&
+          item.status !==
+            "cancelled" &&
+          item.status !==
+            "completed",
+      );
+
+    const objective =
+      existing ??
+      await createCommercialObjective({
+        title:
+          commercialIntent.title,
+
+        description:
+          commercialIntent.description,
+
+        status:
+          "active",
+
+        stage:
+          commercialIntent.stage,
+
+        currency:
+          commercialIntent.currency,
+
+        revenueTarget:
+          commercialIntent.revenueTarget,
+
+        costTarget:
+          commercialIntent.costTarget,
+
+        customerTarget:
+          commercialIntent.customerTarget,
+
+        successCriteria:
+          commercialIntent.successCriteria,
+
+        outcomeId:
+          null,
+
+        taskId:
+          null,
+      });
+
+    /*
+     * Establish the persistent Objective →
+     * Outcome → Milestone → Task relationship.
+     *
+     * Existing linked chains are reused by the
+     * operating-loop implementation.
+     */
+    const loop =
+      await ensureCommercialOperatingLoop(
+        objective.id,
+      );
+
+    /*
+     * Calculate the current measurable gap and
+     * establish/reuse the next commercial action.
+     */
+    const nextAction =
+      await ensureCommercialNextAction(
+        objective.id,
+      );
+
+    const currency =
+      objective.currency;
+
+    let content: string;
+
+    if (locale === "ja") {
+      content = [
+        "商業目標を作成しました。",
+        "",
+        `目標：${objective.title}`,
+        `収益目標：${objective.revenueTarget} ${currency}`,
+        `顧客目標：${objective.customerTarget}`,
+        `コスト目標：${objective.costTarget} ${currency}`,
+        "",
+        `次のアクション：${nextAction.action}`,
+        `理由：${nextAction.gap.reason}`,
+        "",
+        "Objective → Outcome → Milestone → Task → Next Action の運用ループを準備しました。",
+        "Runtime は実行結果を推測せず、明示的な実行指示を待ちます。",
+      ].join("\n");
+    } else if (locale === "zh-CN") {
+      content = [
+        "商业目标已建立。",
+        "",
+        `目标：${objective.title}`,
+        `收入目标：${objective.revenueTarget} ${currency}`,
+        `客户目标：${objective.customerTarget}`,
+        `成本目标：${objective.costTarget} ${currency}`,
+        "",
+        `下一行动：${nextAction.action}`,
+        `判断原因：${nextAction.gap.reason}`,
+        "",
+        "Objective → Outcome → Milestone → Task → Next Action 已建立。",
+        "Runtime 不会虚构商业结果，等待你明确要求执行。",
+      ].join("\n");
+    } else {
+      content = [
+        "Commercial objective created.",
+        "",
+        `Objective: ${objective.title}`,
+        `Revenue target: ${objective.revenueTarget} ${currency}`,
+        `Customer target: ${objective.customerTarget}`,
+        `Cost target: ${objective.costTarget} ${currency}`,
+        "",
+        `Next action: ${nextAction.action}`,
+        `Reason: ${nextAction.gap.reason}`,
+        "",
+        "Objective → Outcome → Milestone → Task → Next Action is ready.",
+        "Runtime will not fabricate commercial results and is waiting for explicit execution.",
+      ].join("\n");
+    }
+
+    return {
+      success: true,
+
+      content,
+
+      code:
+        "C143_17_COMMERCIAL_OBJECTIVE_CREATED",
+
+      commercial: {
+        detected: true,
+
+        objective,
+
+        loop,
+
+        nextAction,
+      },
+
+      execution: {
+        provider:
+          "commercial-operating-layer",
+
+        capabilityTrace: [
+          "chat",
+          "commercial-intent",
+          "commercial-objective",
+          "outcome",
+          "milestone",
+          "task",
+          "gap-engine",
+          "next-action",
+        ],
+      },
+    };
+  }
+
   /*
    * C141 Founder GitHub READ
    *
@@ -379,6 +606,7 @@ export async function GET(
           execution: true,
           founderGitHubRead: true,
           webIntelligence: true,
+          commercialOperatingLayer: true,
         },
         identity: {
           userId:
