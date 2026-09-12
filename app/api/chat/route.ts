@@ -239,10 +239,11 @@ async function executeChatPrompt(
      * Calculate the current measurable gap and
      * establish/reuse the next commercial action.
      */
-    const nextAction =
-      await ensureCommercialNextAction(
-        objective.id,
-      );
+const nextAction =
+  await ensureCommercialNextAction(
+    objective.id,
+    locale,
+  );
 
     const currency =
       objective.currency;
