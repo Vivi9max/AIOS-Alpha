@@ -74,10 +74,224 @@ export interface CommercialOverview {
     | "paused";
 }
 
+export interface CreateCommercialObjectiveInput {
+  title: string;
+  description?: string;
+
+  status?: CommercialObjectiveStatus;
+  stage?: CommercialStage;
+
+  currency?: string;
+
+  revenueTarget?: number;
+  costTarget?: number;
+  customerTarget?: number;
+
+  outcomeId?: string | null;
+  taskId?: string | null;
+
+  successCriteria?: string;
+}
+
+export interface UpdateCommercialObjectiveInput {
+  title?: string;
+  description?: string;
+
+  status?: CommercialObjectiveStatus;
+  stage?: CommercialStage;
+
+  currency?: string;
+
+  revenueTarget?: number;
+  revenueActual?: number;
+
+  costTarget?: number;
+  costActual?: number;
+
+  customerTarget?: number;
+  customerActual?: number;
+
+  outcomeId?: string | null;
+  taskId?: string | null;
+
+  successCriteria?: string;
+}
+
 const STORAGE_RESOURCE =
   "commercial-objectives";
 
 const MAX_OBJECTIVES = 100;
+
+const UNSPECIFIED_CURRENCY =
+  "UNSPECIFIED";
+
+/**
+ * Supported ISO-4217-style currency codes.
+ *
+ * We intentionally accept explicit codes rather than
+ * inferring currency from locale.
+ */
+const CURRENCY_CODES = new Set([
+  "AED",
+  "AFN",
+  "ALL",
+  "AMD",
+  "ANG",
+  "AOA",
+  "ARS",
+  "AUD",
+  "AWG",
+  "AZN",
+  "BAM",
+  "BBD",
+  "BDT",
+  "BGN",
+  "BHD",
+  "BIF",
+  "BMD",
+  "BND",
+  "BOB",
+  "BRL",
+  "BSD",
+  "BTN",
+  "BWP",
+  "BYN",
+  "BZD",
+  "CAD",
+  "CDF",
+  "CHF",
+  "CLP",
+  "CNY",
+  "COP",
+  "CRC",
+  "CUP",
+  "CVE",
+  "CZK",
+  "DJF",
+  "DKK",
+  "DOP",
+  "DZD",
+  "EGP",
+  "ERN",
+  "ETB",
+  "EUR",
+  "FJD",
+  "FKP",
+  "GBP",
+  "GEL",
+  "GHS",
+  "GIP",
+  "GMD",
+  "GNF",
+  "GTQ",
+  "GYD",
+  "HKD",
+  "HNL",
+  "HTG",
+  "HUF",
+  "IDR",
+  "ILS",
+  "INR",
+  "IQD",
+  "IRR",
+  "ISK",
+  "JMD",
+  "JOD",
+  "JPY",
+  "KES",
+  "KGS",
+  "KHR",
+  "KMF",
+  "KPW",
+  "KRW",
+  "KWD",
+  "KYD",
+  "KZT",
+  "LAK",
+  "LBP",
+  "LKR",
+  "LRD",
+  "LSL",
+  "LYD",
+  "MAD",
+  "MDL",
+  "MGA",
+  "MKD",
+  "MMK",
+  "MNT",
+  "MOP",
+  "MRU",
+  "MUR",
+  "MVR",
+  "MWK",
+  "MXN",
+  "MYR",
+  "MZN",
+  "NAD",
+  "NGN",
+  "NIO",
+  "NOK",
+  "NPR",
+  "NZD",
+  "OMR",
+  "PAB",
+  "PEN",
+  "PGK",
+  "PHP",
+  "PKR",
+  "PLN",
+  "PYG",
+  "QAR",
+  "RON",
+  "RSD",
+  "RUB",
+  "RWF",
+  "SAR",
+  "SBD",
+  "SCR",
+  "SDG",
+  "SEK",
+  "SGD",
+  "SHP",
+  "SLE",
+  "SOS",
+  "SRD",
+  "SSP",
+  "STN",
+  "SYP",
+  "SZL",
+  "THB",
+  "TJS",
+  "TMT",
+  "TND",
+  "TOP",
+  "TRY",
+  "TTD",
+  "TWD",
+  "TZS",
+  "UAH",
+  "UGX",
+  "USD",
+  "UYU",
+  "UZS",
+  "VED",
+  "VES",
+  "VND",
+  "VUV",
+  "WST",
+  "XAF",
+  "XCD",
+  "XOF",
+  "XPF",
+  "YER",
+  "ZAR",
+  "ZMW",
+  "ZWL",
+
+  // Digital currencies explicitly named by the user.
+  "BTC",
+  "ETH",
+]);
 
 function storageKey(): string {
   return createUserStorageKey(
@@ -107,6 +321,7 @@ function normalizeText(
   }
 
   return value
+    .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
 }
@@ -115,8 +330,7 @@ function normalizeMoney(
   value: unknown,
 ): number {
   const number =
-    typeof value ===
-    "number"
+    typeof value === "number"
       ? value
       : Number(value);
 
@@ -140,8 +354,7 @@ function normalizeCount(
   value: unknown,
 ): number {
   const number =
-    typeof value ===
-    "number"
+    typeof value === "number"
       ? value
       : Number(value);
 
@@ -159,28 +372,290 @@ function normalizeCount(
   );
 }
 
+/**
+ * Normalize an explicitly supplied currency.
+ *
+ * Policy:
+ * 1. Explicit ISO code wins.
+ * 2. Explicit currency names are mapped.
+ * 3. Unambiguous currency symbols are accepted.
+ * 4. Ambiguous symbols such as "$", "¥" and "￥"
+ *    are NEVER guessed.
+ * 5. Locale is NEVER used to infer currency.
+ * 6. Missing / unknown currency becomes UNSPECIFIED.
+ */
 function normalizeCurrency(
   value: unknown,
 ): string {
-  const currency =
+  const raw =
     normalizeText(
       value,
-      8,
-    ).toUpperCase();
+      64,
+    );
 
-  function normalizeCurrency(
-  value: unknown,
-): string {
-  const currency =
-    normalizeText(
-      value,
-      16,
-    ).toUpperCase();
+  if (!raw) {
+    return UNSPECIFIED_CURRENCY;
+  }
 
-  return (
-    currency ||
-    "UNSPECIFIED"
-  );
+  const normalized =
+    raw.toUpperCase();
+
+  if (
+    CURRENCY_CODES.has(
+      normalized,
+    )
+  ) {
+    return normalized;
+  }
+
+  const compact =
+    raw
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const namedCurrencies: Array<
+    [RegExp, string]
+  > = [
+    [
+      /人民币|人民币元|元人民币|Chinese Yuan|Renminbi/i,
+      "CNY",
+    ],
+    [
+      /美元|美金|美刀|US dollars?|United States dollars?/i,
+      "USD",
+    ],
+    [
+      /日元|日本円|Japanese yen/i,
+      "JPY",
+    ],
+    [
+      /港币|港元|Hong Kong dollars?/i,
+      "HKD",
+    ],
+    [
+      /澳门元|澳门币|Macau pataca/i,
+      "MOP",
+    ],
+    [
+      /台币|新台币|台湾ドル|Taiwan dollars?/i,
+      "TWD",
+    ],
+    [
+      /韩元|韩国ウォン|Korean won/i,
+      "KRW",
+    ],
+    [
+      /新加坡元|新加坡币|Singapore dollars?/i,
+      "SGD",
+    ],
+    [
+      /澳元|澳大利亚元|Australian dollars?/i,
+      "AUD",
+    ],
+    [
+      /加元|加拿大元|Canadian dollars?/i,
+      "CAD",
+    ],
+    [
+      /新西兰元|纽元|New Zealand dollars?/i,
+      "NZD",
+    ],
+    [
+      /欧元|euro|euros/i,
+      "EUR",
+    ],
+    [
+      /英镑|pound sterling|British pounds?|sterling/i,
+      "GBP",
+    ],
+    [
+      /瑞士法郎|Swiss francs?/i,
+      "CHF",
+    ],
+    [
+      /瑞典克朗|Swedish kronor|Swedish krona/i,
+      "SEK",
+    ],
+    [
+      /挪威克朗|Norwegian kroner|Norwegian krone/i,
+      "NOK",
+    ],
+    [
+      /丹麦克朗|Danish kroner|Danish krone/i,
+      "DKK",
+    ],
+    [
+      /波兰兹罗提|波兰兹罗蒂|Polish zloty|Polish zlotys/i,
+      "PLN",
+    ],
+    [
+      /捷克克朗|Czech koruna|Czech korunas/i,
+      "CZK",
+    ],
+    [
+      /匈牙利福林|Hungarian forint/i,
+      "HUF",
+    ],
+    [
+      /俄罗斯卢布|俄罗​​斯卢布|卢布|Russian rubles?|Russian roubles?/i,
+      "RUB",
+    ],
+    [
+      /土耳其里拉|Turkish lira/i,
+      "TRY",
+    ],
+    [
+      /印度卢比|Indian rupees?/i,
+      "INR",
+    ],
+    [
+      /巴基斯坦卢比|Pakistani rupees?/i,
+      "PKR",
+    ],
+    [
+      /孟加拉塔卡|Bangladeshi taka/i,
+      "BDT",
+    ],
+    [
+      /泰铢|Thai baht/i,
+      "THB",
+    ],
+    [
+      /越南盾|Vietnamese dong/i,
+      "VND",
+    ],
+    [
+      /印尼盾|印尼卢比|Indonesian rupiah/i,
+      "IDR",
+    ],
+    [
+      /马来西亚林吉特|马来西亚令吉|Malaysian ringgit/i,
+      "MYR",
+    ],
+    [
+      /菲律宾比索|Philippine pesos?/i,
+      "PHP",
+    ],
+    [
+      /墨西哥比索|Mexican pesos?/i,
+      "MXN",
+    ],
+    [
+      /巴西雷亚尔|Brazilian reais?|Brazilian real/i,
+      "BRL",
+    ],
+    [
+      /阿根廷比索|Argentine pesos?/i,
+      "ARS",
+    ],
+    [
+      /智利比索|Chilean pesos?/i,
+      "CLP",
+    ],
+    [
+      /哥伦比亚比索|Colombian pesos?/i,
+      "COP",
+    ],
+    [
+      /秘鲁索尔|Peruvian soles?|Peruvian sol/i,
+      "PEN",
+    ],
+    [
+      /南非兰特|South African rand/i,
+      "ZAR",
+    ],
+    [
+      /尼日利亚奈拉|Nigerian naira/i,
+      "NGN",
+    ],
+    [
+      /肯尼亚先令|Kenyan shillings?/i,
+      "KES",
+    ],
+    [
+      /埃及镑|Egyptian pounds?/i,
+      "EGP",
+    ],
+    [
+      /以色列新谢克尔|以色列谢克尔|Israeli new shekels?|Israeli shekels?/i,
+      "ILS",
+    ],
+    [
+      /沙特里亚尔|Saudi riyals?/i,
+      "SAR",
+    ],
+    [
+      /阿联酋迪拉姆|UAE dirhams?|Emirati dirhams?/i,
+      "AED",
+    ],
+    [
+      /卡塔尔里亚尔|Qatari riyals?/i,
+      "QAR",
+    ],
+    [
+      /科威特第纳尔|Kuwaiti dinars?/i,
+      "KWD",
+    ],
+    [
+      /比特币|bitcoin/i,
+      "BTC",
+    ],
+    [
+      /以太币|以太坊|ether|ethereum/i,
+      "ETH",
+    ],
+  ];
+
+  for (
+    const [
+      pattern,
+      code,
+    ] of namedCurrencies
+  ) {
+    if (
+      pattern.test(
+        compact,
+      )
+    ) {
+      return code;
+    }
+  }
+
+  /**
+   * Only symbols with a single unambiguous
+   * interpretation are accepted.
+   *
+   * "$" is ambiguous.
+   * "¥" and "￥" are ambiguous.
+   */
+  const symbols: Array<
+    [RegExp, string]
+  > = [
+    [/€/i, "EUR"],
+    [/£/i, "GBP"],
+    [/₹/i, "INR"],
+    [/₩/i, "KRW"],
+    [/₽/i, "RUB"],
+    [/₺/i, "TRY"],
+    [/฿/i, "THB"],
+  ];
+
+  for (
+    const [
+      pattern,
+      code,
+    ] of symbols
+  ) {
+    if (
+      pattern.test(
+        compact,
+      )
+    ) {
+      return code;
+    }
+  }
+
+  return UNSPECIFIED_CURRENCY;
 }
 
 function normalizeStatus(
@@ -227,7 +702,9 @@ function normalizeObjective(
   }
 
   const item =
-    value as Partial<CommercialObjective>;
+    value as Partial<
+      CommercialObjective
+    >;
 
   if (
     typeof item.id !==
@@ -248,9 +725,16 @@ function normalizeObjective(
 
   return {
     id: item.id,
-    title: item.title,
+    title:
+      normalizeText(
+        item.title,
+        200,
+      ),
     description:
-      item.description,
+      normalizeText(
+        item.description,
+        2000,
+      ),
 
     status:
       normalizeStatus(
@@ -310,7 +794,10 @@ function normalizeObjective(
         : null,
 
     successCriteria:
-      item.successCriteria,
+      normalizeText(
+        item.successCriteria,
+        1000,
+      ),
 
     createdAt:
       item.createdAt,
@@ -370,27 +857,6 @@ async function writeObjectives(
   );
 }
 
-export interface CreateCommercialObjectiveInput {
-  title: string;
-  description?: string;
-
-  status?:
-    CommercialObjectiveStatus;
-
-  stage?: CommercialStage;
-
-  currency?: string;
-
-  revenueTarget?: number;
-  costTarget?: number;
-  customerTarget?: number;
-
-  outcomeId?: string | null;
-  taskId?: string | null;
-
-  successCriteria?: string;
-}
-
 export async function listCommercialObjectives(): Promise<
   CommercialObjective[]
 > {
@@ -409,7 +875,9 @@ export async function listCommercialObjectives(): Promise<
 
 export async function getCommercialObjective(
   id: string,
-): Promise<CommercialObjective | null> {
+): Promise<
+  CommercialObjective | null
+> {
   const objectives =
     await readObjectives();
 
@@ -464,7 +932,8 @@ export async function createCommercialObjective(
   const now =
     Date.now();
 
-  const objective: CommercialObjective =
+  const objective:
+    CommercialObjective =
     {
       id: createId(),
 
@@ -544,36 +1013,12 @@ export async function createCommercialObjective(
   return objective;
 }
 
-export interface UpdateCommercialObjectiveInput {
-  title?: string;
-  description?: string;
-
-  status?:
-    CommercialObjectiveStatus;
-
-  stage?: CommercialStage;
-
-  currency?: string;
-
-  revenueTarget?: number;
-  revenueActual?: number;
-
-  costTarget?: number;
-  costActual?: number;
-
-  customerTarget?: number;
-  customerActual?: number;
-
-  outcomeId?: string | null;
-  taskId?: string | null;
-
-  successCriteria?: string;
-}
-
 export async function updateCommercialObjective(
   id: string,
   updates: UpdateCommercialObjectiveInput,
-): Promise<CommercialObjective | null> {
+): Promise<
+  CommercialObjective | null
+> {
   const objectives =
     await readObjectives();
 
@@ -596,7 +1041,8 @@ export async function updateCommercialObjective(
     updates.status ??
     current.status;
 
-  const updated: CommercialObjective =
+  const updated:
+    CommercialObjective =
     {
       ...current,
 
@@ -708,7 +1154,7 @@ export async function updateCommercialObjective(
 
       completedAt:
         status ===
-        "completed"
+          "completed"
           ? current.completedAt ??
             Date.now()
           : current.completedAt,
@@ -727,7 +1173,9 @@ export async function updateCommercialObjective(
   return updated;
 }
 
-export async function getCommercialOverview(): Promise<CommercialOverview> {
+export async function getCommercialOverview(): Promise<
+  CommercialOverview
+> {
   const objectives =
     await listCommercialObjectives();
 
@@ -738,8 +1186,7 @@ export async function getCommercialOverview(): Promise<CommercialOverview> {
       ) =>
         item.status ===
         "active",
-    ) ??
-    null;
+    ) ?? null;
 
   const target =
     activeObjective ??
@@ -773,36 +1220,38 @@ export async function getCommercialOverview(): Promise<CommercialOverview> {
   }
 
   const revenueProgress =
-    target.revenueTarget >
-    0
+    target.revenueTarget > 0
       ? Math.min(
           100,
-          Math.round(
-            (target.revenueActual /
-              target.revenueTarget) *
-              100,
+          Math.max(
+            0,
+            Math.round(
+              (target.revenueActual /
+                target.revenueTarget) *
+                100,
+            ),
           ),
         )
       : 0;
 
   const customerProgress =
-    target.customerTarget >
-    0
+    target.customerTarget > 0
       ? Math.min(
           100,
-          Math.round(
-            (target.customerActual /
-              target.customerTarget) *
-              100,
+          Math.max(
+            0,
+            Math.round(
+              (target.customerActual /
+                target.customerTarget) *
+                100,
+            ),
           ),
         )
       : 0;
 
   const progress =
-    target.revenueTarget >
-      0 &&
-    target.customerTarget >
-      0
+    target.revenueTarget > 0 &&
+    target.customerTarget > 0
       ? Math.round(
           (revenueProgress +
             customerProgress) /
@@ -815,7 +1264,7 @@ export async function getCommercialOverview(): Promise<CommercialOverview> {
 
   const status =
     target.status ===
-    "completed"
+      "completed"
       ? "completed"
       : target.status ===
           "paused"
