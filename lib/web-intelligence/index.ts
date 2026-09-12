@@ -186,6 +186,80 @@ function resolveSearchLanguage(
   return "en";
 }
 
+function normalizeHostname(
+  hostname: string,
+): string {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
+}
+
+/*
+ * C143.5
+ *
+ * Hostname diversity is useful for diagnostics,
+ * but verification should use independent domains.
+ *
+ * This intentionally keeps the implementation
+ * dependency-free and conservative.
+ */
+function normalizeSourceDomain(
+  hostname: string,
+): string {
+  const normalized =
+    normalizeHostname(
+      hostname,
+    );
+
+  const parts =
+    normalized
+      .split(".")
+      .filter(Boolean);
+
+  if (parts.length <= 2) {
+    return normalized;
+  }
+
+  const compoundPublicSuffixes = new Set([
+    "co.uk",
+    "org.uk",
+    "ac.uk",
+    "gov.uk",
+    "com.cn",
+    "net.cn",
+    "org.cn",
+    "gov.cn",
+    "com.hk",
+    "net.hk",
+    "org.hk",
+    "gov.hk",
+    "com.jp",
+    "net.jp",
+    "org.jp",
+    "co.jp",
+    "go.jp",
+  ]);
+
+  const suffix =
+    parts.slice(-2).join(".");
+
+  if (
+    compoundPublicSuffixes.has(
+      suffix,
+    ) &&
+    parts.length >= 3
+  ) {
+    return parts
+      .slice(-3)
+      .join(".");
+  }
+
+  return parts
+    .slice(-2)
+    .join(".");
+}
+
 function calculateConfidence(
   hostname: string,
   sourceCount: number,
@@ -374,6 +448,10 @@ export async function retrieveWebEvidence(
             hostname = "";
           }
 
+          if (!hostname) {
+            return null;
+          }
+
           const snippets =
             Array.isArray(
               item.snippets,
@@ -435,28 +513,67 @@ export async function retrieveWebEvidence(
           evidence
             .map(
               (item) =>
-                item.hostname,
+                normalizeHostname(
+                  item.hostname,
+                ),
             )
             .filter(Boolean),
         ),
       );
 
+    const sourceDomains =
+      Array.from(
+        new Set(
+          evidence
+            .map(
+              (item) =>
+                normalizeSourceDomain(
+                  item.hostname,
+                ),
+            )
+            .filter(Boolean),
+        ),
+      );
+
+    /*
+     * C143.5 Verification Gate
+     *
+     * Minimum requirement:
+     *
+     * 1. At least two usable evidence items.
+     * 2. At least two independent source domains.
+     *
+     * Different subdomains of the same organization
+     * do not count as independent corroboration.
+     */
+    const verified =
+      evidence.length >= 2 &&
+      sourceDomains.length >= 2;
+
     return {
       success:
         evidence.length > 0,
+
       query,
-      verified:
-        evidence.length >= 2 &&
-        sourceHosts.length >= 2,
-      provider: "brave",
+
+      verified,
+
+      provider:
+        "brave",
+
       evidence,
+
       sourceCount:
         evidence.length,
+
       sourceHosts,
+
       error:
         evidence.length === 0
           ? "No usable web evidence was returned."
-          : undefined,
+          : verified
+            ? undefined
+            : "Web evidence was returned, but it did not contain enough independent source domains for verification.",
     };
   } catch (error) {
     return {
