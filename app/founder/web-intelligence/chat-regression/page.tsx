@@ -410,57 +410,57 @@ export default function FounderChatWebRegressionPage() {
               />
             </div>
 
-            {(web?.sourceHosts?.length ?? 0) >
-              0 && (
-              <div
-                style={{
-                  marginTop: 18,
-                  padding: 14,
-                  borderRadius: 14,
-                  background: "#f8fafc",
-                }}
-              >
+            {web?.sourceHosts &&
+              web.sourceHosts.length > 0 && (
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 900,
-                    color: "#64748b",
-                    marginBottom: 8,
+                    marginTop: 18,
+                    padding: 14,
+                    borderRadius: 14,
+                    background: "#f8fafc",
                   }}
                 >
-                  VERIFIED SOURCE HOSTS
-                </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 900,
+                      color: "#64748b",
+                      marginBottom: 8,
+                    }}
+                  >
+                    VERIFIED SOURCE HOSTS
+                  </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 7,
-                  }}
-                >
-                  {web.sourceHosts.map(
-                    (host) => (
-                      <span
-                        key={host}
-                        style={{
-                          padding:
-                            "5px 9px",
-                          borderRadius: 999,
-                          background:
-                            "#e2e8f0",
-                          color:
-                            "#334155",
-                          fontSize: 12,
-                          fontWeight: 800,
-                        }}
-                      >
-                        {host}
-                      </span>
-                    ),
-                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 7,
+                    }}
+                  >
+                    {web.sourceHosts.map(
+                      (host) => (
+                        <span
+                          key={host}
+                          style={{
+                            padding:
+                              "5px 9px",
+                            borderRadius: 999,
+                            background:
+                              "#e2e8f0",
+                            color:
+                              "#334155",
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {host}
+                        </span>
+                      ),
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {result.content && (
               <div
