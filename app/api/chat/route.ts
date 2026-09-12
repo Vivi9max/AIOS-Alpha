@@ -483,6 +483,18 @@ export async function POST(
           ),
       );
 
+    /*
+     * The chat execution path is a union:
+     * RuntimeResponse does not expose `code`,
+     * while GitHub/Web Intelligence branches do.
+     *
+     * Narrow structurally before reading it.
+     */
+    const resultCode =
+      "code" in result
+        ? result.code
+        : undefined;
+
     const response =
       NextResponse.json(
         {
@@ -509,7 +521,7 @@ export async function POST(
           status:
             result.success
               ? 200
-              : result.code ===
+              : resultCode ===
                   "WEB_INTELLIGENCE_FAILED"
                 ? 503
                 : 500,
