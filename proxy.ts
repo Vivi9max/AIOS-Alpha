@@ -19,6 +19,9 @@ const PUBLIC_PATHS = [
   // Vercel Cron / Evolution Runtime
   "/api/evolution/heartbeat",
 
+  // C143.8 Web Intelligence autonomous health
+  "/api/health/web-intelligence",
+
   /*
    * Founder-only Web Intelligence verification.
    *
@@ -68,14 +71,6 @@ export function proxy(
   const pathname =
     request.nextUrl.pathname;
 
-  /*
-   * Public routes and explicitly protected
-   * system routes are allowed to reach their
-   * own route handlers.
-   *
-   * Authentication for protected system routes
-   * must be handled by the route itself.
-   */
   if (
     isPublicPath(pathname) ||
     isPublicAsset(pathname)
@@ -103,26 +98,20 @@ export function proxy(
     return NextResponse.json(
       {
         success: false,
-
         content:
           "Alpha access required.",
-
         error:
           "Unauthorized alpha access.",
-
         redirect:
           "/alpha",
-
         timestamp:
           Date.now(),
       },
       {
         status: 401,
-
         headers: {
           "Cache-Control":
             "no-store",
-
           "Content-Type":
             "application/json; charset=utf-8",
         },
