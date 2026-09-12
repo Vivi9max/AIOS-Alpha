@@ -8,6 +8,10 @@ import {
 } from "@/lib/config/app";
 
 import {
+  isFounderRequest,
+} from "@/lib/founder/auth";
+
+import {
   requiresWebIntelligence,
   retrieveWebEvidence,
 } from "@/lib/web-intelligence";
@@ -35,11 +39,49 @@ export async function GET(
   const startedAt =
     Date.now();
 
+  /*
+   * Founder-only verification endpoint.
+   *
+   * Ordinary users do NOT receive access
+   * to this diagnostic route.
+   *
+   * Ordinary users use Web Intelligence
+   * transparently through /api/chat.
+   */
+  if (!isFounderRequest(request)) {
+    return NextResponse.json(
+      {
+        success: false,
+        verified: false,
+        code:
+          "FOUNDER_AUTH_REQUIRED",
+        message:
+          "Founder authentication is required.",
+        runtime:
+          APP_CONFIG.runtimeId,
+        runtimeVersion:
+          APP_CONFIG.version,
+        timestamp:
+          Date.now(),
+        latencyMs:
+          Date.now() -
+          startedAt,
+      },
+      {
+        status: 401,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      },
+    );
+  }
+
   try {
     const apiKeyConfigured =
       Boolean(
         process.env
-          .BRAVE_SEARCH_API_KEY,
+          .BRAVE_SEARCH_API_KEY?.trim(),
       );
 
     if (!apiKeyConfigured) {
@@ -116,48 +158,59 @@ export async function GET(
         VERIFICATION_PROMPT,
       );
 
-    const status =
+    const verified =
       evidence.success &&
-      evidence.verified
-        ? 200
-        : 503;
+      evidence.verified;
 
     return NextResponse.json(
       {
         success:
-          evidence.success &&
-          evidence.verified,
-        verified:
-          evidence.verified,
+          verified,
+
+        verified,
+
         stage:
           "external-evidence",
+
         code:
-          evidence.success &&
-          evidence.verified
+          verified
             ? "WEB_INTELLIGENCE_VERIFIED"
             : "WEB_INTELLIGENCE_FAILED",
+
         prompt:
           VERIFICATION_PROMPT,
+
         sourceCount:
           evidence.sourceCount,
+
         sourceHosts:
           evidence.sourceHosts,
+
         evidence:
           evidence.evidence,
+
         error:
           evidence.error,
+
         runtime:
           APP_CONFIG.runtimeId,
+
         runtimeVersion:
           APP_CONFIG.version,
+
         timestamp:
           Date.now(),
+
         latencyMs:
           Date.now() -
           startedAt,
       },
       {
-        status,
+        status:
+          verified
+            ? 200
+            : 503,
+
         headers: {
           "Cache-Control":
             "no-store",
