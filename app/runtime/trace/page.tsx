@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-
 import {
   useCallback,
   useEffect,
@@ -11,6 +10,10 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
+import {
+  runtimeTraceCopy,
+  type RuntimeTraceCopy,
+} from "@/lib/i18n/runtime-trace";
 
 type TraceStatus =
   | "waiting"
@@ -72,138 +75,87 @@ const PAGE_BACKGROUND =
   "linear-gradient(180deg, #f8fafc 0%, #ffffff 44%)";
 
 function formatDateTime(
-  value?: number
+  value: number | undefined,
+  locale: string,
 ): string {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "—";
 
-  return new Date(
-    value
-  ).toLocaleString(
-    "zh-CN",
-    {
-      hour12: false,
-    }
-  );
+  return new Date(value).toLocaleString(locale, {
+    hour12: false,
+  });
 }
 
 function formatClockTime(
-  value?: number
+  value: number | undefined,
+  locale: string,
 ): string {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "—";
 
-  return new Date(
-    value
-  ).toLocaleTimeString(
-    "zh-CN",
-    {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }
-  );
+  return new Date(value).toLocaleTimeString(locale, {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function formatDuration(
-  milliseconds?: number
+  milliseconds: number | undefined,
 ): string {
   if (
     milliseconds === undefined ||
-    !Number.isFinite(
-      milliseconds
-    )
+    !Number.isFinite(milliseconds)
   ) {
     return "—";
   }
 
-  if (
-    milliseconds < 1000
-  ) {
+  if (milliseconds < 1000) {
     return `${Math.max(
       0,
-      Math.round(
-        milliseconds
-      )
+      Math.round(milliseconds),
     )} ms`;
   }
 
-  const seconds =
-    milliseconds / 1000;
+  const seconds = milliseconds / 1000;
 
-  if (
-    seconds < 60
-  ) {
+  if (seconds < 60) {
     return `${seconds.toFixed(
-      seconds >= 10
-        ? 0
-        : 1
+      seconds >= 10 ? 0 : 1,
     )} s`;
   }
 
-  const minutes =
-    Math.floor(
-      seconds / 60
-    );
-
-  const remainingSeconds =
-    Math.round(
-      seconds % 60
-    );
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
 
   return `${minutes} min ${remainingSeconds} s`;
 }
 
 function normalizeStatus(
-  item: CapabilityTraceItem
+  item: CapabilityTraceItem,
 ): TraceStatus {
   if (
     item.success === false ||
-    item.status
-      ?.toLowerCase()
-      .includes(
-        "fail"
-      )
+    item.status?.toLowerCase().includes("fail")
   ) {
     return "failed";
   }
 
   const status =
-    item.status
-      ?.trim()
-      .toLowerCase() ??
-    "";
+    item.status?.trim().toLowerCase() ?? "";
 
   if (
-    status.includes(
-      "running"
-    ) ||
-    status.includes(
-      "executing"
-    ) ||
-    status.includes(
-      "processing"
-    ) ||
-    status.includes(
-      "started"
-    )
+    status.includes("running") ||
+    status.includes("executing") ||
+    status.includes("processing") ||
+    status.includes("started")
   ) {
     return "running";
   }
 
   if (
-    status.includes(
-      "waiting"
-    ) ||
-    status.includes(
-      "pending"
-    ) ||
-    status.includes(
-      "queued"
-    )
+    status.includes("waiting") ||
+    status.includes("pending") ||
+    status.includes("queued")
   ) {
     return "waiting";
   }
@@ -212,223 +164,147 @@ function normalizeStatus(
 }
 
 function getStatusLabel(
-  status: TraceStatus
+  status: TraceStatus,
+  copy: RuntimeTraceCopy,
 ): string {
   switch (status) {
     case "running":
-      return "Running";
-
+      return copy.statusRunning;
     case "completed":
-      return "Completed";
-
+      return copy.statusCompleted;
     case "failed":
-      return "Failed";
-
+      return copy.statusFailed;
     default:
-      return "Waiting";
+      return copy.statusWaiting;
   }
 }
 
 function getStatusIcon(
-  status: TraceStatus
+  status: TraceStatus,
 ): string {
   switch (status) {
     case "running":
       return "▶";
-
     case "completed":
       return "✓";
-
     case "failed":
       return "×";
-
     default:
       return "•";
   }
 }
 
 function getStatusColor(
-  status: TraceStatus
+  status: TraceStatus,
 ): string {
   switch (status) {
     case "running":
       return "#2563eb";
-
     case "completed":
       return "#15803d";
-
     case "failed":
       return "#dc2626";
-
     default:
       return "#64748b";
   }
 }
 
 function getStatusBackground(
-  status: TraceStatus
+  status: TraceStatus,
 ): string {
   switch (status) {
     case "running":
       return "#dbeafe";
-
     case "completed":
       return "#dcfce7";
-
     case "failed":
       return "#fee2e2";
-
     default:
       return "#f1f5f9";
   }
 }
 
 function calculateProgress(
-  trace: RuntimeTrace | null
+  trace: RuntimeTrace | null,
 ): number {
-  if (!trace) {
-    return 0;
-  }
+  if (!trace) return 0;
 
-  if (
-    trace.success === true
-  ) {
+  if (trace.success === true) {
     return 100;
   }
 
-  const capabilities =
-    trace.capabilityTrace ??
-    [];
+  const capabilities = trace.capabilityTrace ?? [];
 
-  if (
-    capabilities.length ===
-    0
-  ) {
-    return trace.completedAt
-      ? 100
-      : 0;
+  if (capabilities.length === 0) {
+    return trace.completedAt ? 100 : 0;
   }
 
-  const totalProgress =
-    capabilities.reduce(
-      (
-        total,
-        item
-      ) => {
-        const status =
-          normalizeStatus(
-            item
-          );
+  const totalProgress = capabilities.reduce(
+    (total, item) => {
+      const status = normalizeStatus(item);
 
-        if (
-          status ===
-          "completed"
-        ) {
-          return (
-            total + 100
-          );
-        }
+      if (
+        status === "completed" ||
+        status === "failed"
+      ) {
+        return total + 100;
+      }
 
-        if (
-          status ===
-          "failed"
-        ) {
-          return (
-            total + 100
-          );
-        }
+      if (status === "running") {
+        return total + 55;
+      }
 
-        if (
-          status ===
-          "running"
-        ) {
-          return total + 55;
-        }
-
-        return total;
-      },
-      0
-    );
+      return total;
+    },
+    0,
+  );
 
   return Math.max(
     0,
     Math.min(
       100,
       Math.round(
-        totalProgress /
-          capabilities.length
-      )
-    )
+        totalProgress / capabilities.length,
+      ),
+    ),
   );
 }
 
 function getProgressLabel(
   progress: number,
-  failed: boolean
+  failed: boolean,
+  copy: RuntimeTraceCopy,
 ): string {
-  if (failed) {
-    return "Needs attention";
-  }
-
-  if (
-    progress >= 100
-  ) {
-    return "Completed";
-  }
-
-  if (
-    progress >= 75
-  ) {
-    return "Finishing";
-  }
-
-  if (
-    progress >= 40
-  ) {
-    return "Executing";
-  }
-
-  if (
-    progress > 0
-  ) {
-    return "Preparing";
-  }
-
-  return "Waiting";
+  if (failed) return copy.progressAttention;
+  if (progress >= 100) return copy.progressCompleted;
+  if (progress >= 75) return copy.progressFinishing;
+  if (progress >= 40) return copy.progressExecuting;
+  if (progress > 0) return copy.progressPreparing;
+  return copy.statusWaiting;
 }
 
 function shortenId(
-  value?: string
+  value?: string,
 ): string {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "—";
+  if (value.length <= 18) return value;
 
-  if (
-    value.length <= 18
-  ) {
-    return value;
-  }
-
-  return `${value.slice(
-    0,
-    10
-  )}…${value.slice(
-    -6
-  )}`;
+  return `${value.slice(0, 10)}…${value.slice(-6)}`;
 }
 
 export default function RuntimeTracePage() {
   const { locale } = useLanguage();
-  const copy = {
-    en: { description: "Inspect the latest request status, capability queue, timeline and runtime result.", refreshing: "Refreshing…", refresh: "Refresh trace", loading: "Loading Execution Trace…", completed: "Execution completed", failed: "Execution failed", running: "Execution in progress", status: "Status", progress: "Progress", duration: "Duration", provider: "Provider", current: "Current", request: "Request", done: "Completed" },
-    "zh-CN": { description: "查看最近一次请求的执行状态、能力队列、时间线和运行结果。", refreshing: "刷新中…", refresh: "刷新记录", loading: "正在读取 Execution Trace…", completed: "执行完成", failed: "执行失败", running: "执行处理中", status: "状态", progress: "进度", duration: "耗时", provider: "模型服务", current: "当前能力", request: "请求", done: "已完成" },
-    ja: { description: "直近リクエストの実行状態、能力キュー、タイムライン、実行結果を確認します。", refreshing: "更新中…", refresh: "記録を更新", loading: "Execution Trace を読み込み中…", completed: "実行完了", failed: "実行失敗", running: "実行中", status: "状態", progress: "進捗", duration: "所要時間", provider: "プロバイダー", current: "現在", request: "リクエスト", done: "完了" },
-  }[locale];
+  const copy = runtimeTraceCopy[locale];
+
+  const dateLocale =
+    locale === "zh-CN"
+      ? "zh-CN"
+      : locale === "ja"
+        ? "ja-JP"
+        : "en-US";
+
   const [data, setData] =
-    useState<TraceResponse | null>(
-      null
-    );
+    useState<TraceResponse | null>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -439,30 +315,28 @@ export default function RuntimeTracePage() {
   const [rawOpen, setRawOpen] =
     useState(false);
 
-  const loadTrace =
-    useCallback(async () => {
+  const loadTrace = useCallback(
+    async () => {
       setLoading(true);
       setError("");
 
       try {
-        const response =
-          await fetch(
-            "/api/runtime/trace",
-            {
-              cache: "no-store",
-            }
-          );
+        const response = await fetch(
+          "/api/runtime/trace",
+          {
+            cache: "no-store",
+          },
+        );
 
         const result =
-          (await response.json()) as
-            TraceResponse;
+          (await response.json()) as TraceResponse;
 
         if (
           !response.ok ||
           !result.success
         ) {
           throw new Error(
-            "Execution Trace 读取失败。"
+            copy.executionTraceReadFailed,
           );
         }
 
@@ -471,268 +345,197 @@ export default function RuntimeTracePage() {
         setError(
           traceError instanceof Error
             ? traceError.message
-            : "Execution Trace 读取失败。"
+            : copy.executionTraceReadFailed,
         );
       } finally {
         setLoading(false);
       }
-    }, []);
+    },
+    [copy.executionTraceReadFailed],
+  );
 
   useEffect(() => {
     void loadTrace();
   }, [loadTrace]);
 
-  const trace =
-    data?.trace ?? null;
+  const trace = data?.trace ?? null;
 
-  const queue =
-    useMemo<QueueItem[]>(
-      () =>
-        (
-          trace?.capabilityTrace ??
-          []
-        ).map(
-          (
-            item,
-            index
-          ) => ({
-            id: `${item.capability ?? "capability"}-${index}`,
+  const queue = useMemo<QueueItem[]>(
+    () =>
+      (trace?.capabilityTrace ?? []).map(
+        (item, index) => ({
+          id: `${item.capability ?? "capability"}-${index}`,
+          capability:
+            item.capability ??
+            `${copy.current} ${index + 1}`,
+          status: normalizeStatus(item),
+          durationMs:
+            typeof item.durationMs === "number"
+              ? item.durationMs
+              : null,
+          error: item.error ?? null,
+        }),
+      ),
+    [trace, copy.current],
+  );
 
-            capability:
-              item.capability ??
-              `Capability ${index + 1}`,
+  const progress = useMemo(
+    () => calculateProgress(trace),
+    [trace],
+  );
 
-            status:
-              normalizeStatus(
-                item
-              ),
+  const completedCount = queue.filter(
+    (item) =>
+      item.status === "completed",
+  ).length;
 
-            durationMs:
-              typeof item.durationMs ===
-              "number"
-                ? item.durationMs
-                : null,
-
-            error:
-              item.error ??
-              null,
-          })
-        ),
-      [trace]
-    );
-
-  const progress =
-    useMemo(
-      () =>
-        calculateProgress(
-          trace
-        ),
-      [trace]
-    );
-
-  const completedCount =
-    queue.filter(
-      (item) =>
-        item.status ===
-        "completed"
-    ).length;
-
-  const failedCount =
-    queue.filter(
-      (item) =>
-        item.status ===
-        "failed"
-    ).length;
+  const failedCount = queue.filter(
+    (item) =>
+      item.status === "failed",
+  ).length;
 
   const currentItem =
     queue.find(
       (item) =>
-        item.status ===
-        "running"
+        item.status === "running",
     ) ??
     queue.find(
       (item) =>
-        item.status ===
-        "failed"
+        item.status === "failed",
     ) ??
-    (
-      trace?.success
-        ? queue[
-            queue.length - 1
-          ]
-        : queue[0]
-    ) ??
+    (trace?.success
+      ? queue[queue.length - 1]
+      : queue[0]) ??
     null;
 
-  const executionStatus:
-    TraceStatus =
+  const executionStatus: TraceStatus =
     trace?.success === true
       ? "completed"
       : failedCount > 0 ||
-          trace?.error
+          Boolean(trace?.error)
         ? "failed"
         : currentItem?.status ===
             "running"
           ? "running"
-          : trace
-            ? "waiting"
-            : "waiting";
+          : "waiting";
 
   const durationMs =
-    typeof trace?.latencyMs ===
-    "number"
+    typeof trace?.latencyMs === "number"
       ? trace.latencyMs
       : trace?.startedAt &&
           trace?.completedAt
         ? Math.max(
             0,
             trace.completedAt -
-              trace.startedAt
+              trace.startedAt,
           )
         : undefined;
 
   const timeline =
-    useMemo<
-      TimelineItem[]
-    >(() => {
-      if (!trace) {
-        return [];
-      }
+    useMemo<TimelineItem[]>(
+      () => {
+        if (!trace) return [];
 
-      const items: TimelineItem[] =
-        [];
+        const items: TimelineItem[] = [];
+        const startedAt =
+          trace.startedAt ?? Date.now();
 
-      const startedAt =
-        trace.startedAt ??
-        Date.now();
+        items.push({
+          id: "execution-started",
+          timestamp: startedAt,
+          title: copy.executionStarted,
+          description:
+            trace.goal ||
+            trace.promptPreview ||
+            copy.runtimeReceivedRequest,
+          status: "running",
+        });
 
-      items.push({
-        id: "execution-started",
-        timestamp:
-          startedAt,
-        title:
-          "Execution Started",
-        description:
-          trace.goal ||
-          trace.promptPreview ||
-          "Runtime received a new request.",
-        status:
-          "running",
-      });
+        let cursor = startedAt;
 
-      let cursor =
-        startedAt;
-
-      const capabilityDurationTotal =
-        (
-          trace.capabilityTrace ??
-          []
-        ).reduce(
+        const capabilityDurationTotal =
           (
-            total,
-            item
-          ) =>
-            total +
-            (
-              item.durationMs ??
-              0
-            ),
-          0
-        );
+            trace.capabilityTrace ?? []
+          ).reduce(
+            (total, item) =>
+              total + (item.durationMs ?? 0),
+            0,
+          );
 
-      (
-        trace.capabilityTrace ??
-        []
-      ).forEach(
         (
-          item,
-          index
-        ) => {
+          trace.capabilityTrace ?? []
+        ).forEach((item, index) => {
           const duration =
             item.durationMs ??
-            (
-              capabilityDurationTotal >
-              0
-                ? 0
-                : 1
-            );
+            (capabilityDurationTotal > 0
+              ? 0
+              : 1);
 
           cursor += duration;
 
           const status =
-            normalizeStatus(
-              item
+            normalizeStatus(item);
+
+          const description =
+            item.error ||
+            (
+              typeof item.durationMs ===
+              "number"
+                ? `${copy.completedIn} ${formatDuration(
+                    item.durationMs,
+                  )}.`
+                : copy.capabilityRecorded
             );
 
           items.push({
-            id: `timeline-${item.capability ?? index}`,
-
-            timestamp:
-              Math.min(
-                cursor,
-                trace.completedAt ??
-                  cursor
-              ),
-
-            title:
-              `${item.capability ?? `Capability ${index + 1}`} ${getStatusLabel(
-                status
-              )}`,
-
-            description:
-              item.error ||
-              (
-                typeof item.durationMs ===
-                "number"
-                  ? `Completed in ${formatDuration(
-                      item.durationMs
-                    )}.`
-                  : "Capability execution recorded."
-              ),
-
+            id: `timeline-${
+              item.capability ?? index
+            }`,
+            timestamp: Math.min(
+              cursor,
+              trace.completedAt ?? cursor,
+            ),
+            title: `${
+              item.capability ??
+              `${copy.current} ${index + 1}`
+            } ${getStatusLabel(
+              status,
+              copy,
+            )}`,
+            description,
             status,
           });
-        }
-      );
+        });
 
-      if (
-        trace.completedAt
-      ) {
-        items.push({
-          id:
-            trace.success
+        if (trace.completedAt) {
+          items.push({
+            id: trace.success
               ? "execution-completed"
               : "execution-failed",
-
-          timestamp:
-            trace.completedAt,
-
-          title:
-            trace.success
-              ? "Execution Completed"
-              : "Execution Failed",
-
-          description:
-            trace.error ||
-            (
-              trace.success
-                ? "All recorded runtime operations finished."
-                : "The runtime stopped before successful completion."
-            ),
-
-          status:
-            trace.success
+            timestamp: trace.completedAt,
+            title: trace.success
+              ? copy.executionCompleted
+              : copy.failed,
+            description:
+              trace.error ||
+              (
+                trace.success
+                  ? copy.allOperationsFinished
+                  : copy.runtimeStopped
+              ),
+            status: trace.success
               ? "completed"
               : "failed",
-        });
-      }
+          });
+        }
 
-      return items.sort(
-        (a, b) =>
-          a.timestamp -
-          b.timestamp
-      );
-    }, [trace]);
+        return items.sort(
+          (a, b) =>
+            a.timestamp - b.timestamp,
+        );
+      },
+      [trace, copy],
+    );
 
   return (
     <WorkspaceShell>
@@ -743,25 +546,21 @@ export default function RuntimeTracePage() {
           margin: "0 auto",
           paddingBottom: 42,
           color: "#0f172a",
-          background:
-            PAGE_BACKGROUND,
+          background: PAGE_BACKGROUND,
         }}
       >
         <Link
           href="/runtime"
           style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
+            display: "inline-flex",
+            alignItems: "center",
             minHeight: 42,
             color: "#475569",
-            textDecoration:
-              "none",
+            textDecoration: "none",
             fontWeight: 850,
           }}
         >
-          ← 返回 Runtime
+          {copy.backToRuntime}
         </Link>
 
         <header
@@ -776,11 +575,10 @@ export default function RuntimeTracePage() {
               color: "#2563eb",
               fontSize: 12,
               fontWeight: 950,
-              letterSpacing:
-                "0.08em",
+              letterSpacing: "0.08em",
             }}
           >
-            AIOS RUNTIME
+            {copy.eyebrow}
           </p>
 
           <div
@@ -788,8 +586,7 @@ export default function RuntimeTracePage() {
               display: "flex",
               justifyContent:
                 "space-between",
-              alignItems:
-                "flex-start",
+              alignItems: "flex-start",
               flexWrap: "wrap",
               gap: 14,
               marginTop: 8,
@@ -806,14 +603,13 @@ export default function RuntimeTracePage() {
                     "-0.035em",
                 }}
               >
-                Execution Trace
+                {copy.title}
               </h1>
 
               <p
                 style={{
                   maxWidth: 690,
-                  margin:
-                    "12px 0 0",
+                  margin: "12px 0 0",
                   color: "#64748b",
                   lineHeight: 1.7,
                 }}
@@ -830,26 +626,22 @@ export default function RuntimeTracePage() {
               disabled={loading}
               style={{
                 minHeight: 44,
-                padding:
-                  "0 17px",
+                padding: "0 17px",
                 border:
                   "1px solid #dbe3ee",
                 borderRadius: 13,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
                 color: "#0f172a",
                 fontWeight: 900,
-                cursor:
-                  loading
-                    ? "wait"
-                    : "pointer",
-                opacity:
-                  loading
-                    ? 0.65
-                    : 1,
+                cursor: loading
+                  ? "wait"
+                  : "pointer",
+                opacity: loading ? 0.65 : 1,
               }}
             >
-              {loading ? copy.refreshing : copy.refresh}
+              {loading
+                ? copy.refreshing
+                : copy.refresh}
             </button>
           </div>
         </header>
@@ -862,8 +654,7 @@ export default function RuntimeTracePage() {
               border:
                 "1px solid #fecdd3",
               borderRadius: 16,
-              background:
-                "#fff1f2",
+              background: "#fff1f2",
               color: "#be123c",
               fontWeight: 800,
             }}
@@ -872,28 +663,26 @@ export default function RuntimeTracePage() {
           </section>
         )}
 
-        {loading &&
-          !trace && (
-            <section
-              style={{
-                padding: 24,
-                border:
-                  "1px solid #e2e8f0",
-                borderRadius: 22,
-                background:
-                  "#ffffff",
-              }}
-            >
-              <strong>
-                {copy.loading}
-              </strong>
-            </section>
-          )}
+        {loading && !trace && (
+          <section
+            style={{
+              padding: 24,
+              border:
+                "1px solid #e2e8f0",
+              borderRadius: 22,
+              background: "#ffffff",
+            }}
+          >
+            <strong>
+              {copy.loading}
+            </strong>
+          </section>
+        )}
 
         {!loading &&
           !trace &&
           !error && (
-            <EmptyTrace />
+            <EmptyTrace copy={copy} />
           )}
 
         {trace && (
@@ -902,8 +691,7 @@ export default function RuntimeTracePage() {
               style={{
                 padding: 22,
                 borderRadius: 24,
-                background:
-                  "#0f172a",
+                background: "#0f172a",
                 color: "#ffffff",
                 boxShadow:
                   "0 18px 48px rgba(15, 23, 42, 0.14)",
@@ -931,7 +719,7 @@ export default function RuntimeTracePage() {
                         "0.08em",
                     }}
                   >
-                    EXECUTION OVERVIEW
+                    {copy.executionOverview}
                   </p>
 
                   <h2
@@ -962,7 +750,7 @@ export default function RuntimeTracePage() {
                   >
                     {trace.goal ||
                       trace.promptPreview ||
-                      "No request preview available."}
+                      copy.noRequestPreview}
                   </p>
                 </div>
 
@@ -970,6 +758,7 @@ export default function RuntimeTracePage() {
                   status={
                     executionStatus
                   }
+                  copy={copy}
                 />
               </div>
 
@@ -985,7 +774,8 @@ export default function RuntimeTracePage() {
                 <DarkMetric
                   label={copy.status}
                   value={getStatusLabel(
-                    executionStatus
+                    executionStatus,
+                    copy,
                   )}
                 />
 
@@ -997,15 +787,14 @@ export default function RuntimeTracePage() {
                 <DarkMetric
                   label={copy.duration}
                   value={formatDuration(
-                    durationMs
+                    durationMs,
                   )}
                 />
 
                 <DarkMetric
                   label={copy.provider}
                   value={
-                    trace.provider ??
-                    "—"
+                    trace.provider ?? "—"
                   }
                 />
 
@@ -1024,7 +813,7 @@ export default function RuntimeTracePage() {
                 <DarkMetric
                   label={copy.request}
                   value={shortenId(
-                    trace.requestId
+                    trace.requestId,
                   )}
                 />
               </div>
@@ -1037,8 +826,7 @@ export default function RuntimeTracePage() {
                 border:
                   "1px solid #e2e8f0",
                 borderRadius: 22,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
               }}
             >
               <div
@@ -1046,8 +834,7 @@ export default function RuntimeTracePage() {
                   display: "flex",
                   justifyContent:
                     "space-between",
-                  alignItems:
-                    "center",
+                  alignItems: "center",
                   gap: 12,
                 }}
               >
@@ -1060,7 +847,7 @@ export default function RuntimeTracePage() {
                       fontWeight: 950,
                     }}
                   >
-                    EXECUTION PROGRESS
+                    {copy.executionProgress}
                   </p>
 
                   <h2
@@ -1073,7 +860,8 @@ export default function RuntimeTracePage() {
                     {getProgressLabel(
                       progress,
                       executionStatus ===
-                        "failed"
+                        "failed",
+                      copy,
                     )}
                   </h2>
                 </div>
@@ -1091,18 +879,15 @@ export default function RuntimeTracePage() {
                 style={{
                   height: 12,
                   marginTop: 18,
-                  overflow:
-                    "hidden",
+                  overflow: "hidden",
                   borderRadius: 999,
-                  background:
-                    "#e2e8f0",
+                  background: "#e2e8f0",
                 }}
               >
                 <div
                   style={{
                     width: `${progress}%`,
-                    height:
-                      "100%",
+                    height: "100%",
                     borderRadius: 999,
                     background:
                       executionStatus ===
@@ -1131,18 +916,17 @@ export default function RuntimeTracePage() {
                 }}
               >
                 <span>
-                  Started
+                  {copy.started}
                 </span>
 
                 <span>
                   {completedCount}/
-                  {queue.length ||
-                    1}{" "}
-                  capabilities
+                  {queue.length || 1}{" "}
+                  {copy.capabilities}
                 </span>
 
                 <span>
-                  Completed
+                  {copy.completedLabel}
                 </span>
               </div>
             </section>
@@ -1166,7 +950,7 @@ export default function RuntimeTracePage() {
                   fontWeight: 950,
                 }}
               >
-                CURRENT STEP
+                {copy.currentStep}
               </p>
 
               <div
@@ -1174,8 +958,7 @@ export default function RuntimeTracePage() {
                   display: "flex",
                   justifyContent:
                     "space-between",
-                  alignItems:
-                    "center",
+                  alignItems: "center",
                   flexWrap: "wrap",
                   gap: 14,
                   marginTop: 10,
@@ -1191,8 +974,8 @@ export default function RuntimeTracePage() {
                     {currentItem?.capability ??
                       (
                         trace.success
-                          ? "Execution Completed"
-                          : "Runtime"
+                          ? copy.executionCompleted
+                          : copy.runtime
                       )}
                   </h2>
 
@@ -1207,8 +990,8 @@ export default function RuntimeTracePage() {
                     {currentItem?.error ||
                       (
                         trace.success
-                          ? "最近一次执行已经完成。"
-                          : "正在等待新的能力执行记录。"
+                          ? copy.recentExecutionCompleted
+                          : copy.waitingForCapability
                       )}
                   </p>
                 </div>
@@ -1218,6 +1001,7 @@ export default function RuntimeTracePage() {
                     currentItem?.status ??
                     executionStatus
                   }
+                  copy={copy}
                 />
               </div>
             </section>
@@ -1245,8 +1029,7 @@ export default function RuntimeTracePage() {
                     border:
                       "1px solid #e2e8f0",
                     borderRadius: 22,
-                    background:
-                      "#ffffff",
+                    background: "#ffffff",
                   }}
                 >
                   <h2
@@ -1255,7 +1038,7 @@ export default function RuntimeTracePage() {
                       fontSize: 21,
                     }}
                   >
-                    Execution Queue
+                    {copy.executionQueue}
                   </h2>
 
                   <p
@@ -1266,11 +1049,10 @@ export default function RuntimeTracePage() {
                       lineHeight: 1.6,
                     }}
                   >
-                    按执行顺序显示本次请求调用的能力。
+                    {copy.queueDescription}
                   </p>
 
-                  {queue.length ===
-                  0 ? (
+                  {queue.length === 0 ? (
                     <p
                       style={{
                         margin:
@@ -1278,34 +1060,25 @@ export default function RuntimeTracePage() {
                         color: "#64748b",
                       }}
                     >
-                      本次执行没有独立能力调用记录。
+                      {copy.noCapabilityRecords}
                     </p>
                   ) : (
                     <div
                       style={{
-                        display:
-                          "grid",
+                        display: "grid",
                         gap: 10,
                         marginTop: 16,
                       }}
                     >
                       {queue.map(
-                        (
-                          item,
-                          index
-                        ) => (
+                        (item, index) => (
                           <QueueRow
-                            key={
-                              item.id
-                            }
-                            item={
-                              item
-                            }
-                            index={
-                              index
-                            }
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            copy={copy}
                           />
-                        )
+                        ),
                       )}
                     </div>
                   )}
@@ -1317,8 +1090,7 @@ export default function RuntimeTracePage() {
                     border:
                       "1px solid #e2e8f0",
                     borderRadius: 22,
-                    background:
-                      "#ffffff",
+                    background: "#ffffff",
                   }}
                 >
                   <h2
@@ -1327,7 +1099,7 @@ export default function RuntimeTracePage() {
                       fontSize: 21,
                     }}
                   >
-                    Execution Timeline
+                    {copy.executionTimeline}
                   </h2>
 
                   <p
@@ -1338,36 +1110,30 @@ export default function RuntimeTracePage() {
                       lineHeight: 1.6,
                     }}
                   >
-                    最近一次运行产生的关键执行节点。
+                    {copy.timelineDescription}
                   </p>
 
                   <div
                     style={{
-                      display:
-                        "grid",
+                      display: "grid",
                       gap: 0,
                       marginTop: 18,
                     }}
                   >
                     {timeline.map(
-                      (
-                        item,
-                        index
-                      ) => (
+                      (item, index) => (
                         <TimelineRow
-                          key={
-                            item.id
-                          }
-                          item={
-                            item
-                          }
+                          key={item.id}
+                          item={item}
                           isLast={
                             index ===
-                            timeline.length -
-                              1
+                            timeline.length - 1
+                          }
+                          dateLocale={
+                            dateLocale
                           }
                         />
-                      )
+                      ),
                     )}
                   </div>
                 </section>
@@ -1380,15 +1146,13 @@ export default function RuntimeTracePage() {
               >
                 <section
                   style={{
-                    position:
-                      "sticky",
+                    position: "sticky",
                     top: 18,
                     padding: 20,
                     border:
                       "1px solid #e2e8f0",
                     borderRadius: 22,
-                    background:
-                      "#ffffff",
+                    background: "#ffffff",
                   }}
                 >
                   <p
@@ -1399,70 +1163,71 @@ export default function RuntimeTracePage() {
                       fontWeight: 950,
                     }}
                   >
-                    EXECUTION SUMMARY
+                    {copy.executionSummary}
                   </p>
 
                   <div
                     style={{
-                      display:
-                        "grid",
+                      display: "grid",
                       gap: 0,
                       marginTop: 10,
                     }}
                   >
                     <SummaryRow
-                      label="Events"
+                      label={copy.events}
                       value={String(
-                        timeline.length
+                        timeline.length,
                       )}
                     />
 
                     <SummaryRow
-                      label="Capabilities"
+                      label={copy.capabilities}
                       value={String(
-                        queue.length
+                        queue.length,
                       )}
                     />
 
                     <SummaryRow
-                      label="Completed"
+                      label={copy.completedLabel}
                       value={String(
-                        completedCount
+                        completedCount,
                       )}
                     />
 
                     <SummaryRow
-                      label="Failed"
+                      label={copy.statusFailed}
                       value={String(
-                        failedCount
+                        failedCount,
                       )}
                     />
 
                     <SummaryRow
-                      label="Progress"
+                      label={copy.progress}
                       value={`${progress}%`}
                     />
 
                     <SummaryRow
-                      label="Fallback"
+                      label={copy.fallback}
                       value={
                         trace.fallbackUsed
-                          ? "Used"
-                          : "Not used"
+                          ? copy.used
+                          : copy.notUsed
                       }
                     />
 
                     <SummaryRow
-                      label="Started"
+                      label={copy.started}
                       value={formatClockTime(
-                        trace.startedAt
+                        trace.startedAt,
+                        dateLocale,
                       )}
                     />
 
                     <SummaryRow
-                      label="Finished"
+                      label={copy.finished}
                       value={formatClockTime(
-                        trace.completedAt
+                        trace.completedAt,
+                        dateLocale,
                       )}
                       last
                     />
@@ -1474,23 +1239,19 @@ export default function RuntimeTracePage() {
             <section
               style={{
                 marginTop: 18,
-                overflow:
-                  "hidden",
+                overflow: "hidden",
                 border:
                   "1px solid #e2e8f0",
                 borderRadius: 22,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
               }}
             >
               <button
                 type="button"
                 onClick={() =>
                   setRawOpen(
-                    (
-                      current
-                    ) =>
-                      !current
+                    (current) =>
+                      !current,
                   )
                 }
                 style={{
@@ -1498,25 +1259,20 @@ export default function RuntimeTracePage() {
                   width: "100%",
                   justifyContent:
                     "space-between",
-                  alignItems:
-                    "center",
+                  alignItems: "center",
                   gap: 12,
                   minHeight: 62,
-                  padding:
-                    "0 20px",
+                  padding: "0 20px",
                   border: 0,
-                  background:
-                    "#ffffff",
+                  background: "#ffffff",
                   color: "#0f172a",
                   fontWeight: 900,
-                  textAlign:
-                    "left",
-                  cursor:
-                    "pointer",
+                  textAlign: "left",
+                  cursor: "pointer",
                 }}
               >
                 <span>
-                  Raw Trace
+                  {copy.rawTrace}
                 </span>
 
                 <span
@@ -1525,8 +1281,8 @@ export default function RuntimeTracePage() {
                   }}
                 >
                   {rawOpen
-                    ? "收起 ↑"
-                    : "展开 ↓"}
+                    ? copy.collapse
+                    : copy.expand}
                 </span>
               </button>
 
@@ -1536,36 +1292,26 @@ export default function RuntimeTracePage() {
                     maxHeight: 540,
                     margin: 0,
                     padding: 20,
-                    overflow:
-                      "auto",
+                    overflow: "auto",
                     borderTop:
                       "1px solid #e2e8f0",
-                    background:
-                      "#0f172a",
+                    background: "#0f172a",
                     color: "#dbeafe",
                     fontSize: 12,
                     lineHeight: 1.7,
-                    whiteSpace:
-                      "pre-wrap",
-                    overflowWrap:
-                      "anywhere",
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
                   }}
                 >
                   {JSON.stringify(
                     {
-                      runtime:
-                        data?.runtime,
-
-                      version:
-                        data?.version,
-
+                      runtime: data?.runtime,
+                      version: data?.version,
                       trace,
-
-                      timestamp:
-                        data?.timestamp,
+                      timestamp: data?.timestamp,
                     },
                     null,
-                    2
+                    2,
                   )}
                 </pre>
               )}
@@ -1581,7 +1327,7 @@ export default function RuntimeTracePage() {
               }}
             >
               <InfoCard
-                label="Plan"
+                label={copy.plan}
                 value={
                   trace.planType ??
                   trace.intent ??
@@ -1590,23 +1336,25 @@ export default function RuntimeTracePage() {
               />
 
               <InfoCard
-                label="Plan ID"
+                label={copy.planId}
                 value={shortenId(
-                  trace.planId
+                  trace.planId,
                 )}
               />
 
               <InfoCard
-                label="Started"
+                label={copy.startedAt}
                 value={formatDateTime(
-                  trace.startedAt
+                  trace.startedAt,
+                  dateLocale,
                 )}
               />
 
               <InfoCard
-                label="Completed"
+                label={copy.completedAt}
                 value={formatDateTime(
-                  trace.completedAt
+                  trace.completedAt,
+                  dateLocale,
                 )}
               />
             </section>
@@ -1627,44 +1375,33 @@ export default function RuntimeTracePage() {
 
 function StatusBadge({
   status,
+  copy,
 }: {
   status: TraceStatus;
+  copy: RuntimeTraceCopy;
 }) {
   return (
     <span
       style={{
-        display:
-          "inline-flex",
-        alignItems:
-          "center",
+        display: "inline-flex",
+        alignItems: "center",
         gap: 7,
         minHeight: 34,
-        padding:
-          "0 12px",
+        padding: "0 12px",
         borderRadius: 999,
         background:
-          getStatusBackground(
-            status
-          ),
-        color:
-          getStatusColor(
-            status
-          ),
+          getStatusBackground(status),
+        color: getStatusColor(status),
         fontSize: 12,
         fontWeight: 950,
-        whiteSpace:
-          "nowrap",
+        whiteSpace: "nowrap",
       }}
     >
       <span>
-        {getStatusIcon(
-          status
-        )}
+        {getStatusIcon(status)}
       </span>
 
-      {getStatusLabel(
-        status
-      )}
+      {getStatusLabel(status, copy)}
     </span>
   );
 }
@@ -1680,8 +1417,7 @@ function DarkMetric({
     <div
       style={{
         minWidth: 0,
-        padding:
-          "13px 14px",
+        padding: "13px 14px",
         border:
           "1px solid rgba(255, 255, 255, 0.12)",
         borderRadius: 15,
@@ -1703,16 +1439,12 @@ function DarkMetric({
       <p
         title={value}
         style={{
-          margin:
-            "7px 0 0",
+          margin: "7px 0 0",
           color: "#ffffff",
           fontWeight: 900,
-          overflow:
-            "hidden",
-          textOverflow:
-            "ellipsis",
-          whiteSpace:
-            "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
         {value}
@@ -1724,14 +1456,13 @@ function DarkMetric({
 function QueueRow({
   item,
   index,
+  copy,
 }: {
   item: QueueItem;
   index: number;
+  copy: RuntimeTraceCopy;
 }) {
-  const color =
-    getStatusColor(
-      item.status
-    );
+  const color = getStatusColor(item.status);
 
   return (
     <div
@@ -1739,50 +1470,39 @@ function QueueRow({
         display: "grid",
         gridTemplateColumns:
           "38px minmax(0, 1fr) auto",
-        alignItems:
-          "center",
+        alignItems: "center",
         gap: 12,
         padding: 14,
         border:
-          item.status ===
-          "running"
+          item.status === "running"
             ? "1px solid #93c5fd"
-            : item.status ===
-                "failed"
+            : item.status === "failed"
               ? "1px solid #fecaca"
               : "1px solid #e2e8f0",
         borderRadius: 16,
         background:
-          item.status ===
-          "running"
+          item.status === "running"
             ? "#eff6ff"
-            : item.status ===
-                "failed"
+            : item.status === "failed"
               ? "#fff1f2"
               : "#f8fafc",
       }}
     >
       <span
         style={{
-          display:
-            "inline-flex",
+          display: "inline-flex",
           width: 34,
           height: 34,
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: 11,
           background:
-            getStatusBackground(
-              item.status
-            ),
+            getStatusBackground(item.status),
           color,
           fontWeight: 950,
         }}
       >
-        {item.status ===
-        "completed"
+        {item.status === "completed"
           ? "✓"
           : index + 1}
       </span>
@@ -1794,10 +1514,8 @@ function QueueRow({
       >
         <strong
           style={{
-            display:
-              "block",
-            overflowWrap:
-              "anywhere",
+            display: "block",
+            overflowWrap: "anywhere",
           }}
         >
           {item.capability}
@@ -1805,25 +1523,22 @@ function QueueRow({
 
         <span
           style={{
-            display:
-              "block",
+            display: "block",
             marginTop: 4,
-            color:
-              item.error
-                ? "#be123c"
-                : "#64748b",
+            color: item.error
+              ? "#be123c"
+              : "#64748b",
             fontSize: 12,
             lineHeight: 1.5,
           }}
         >
           {item.error ||
             (
-              item.durationMs !==
-              null
+              item.durationMs !== null
                 ? formatDuration(
-                    item.durationMs
+                    item.durationMs,
                   )
-                : "No duration recorded"
+                : copy.noDuration
             )}
         </span>
       </div>
@@ -1833,12 +1548,12 @@ function QueueRow({
           color,
           fontSize: 12,
           fontWeight: 950,
-          whiteSpace:
-            "nowrap",
+          whiteSpace: "nowrap",
         }}
       >
         {getStatusLabel(
-          item.status
+          item.status,
+          copy,
         )}
       </span>
     </div>
@@ -1848,14 +1563,13 @@ function QueueRow({
 function TimelineRow({
   item,
   isLast,
+  dateLocale,
 }: {
   item: TimelineItem;
   isLast: boolean;
+  dateLocale: string;
 }) {
-  const color =
-    getStatusColor(
-      item.status
-    );
+  const color = getStatusColor(item.status);
 
   return (
     <div
@@ -1875,69 +1589,57 @@ function TimelineRow({
         }}
       >
         {formatClockTime(
-          item.timestamp
+          item.timestamp,
+          dateLocale,
         )}
       </time>
 
       <div
         style={{
-          position:
-            "relative",
+          position: "relative",
           display: "flex",
-          justifyContent:
-            "center",
+          justifyContent: "center",
         }}
       >
         {!isLast && (
           <span
             style={{
-              position:
-                "absolute",
+              position: "absolute",
               top: 18,
               bottom: -6,
               width: 2,
-              background:
-                "#e2e8f0",
+              background: "#e2e8f0",
             }}
           />
         )}
 
         <span
           style={{
-            position:
-              "relative",
+            position: "relative",
             zIndex: 1,
-            display:
-              "inline-flex",
+            display: "inline-flex",
             width: 20,
             height: 20,
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            borderRadius:
-              "50%",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "50%",
             background:
               getStatusBackground(
-                item.status
+                item.status,
               ),
             color,
             fontSize: 11,
             fontWeight: 950,
           }}
         >
-          {getStatusIcon(
-            item.status
-          )}
+          {getStatusIcon(item.status)}
         </span>
       </div>
 
       <div
         style={{
           paddingBottom:
-            isLast
-              ? 0
-              : 22,
+            isLast ? 0 : 22,
         }}
       >
         <strong>
@@ -1946,13 +1648,11 @@ function TimelineRow({
 
         <p
           style={{
-            margin:
-              "5px 0 0",
+            margin: "5px 0 0",
             color: "#64748b",
             fontSize: 13,
             lineHeight: 1.55,
-            overflowWrap:
-              "anywhere",
+            overflowWrap: "anywhere",
           }}
         >
           {item.description}
@@ -1975,10 +1675,8 @@ function SummaryRow({
     <div
       style={{
         display: "flex",
-        justifyContent:
-          "space-between",
-        alignItems:
-          "center",
+        justifyContent: "space-between",
+        alignItems: "center",
         gap: 12,
         minHeight: 47,
         borderBottom:
@@ -1999,10 +1697,8 @@ function SummaryRow({
 
       <strong
         style={{
-          textAlign:
-            "right",
-          overflowWrap:
-            "anywhere",
+          textAlign: "right",
+          overflowWrap: "anywhere",
         }}
       >
         {value}
@@ -2026,8 +1722,7 @@ function InfoCard({
         border:
           "1px solid #e2e8f0",
         borderRadius: 17,
-        background:
-          "#ffffff",
+        background: "#ffffff",
       }}
     >
       <p
@@ -2044,11 +1739,9 @@ function InfoCard({
       <p
         title={value}
         style={{
-          margin:
-            "8px 0 0",
+          margin: "8px 0 0",
           fontWeight: 900,
-          overflowWrap:
-            "anywhere",
+          overflowWrap: "anywhere",
         }}
       >
         {value}
@@ -2057,7 +1750,11 @@ function InfoCard({
   );
 }
 
-function EmptyTrace() {
+function EmptyTrace({
+  copy,
+}: {
+  copy: RuntimeTraceCopy;
+}) {
   return (
     <section
       style={{
@@ -2065,23 +1762,18 @@ function EmptyTrace() {
         border:
           "1px solid #e2e8f0",
         borderRadius: 22,
-        background:
-          "#ffffff",
+        background: "#ffffff",
       }}
     >
       <div
         style={{
-          display:
-            "inline-flex",
+          display: "inline-flex",
           width: 48,
           height: 48,
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: 15,
-          background:
-            "#eff6ff",
+          background: "#eff6ff",
           fontSize: 23,
         }}
       >
@@ -2090,46 +1782,39 @@ function EmptyTrace() {
 
       <h2
         style={{
-          margin:
-            "16px 0 0",
+          margin: "16px 0 0",
         }}
       >
-        暂无执行记录
+        {copy.emptyTitle}
       </h2>
 
       <p
         style={{
           maxWidth: 590,
-          margin:
-            "9px 0 0",
+          margin: "9px 0 0",
           color: "#64748b",
           lineHeight: 1.7,
         }}
       >
-        前往 Planner 执行一个目标后，这里会显示 Execution Overview、Queue、Timeline 和完整运行记录。
+        {copy.emptyDescription}
       </p>
 
       <Link
         href="/planner"
         style={{
-          display:
-            "inline-flex",
-          alignItems:
-            "center",
+          display: "inline-flex",
+          alignItems: "center",
           minHeight: 44,
           marginTop: 18,
-          padding:
-            "0 17px",
+          padding: "0 17px",
           borderRadius: 13,
-          background:
-            "#0f172a",
+          background: "#0f172a",
           color: "#ffffff",
-          textDecoration:
-            "none",
+          textDecoration: "none",
           fontWeight: 900,
         }}
       >
-        打开 Planner →
+        {copy.openPlanner}
       </Link>
     </section>
   );
