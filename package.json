@@ -2,14 +2,14 @@
   "name": "aios-alpha",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "typecheck": "tsc --noEmit",
-    "build": "next build",
-    "start": "next start",
-    "verify": "node scripts/verify.mjs",
-    "verify:locale": "node scripts/verify-locale.mjs"
-    "verify:deployment": "node scripts/verify-deployment.mjs"
-  },
+  "dev": "next dev",
+  "typecheck": "tsc --noEmit",
+  "build": "next build",
+  "start": "next start",
+  "verify": "node scripts/verify.mjs",
+  "verify:locale": "node scripts/verify-locale.mjs",
+  "verify:deployment": "node scripts/verify-deployment.mjs"
+}
   "dependencies": {
     "next": "^16.2.10",
     "openai": "^6.46.0",
