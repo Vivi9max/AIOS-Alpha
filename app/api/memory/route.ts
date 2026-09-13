@@ -15,6 +15,9 @@ import {
 import {
   clearPersistentMemory,
   getPersistentMemory,
+  removeAndSaveMemory,
+  restoreAndSaveMemory,
+  type MemoryRecord,
 } from "@/lib/memory/store";
 
 export const dynamic =
@@ -26,7 +29,6 @@ export const runtime =
 function applyIdentityCookie(
   response:
     NextResponse,
-
   userId:
     string
 ): NextResponse {
@@ -65,10 +67,8 @@ function jsonResponse(
       string,
       unknown
     >,
-
   userId:
     string,
-
   status =
     200
 ): NextResponse {
@@ -91,6 +91,36 @@ function jsonResponse(
   return applyIdentityCookie(
     response,
     userId
+  );
+}
+
+function isMemoryRecord(
+  value: unknown
+): value is MemoryRecord {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return false;
+  }
+
+  const item =
+    value as Partial<MemoryRecord>;
+
+  return (
+    typeof item.id ===
+      "number" &&
+    (
+      item.role ===
+        "user" ||
+      item.role ===
+        "assistant"
+    ) &&
+    typeof item.content ===
+      "string" &&
+    typeof item.timestamp ===
+      "number"
   );
 }
 
@@ -197,6 +227,13 @@ export async function GET(
   }
 }
 
+/**
+ * C143.18
+ *
+ * DELETE without an id keeps the existing "clear all" behaviour.
+ *
+ * DELETE with { id } removes exactly one conversation record.
+ */
 export async function DELETE(
   request:
     NextRequest
@@ -207,6 +244,95 @@ export async function DELETE(
     );
 
   try {
+    let body:
+      unknown = null;
+
+    try {
+      body =
+        await request.json();
+    } catch {
+      body =
+        null;
+    }
+
+    const requestedId =
+      body &&
+      typeof body ===
+        "object"
+        ? (
+            body as {
+              id?: unknown;
+            }
+          ).id
+        : undefined;
+
+    if (
+      typeof requestedId ===
+      "number" &&
+      Number.isFinite(
+        requestedId
+      )
+    ) {
+      const removed =
+        await runWithUserContext(
+          identity.userId,
+          () =>
+            removeAndSaveMemory(
+              requestedId
+            )
+        );
+
+      if (!removed) {
+        return jsonResponse(
+          {
+            success:
+              false,
+
+            error:
+              "Memory record not found.",
+
+            identity: {
+              userId:
+                identity.userId,
+
+              isolated:
+                true,
+            },
+
+            timestamp:
+              Date.now(),
+          },
+          identity.userId,
+          404
+        );
+      }
+
+      return jsonResponse(
+        {
+          success:
+            true,
+
+          action:
+            "deleted",
+
+          deleted:
+            removed,
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId
+      );
+    }
+
     await runWithUserContext(
       identity.userId,
       () =>
@@ -217,6 +343,9 @@ export async function DELETE(
       {
         success:
           true,
+
+        action:
+          "cleared",
 
         items:
           [],
@@ -265,7 +394,197 @@ export async function DELETE(
         error:
           error instanceof Error
             ? error.message
-            : "Memory clearing failed.",
+            : "Memory operation failed.",
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId,
+      500
+    );
+  }
+}
+
+/**
+ * C143.18
+ *
+ * Undo a previous single-message deletion.
+ *
+ * The record is accepted only after being validated and is restored
+ * inside the authenticated user's own storage scope.
+ */
+export async function POST(
+  request:
+    NextRequest
+) {
+  const identity =
+    resolveAlphaIdentity(
+      request
+    );
+
+  try {
+    const body =
+      await request.json();
+
+    const action =
+      body &&
+      typeof body ===
+        "object"
+        ? (
+            body as {
+              action?: unknown;
+            }
+          ).action
+        : undefined;
+
+    if (
+      action !==
+      "undo"
+    ) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          error:
+            "Unsupported memory action.",
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        400
+      );
+    }
+
+    const record =
+      body &&
+      typeof body ===
+        "object"
+        ? (
+            body as {
+              record?: unknown;
+            }
+          ).record
+        : undefined;
+
+    if (
+      !isMemoryRecord(
+        record
+      )
+    ) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          error:
+            "A valid deleted memory record is required.",
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        400
+      );
+    }
+
+    const restored =
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          restoreAndSaveMemory(
+            record
+          )
+      );
+
+    if (!restored) {
+      return jsonResponse(
+        {
+          success:
+            false,
+
+          error:
+            "Memory record could not be restored.",
+
+          identity: {
+            userId:
+              identity.userId,
+
+            isolated:
+              true,
+          },
+
+          timestamp:
+            Date.now(),
+        },
+        identity.userId,
+        400
+      );
+    }
+
+    return jsonResponse(
+      {
+        success:
+          true,
+
+        action:
+          "restored",
+
+        restored,
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
+
+        timestamp:
+          Date.now(),
+      },
+      identity.userId
+    );
+  } catch (error) {
+    console.error(
+      "[AIOS Memory POST]",
+      error
+    );
+
+    return jsonResponse(
+      {
+        success:
+          false,
+
+        error:
+          error instanceof Error
+            ? error.message
+            : "Memory restore failed.",
+
+        identity: {
+          userId:
+            identity.userId,
+
+          isolated:
+            true,
+        },
 
         timestamp:
           Date.now(),
