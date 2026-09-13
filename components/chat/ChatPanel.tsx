@@ -187,6 +187,13 @@ function sanitizeRestoredMessages(
         )
     )
     .map((item) => ({
+      /*
+       * C143.18:
+       * Preserve the persisted memory id so MessageList can
+       * perform single-message delete and undo against the
+       * authenticated user's server-side memory.
+       */
+      id: item.id,
       role: item.role,
       content: item.content,
     }));
