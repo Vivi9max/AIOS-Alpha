@@ -3,16 +3,14 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
 import type { Locale } from "@/lib/i18n";
-
-import {
-  MODULE_ICONS,
-} from "@/lib/ui/module-icons";
+import { MODULE_ICONS } from "@/lib/ui/module-icons";
 
 interface MemoryRecord {
   id: number;
@@ -34,9 +32,10 @@ interface ProfileResponse {
   profile: MemoryProfile;
   completedFields: number;
   timestamp: number;
+  error?: string;
 }
 
-const emptyProfile: MemoryProfile = {
+const EMPTY_PROFILE: MemoryProfile = {
   name: "",
   location: "",
   goal: "",
@@ -44,69 +43,302 @@ const emptyProfile: MemoryProfile = {
   preference: "",
 };
 
-function getProfileFields(locale: Locale) {
- const fields = {
+type ProfileField = keyof MemoryProfile;
+
+interface FieldDefinition {
+  key: ProfileField;
+  label: string;
+  placeholder: string;
+  icon: string;
+}
+
+const PROFILE_FIELDS: Record<
+  Locale,
+  FieldDefinition[]
+> = {
   en: [
-   { key: "name", label: "Name", icon: "👤", placeholder: "For example: Vivi" }, { key: "location", label: "Location", icon: "📍", placeholder: "For example: China or Japan" }, { key: "project", label: "Current project", icon: "🚀", placeholder: "For example: AIOS Alpha" }, { key: "goal", label: "Long-term goal", icon: "🎯", placeholder: "For example: Publicly launch AIOS Alpha" }, { key: "preference", label: "Preferences", icon: "✨", placeholder: "For example: concise, delivery-first responses" },
+    {
+      key: "name",
+      label: "Name",
+      icon: "👤",
+      placeholder: "For example: Vivi",
+    },
+    {
+      key: "location",
+      label: "Location",
+      icon: "📍",
+      placeholder: "For example: China or Japan",
+    },
+    {
+      key: "project",
+      label: "Current project",
+      icon: "🚀",
+      placeholder: "For example: AIOS Alpha",
+    },
+    {
+      key: "goal",
+      label: "Long-term goal",
+      icon: "🎯",
+      placeholder: "For example: Launch AIOS Alpha publicly",
+    },
+    {
+      key: "preference",
+      label: "Preferences",
+      icon: "✨",
+      placeholder: "For example: concise, delivery-first responses",
+    },
   ],
+
   "zh-CN": [
-  {
-    key: "name",
-    label: "姓名",
-    icon: "👤",
-    placeholder: "例如：Vivi",
-  },
-  {
-    key: "location",
-    label: "所在地",
-    icon: "📍",
-    placeholder: "例如：中国、日本",
-  },
-  {
-    key: "project",
-    label: "当前项目",
-    icon: "🚀",
-    placeholder: "例如：AIOS Alpha",
-  },
-  {
-    key: "goal",
-    label: "长期目标",
-    icon: "🎯",
-    placeholder: "例如：让 AIOS Alpha 正式上线",
-  },
-  {
-    key: "preference",
-    label: "用户偏好",
-    icon: "✨",
-    placeholder: "例如：少废话、直接交付",
-  },
+    {
+      key: "name",
+      label: "姓名",
+      icon: "👤",
+      placeholder: "例如：Vivi",
+    },
+    {
+      key: "location",
+      label: "所在地",
+      icon: "📍",
+      placeholder: "例如：中国、日本",
+    },
+    {
+      key: "project",
+      label: "当前项目",
+      icon: "🚀",
+      placeholder: "例如：AIOS Alpha",
+    },
+    {
+      key: "goal",
+      label: "长期目标",
+      icon: "🎯",
+      placeholder: "例如：让 AIOS Alpha 正式上线",
+    },
+    {
+      key: "preference",
+      label: "用户偏好",
+      icon: "✨",
+      placeholder: "例如：少废话、直接交付",
+    },
   ],
+
   ja: [
-   { key: "name", label: "名前", icon: "👤", placeholder: "例：Vivi" }, { key: "location", label: "所在地", icon: "📍", placeholder: "例：中国、日本" }, { key: "project", label: "現在のプロジェクト", icon: "🚀", placeholder: "例：AIOS Alpha" }, { key: "goal", label: "長期目標", icon: "🎯", placeholder: "例：AIOS Alpha を一般公開" }, { key: "preference", label: "ユーザー設定", icon: "✨", placeholder: "例：簡潔で成果物を優先" },
+    {
+      key: "name",
+      label: "名前",
+      icon: "👤",
+      placeholder: "例：Vivi",
+    },
+    {
+      key: "location",
+      label: "所在地",
+      icon: "📍",
+      placeholder: "例：中国、日本",
+    },
+    {
+      key: "project",
+      label: "現在のプロジェクト",
+      icon: "🚀",
+      placeholder: "例：AIOS Alpha",
+    },
+    {
+      key: "goal",
+      label: "長期目標",
+      icon: "🎯",
+      placeholder: "例：AIOS Alpha を一般公開",
+    },
+    {
+      key: "preference",
+      label: "ユーザー設定",
+      icon: "✨",
+      placeholder: "例：簡潔で成果物を優先",
+    },
   ],
- } as const;
- return fields[locale];
+};
+
+const COPY = {
+  en: {
+    title: "Memory",
+    description:
+      "Manage structured long-term information and conversation memory.",
+
+    clear: "Clear conversations",
+    clearConfirm:
+      "Clear all conversation memory? Your manually saved profile will remain.",
+
+    profileTitle: "Memory Profile",
+    profileDescription:
+      "Structured information retained for future conversations.",
+    edit: "Edit profile",
+    save: "Save profile",
+    saving: "Saving…",
+    cancel: "Cancel",
+    reset: "Reset manual profile",
+    resetConfirm:
+      "Reset manually entered profile information? Information automatically extracted from conversations will remain.",
+
+    saved: "Memory Profile saved.",
+    resetDone: "Manual profile information reset.",
+    cleared: "Conversation memory cleared.",
+
+    conversationTitle: "Conversation memory",
+    conversationDescription:
+      "Context retained from previous conversations.",
+    empty: "No conversation memory yet.",
+
+    loading: "Loading memory…",
+    missing: "Not recorded",
+
+    loadError: "Memory could not be loaded.",
+    saveError: "Memory Profile could not be saved.",
+    resetError: "Memory Profile could not be reset.",
+    clearError: "Conversation memory could not be cleared.",
+
+    progress: "Profile completeness",
+    fields: "fields",
+    user: "You",
+    assistant: "AIOS",
+  },
+
+  "zh-CN": {
+    title: "记忆",
+    description: "管理结构化长期资料和对话记忆。",
+
+    clear: "清空对话",
+    clearConfirm:
+      "确定清空全部对话记忆吗？手动保存的 Profile 会继续保留。",
+
+    profileTitle: "Memory Profile",
+    profileDescription:
+      "为后续对话保留的结构化长期资料。",
+    edit: "编辑 Profile",
+    save: "保存资料",
+    saving: "保存中…",
+    cancel: "取消",
+    reset: "重置手动资料",
+    resetConfirm:
+      "确定重置手动填写的资料吗？从对话中自动提取的资料仍会保留。",
+
+    saved: "Memory Profile 已保存。",
+    resetDone: "手动资料已重置。",
+    cleared: "对话记忆已清空。",
+
+    conversationTitle: "对话记忆",
+    conversationDescription:
+      "从历史对话中保留的上下文。",
+    empty: "还没有对话记忆。",
+
+    loading: "正在读取记忆……",
+    missing: "尚未记录",
+
+    loadError: "记忆读取失败。",
+    saveError: "Memory Profile 保存失败。",
+    resetError: "Memory Profile 重置失败。",
+    clearError: "清空对话记忆失败。",
+
+    progress: "Profile 完整度",
+    fields: "项",
+    user: "你",
+    assistant: "AIOS",
+  },
+
+  ja: {
+    title: "メモリー",
+    description:
+      "構造化された長期情報と会話メモリーを管理します。",
+
+    clear: "会話を消去",
+    clearConfirm:
+      "すべての会話メモリーを消去しますか？手動で保存したプロフィールは残ります。",
+
+    profileTitle: "メモリープロフィール",
+    profileDescription:
+      "今後の会話で使用する構造化された長期情報です。",
+    edit: "プロフィールを編集",
+    save: "プロフィールを保存",
+    saving: "保存中…",
+    cancel: "キャンセル",
+    reset: "手動情報をリセット",
+    resetConfirm:
+      "手動で入力したプロフィール情報をリセットしますか？会話から自動抽出された情報は残ります。",
+
+    saved: "プロフィールを保存しました。",
+    resetDone: "手動情報をリセットしました。",
+    cleared: "会話メモリーを消去しました。",
+
+    conversationTitle: "会話メモリー",
+    conversationDescription:
+      "過去の会話から保持されたコンテキスト。",
+    empty: "会話メモリーはまだありません。",
+
+    loading: "メモリーを読み込み中…",
+    missing: "未登録",
+
+    loadError: "メモリーを読み込めませんでした。",
+    saveError:
+      "プロフィールを保存できませんでした。",
+    resetError:
+      "プロフィールをリセットできませんでした。",
+    clearError:
+      "会話メモリーを消去できませんでした。",
+
+    progress: "プロフィール完成度",
+    fields: "項目",
+    user: "あなた",
+    assistant: "AIOS",
+  },
+} as const;
+
+function formatDate(
+  timestamp: number,
+  locale: Locale
+): string {
+  if (!timestamp) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(
+    locale === "zh-CN"
+      ? "zh-CN"
+      : locale === "ja"
+        ? "ja-JP"
+        : "en-US",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  ).format(new Date(timestamp));
+}
+
+function normalizeProfile(
+  profile?: MemoryProfile
+): MemoryProfile {
+  return {
+    ...EMPTY_PROFILE,
+    ...(profile ?? {}),
+  };
 }
 
 export default function MemoryPage() {
   const { locale } = useLanguage();
-  const copy = {
-    en: { title: "Memory", description: "Manage structured long-term information and conversation memory.", clear: "Clear conversations", loading: "Loading memory…", profile: "Memory Profile", profileDescription: "Automatically extracted and manually editable.", items: "fields", saving: "Saving…", save: "Save profile", cancel: "Cancel", missing: "Not recorded", edit: "Edit profile", reset: "Reset manual profile", conversationTitle: "Conversation memory", conversationDescription: "Context retained from earlier conversations.", empty: "No conversation memory yet." },
-    "zh-CN": { title: "记忆", description: "管理结构化长期资料和对话记忆。", clear: "清空对话", loading: "正在读取记忆……", profile: "Memory Profile", profileDescription: "自动提取，也可以手动修正。", items: "项", saving: "保存中…", save: "保存资料", cancel: "取消", missing: "尚未记录", edit: "编辑 Profile", reset: "重置手动资料", conversationTitle: "对话记忆", conversationDescription: "从历史对话中保留的上下文。", empty: "还没有对话记忆。" },
-    ja: { title: "メモリー", description: "構造化された長期情報と会話メモリーを管理します。", clear: "会話を消去", loading: "メモリーを読み込み中…", profile: "メモリープロフィール", profileDescription: "自動抽出された内容を手動で修正できます。", items: "項目", saving: "保存中…", save: "プロフィールを保存", cancel: "キャンセル", missing: "未登録", edit: "プロフィールを編集", reset: "手動情報をリセット", conversationTitle: "会話メモリー", conversationDescription: "過去の会話から保持されたコンテキスト。", empty: "会話メモリーはまだありません。" },
-  }[locale];
-  const profileFields = getProfileFields(locale);
-  const [items, setItems] =
-    useState<MemoryRecord[]>([]);
+  const copy = COPY[locale];
+  const fields = PROFILE_FIELDS[locale];
+
+  const [items, setItems] = useState<
+    MemoryRecord[]
+  >([]);
 
   const [profile, setProfile] =
     useState<MemoryProfile>(
-      emptyProfile
+      EMPTY_PROFILE
     );
 
   const [draftProfile, setDraftProfile] =
     useState<MemoryProfile>(
-      emptyProfile
+      EMPTY_PROFILE
     );
 
   const [
@@ -129,8 +361,8 @@ export default function MemoryPage() {
   const [notice, setNotice] =
     useState("");
 
-  const loadMemory = useCallback(
-    async () => {
+  const loadMemory =
+    useCallback(async () => {
       setLoading(true);
       setError("");
       setNotice("");
@@ -143,25 +375,10 @@ export default function MemoryPage() {
           fetch("/api/memory", {
             cache: "no-store",
           }),
-          fetch(
-            "/api/memory/profile",
-            {
-              cache: "no-store",
-            }
-          ),
+          fetch("/api/memory/profile", {
+            cache: "no-store",
+          }),
         ]);
-
-        if (!memoryResponse.ok) {
-          throw new Error(
-            "Failed to load memory."
-          );
-        }
-
-        if (!profileResponse.ok) {
-          throw new Error(
-            "Failed to load profile."
-          );
-        }
 
         const memoryData =
           await memoryResponse.json();
@@ -169,10 +386,24 @@ export default function MemoryPage() {
         const profileData =
           (await profileResponse.json()) as ProfileResponse;
 
-        const nextProfile = {
-          ...emptyProfile,
-          ...(profileData.profile ?? {}),
-        };
+        if (!memoryResponse.ok) {
+          throw new Error(
+            profileData.error ??
+              copy.loadError
+          );
+        }
+
+        if (!profileResponse.ok) {
+          throw new Error(
+            profileData.error ??
+              copy.loadError
+          );
+        }
+
+        const nextProfile =
+          normalizeProfile(
+            profileData.profile
+          );
 
         setItems(
           Array.isArray(
@@ -192,36 +423,42 @@ export default function MemoryPage() {
             ? profileData.completedFields
             : 0
         );
-      } catch {
-        setError("记忆读取失败。");
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : copy.loadError
+        );
       } finally {
         setLoading(false);
       }
-    },
-    []
-  );
+    }, [copy.loadError]);
 
   useEffect(() => {
-    loadMemory();
+    void loadMemory();
   }, [loadMemory]);
 
-  function updateDraft(
-    field: keyof MemoryProfile,
-    value: string
-  ) {
-    setNotice("");
+  const progress = useMemo(() => {
+    const total = fields.length;
 
-    setDraftProfile(
-      (current) => ({
-        ...current,
-        [field]: value,
-      })
+    if (total === 0) {
+      return 0;
+    }
+
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        Math.round(
+          (completedFields / total) * 100
+        )
+      )
     );
-  }
+  }, [completedFields, fields.length]);
 
   function startEditing() {
     setDraftProfile({
-      ...emptyProfile,
+      ...EMPTY_PROFILE,
       ...profile,
     });
 
@@ -232,11 +469,26 @@ export default function MemoryPage() {
 
   function cancelEditing() {
     setDraftProfile({
-      ...emptyProfile,
+      ...EMPTY_PROFILE,
       ...profile,
     });
 
     setEditing(false);
+    setError("");
+    setNotice("");
+  }
+
+  function updateDraft(
+    field: ProfileField,
+    value: string
+  ) {
+    setDraftProfile(
+      (current) => ({
+        ...current,
+        [field]: value,
+      })
+    );
+
     setError("");
     setNotice("");
   }
@@ -261,19 +513,20 @@ export default function MemoryPage() {
         }
       );
 
-      if (!response.ok) {
-        throw new Error(
-          "Failed to save profile."
-        );
-      }
-
       const data =
         (await response.json()) as ProfileResponse;
 
-      const nextProfile = {
-        ...emptyProfile,
-        ...(data.profile ?? {}),
-      };
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            copy.saveError
+        );
+      }
+
+      const nextProfile =
+        normalizeProfile(
+          data.profile
+        );
 
       setProfile(nextProfile);
       setDraftProfile(nextProfile);
@@ -287,12 +540,12 @@ export default function MemoryPage() {
       );
 
       setEditing(false);
-      setNotice(
-        "Memory Profile 已保存。"
-      );
-    } catch {
+      setNotice(copy.saved);
+    } catch (saveError) {
       setError(
-        "Memory Profile 保存失败。"
+        saveError instanceof Error
+          ? saveError.message
+          : copy.saveError
       );
     } finally {
       setSaving(false);
@@ -300,11 +553,11 @@ export default function MemoryPage() {
   }
 
   async function resetManualProfile() {
-    const confirmed = window.confirm(
-      "确定清除手动填写的资料吗？从对话中自动提取的资料仍会保留。"
-    );
-
-    if (!confirmed) {
+    if (
+      !window.confirm(
+        copy.resetConfirm
+      )
+    ) {
       return;
     }
 
@@ -320,19 +573,20 @@ export default function MemoryPage() {
         }
       );
 
-      if (!response.ok) {
-        throw new Error(
-          "Failed to reset profile."
-        );
-      }
-
       const data =
         (await response.json()) as ProfileResponse;
 
-      const nextProfile = {
-        ...emptyProfile,
-        ...(data.profile ?? {}),
-      };
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            copy.resetError
+        );
+      }
+
+      const nextProfile =
+        normalizeProfile(
+          data.profile
+        );
 
       setProfile(nextProfile);
       setDraftProfile(nextProfile);
@@ -346,24 +600,24 @@ export default function MemoryPage() {
       );
 
       setEditing(false);
-      setNotice(
-        "手动资料已重置。"
-      );
-    } catch {
+      setNotice(copy.resetDone);
+    } catch (resetError) {
       setError(
-        "Memory Profile 重置失败。"
+        resetError instanceof Error
+          ? resetError.message
+          : copy.resetError
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleClearMemory() {
-    const confirmed = window.confirm(
-      "确定清空全部对话记忆吗？手动填写的 Profile 将继续保留。"
-    );
-
-    if (!confirmed) {
+  async function clearConversationMemory() {
+    if (
+      !window.confirm(
+        copy.clearConfirm
+      )
+    ) {
       return;
     }
 
@@ -379,58 +633,35 @@ export default function MemoryPage() {
       );
 
       if (!response.ok) {
+        const data =
+          await response.json().catch(
+            () => null
+          );
+
         throw new Error(
-          "Failed to clear memory."
+          data?.error ??
+            copy.clearError
         );
       }
 
       setItems([]);
 
-      const profileResponse =
-        await fetch(
-          "/api/memory/profile",
-          {
-            cache: "no-store",
-          }
-        );
-
-      if (
-        profileResponse.ok
-      ) {
-        const data =
-          (await profileResponse.json()) as ProfileResponse;
-
-        const nextProfile = {
-          ...emptyProfile,
-          ...(data.profile ?? {}),
-        };
-
-        setProfile(nextProfile);
-        setDraftProfile(
-          nextProfile
-        );
-
-        setCompletedFields(
-          data.completedFields ?? 0
-        );
-      }
-
-      setNotice(
-        "对话记忆已清空。"
-      );
-    } catch {
+      setNotice(copy.cleared);
+    } catch (clearError) {
       setError(
-        "清空对话记忆失败。"
+        clearError instanceof Error
+          ? clearError.message
+          : copy.clearError
       );
     }
   }
 
   return (
     <WorkspaceShell>
-      <div
+      <main
         style={{
           width: "100%",
-          maxWidth: 820,
+          maxWidth: 860,
           margin: "0 auto",
           color: "#111827",
         }}
@@ -441,7 +672,8 @@ export default function MemoryPage() {
             flexWrap: "wrap",
             justifyContent:
               "space-between",
-            alignItems: "flex-start",
+            alignItems:
+              "flex-start",
             gap: 16,
             marginBottom: 22,
           }}
@@ -451,14 +683,17 @@ export default function MemoryPage() {
               style={{
                 margin: 0,
                 fontSize: 30,
+                lineHeight: 1.2,
               }}
             >
-              {MODULE_ICONS.memory} {copy.title}
+              {MODULE_ICONS.memory}{" "}
+              {copy.title}
             </h1>
 
             <p
               style={{
-                margin: "8px 0 0",
+                margin:
+                  "8px 0 0",
                 color: "#6b7280",
                 lineHeight: 1.55,
               }}
@@ -470,13 +705,15 @@ export default function MemoryPage() {
           <button
             type="button"
             onClick={
-              handleClearMemory
+              clearConversationMemory
             }
             disabled={
+              loading ||
               items.length === 0
             }
             style={{
-              padding: "10px 13px",
+              padding:
+                "10px 14px",
               border:
                 "1px solid #fecaca",
               borderRadius: 10,
@@ -489,6 +726,10 @@ export default function MemoryPage() {
                   ? "#b91c1c"
                   : "#9ca3af",
               fontWeight: 700,
+              cursor:
+                items.length > 0
+                  ? "pointer"
+                  : "default",
             }}
           >
             {copy.clear}
@@ -505,6 +746,7 @@ export default function MemoryPage() {
               borderRadius: 12,
               background: "#fff7f7",
               color: "#b91c1c",
+              lineHeight: 1.5,
             }}
           >
             {error}
@@ -521,6 +763,7 @@ export default function MemoryPage() {
               borderRadius: 12,
               background: "#f0fdf4",
               color: "#047857",
+              lineHeight: 1.5,
             }}
           >
             {notice}
@@ -528,48 +771,52 @@ export default function MemoryPage() {
         )}
 
         {loading ? (
-          <div
+          <section
             style={{
               padding: 24,
               border:
                 "1px solid #e5e7eb",
-              borderRadius: 16,
-              background: "#ffffff",
+              borderRadius: 18,
+              background:
+                "#ffffff",
             }}
           >
             {copy.loading}
-          </div>
+          </section>
         ) : (
           <>
             <section
               style={{
-                marginBottom: 26,
-                padding: 18,
+                marginBottom: 24,
+                padding: 20,
                 border:
                   "1px solid #e5e7eb",
                 borderRadius: 18,
-                background: "#ffffff",
+                background:
+                  "#ffffff",
               }}
             >
               <div
                 style={{
                   display: "flex",
-                  flexWrap: "wrap",
+                  flexWrap:
+                    "wrap",
                   justifyContent:
                     "space-between",
-                  alignItems: "center",
+                  alignItems:
+                    "center",
                   gap: 12,
-                  marginBottom: 16,
+                  marginBottom: 14,
                 }}
               >
                 <div>
                   <h2
                     style={{
                       margin: 0,
-                      fontSize: 21,
+                      fontSize: 20,
                     }}
                   >
-                    {copy.profile}
+                    {copy.profileTitle}
                   </h2>
 
                   <p
@@ -578,360 +825,348 @@ export default function MemoryPage() {
                         "6px 0 0",
                       color:
                         "#6b7280",
-                      fontSize: 13,
                     }}
                   >
-                    {copy.profileDescription}
+                    {
+                      copy.profileDescription
+                    }
                   </p>
                 </div>
 
-                <span
-                  style={{
-                    padding:
-                      "7px 10px",
-                    borderRadius: 999,
-                    background:
-                      "#eef2ff",
-                    color:
-                      "#4338ca",
-                    fontSize: 13,
-                    fontWeight: 800,
-                  }}
-                >
-                  {completedFields}/
-                  {profileFields.length} {copy.items}
-                </span>
+                {!editing && (
+                  <button
+                    type="button"
+                    onClick={
+                      startEditing
+                    }
+                    style={{
+                      padding:
+                        "9px 13px",
+                      border:
+                        "1px solid #d1d5db",
+                      borderRadius: 10,
+                      background:
+                        "#ffffff",
+                      fontWeight: 700,
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    {copy.edit}
+                  </button>
+                )}
               </div>
 
-              {editing ? (
+              <div
+                style={{
+                  marginBottom: 20,
+                }}
+              >
                 <div
                   style={{
-                    display: "grid",
-                    gap: 13,
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    marginBottom: 7,
+                    fontSize: 13,
+                    color:
+                      "#6b7280",
                   }}
                 >
-                  {profileFields.map(
-                    (field) => (
-                      <label
+                  <span>
+                    {copy.progress}
+                  </span>
+
+                  <span>
+                    {completedFields}/
+                    {fields.length}{" "}
+                    {copy.fields} ·{" "}
+                    {progress}%
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    height: 7,
+                    borderRadius: 99,
+                    background:
+                      "#e5e7eb",
+                    overflow:
+                      "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${progress}%`,
+                      height: "100%",
+                      background:
+                        "#111827",
+                      borderRadius:
+                        99,
+                      transition:
+                        "width 180ms ease",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                {fields.map(
+                  (field) => {
+                    const value =
+                      editing
+                        ? draftProfile[
+                            field.key
+                          ] ?? ""
+                        : profile[
+                            field.key
+                          ] ?? "";
+
+                    return (
+                      <div
                         key={
                           field.key
                         }
                         style={{
-                          display:
-                            "grid",
-                          gap: 7,
+                          padding: 14,
+                          border:
+                            "1px solid #e5e7eb",
+                          borderRadius:
+                            14,
+                          background:
+                            "#fafafa",
                         }}
                       >
-                        <strong
+                        <div
                           style={{
-                            fontSize: 13,
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            gap: 8,
+                            marginBottom:
+                              8,
+                            fontWeight:
+                              700,
                           }}
                         >
-                          {field.icon}{" "}
-                          {field.label}
-                        </strong>
+                          <span>
+                            {
+                              field.icon
+                            }
+                          </span>
 
-                        <textarea
-                          value={
-                            draftProfile[
-                              field.key
-                            ] ?? ""
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            updateDraft(
-                              field.key,
+                          <span>
+                            {
+                              field.label
+                            }
+                          </span>
+                        </div>
+
+                        {editing ? (
+                          <input
+                            value={
+                              value
+                            }
+                            onChange={(
                               event
-                                .target
-                                .value
-                            )
-                          }
-                          placeholder={
-                            field.placeholder
-                          }
-                          rows={
-                            field.key ===
-                              "goal" ||
-                            field.key ===
-                              "preference"
-                              ? 3
-                              : 2
-                          }
-                          style={{
-                            width:
-                              "100%",
-                            boxSizing:
-                              "border-box",
-                            resize:
-                              "vertical",
-                            padding:
-                              "12px 13px",
-                            border:
-                              "1px solid #d1d5db",
-                            borderRadius: 11,
-                            font:
-                              "inherit",
-                            lineHeight:
-                              1.5,
-                            color:
-                              "#111827",
-                            background:
-                              "#ffffff",
-                          }}
-                        />
-                      </label>
-                    )
-                  )}
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap:
-                        "wrap",
-                      gap: 10,
-                      marginTop: 4,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={
-                        saveProfile
-                      }
-                      disabled={saving}
-                      style={{
-                        flex: "1 1 150px",
-                        padding:
-                          "12px 15px",
-                        border: 0,
-                        borderRadius: 10,
-                        background:
-                          "#111827",
-                        color:
-                          "#ffffff",
-                        fontWeight: 800,
-                        opacity: saving
-                          ? 0.6
-                          : 1,
-                      }}
-                    >
-                      {saving
-                        ? copy.saving
-                        : copy.save}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={
-                        cancelEditing
-                      }
-                      disabled={saving}
-                      style={{
-                        flex: "1 1 110px",
-                        padding:
-                          "12px 15px",
-                        border:
-                          "1px solid #d1d5db",
-                        borderRadius: 10,
-                        background:
-                          "#ffffff",
-                        color:
-                          "#111827",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {copy.cancel}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(210px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    {profileFields.map(
-                      (field) => {
-                        const value =
-                          profile[
-                            field.key
-                          ];
-
-                        return (
-                          <article
-                            key={
-                              field.key
+                            ) =>
+                              updateDraft(
+                                field.key,
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            placeholder={
+                              field.placeholder
                             }
                             style={{
-                              minWidth: 0,
-                              padding: 14,
+                              width:
+                                "100%",
+                              boxSizing:
+                                "border-box",
+                              padding:
+                                "10px 11px",
                               border:
-                                "1px solid #e5e7eb",
-                              borderRadius: 14,
+                                "1px solid #d1d5db",
+                              borderRadius:
+                                9,
                               background:
-                                value
-                                  ? "#ffffff"
-                                  : "#f8fafc",
+                                "#ffffff",
+                              outline:
+                                "none",
                             }}
-                          >
-                            <p
-                              style={{
-                                margin: 0,
-                                color:
-                                  "#6b7280",
-                                fontSize: 12,
-                                fontWeight: 800,
-                              }}
-                            >
-                              {field.icon}{" "}
-                              {field.label}
-                            </p>
-
-                            <strong
-                              style={{
-                                display:
-                                  "block",
-                                marginTop: 8,
-                                lineHeight:
-                                  1.45,
-                                whiteSpace:
-                                  "pre-wrap",
-                                overflowWrap:
-                                  "anywhere",
-                                color: value
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              color:
+                                value
                                   ? "#111827"
                                   : "#9ca3af",
-                              }}
-                            >
-                              {value || copy.missing}
-                            </strong>
-                          </article>
-                        );
-                      }
-                    )}
-                  </div>
+                              lineHeight:
+                                1.5,
+                              minHeight:
+                                24,
+                            }}
+                          >
+                            {value ||
+                              copy.missing}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                )}
+              </div>
 
-                  <div
+              {editing && (
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    flexWrap:
+                      "wrap",
+                    gap: 10,
+                    marginTop: 18,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={
+                      saveProfile
+                    }
+                    disabled={saving}
                     style={{
-                      display: "flex",
-                      flexWrap:
-                        "wrap",
-                      gap: 10,
-                      marginTop: 16,
+                      padding:
+                        "10px 14px",
+                      border: 0,
+                      borderRadius: 10,
+                      background:
+                        "#111827",
+                      color:
+                        "#ffffff",
+                      fontWeight: 700,
+                      cursor:
+                        saving
+                          ? "default"
+                          : "pointer",
+                      opacity:
+                        saving
+                          ? 0.65
+                          : 1,
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={
-                        startEditing
-                      }
-                      style={{
-                        flex: "1 1 150px",
-                        padding:
-                          "11px 14px",
-                        border: 0,
-                        borderRadius: 10,
-                        background:
-                          "#111827",
-                        color:
-                          "#ffffff",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {copy.edit}
-                    </button>
+                    {saving
+                      ? copy.saving
+                      : copy.save}
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={
-                        resetManualProfile
-                      }
-                      disabled={saving}
-                      style={{
-                        flex: "1 1 150px",
-                        padding:
-                          "11px 14px",
-                        border:
-                          "1px solid #d1d5db",
-                        borderRadius: 10,
-                        background:
-                          "#ffffff",
-                        color:
-                          "#4b5563",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {copy.reset}
-                    </button>
-                  </div>
-                </>
+                  <button
+                    type="button"
+                    onClick={
+                      cancelEditing
+                    }
+                    disabled={saving}
+                    style={{
+                      padding:
+                        "10px 14px",
+                      border:
+                        "1px solid #d1d5db",
+                      borderRadius: 10,
+                      background:
+                        "#ffffff",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {copy.cancel}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      resetManualProfile
+                    }
+                    disabled={saving}
+                    style={{
+                      padding:
+                        "10px 14px",
+                      border:
+                        "1px solid #fecaca",
+                      borderRadius: 10,
+                      background:
+                        "#fff7f7",
+                      color:
+                        "#b91c1c",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {copy.reset}
+                  </button>
+                </div>
               )}
             </section>
 
-            <section>
+            <section
+              style={{
+                padding: 20,
+                border:
+                  "1px solid #e5e7eb",
+                borderRadius: 18,
+                background:
+                  "#ffffff",
+              }}
+            >
               <div
                 style={{
-                  display: "flex",
-                  justifyContent:
-                    "space-between",
-                  alignItems: "center",
-                  gap: 12,
-                  marginBottom: 13,
+                  marginBottom: 16,
                 }}
               >
-                <div>
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize: 21,
-                    }}
-                  >
-                    {copy.conversationTitle}
-                  </h2>
-
-                  <p
-                    style={{
-                      margin:
-                        "5px 0 0",
-                      color:
-                        "#6b7280",
-                      fontSize: 13,
-                    }}
-                  >
-                    {copy.conversationDescription}
-                  </p>
-                </div>
-
-                <strong
+                <h2
                   style={{
-                    color:
-                      "#6b7280",
-                    fontSize: 13,
+                    margin: 0,
+                    fontSize: 20,
                   }}
                 >
-                  {items.length} {copy.items}
-                </strong>
+                  {
+                    copy.conversationTitle
+                  }
+                </h2>
+
+                <p
+                  style={{
+                    margin:
+                      "6px 0 0",
+                    color:
+                      "#6b7280",
+                  }}
+                >
+                  {
+                    copy.conversationDescription
+                  }
+                </p>
               </div>
 
-              {items.length === 0 ? (
+              {items.length ===
+              0 ? (
                 <div
                   style={{
-                    padding:
-                      "38px 18px",
-                    background:
-                      "#ffffff",
+                    padding: 24,
                     border:
-                      "1px dashed #cbd5e1",
-                    borderRadius: 16,
+                      "1px dashed #d1d5db",
+                    borderRadius: 14,
+                    color:
+                      "#6b7280",
                     textAlign:
                       "center",
-                    color:
-                      "#64748b",
-                    lineHeight: 1.7,
                   }}
                 >
                   {copy.empty}
@@ -939,79 +1174,89 @@ export default function MemoryPage() {
               ) : (
                 <div
                   style={{
-                    display: "grid",
+                    display:
+                      "grid",
                     gap: 12,
                   }}
                 >
-                  {[...items]
-                    .reverse()
-                    .map((item) => (
+                  {items.map(
+                    (item) => (
                       <article
                         key={
                           item.id
                         }
                         style={{
-                          minWidth: 0,
-                          padding: 16,
-                          background:
-                            "#ffffff",
+                          padding:
+                            14,
                           border:
                             "1px solid #e5e7eb",
-                          borderRadius: 14,
+                          borderRadius:
+                            14,
+                          background:
+                            item.role ===
+                            "user"
+                              ? "#fafafa"
+                              : "#ffffff",
                         }}
                       >
                         <div
                           style={{
                             display:
                               "flex",
-                            flexWrap:
-                              "wrap",
                             justifyContent:
                               "space-between",
-                            gap: 8,
-                            marginBottom: 9,
+                            gap: 12,
+                            marginBottom:
+                              7,
+                            fontSize:
+                              12,
+                            color:
+                              "#6b7280",
                           }}
                         >
-                          <strong>
-                            {item.role ===
-                            "user"
-                              ? "U · User"
-                              : "AI · Assistant"}
-                          </strong>
-
-                          <time
+                          <strong
                             style={{
                               color:
-                                "#9ca3af",
-                              fontSize: 12,
+                                "#374151",
                             }}
                           >
-                            {new Date(
-                              item.timestamp
-                            ).toLocaleString()}
-                          </time>
+                            {item.role ===
+                            "user"
+                              ? copy.user
+                              : copy.assistant}
+                          </strong>
+
+                          <span>
+                            {formatDate(
+                              item.timestamp,
+                              locale
+                            )}
+                          </span>
                         </div>
 
-                        <p
+                        <div
                           style={{
-                            margin: 0,
-                            lineHeight: 1.65,
                             whiteSpace:
                               "pre-wrap",
-                            overflowWrap:
-                              "anywhere",
+                            lineHeight:
+                              1.6,
+                            color:
+                              "#111827",
                           }}
                         >
-                          {item.content}
-                        </p>
+                          {
+                            item.content
+                          }
+                        </div>
                       </article>
-                    ))}
+                    )
+                  )}
                 </div>
               )}
             </section>
           </>
         )}
-      </div>
+      </main>
     </WorkspaceShell>
   );
 }
