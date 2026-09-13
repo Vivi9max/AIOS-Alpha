@@ -222,7 +222,7 @@ const COPY = {
     memoryDescription:
       "Manage long-term context and information.",
     runtime: "Runtime",
-    runtimeDescription:
+    runtimeQuickDescription:
       "Inspect execution state and evidence.",
     settings: "Settings",
     settingsDescription:
@@ -407,7 +407,7 @@ const COPY = {
     memoryDescription:
       "管理长期上下文和资料。",
     runtime: "Runtime",
-    runtimeDescription:
+    runtimeQuickDescription:
       "查看执行状态与运行证据。",
     settings: "设置",
     settingsDescription:
@@ -596,7 +596,7 @@ const COPY = {
     memoryDescription:
       "長期コンテキストと情報を管理します。",
     runtime: "Runtime",
-    runtimeDescription:
+    runtimeQuickDescription:
       "実行状態と証拠を確認します。",
     settings: "設定",
     settingsDescription:
@@ -2101,7 +2101,7 @@ export default function DashboardPage() {
                   icon: "⚡",
                   title: copy.runtime,
                   description:
-                    copy.runtimeDescription,
+                    copy.runtimeQuickDescription,
                   href: "/runtime/trace",
                 },
                 {
