@@ -8,6 +8,7 @@
     "start": "next start",
     "verify": "node scripts/verify.mjs",
     "verify:locale": "node scripts/verify-locale.mjs",
+    "verify:locale:surface": "node scripts/verify-locale-surface.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
