@@ -15,6 +15,10 @@ import type {
   Locale,
 } from "@/lib/i18n";
 
+import {
+  APP_VERSION,
+} from "@/lib/config/app";
+
 type AlphaCopy = {
   badge: string;
   title: string;
@@ -30,7 +34,7 @@ type AlphaCopy = {
 
 const alphaCopy: Record<Locale, AlphaCopy> = {
   en: {
-    badge: "PRIVATE ALPHA · v0.4",
+    badge: `PRIVATE ALPHA · v${APP_VERSION}`,
     title: "Welcome to AIOS Alpha",
     description:
       "AIOS Alpha is currently available to a limited group of early testers. Enter your invitation code to continue to the workspace.",
@@ -45,7 +49,7 @@ const alphaCopy: Record<Locale, AlphaCopy> = {
   },
 
   "zh-CN": {
-    badge: "PRIVATE ALPHA · v0.4",
+    badge: `封闭 Alpha · v${APP_VERSION}`,
     title: "欢迎来到 AIOS Alpha",
     description:
       "AIOS Alpha 目前仅向首批测试用户开放。请输入邀请码，进入 AIOS 工作空间。",
@@ -60,7 +64,7 @@ const alphaCopy: Record<Locale, AlphaCopy> = {
   },
 
   ja: {
-    badge: "PRIVATE ALPHA · v0.4",
+    badge: `クローズド Alpha · v${APP_VERSION}`,
     title: "AIOS Alpha へようこそ",
     description:
       "AIOS Alpha は現在、限られた先行テスターの方にのみ公開しています。招待コードを入力して、ワークスペースへ進んでください。",
