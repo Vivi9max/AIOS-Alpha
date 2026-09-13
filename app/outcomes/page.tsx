@@ -140,11 +140,12 @@ function parseTargetDate(value: string): number | null {
     : null;
 }
 
+type OutcomePageCopy =
+  (typeof outcomesCopy)[Locale];
+
 async function readJson(
   response: Response,
-  copy: ReturnType<
-    typeof outcomesCopy
-  >
+  copy: OutcomePageCopy
 ): Promise<OutcomesResponse> {
   let data: OutcomesResponse;
 
