@@ -4,7 +4,92 @@ import {
   useState,
 } from "react";
 
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
+import type {
+  Locale,
+} from "@/lib/i18n";
+
+type Copy = {
+  confirmTitle: string;
+  confirmBody: string;
+  confirmMemory: string;
+  cancel: string;
+  confirm: string;
+  creating: string;
+  newConversation: string;
+  resetFailed: string;
+  createFailed: string;
+};
+
+const copy: Record<
+  Locale,
+  Copy
+> = {
+  en: {
+    confirmTitle:
+      "Start a new conversation?",
+    confirmBody:
+      "The current conversation history will be cleared.",
+    confirmMemory:
+      "Memory Profile and Tasks will not be affected.",
+    cancel: "Cancel",
+    confirm: "Continue",
+    creating: "Creating…",
+    newConversation:
+      "＋ New conversation",
+    resetFailed:
+      "Conversation reset failed.",
+    createFailed:
+      "Failed to create a new conversation.",
+  },
+
+  "zh-CN": {
+    confirmTitle:
+      "确定开始新对话吗？",
+    confirmBody:
+      "当前对话记录将被清空。",
+    confirmMemory:
+      "Memory Profile 和 Tasks 不会受到影响。",
+    cancel: "取消",
+    confirm: "继续",
+    creating: "正在创建…",
+    newConversation:
+      "＋ 新对话",
+    resetFailed:
+      "对话重置失败。",
+    createFailed:
+      "新对话创建失败。",
+  },
+
+  ja: {
+    confirmTitle:
+      "新しい会話を開始しますか？",
+    confirmBody:
+      "現在の会話履歴は消去されます。",
+    confirmMemory:
+      "Memory Profile と Tasks には影響しません。",
+    cancel: "キャンセル",
+    confirm: "続行",
+    creating: "作成中…",
+    newConversation:
+      "＋ 新しい会話",
+    resetFailed:
+      "会話のリセットに失敗しました。",
+    createFailed:
+      "新しい会話を作成できませんでした。",
+  },
+};
+
 export default function NewConversationButton() {
+  const { locale } =
+    useLanguage();
+
+  const text =
+    copy[locale];
+
   const [clearing, setClearing] =
     useState(false);
 
@@ -19,10 +104,10 @@ export default function NewConversationButton() {
     const confirmed =
       window.confirm(
         [
-          "确定开始新对话吗？",
+          text.confirmTitle,
           "",
-          "当前对话记录将被清空。",
-          "Memory Profile 和 Tasks 不会受到影响。",
+          text.confirmBody,
+          text.confirmMemory,
         ].join("\n")
       );
 
@@ -50,8 +135,7 @@ export default function NewConversationButton() {
         !data.success
       ) {
         throw new Error(
-          data.error ??
-            "Conversation reset failed."
+          text.resetFailed
         );
       }
 
@@ -60,7 +144,7 @@ export default function NewConversationButton() {
       setError(
         clearError instanceof Error
           ? clearError.message
-          : "新对话创建失败。"
+          : text.createFailed
       );
 
       setClearing(false);
@@ -71,8 +155,10 @@ export default function NewConversationButton() {
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
+        flexDirection:
+          "column",
+        alignItems:
+          "flex-end",
         gap: 7,
         marginBottom: 12,
       }}
@@ -109,12 +195,13 @@ export default function NewConversationButton() {
         }}
       >
         {clearing
-          ? "正在创建…"
-          : "＋ 新对话"}
+          ? text.creating
+          : text.newConversation}
       </button>
 
       {error && (
         <span
+          role="alert"
           style={{
             maxWidth: 300,
             color: "#b91c1c",
