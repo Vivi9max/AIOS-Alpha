@@ -37,12 +37,19 @@ const globalMemory =
 const MAX_MEMORY_RECORDS =
   100;
 
+function getMemoryStates():
+  Map<string, UserMemoryState> {
+  return (
+    globalMemory
+      .__aiosUserMemoryStates ??
+    (globalMemory
+      .__aiosUserMemoryStates =
+      new Map())
+  );
+}
+
 const userMemoryStates =
-  globalMemory
-    .__aiosUserMemoryStates ??
-  (globalMemory
-    .__aiosUserMemoryStates =
-    new Map());
+  getMemoryStates();
 
 function getStorageKey():
   string {
@@ -62,7 +69,8 @@ function getStorageKey():
 function sanitizeMemoryContent(
   content: string
 ): string | null {
-  const raw = content.trim();
+  const raw =
+    content.trim();
 
   if (!raw) {
     return null;
@@ -224,8 +232,7 @@ function createMemoryId():
 
   state.sequence =
     (
-      state.sequence +
-      1
+      state.sequence + 1
     ) %
     1000;
 
@@ -322,6 +329,35 @@ export async function hydrateMemory():
             );
           }
         }
+
+        /*
+         * Keep sequence ahead of restored IDs.
+         * This prevents a newly created message from accidentally
+         * colliding with an existing restored record.
+         */
+        const maxId =
+          state.records.reduce(
+            (
+              maximum,
+              item
+            ) =>
+              Math.max(
+                maximum,
+                item.id
+              ),
+            0
+          );
+
+        const sequence =
+          maxId %
+          1000;
+
+        state.sequence =
+          Number.isFinite(
+            sequence
+          )
+            ? sequence
+            : 0;
       } catch (error) {
         console.error(
           "[AIOS Memory Hydration]",
@@ -517,6 +553,175 @@ export function buildConversationContext(
         `${item.role}: ${item.content}`
     )
     .join("\n");
+}
+
+/**
+ * C143.18:
+ * Remove one conversation record from the current user's memory.
+ *
+ * The complete removed record is returned so the caller can offer
+ * an explicit undo operation without reconstructing the message.
+ */
+export function removeMemoryById(
+  id: number
+): MemoryRecord | null {
+  const state =
+    getMemoryState();
+
+  const index =
+    state.records.findIndex(
+      (item) =>
+        item.id === id
+    );
+
+  if (index < 0) {
+    return null;
+  }
+
+  const [
+    removed,
+  ] =
+    state.records.splice(
+      index,
+      1
+    );
+
+  return removed ?? null;
+}
+
+/**
+ * C143.18:
+ * Restore an exact previously removed record.
+ *
+ * Records are ordered by timestamp and ID after restoration so
+ * undo does not disturb chronological conversation order.
+ */
+export function restoreMemoryRecord(
+  record: MemoryRecord
+): MemoryRecord | null {
+  if (
+    !isMemoryRecord(
+      record
+    )
+  ) {
+    return null;
+  }
+
+  const state =
+    getMemoryState();
+
+  const sanitized =
+    sanitizeMemoryRecord(
+      record
+    );
+
+  if (!sanitized) {
+    return null;
+  }
+
+  const exists =
+    state.records.some(
+      (item) =>
+        item.id ===
+        sanitized.id
+    );
+
+  if (exists) {
+    return (
+      state.records.find(
+        (item) =>
+          item.id ===
+          sanitized.id
+      ) ?? null
+    );
+  }
+
+  state.records.push(
+    sanitized
+  );
+
+  state.records.sort(
+    (a, b) => {
+      if (
+        a.timestamp !==
+        b.timestamp
+      ) {
+        return (
+          a.timestamp -
+          b.timestamp
+        );
+      }
+
+      return (
+        a.id -
+        b.id
+      );
+    }
+  );
+
+  if (
+    state.records.length >
+    MAX_MEMORY_RECORDS
+  ) {
+    state.records.splice(
+      0,
+      state.records.length -
+        MAX_MEMORY_RECORDS
+    );
+  }
+
+  const sequence =
+    sanitized.id %
+    1000;
+
+  if (
+    Number.isFinite(
+      sequence
+    )
+  ) {
+    state.sequence =
+      sequence;
+  }
+
+  return sanitized;
+}
+
+export async function removeAndSaveMemory(
+  id: number
+): Promise<MemoryRecord | null> {
+  await hydrateMemory();
+
+  const removed =
+    removeMemoryById(
+      id
+    );
+
+  if (!removed) {
+    return null;
+  }
+
+  await saveMemory();
+
+  return removed;
+}
+
+export async function restoreAndSaveMemory(
+  record: MemoryRecord
+): Promise<MemoryRecord | null> {
+  await hydrateMemory();
+
+  const restored =
+    restoreMemoryRecord(
+      record
+    );
+
+  if (!restored) {
+    return null;
+  }
+
+  await saveMemory();
+
+  return restored;
 }
 
 export function clearMemory():
