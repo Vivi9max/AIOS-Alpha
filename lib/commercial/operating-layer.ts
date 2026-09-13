@@ -22,6 +22,41 @@ export type CommercialStage =
   | "retention"
   | "scaling";
 
+export type CommercialDeadlineStatus =
+  | "none"
+  | "on-track"
+  | "at-risk"
+  | "critical"
+  | "overdue"
+  | "completed";
+
+export interface CommercialGapSnapshot {
+  revenueGap: number;
+  customerGap: number;
+  costHeadroom: number;
+
+  revenueProgress: number;
+  customerProgress: number;
+
+  daysRemaining: number | null;
+
+  dailyRevenueRequired: number;
+  dailyCustomersRequired: number;
+  dailyCostBudget: number;
+
+  timeProgress: number;
+
+  deadlineStatus:
+    CommercialDeadlineStatus;
+
+  commercialHealth:
+    "healthy"
+    | "at-risk"
+    | "critical"
+    | "complete"
+    | "undefined";
+}
+
 export interface CommercialObjective {
   id: string;
 
@@ -47,15 +82,40 @@ export interface CommercialObjective {
 
   successCriteria: string;
 
+  /**
+   * Absolute UTC timestamp.
+   *
+   * Optional for backward compatibility with
+   * objectives created before C143.17.2.
+   */
+  deadlineAt?: number;
+
+  /**
+   * Original requested duration.
+   *
+   * Example:
+   * 30 days -> deadlineDays = 30.
+   */
+  deadlineDays?: number;
+
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
 }
 
+export interface CommercialObjectiveWithGap
+  extends CommercialObjective {
+  gap: CommercialGapSnapshot;
+}
+
 export interface CommercialOverview {
   objectives: CommercialObjective[];
 
-  activeObjective: CommercialObjective | null;
+  activeObjective:
+    CommercialObjective | null;
+
+  activeGap:
+    CommercialGapSnapshot | null;
 
   revenueTarget: number;
   revenueActual: number;
@@ -64,6 +124,10 @@ export interface CommercialOverview {
   customerTarget: number;
   customerActual: number;
   customerGap: number;
+
+  costTarget: number;
+  costActual: number;
+  costHeadroom: number;
 
   progress: number;
 
@@ -91,6 +155,17 @@ export interface CreateCommercialObjectiveInput {
   taskId?: string | null;
 
   successCriteria?: string;
+
+  /**
+   * Absolute deadline timestamp.
+   */
+  deadlineAt?: number | null;
+
+  /**
+   * Relative duration in days.
+   * Converted to deadlineAt at creation time.
+   */
+  deadlineDays?: number | null;
 }
 
 export interface UpdateCommercialObjectiveInput {
@@ -115,6 +190,9 @@ export interface UpdateCommercialObjectiveInput {
   taskId?: string | null;
 
   successCriteria?: string;
+
+  deadlineAt?: number | null;
+  deadlineDays?: number | null;
 }
 
 const STORAGE_RESOURCE =
@@ -122,15 +200,12 @@ const STORAGE_RESOURCE =
 
 const MAX_OBJECTIVES = 100;
 
+const DAY_MS =
+  24 * 60 * 60 * 1000;
+
 const UNSPECIFIED_CURRENCY =
   "UNSPECIFIED";
 
-/**
- * Supported ISO-4217-style currency codes.
- *
- * We intentionally accept explicit codes rather than
- * inferring currency from locale.
- */
 const CURRENCY_CODES = new Set([
   "AED",
   "AFN",
@@ -287,8 +362,6 @@ const CURRENCY_CODES = new Set([
   "ZAR",
   "ZMW",
   "ZWL",
-
-  // Digital currencies explicitly named by the user.
   "BTC",
   "ETH",
 ]);
@@ -372,18 +445,59 @@ function normalizeCount(
   );
 }
 
-/**
- * Normalize an explicitly supplied currency.
- *
- * Policy:
- * 1. Explicit ISO code wins.
- * 2. Explicit currency names are mapped.
- * 3. Unambiguous currency symbols are accepted.
- * 4. Ambiguous symbols such as "$", "¥" and "￥"
- *    are NEVER guessed.
- * 5. Locale is NEVER used to infer currency.
- * 6. Missing / unknown currency becomes UNSPECIFIED.
- */
+function normalizeDeadlineDays(
+  value: unknown,
+): number | undefined {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return undefined;
+  }
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      number,
+    ) ||
+    number <= 0
+  ) {
+    return undefined;
+  }
+
+  return Math.min(
+    Math.floor(number),
+    3650,
+  );
+}
+
+function normalizeDeadlineAt(
+  value: unknown,
+): number | undefined {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return undefined;
+  }
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      number,
+    ) ||
+    number <= 0
+  ) {
+    return undefined;
+  }
+
+  return number;
+}
+
 function normalizeCurrency(
   value: unknown,
 ): string {
@@ -397,213 +511,67 @@ function normalizeCurrency(
     return UNSPECIFIED_CURRENCY;
   }
 
-  const normalized =
+  const upper =
     raw.toUpperCase();
 
   if (
     CURRENCY_CODES.has(
-      normalized,
+      upper,
     )
   ) {
-    return normalized;
+    return upper;
   }
-
-  const compact =
-    raw
-      .replace(/\s+/g, " ")
-      .trim();
 
   const namedCurrencies: Array<
     [RegExp, string]
   > = [
-    [
-      /人民币|人民币元|元人民币|Chinese Yuan|Renminbi/i,
-      "CNY",
-    ],
-    [
-      /美元|美金|美刀|US dollars?|United States dollars?/i,
-      "USD",
-    ],
-    [
-      /日元|日本円|Japanese yen/i,
-      "JPY",
-    ],
-    [
-      /港币|港元|Hong Kong dollars?/i,
-      "HKD",
-    ],
-    [
-      /澳门元|澳门币|Macau pataca/i,
-      "MOP",
-    ],
-    [
-      /台币|新台币|台湾ドル|Taiwan dollars?/i,
-      "TWD",
-    ],
-    [
-      /韩元|韩国ウォン|Korean won/i,
-      "KRW",
-    ],
-    [
-      /新加坡元|新加坡币|Singapore dollars?/i,
-      "SGD",
-    ],
-    [
-      /澳元|澳大利亚元|Australian dollars?/i,
-      "AUD",
-    ],
-    [
-      /加元|加拿大元|Canadian dollars?/i,
-      "CAD",
-    ],
-    [
-      /新西兰元|纽元|New Zealand dollars?/i,
-      "NZD",
-    ],
-    [
-      /欧元|euro|euros/i,
-      "EUR",
-    ],
-    [
-      /英镑|pound sterling|British pounds?|sterling/i,
-      "GBP",
-    ],
-    [
-      /瑞士法郎|Swiss francs?/i,
-      "CHF",
-    ],
-    [
-      /瑞典克朗|Swedish kronor|Swedish krona/i,
-      "SEK",
-    ],
-    [
-      /挪威克朗|Norwegian kroner|Norwegian krone/i,
-      "NOK",
-    ],
-    [
-      /丹麦克朗|Danish kroner|Danish krone/i,
-      "DKK",
-    ],
-    [
-      /波兰兹罗提|波兰兹罗蒂|Polish zloty|Polish zlotys/i,
-      "PLN",
-    ],
-    [
-      /捷克克朗|Czech koruna|Czech korunas/i,
-      "CZK",
-    ],
-    [
-      /匈牙利福林|Hungarian forint/i,
-      "HUF",
-    ],
-    [
-      /俄罗斯卢布|俄罗​​斯卢布|卢布|Russian rubles?|Russian roubles?/i,
-      "RUB",
-    ],
-    [
-      /土耳其里拉|Turkish lira/i,
-      "TRY",
-    ],
-    [
-      /印度卢比|Indian rupees?/i,
-      "INR",
-    ],
-    [
-      /巴基斯坦卢比|Pakistani rupees?/i,
-      "PKR",
-    ],
-    [
-      /孟加拉塔卡|Bangladeshi taka/i,
-      "BDT",
-    ],
-    [
-      /泰铢|Thai baht/i,
-      "THB",
-    ],
-    [
-      /越南盾|Vietnamese dong/i,
-      "VND",
-    ],
-    [
-      /印尼盾|印尼卢比|Indonesian rupiah/i,
-      "IDR",
-    ],
-    [
-      /马来西亚林吉特|马来西亚令吉|Malaysian ringgit/i,
-      "MYR",
-    ],
-    [
-      /菲律宾比索|Philippine pesos?/i,
-      "PHP",
-    ],
-    [
-      /墨西哥比索|Mexican pesos?/i,
-      "MXN",
-    ],
-    [
-      /巴西雷亚尔|Brazilian reais?|Brazilian real/i,
-      "BRL",
-    ],
-    [
-      /阿根廷比索|Argentine pesos?/i,
-      "ARS",
-    ],
-    [
-      /智利比索|Chilean pesos?/i,
-      "CLP",
-    ],
-    [
-      /哥伦比亚比索|Colombian pesos?/i,
-      "COP",
-    ],
-    [
-      /秘鲁索尔|Peruvian soles?|Peruvian sol/i,
-      "PEN",
-    ],
-    [
-      /南非兰特|South African rand/i,
-      "ZAR",
-    ],
-    [
-      /尼日利亚奈拉|Nigerian naira/i,
-      "NGN",
-    ],
-    [
-      /肯尼亚先令|Kenyan shillings?/i,
-      "KES",
-    ],
-    [
-      /埃及镑|Egyptian pounds?/i,
-      "EGP",
-    ],
-    [
-      /以色列新谢克尔|以色列谢克尔|Israeli new shekels?|Israeli shekels?/i,
-      "ILS",
-    ],
-    [
-      /沙特里亚尔|Saudi riyals?/i,
-      "SAR",
-    ],
-    [
-      /阿联酋迪拉姆|UAE dirhams?|Emirati dirhams?/i,
-      "AED",
-    ],
-    [
-      /卡塔尔里亚尔|Qatari riyals?/i,
-      "QAR",
-    ],
-    [
-      /科威特第纳尔|Kuwaiti dinars?/i,
-      "KWD",
-    ],
-    [
-      /比特币|bitcoin/i,
-      "BTC",
-    ],
-    [
-      /以太币|以太坊|ether|ethereum/i,
-      "ETH",
-    ],
+    [/人民币|人民币元|元人民币|Chinese Yuan|Renminbi/i, "CNY"],
+    [/美元|美金|美刀|US dollars?|United States dollars?/i, "USD"],
+    [/日元|日本円|円|Japanese yen/i, "JPY"],
+    [/港币|港元|Hong Kong dollars?/i, "HKD"],
+    [/澳门元|澳门币|Macau pataca/i, "MOP"],
+    [/台币|新台币|台湾ドル|Taiwan dollars?/i, "TWD"],
+    [/韩元|韩国ウォン|Korean won/i, "KRW"],
+    [/新加坡元|新加坡币|Singapore dollars?/i, "SGD"],
+    [/澳元|澳大利亚元|Australian dollars?/i, "AUD"],
+    [/加元|加拿大元|Canadian dollars?/i, "CAD"],
+    [/新西兰元|纽元|New Zealand dollars?/i, "NZD"],
+    [/欧元|euro|euros/i, "EUR"],
+    [/英镑|pound sterling|British pounds?|sterling/i, "GBP"],
+    [/瑞士法郎|Swiss francs?/i, "CHF"],
+    [/瑞典克朗|Swedish kronor|Swedish krona/i, "SEK"],
+    [/挪威克朗|Norwegian kroner|Norwegian krone/i, "NOK"],
+    [/丹麦克朗|Danish kroner|Danish krone/i, "DKK"],
+    [/波兰兹罗提|Polish zloty|Polish zlotys/i, "PLN"],
+    [/捷克克朗|Czech koruna|Czech korunas/i, "CZK"],
+    [/匈牙利福林|Hungarian forint/i, "HUF"],
+    [/俄罗斯卢布|卢布|Russian rubles?|Russian roubles?/i, "RUB"],
+    [/土耳其里拉|Turkish lira/i, "TRY"],
+    [/印度卢比|Indian rupees?/i, "INR"],
+    [/巴基斯坦卢比|Pakistani rupees?/i, "PKR"],
+    [/孟加拉塔卡|Bangladeshi taka/i, "BDT"],
+    [/泰铢|Thai baht/i, "THB"],
+    [/越南盾|Vietnamese dong/i, "VND"],
+    [/印尼盾|印尼卢比|Indonesian rupiah/i, "IDR"],
+    [/马来西亚林吉特|马来西亚令吉|Malaysian ringgit/i, "MYR"],
+    [/菲律宾比索|Philippine pesos?/i, "PHP"],
+    [/墨西哥比索|Mexican pesos?/i, "MXN"],
+    [/巴西雷亚尔|Brazilian reais?|Brazilian real/i, "BRL"],
+    [/阿根廷比索|Argentine pesos?/i, "ARS"],
+    [/智利比索|Chilean pesos?/i, "CLP"],
+    [/哥伦比亚比索|Colombian pesos?/i, "COP"],
+    [/秘鲁索尔|Peruvian soles?|Peruvian sol/i, "PEN"],
+    [/南非兰特|South African rand/i, "ZAR"],
+    [/尼日利亚奈拉|Nigerian naira/i, "NGN"],
+    [/肯尼亚先令|Kenyan shillings?/i, "KES"],
+    [/埃及镑|Egyptian pounds?/i, "EGP"],
+    [/以色列新谢克尔|以色列谢克尔|Israeli new shekels?|Israeli shekels?/i, "ILS"],
+    [/沙特里亚尔|Saudi riyals?/i, "SAR"],
+    [/阿联酋迪拉姆|UAE dirhams?|Emirati dirhams?/i, "AED"],
+    [/卡塔尔里亚尔|Qatari riyals?/i, "QAR"],
+    [/科威特第纳尔|Kuwaiti dinars?/i, "KWD"],
+    [/比特币|bitcoin/i, "BTC"],
+    [/以太币|以太坊|ether|ethereum/i, "ETH"],
   ];
 
   for (
@@ -613,21 +581,12 @@ function normalizeCurrency(
     ] of namedCurrencies
   ) {
     if (
-      pattern.test(
-        compact,
-      )
+      pattern.test(raw)
     ) {
       return code;
     }
   }
 
-  /**
-   * Only symbols with a single unambiguous
-   * interpretation are accepted.
-   *
-   * "$" is ambiguous.
-   * "¥" and "￥" are ambiguous.
-   */
   const symbols: Array<
     [RegExp, string]
   > = [
@@ -647,9 +606,7 @@ function normalizeCurrency(
     ] of symbols
   ) {
     if (
-      pattern.test(
-        compact,
-      )
+      pattern.test(raw)
     ) {
       return code;
     }
@@ -723,13 +680,25 @@ function normalizeObjective(
     return null;
   }
 
+  const deadlineAt =
+    normalizeDeadlineAt(
+      item.deadlineAt,
+    );
+
+  const deadlineDays =
+    normalizeDeadlineDays(
+      item.deadlineDays,
+    );
+
   return {
     id: item.id,
+
     title:
       normalizeText(
         item.title,
         200,
       ),
+
     description:
       normalizeText(
         item.description,
@@ -799,6 +768,18 @@ function normalizeObjective(
         1000,
       ),
 
+    ...(deadlineAt !== undefined
+      ? {
+          deadlineAt,
+        }
+      : {}),
+
+    ...(deadlineDays !== undefined
+      ? {
+          deadlineDays,
+        }
+      : {}),
+
     createdAt:
       item.createdAt,
 
@@ -857,6 +838,253 @@ async function writeObjectives(
   );
 }
 
+export function calculateCommercialGap(
+  objective: CommercialObjective,
+  now = Date.now(),
+): CommercialGapSnapshot {
+  const revenueGap =
+    Math.max(
+      0,
+      normalizeMoney(
+        objective.revenueTarget -
+          objective.revenueActual,
+      ),
+    );
+
+  const customerGap =
+    Math.max(
+      0,
+      normalizeCount(
+        objective.customerTarget -
+          objective.customerActual,
+      ),
+    );
+
+  const costHeadroom =
+    normalizeMoney(
+      objective.costTarget -
+        objective.costActual,
+    );
+
+  const revenueProgress =
+    objective.revenueTarget > 0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(
+              (objective.revenueActual /
+                objective.revenueTarget) *
+                100,
+            ),
+          ),
+        )
+      : 0;
+
+  const customerProgress =
+    objective.customerTarget > 0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(
+              (objective.customerActual /
+                objective.customerTarget) *
+                100,
+            ),
+          ),
+        )
+      : 0;
+
+  let daysRemaining:
+    number | null = null;
+
+  let deadlineStatus:
+    CommercialDeadlineStatus =
+      "none";
+
+  let timeProgress = 0;
+
+  if (
+    objective.deadlineAt !==
+      undefined
+  ) {
+    const remainingMs =
+      objective.deadlineAt -
+      now;
+
+    daysRemaining =
+      Math.max(
+        0,
+        Math.ceil(
+          remainingMs /
+            DAY_MS,
+        ),
+      );
+
+    const totalDuration =
+      objective.deadlineDays !==
+        undefined
+        ? objective.deadlineDays *
+          DAY_MS
+        : Math.max(
+            DAY_MS,
+            objective.deadlineAt -
+              objective.createdAt,
+          );
+
+    timeProgress =
+      Math.min(
+        100,
+        Math.max(
+          0,
+          Math.round(
+            ((now -
+              objective.createdAt) /
+              totalDuration) *
+              100,
+          ),
+        ),
+      );
+
+    if (
+      revenueGap <= 0 &&
+      customerGap <= 0
+    ) {
+      deadlineStatus =
+        "completed";
+    } else if (
+      remainingMs <= 0
+    ) {
+      deadlineStatus =
+        "overdue";
+    } else {
+      const targetProgress =
+        Math.max(
+          revenueProgress,
+          customerProgress,
+        );
+
+      if (
+        targetProgress + 20 <
+        timeProgress
+      ) {
+        deadlineStatus =
+          "critical";
+      } else if (
+        targetProgress + 5 <
+        timeProgress
+      ) {
+        deadlineStatus =
+          "at-risk";
+      } else {
+        deadlineStatus =
+          "on-track";
+      }
+    }
+  }
+
+  const dailyRevenueRequired =
+    daysRemaining !== null &&
+    daysRemaining > 0
+      ? normalizeMoney(
+          revenueGap /
+            daysRemaining,
+        )
+      : revenueGap;
+
+  const dailyCustomersRequired =
+    daysRemaining !== null &&
+    daysRemaining > 0
+      ? Math.ceil(
+          customerGap /
+            daysRemaining,
+        )
+      : customerGap;
+
+  const dailyCostBudget =
+    daysRemaining !== null &&
+    daysRemaining > 0
+      ? normalizeMoney(
+          Math.max(
+            0,
+            costHeadroom,
+          ) /
+            daysRemaining,
+        )
+      : Math.max(
+          0,
+          costHeadroom,
+        );
+
+  let commercialHealth:
+    CommercialGapSnapshot["commercialHealth"];
+
+  if (
+    revenueGap <= 0 &&
+    customerGap <= 0
+  ) {
+    commercialHealth =
+      "complete";
+  } else if (
+    objective.costActual >
+    objective.costTarget
+  ) {
+    commercialHealth =
+      "critical";
+  } else if (
+    deadlineStatus ===
+      "overdue" ||
+    deadlineStatus ===
+      "critical"
+  ) {
+    commercialHealth =
+      "critical";
+  } else if (
+    deadlineStatus ===
+      "at-risk"
+  ) {
+    commercialHealth =
+      "at-risk";
+  } else if (
+    objective.currency ===
+      UNSPECIFIED_CURRENCY &&
+    (
+      objective.revenueTarget >
+        0 ||
+      objective.costTarget >
+        0
+    )
+  ) {
+    commercialHealth =
+      "undefined";
+  } else {
+    commercialHealth =
+      "healthy";
+  }
+
+  return {
+    revenueGap,
+    customerGap,
+    costHeadroom,
+
+    revenueProgress,
+    customerProgress,
+
+    daysRemaining,
+
+    dailyRevenueRequired,
+    dailyCustomersRequired,
+    dailyCostBudget,
+
+    timeProgress,
+
+    deadlineStatus,
+
+    commercialHealth,
+  };
+}
+
 export async function listCommercialObjectives(): Promise<
   CommercialObjective[]
 > {
@@ -889,6 +1117,31 @@ export async function getCommercialObjective(
         item.id === id,
     ) ?? null
   );
+}
+
+export async function getCommercialObjectiveWithGap(
+  id: string,
+  now = Date.now(),
+): Promise<
+  CommercialObjectiveWithGap | null
+> {
+  const objective =
+    await getCommercialObjective(
+      id,
+    );
+
+  if (!objective) {
+    return null;
+  }
+
+  return {
+    ...objective,
+    gap:
+      calculateCommercialGap(
+        objective,
+        now,
+      ),
+  };
 }
 
 export async function createCommercialObjective(
@@ -931,6 +1184,27 @@ export async function createCommercialObjective(
 
   const now =
     Date.now();
+
+  const explicitDeadlineAt =
+    normalizeDeadlineAt(
+      input.deadlineAt,
+    );
+
+  const deadlineDays =
+    normalizeDeadlineDays(
+      input.deadlineDays,
+    );
+
+  const deadlineAt =
+    explicitDeadlineAt ??
+    (
+      deadlineDays !==
+        undefined
+        ? now +
+          deadlineDays *
+            DAY_MS
+        : undefined
+    );
 
   const objective:
     CommercialObjective =
@@ -998,6 +1272,18 @@ export async function createCommercialObjective(
         ) ||
         "Generate measurable commercial progress and record verified business results.",
 
+      ...(deadlineAt !== undefined
+        ? {
+            deadlineAt,
+          }
+        : {}),
+
+      ...(deadlineDays !== undefined
+        ? {
+            deadlineDays,
+          }
+        : {}),
+
       createdAt: now,
       updatedAt: now,
     };
@@ -1040,6 +1326,45 @@ export async function updateCommercialObjective(
   const status =
     updates.status ??
     current.status;
+
+  let nextDeadlineAt =
+    current.deadlineAt;
+
+  let nextDeadlineDays =
+    current.deadlineDays;
+
+  if (
+    updates.deadlineAt !==
+      undefined
+  ) {
+    nextDeadlineAt =
+      normalizeDeadlineAt(
+        updates.deadlineAt,
+      );
+  }
+
+  if (
+    updates.deadlineDays !==
+      undefined
+  ) {
+    nextDeadlineDays =
+      normalizeDeadlineDays(
+        updates.deadlineDays,
+      );
+
+    if (
+      nextDeadlineDays !==
+        undefined
+    ) {
+      nextDeadlineAt =
+        Date.now() +
+        nextDeadlineDays *
+          DAY_MS;
+    } else {
+      nextDeadlineAt =
+        undefined;
+    }
+  }
 
   const updated:
     CommercialObjective =
@@ -1152,6 +1477,28 @@ export async function updateCommercialObjective(
               1000,
             ),
 
+      ...(nextDeadlineAt !==
+        undefined
+        ? {
+            deadlineAt:
+              nextDeadlineAt,
+          }
+        : {
+            deadlineAt:
+              undefined,
+          }),
+
+      ...(nextDeadlineDays !==
+        undefined
+        ? {
+            deadlineDays:
+              nextDeadlineDays,
+          }
+        : {
+            deadlineDays:
+              undefined,
+          }),
+
       completedAt:
         status ===
           "completed"
@@ -1202,7 +1549,10 @@ export async function getCommercialOverview(): Promise<
   if (!target) {
     return {
       objectives,
+
       activeObjective: null,
+
+      activeGap: null,
 
       revenueTarget: 0,
       revenueActual: 0,
@@ -1212,6 +1562,10 @@ export async function getCommercialOverview(): Promise<
       customerActual: 0,
       customerGap: 0,
 
+      costTarget: 0,
+      costActual: 0,
+      costHeadroom: 0,
+
       progress: 0,
 
       status:
@@ -1219,43 +1573,25 @@ export async function getCommercialOverview(): Promise<
     };
   }
 
+  const gap =
+    calculateCommercialGap(
+      target,
+    );
+
   const revenueProgress =
-    target.revenueTarget > 0
-      ? Math.min(
-          100,
-          Math.max(
-            0,
-            Math.round(
-              (target.revenueActual /
-                target.revenueTarget) *
-                100,
-            ),
-          ),
-        )
-      : 0;
+    gap.revenueProgress;
 
   const customerProgress =
-    target.customerTarget > 0
-      ? Math.min(
-          100,
-          Math.max(
-            0,
-            Math.round(
-              (target.customerActual /
-                target.customerTarget) *
-                100,
-            ),
-          ),
-        )
-      : 0;
+    gap.customerProgress;
 
   const progress =
     target.revenueTarget > 0 &&
     target.customerTarget > 0
       ? Math.round(
-          (revenueProgress +
-            customerProgress) /
-            2,
+          (
+            revenueProgress +
+            customerProgress
+          ) / 2,
         )
       : Math.max(
           revenueProgress,
@@ -1273,7 +1609,15 @@ export async function getCommercialOverview(): Promise<
 
   return {
     objectives,
-    activeObjective,
+
+    activeObjective:
+      target.status ===
+        "active"
+        ? target
+        : activeObjective,
+
+    activeGap:
+      gap,
 
     revenueTarget:
       target.revenueTarget,
@@ -1282,11 +1626,7 @@ export async function getCommercialOverview(): Promise<
       target.revenueActual,
 
     revenueGap:
-      Math.max(
-        0,
-        target.revenueTarget -
-          target.revenueActual,
-      ),
+      gap.revenueGap,
 
     customerTarget:
       target.customerTarget,
@@ -1295,11 +1635,16 @@ export async function getCommercialOverview(): Promise<
       target.customerActual,
 
     customerGap:
-      Math.max(
-        0,
-        target.customerTarget -
-          target.customerActual,
-      ),
+      gap.customerGap,
+
+    costTarget:
+      target.costTarget,
+
+    costActual:
+      target.costActual,
+
+    costHeadroom:
+      gap.costHeadroom,
 
     progress,
 
