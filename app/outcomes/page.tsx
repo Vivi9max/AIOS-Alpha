@@ -1040,9 +1040,7 @@ function OutcomeCard({
 }: {
   outcome: Outcome;
   expanded: boolean;
-  copy: ReturnType<
-    typeof outcomesCopy
-  >;
+  copy: OutcomePageCopy;
   locale: Locale;
   onToggle: () => void;
   onStatusChange: (
