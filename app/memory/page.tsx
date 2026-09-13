@@ -9,8 +9,13 @@ import {
 
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
-import type { Locale } from "@/lib/i18n";
 import { MODULE_ICONS } from "@/lib/ui/module-icons";
+
+import {
+  memoryPageCopy,
+  memoryProfileFields,
+  type MemoryProfileField,
+} from "@/lib/i18n/memory";
 
 interface MemoryRecord {
   id: number;
@@ -43,255 +48,9 @@ const EMPTY_PROFILE: MemoryProfile = {
   preference: "",
 };
 
-type ProfileField = keyof MemoryProfile;
-
-interface FieldDefinition {
-  key: ProfileField;
-  label: string;
-  placeholder: string;
-  icon: string;
-}
-
-const PROFILE_FIELDS: Record<
-  Locale,
-  FieldDefinition[]
-> = {
-  en: [
-    {
-      key: "name",
-      label: "Name",
-      icon: "👤",
-      placeholder: "For example: Vivi",
-    },
-    {
-      key: "location",
-      label: "Location",
-      icon: "📍",
-      placeholder: "For example: China or Japan",
-    },
-    {
-      key: "project",
-      label: "Current project",
-      icon: "🚀",
-      placeholder: "For example: AIOS Alpha",
-    },
-    {
-      key: "goal",
-      label: "Long-term goal",
-      icon: "🎯",
-      placeholder: "For example: Launch AIOS Alpha publicly",
-    },
-    {
-      key: "preference",
-      label: "Preferences",
-      icon: "✨",
-      placeholder: "For example: concise, delivery-first responses",
-    },
-  ],
-
-  "zh-CN": [
-    {
-      key: "name",
-      label: "姓名",
-      icon: "👤",
-      placeholder: "例如：Vivi",
-    },
-    {
-      key: "location",
-      label: "所在地",
-      icon: "📍",
-      placeholder: "例如：中国、日本",
-    },
-    {
-      key: "project",
-      label: "当前项目",
-      icon: "🚀",
-      placeholder: "例如：AIOS Alpha",
-    },
-    {
-      key: "goal",
-      label: "长期目标",
-      icon: "🎯",
-      placeholder: "例如：让 AIOS Alpha 正式上线",
-    },
-    {
-      key: "preference",
-      label: "用户偏好",
-      icon: "✨",
-      placeholder: "例如：少废话、直接交付",
-    },
-  ],
-
-  ja: [
-    {
-      key: "name",
-      label: "名前",
-      icon: "👤",
-      placeholder: "例：Vivi",
-    },
-    {
-      key: "location",
-      label: "所在地",
-      icon: "📍",
-      placeholder: "例：中国、日本",
-    },
-    {
-      key: "project",
-      label: "現在のプロジェクト",
-      icon: "🚀",
-      placeholder: "例：AIOS Alpha",
-    },
-    {
-      key: "goal",
-      label: "長期目標",
-      icon: "🎯",
-      placeholder: "例：AIOS Alpha を一般公開",
-    },
-    {
-      key: "preference",
-      label: "ユーザー設定",
-      icon: "✨",
-      placeholder: "例：簡潔で成果物を優先",
-    },
-  ],
-};
-
-const COPY = {
-  en: {
-    title: "Memory",
-    description:
-      "Manage structured long-term information and conversation memory.",
-
-    clear: "Clear conversations",
-    clearConfirm:
-      "Clear all conversation memory? Your manually saved profile will remain.",
-
-    profileTitle: "Memory Profile",
-    profileDescription:
-      "Structured information retained for future conversations.",
-    edit: "Edit profile",
-    save: "Save profile",
-    saving: "Saving…",
-    cancel: "Cancel",
-    reset: "Reset manual profile",
-    resetConfirm:
-      "Reset manually entered profile information? Information automatically extracted from conversations will remain.",
-
-    saved: "Memory Profile saved.",
-    resetDone: "Manual profile information reset.",
-    cleared: "Conversation memory cleared.",
-
-    conversationTitle: "Conversation memory",
-    conversationDescription:
-      "Context retained from previous conversations.",
-    empty: "No conversation memory yet.",
-
-    loading: "Loading memory…",
-    missing: "Not recorded",
-
-    loadError: "Memory could not be loaded.",
-    saveError: "Memory Profile could not be saved.",
-    resetError: "Memory Profile could not be reset.",
-    clearError: "Conversation memory could not be cleared.",
-
-    progress: "Profile completeness",
-    fields: "fields",
-    user: "You",
-    assistant: "AIOS",
-  },
-
-  "zh-CN": {
-    title: "记忆",
-    description: "管理结构化长期资料和对话记忆。",
-
-    clear: "清空对话",
-    clearConfirm:
-      "确定清空全部对话记忆吗？手动保存的 Profile 会继续保留。",
-
-    profileTitle: "Memory Profile",
-    profileDescription:
-      "为后续对话保留的结构化长期资料。",
-    edit: "编辑 Profile",
-    save: "保存资料",
-    saving: "保存中…",
-    cancel: "取消",
-    reset: "重置手动资料",
-    resetConfirm:
-      "确定重置手动填写的资料吗？从对话中自动提取的资料仍会保留。",
-
-    saved: "Memory Profile 已保存。",
-    resetDone: "手动资料已重置。",
-    cleared: "对话记忆已清空。",
-
-    conversationTitle: "对话记忆",
-    conversationDescription:
-      "从历史对话中保留的上下文。",
-    empty: "还没有对话记忆。",
-
-    loading: "正在读取记忆……",
-    missing: "尚未记录",
-
-    loadError: "记忆读取失败。",
-    saveError: "Memory Profile 保存失败。",
-    resetError: "Memory Profile 重置失败。",
-    clearError: "清空对话记忆失败。",
-
-    progress: "Profile 完整度",
-    fields: "项",
-    user: "你",
-    assistant: "AIOS",
-  },
-
-  ja: {
-    title: "メモリー",
-    description:
-      "構造化された長期情報と会話メモリーを管理します。",
-
-    clear: "会話を消去",
-    clearConfirm:
-      "すべての会話メモリーを消去しますか？手動で保存したプロフィールは残ります。",
-
-    profileTitle: "メモリープロフィール",
-    profileDescription:
-      "今後の会話で使用する構造化された長期情報です。",
-    edit: "プロフィールを編集",
-    save: "プロフィールを保存",
-    saving: "保存中…",
-    cancel: "キャンセル",
-    reset: "手動情報をリセット",
-    resetConfirm:
-      "手動で入力したプロフィール情報をリセットしますか？会話から自動抽出された情報は残ります。",
-
-    saved: "プロフィールを保存しました。",
-    resetDone: "手動情報をリセットしました。",
-    cleared: "会話メモリーを消去しました。",
-
-    conversationTitle: "会話メモリー",
-    conversationDescription:
-      "過去の会話から保持されたコンテキスト。",
-    empty: "会話メモリーはまだありません。",
-
-    loading: "メモリーを読み込み中…",
-    missing: "未登録",
-
-    loadError: "メモリーを読み込めませんでした。",
-    saveError:
-      "プロフィールを保存できませんでした。",
-    resetError:
-      "プロフィールをリセットできませんでした。",
-    clearError:
-      "会話メモリーを消去できませんでした。",
-
-    progress: "プロフィール完成度",
-    fields: "項目",
-    user: "あなた",
-    assistant: "AIOS",
-  },
-} as const;
-
 function formatDate(
   timestamp: number,
-  locale: Locale
+  locale: "en" | "zh-CN" | "ja"
 ): string {
   if (!timestamp) {
     return "";
@@ -324,8 +83,9 @@ function normalizeProfile(
 
 export default function MemoryPage() {
   const { locale } = useLanguage();
-  const copy = COPY[locale];
-  const fields = PROFILE_FIELDS[locale];
+
+  const copy = memoryPageCopy[locale];
+  const fields = memoryProfileFields[locale];
 
   const [items, setItems] = useState<
     MemoryRecord[]
@@ -454,7 +214,10 @@ export default function MemoryPage() {
         )
       )
     );
-  }, [completedFields, fields.length]);
+  }, [
+    completedFields,
+    fields.length,
+  ]);
 
   function startEditing() {
     setDraftProfile({
@@ -479,7 +242,7 @@ export default function MemoryPage() {
   }
 
   function updateDraft(
-    field: ProfileField,
+    field: MemoryProfileField,
     value: string
   ) {
     setDraftProfile(
@@ -634,9 +397,9 @@ export default function MemoryPage() {
 
       if (!response.ok) {
         const data =
-          await response.json().catch(
-            () => null
-          );
+          await response
+            .json()
+            .catch(() => null);
 
         throw new Error(
           data?.error ??
@@ -645,7 +408,6 @@ export default function MemoryPage() {
       }
 
       setItems([]);
-
       setNotice(copy.cleared);
     } catch (clearError) {
       setError(
@@ -692,8 +454,7 @@ export default function MemoryPage() {
 
             <p
               style={{
-                margin:
-                  "8px 0 0",
+                margin: "8px 0 0",
                 color: "#6b7280",
                 lineHeight: 1.55,
               }}
@@ -712,8 +473,7 @@ export default function MemoryPage() {
               items.length === 0
             }
             style={{
-              padding:
-                "10px 14px",
+              padding: "10px 14px",
               border:
                 "1px solid #fecaca",
               borderRadius: 10,
@@ -777,8 +537,7 @@ export default function MemoryPage() {
               border:
                 "1px solid #e5e7eb",
               borderRadius: 18,
-              background:
-                "#ffffff",
+              background: "#ffffff",
             }}
           >
             {copy.loading}
@@ -792,15 +551,13 @@ export default function MemoryPage() {
                 border:
                   "1px solid #e5e7eb",
                 borderRadius: 18,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
               }}
             >
               <div
                 style={{
                   display: "flex",
-                  flexWrap:
-                    "wrap",
+                  flexWrap: "wrap",
                   justifyContent:
                     "space-between",
                   alignItems:
@@ -823,8 +580,7 @@ export default function MemoryPage() {
                     style={{
                       margin:
                         "6px 0 0",
-                      color:
-                        "#6b7280",
+                      color: "#6b7280",
                     }}
                   >
                     {
@@ -869,8 +625,7 @@ export default function MemoryPage() {
                       "space-between",
                     marginBottom: 7,
                     fontSize: 13,
-                    color:
-                      "#6b7280",
+                    color: "#6b7280",
                   }}
                 >
                   <span>
@@ -891,8 +646,7 @@ export default function MemoryPage() {
                     borderRadius: 99,
                     background:
                       "#e5e7eb",
-                    overflow:
-                      "hidden",
+                    overflow: "hidden",
                   }}
                 >
                   <div
@@ -901,8 +655,7 @@ export default function MemoryPage() {
                       height: "100%",
                       background:
                         "#111827",
-                      borderRadius:
-                        99,
+                      borderRadius: 99,
                       transition:
                         "width 180ms ease",
                     }}
@@ -931,15 +684,12 @@ export default function MemoryPage() {
 
                     return (
                       <div
-                        key={
-                          field.key
-                        }
+                        key={field.key}
                         style={{
                           padding: 14,
                           border:
                             "1px solid #e5e7eb",
-                          borderRadius:
-                            14,
+                          borderRadius: 14,
                           background:
                             "#fafafa",
                         }}
@@ -951,10 +701,8 @@ export default function MemoryPage() {
                             alignItems:
                               "center",
                             gap: 8,
-                            marginBottom:
-                              8,
-                            fontWeight:
-                              700,
+                            marginBottom: 8,
+                            fontWeight: 700,
                           }}
                         >
                           <span>
@@ -972,9 +720,7 @@ export default function MemoryPage() {
 
                         {editing ? (
                           <input
-                            value={
-                              value
-                            }
+                            value={value}
                             onChange={(
                               event
                             ) =>
@@ -997,8 +743,7 @@ export default function MemoryPage() {
                                 "10px 11px",
                               border:
                                 "1px solid #d1d5db",
-                              borderRadius:
-                                9,
+                              borderRadius: 9,
                               background:
                                 "#ffffff",
                               outline:
@@ -1008,14 +753,12 @@ export default function MemoryPage() {
                         ) : (
                           <div
                             style={{
-                              color:
-                                value
-                                  ? "#111827"
-                                  : "#9ca3af",
+                              color: value
+                                ? "#111827"
+                                : "#9ca3af",
                               lineHeight:
                                 1.5,
-                              minHeight:
-                                24,
+                              minHeight: 24,
                             }}
                           >
                             {value ||
@@ -1031,10 +774,8 @@ export default function MemoryPage() {
               {editing && (
                 <div
                   style={{
-                    display:
-                      "flex",
-                    flexWrap:
-                      "wrap",
+                    display: "flex",
+                    flexWrap: "wrap",
                     gap: 10,
                     marginTop: 18,
                   }}
@@ -1052,17 +793,14 @@ export default function MemoryPage() {
                       borderRadius: 10,
                       background:
                         "#111827",
-                      color:
-                        "#ffffff",
+                      color: "#ffffff",
                       fontWeight: 700,
-                      cursor:
-                        saving
-                          ? "default"
-                          : "pointer",
-                      opacity:
-                        saving
-                          ? 0.65
-                          : 1,
+                      cursor: saving
+                        ? "default"
+                        : "pointer",
+                      opacity: saving
+                        ? 0.65
+                        : 1,
                     }}
                   >
                     {saving
@@ -1104,8 +842,7 @@ export default function MemoryPage() {
                       borderRadius: 10,
                       background:
                         "#fff7f7",
-                      color:
-                        "#b91c1c",
+                      color: "#b91c1c",
                       fontWeight: 700,
                     }}
                   >
@@ -1121,8 +858,7 @@ export default function MemoryPage() {
                 border:
                   "1px solid #e5e7eb",
                 borderRadius: 18,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
               }}
             >
               <div
@@ -1143,10 +879,8 @@ export default function MemoryPage() {
 
                 <p
                   style={{
-                    margin:
-                      "6px 0 0",
-                    color:
-                      "#6b7280",
+                    margin: "6px 0 0",
+                    color: "#6b7280",
                   }}
                 >
                   {
@@ -1155,16 +889,14 @@ export default function MemoryPage() {
                 </p>
               </div>
 
-              {items.length ===
-              0 ? (
+              {items.length === 0 ? (
                 <div
                   style={{
                     padding: 24,
                     border:
                       "1px dashed #d1d5db",
                     borderRadius: 14,
-                    color:
-                      "#6b7280",
+                    color: "#6b7280",
                     textAlign:
                       "center",
                   }}
@@ -1174,24 +906,19 @@ export default function MemoryPage() {
               ) : (
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gap: 12,
                   }}
                 >
                   {items.map(
                     (item) => (
                       <article
-                        key={
-                          item.id
-                        }
+                        key={item.id}
                         style={{
-                          padding:
-                            14,
+                          padding: 14,
                           border:
                             "1px solid #e5e7eb",
-                          borderRadius:
-                            14,
+                          borderRadius: 14,
                           background:
                             item.role ===
                             "user"
@@ -1206,10 +933,8 @@ export default function MemoryPage() {
                             justifyContent:
                               "space-between",
                             gap: 12,
-                            marginBottom:
-                              7,
-                            fontSize:
-                              12,
+                            marginBottom: 7,
+                            fontSize: 12,
                             color:
                               "#6b7280",
                           }}
@@ -1238,15 +963,12 @@ export default function MemoryPage() {
                           style={{
                             whiteSpace:
                               "pre-wrap",
-                            lineHeight:
-                              1.6,
+                            lineHeight: 1.6,
                             color:
                               "#111827",
                           }}
                         >
-                          {
-                            item.content
-                          }
+                          {item.content}
                         </div>
                       </article>
                     )
