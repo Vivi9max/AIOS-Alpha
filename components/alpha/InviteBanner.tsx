@@ -102,7 +102,8 @@ function InviteBannerContent({
 }
 
 export default function InviteBanner() {
-  const { locale } = useLanguage();
+  const { locale } =
+    useLanguage();
 
   const copy =
     inviteBannerCopy[locale];
