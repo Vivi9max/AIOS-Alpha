@@ -43,6 +43,7 @@ import {
 import {
   createCommercialObjective,
   listCommercialObjectives,
+  updateCommercialObjective,
 } from "@/lib/commercial/operating-layer";
 
 import {
@@ -104,60 +105,132 @@ function applyIdentityCookie(
   return response;
 }
 
-function webUnavailableMessage(
+function formatCommercialGap(
+  objective: Awaited<
+    ReturnType<
+      typeof updateCommercialObjective
+    >
+  >,
   locale: Locale,
-): string {
+): string[] {
+  if (!objective) {
+    return [];
+  }
+
+  const now =
+    Date.now();
+
+  const revenueGap =
+    Math.max(
+      0,
+      objective.revenueTarget -
+        objective.revenueActual,
+    );
+
+  const customerGap =
+    Math.max(
+      0,
+      objective.customerTarget -
+        objective.customerActual,
+    );
+
+  const costHeadroom =
+    objective.costTarget -
+    objective.costActual;
+
+  const deadlineAt =
+    objective.deadlineAt;
+
+  const daysRemaining =
+    deadlineAt !==
+      undefined
+      ? Math.max(
+          0,
+          Math.ceil(
+            (deadlineAt -
+              now) /
+              (24 *
+                60 *
+                60 *
+                1000),
+          ),
+        )
+      : null;
+
+  const dailyRevenue =
+    daysRemaining !== null &&
+    daysRemaining > 0
+      ? Math.round(
+          (
+            revenueGap /
+            daysRemaining
+          ) * 100,
+        ) / 100
+      : revenueGap;
+
+  const dailyCustomers =
+    daysRemaining !== null &&
+    daysRemaining > 0
+      ? Math.ceil(
+          customerGap /
+            daysRemaining,
+        )
+      : customerGap;
+
   if (locale === "ja") {
-    return "このリクエストには最新の外部情報が必要ですが、現在 Web Intelligence から信頼できる情報を取得できません。古い情報で推測せず、今回の分析を停止しました。";
+    return [
+      "",
+      "現在のCommercial Gap：",
+      `収益Gap：${revenueGap} ${objective.currency}`,
+      `顧客Gap：${customerGap}`,
+      `コスト余力：${costHeadroom} ${objective.currency}`,
+      ...(daysRemaining !== null
+        ? [
+            `残り：${daysRemaining}日`,
+            `1日あたり必要収益：${dailyRevenue} ${objective.currency}`,
+            `1日あたり必要顧客数：${dailyCustomers}`,
+          ]
+        : []),
+    ];
   }
 
   if (locale === "zh-CN") {
-    return "当前请求需要实时外部信息，但 Web Intelligence 暂时无法取得经过验证的可靠数据。为避免使用过期或单一来源信息猜测，AIOS 已停止本次分析。";
+    return [
+      "",
+      "当前 Commercial Gap：",
+      `收入 Gap：${revenueGap} ${objective.currency}`,
+      `客户 Gap：${customerGap}`,
+      `成本剩余空间：${costHeadroom} ${objective.currency}`,
+      ...(daysRemaining !== null
+        ? [
+            `剩余时间：${daysRemaining} 天`,
+            `每日所需收入：${dailyRevenue} ${objective.currency}`,
+            `每日所需新增客户：${dailyCustomers}`,
+          ]
+        : []),
+    ];
   }
 
-  return "This request requires live external information, but Web Intelligence could not retrieve sufficiently verified evidence. AIOS stopped instead of guessing with stale or weakly supported information.";
+  return [
+    "",
+    "Current Commercial Gap:",
+    `Revenue gap: ${revenueGap} ${objective.currency}`,
+    `Customer gap: ${customerGap}`,
+    `Cost headroom: ${costHeadroom} ${objective.currency}`,
+    ...(daysRemaining !== null
+      ? [
+          `Days remaining: ${daysRemaining}`,
+          `Required daily revenue: ${dailyRevenue} ${objective.currency}`,
+          `Required daily customers: ${dailyCustomers}`,
+        ]
+      : []),
+  ];
 }
 
 async function executeChatPrompt(
   prompt: string,
   locale: Locale,
 ) {
-  /*
-   * C143.17
-   *
-   * Explicit commercial-objective requests entered
-   * through Chat are connected to the existing
-   * Commercial Operating Layer.
-   *
-   * This creates:
-   *
-   * Chat
-   *   ↓
-   * Commercial Objective
-   *   ↓
-   * Outcome
-   *   ↓
-   * Milestone
-   *   ↓
-   * Task
-   *   ↓
-   * Gap Engine
-   *   ↓
-   * Next Action
-   *
-   * IMPORTANT:
-   *
-   * Creating a commercial objective does NOT execute
-   * Runtime automatically.
-   *
-   * Runtime execution remains an explicit next step.
-   *
-   * Runtime success is never treated as commercial
-   * success. Revenue, customers, and costs must only
-   * be updated through the verified commercial result
-   * path.
-   */
-
   const commercialIntent =
     detectCommercialChatIntent(
       prompt,
@@ -170,11 +243,6 @@ async function executeChatPrompt(
     const existingObjectives =
       await listCommercialObjectives();
 
-    /*
-     * Reuse an existing active/planned objective
-     * with the same title instead of creating duplicate
-     * commercial operating loops from repeated Chat input.
-     */
     const existing =
       existingObjectives.find(
         (item) =>
@@ -186,114 +254,266 @@ async function executeChatPrompt(
             "completed",
       );
 
-    const objective =
-      existing ??
-      await createCommercialObjective({
-        title:
-          commercialIntent.title,
+    let objective;
 
-        description:
-          commercialIntent.description,
+    if (existing) {
+      /*
+       * C143.17.2
+       *
+       * Do not blindly reuse an old objective.
+       *
+       * Explicit values from the current request
+       * reconcile the existing objective.
+       *
+       * This fixes:
+       *
+       * old objective = CNY
+       * new request = USD
+       *
+       * without creating duplicate objectives.
+       */
 
-        status:
-          "active",
+      const updates: Parameters<
+        typeof updateCommercialObjective
+      >[1] = {};
 
-        stage:
-          commercialIntent.stage,
+      if (
+        commercialIntent.currency !==
+          "UNSPECIFIED" &&
+        commercialIntent.currency !==
+          existing.currency
+      ) {
+        updates.currency =
+          commercialIntent.currency;
+      }
 
-        currency:
-          commercialIntent.currency,
+      if (
+        commercialIntent.revenueTarget >
+          0 &&
+        commercialIntent.revenueTarget !==
+          existing.revenueTarget
+      ) {
+        updates.revenueTarget =
+          commercialIntent.revenueTarget;
+      }
 
-        revenueTarget:
-          commercialIntent.revenueTarget,
+      if (
+        commercialIntent.costTarget >
+          0 &&
+        commercialIntent.costTarget !==
+          existing.costTarget
+      ) {
+        updates.costTarget =
+          commercialIntent.costTarget;
+      }
 
-        costTarget:
-          commercialIntent.costTarget,
+      if (
+        commercialIntent.customerTarget >
+          0 &&
+        commercialIntent.customerTarget !==
+          existing.customerTarget
+      ) {
+        updates.customerTarget =
+          commercialIntent.customerTarget;
+      }
 
-        customerTarget:
-          commercialIntent.customerTarget,
+      if (
+        commercialIntent.deadlineDays !==
+          null
+      ) {
+        updates.deadlineDays =
+          commercialIntent.deadlineDays;
+      }
 
-        successCriteria:
-          commercialIntent.successCriteria,
+      if (
+        commercialIntent.description !==
+          existing.description
+      ) {
+        updates.description =
+          commercialIntent.description;
+      }
 
-        outcomeId:
-          null,
+      if (
+        commercialIntent.successCriteria !==
+          existing.successCriteria
+      ) {
+        updates.successCriteria =
+          commercialIntent.successCriteria;
+      }
 
-        taskId:
-          null,
-      });
+      if (
+        commercialIntent.stage !==
+          existing.stage
+      ) {
+        updates.stage =
+          commercialIntent.stage;
+      }
 
-    /*
-     * Establish the persistent Objective →
-     * Outcome → Milestone → Task relationship.
-     *
-     * Existing linked chains are reused by the
-     * operating-loop implementation.
-     */
+      objective =
+        Object.keys(updates)
+          .length > 0
+          ? await updateCommercialObjective(
+              existing.id,
+              updates,
+            )
+          : existing;
+    } else {
+      objective =
+        await createCommercialObjective({
+          title:
+            commercialIntent.title,
+
+          description:
+            commercialIntent.description,
+
+          status:
+            "active",
+
+          stage:
+            commercialIntent.stage,
+
+          currency:
+            commercialIntent.currency,
+
+          revenueTarget:
+            commercialIntent.revenueTarget,
+
+          costTarget:
+            commercialIntent.costTarget,
+
+          customerTarget:
+            commercialIntent.customerTarget,
+
+          deadlineDays:
+            commercialIntent.deadlineDays,
+
+          successCriteria:
+            commercialIntent.successCriteria,
+
+          outcomeId:
+            null,
+
+          taskId:
+            null,
+        });
+    }
+
+    if (!objective) {
+      throw new Error(
+        "COMMERCIAL_OBJECTIVE_RECONCILIATION_FAILED",
+      );
+    }
+
     const loop =
       await ensureCommercialOperatingLoop(
         objective.id,
       );
 
-    /*
-     * Calculate the current measurable gap and
-     * establish/reuse the next commercial action.
-     */
-const nextAction =
-  await ensureCommercialNextAction(
-    objective.id,
-    locale,
-  );
+    const nextAction =
+      await ensureCommercialNextAction(
+        objective.id,
+        locale,
+      );
 
     const currency =
       objective.currency;
+
+    const deadlineAt =
+      objective.deadlineAt;
+
+    const daysRemaining =
+      deadlineAt !==
+        undefined
+        ? Math.max(
+            0,
+            Math.ceil(
+              (
+                deadlineAt -
+                Date.now()
+              ) /
+                (
+                  24 *
+                  60 *
+                  60 *
+                  1000
+                ),
+            ),
+          )
+        : null;
 
     let content: string;
 
     if (locale === "ja") {
       content = [
-        "商業目標を作成しました。",
+        "商業目標を作成・更新しました。",
         "",
         `目標：${objective.title}`,
         `収益目標：${objective.revenueTarget} ${currency}`,
         `顧客目標：${objective.customerTarget}`,
-        `コスト目標：${objective.costTarget} ${currency}`,
+        `コスト上限：${objective.costTarget} ${currency}`,
+        ...(daysRemaining !== null
+          ? [
+              `期限：${daysRemaining}日以内`,
+            ]
+          : []),
         "",
         `次のアクション：${nextAction.action}`,
         `理由：${nextAction.gap.reason}`,
+        ...formatCommercialGap(
+          objective,
+          locale,
+        ),
         "",
-        "Objective → Outcome → Milestone → Task → Next Action の運用ループを準備しました。",
-        "Runtime は実行結果を推測せず、明示的な実行指示を待ちます。",
+        "Objective → Outcome → Milestone → Task → Gap → Next Action の運用ループを準備しました。",
+        "Runtime は検証済みの商業結果のみを Actual に反映します。",
       ].join("\n");
     } else if (locale === "zh-CN") {
       content = [
-        "商业目标已建立。",
+        "商业目标已建立/更新。",
         "",
         `目标：${objective.title}`,
         `收入目标：${objective.revenueTarget} ${currency}`,
         `客户目标：${objective.customerTarget}`,
-        `成本目标：${objective.costTarget} ${currency}`,
+        `成本上限：${objective.costTarget} ${currency}`,
+        ...(daysRemaining !== null
+          ? [
+              `期限：${daysRemaining} 天`,
+            ]
+          : []),
         "",
         `下一行动：${nextAction.action}`,
         `判断原因：${nextAction.gap.reason}`,
+        ...formatCommercialGap(
+          objective,
+          locale,
+        ),
         "",
-        "Objective → Outcome → Milestone → Task → Next Action 已建立。",
-        "Runtime 不会虚构商业结果，等待你明确要求执行。",
+        "Objective → Outcome → Milestone → Task → Gap → Next Action 已建立。",
+        "Runtime 只会将经过验证的商业结果写入 Actual，不会虚构收入、客户或成本。",
       ].join("\n");
     } else {
       content = [
-        "Commercial objective created.",
+        "Commercial objective created/updated.",
         "",
         `Objective: ${objective.title}`,
         `Revenue target: ${objective.revenueTarget} ${currency}`,
         `Customer target: ${objective.customerTarget}`,
-        `Cost target: ${objective.costTarget} ${currency}`,
+        `Cost cap: ${objective.costTarget} ${currency}`,
+        ...(daysRemaining !== null
+          ? [
+              `Deadline: ${daysRemaining} days`,
+            ]
+          : []),
         "",
         `Next action: ${nextAction.action}`,
         `Reason: ${nextAction.gap.reason}`,
+        ...formatCommercialGap(
+          objective,
+          locale,
+        ),
         "",
-        "Objective → Outcome → Milestone → Task → Next Action is ready.",
-        "Runtime will not fabricate commercial results and is waiting for explicit execution.",
+        "Objective → Outcome → Milestone → Task → Gap → Next Action is ready.",
+        "Runtime only records verified commercial results as Actuals and never fabricates revenue, customers, or costs.",
       ].join("\n");
     }
 
@@ -303,7 +523,7 @@ const nextAction =
       content,
 
       code:
-        "C143_17_COMMERCIAL_OBJECTIVE_CREATED",
+        "C143_17_2_COMMERCIAL_OBJECTIVE_RECONCILED",
 
       commercial: {
         detected: true,
@@ -323,6 +543,8 @@ const nextAction =
           "chat",
           "commercial-intent",
           "commercial-objective",
+          "deadline",
+          "commercial-gap",
           "outcome",
           "milestone",
           "task",
@@ -332,16 +554,6 @@ const nextAction =
       },
     };
   }
-
-  /*
-   * C141 Founder GitHub READ
-   *
-   * Explicit GitHub READ requests remain isolated
-   * from the normal AIOS Web Intelligence path.
-   *
-   * GitHub is treated as an authoritative internal
-   * development source for Founder operations.
-   */
 
   const detection =
     detectFounderRuntimeGitHubTask(
@@ -469,17 +681,6 @@ const nextAction =
     };
   }
 
-  /*
-   * C143 Web Intelligence
-   *
-   * The Planner/Runtime decides whether the request
-   * requires current external information.
-   *
-   * Web data is retrieved BEFORE the Runtime executes.
-   * It is passed as Runtime metadata, not appended
-   * to the user's prompt.
-   */
-
   const needsWeb =
     requiresWebIntelligence(
       prompt,
@@ -494,77 +695,43 @@ const nextAction =
       );
 
     /*
-     * C143.4 Verification Gate
+     * C143.17.2
      *
-     * `success` means usable evidence exists.
-     * `verified` means the evidence passes the
-     * minimum multi-source verification threshold.
+     * Web verification is now evidence quality,
+     * not a global Chat kill-switch.
      *
-     * When live information is required,
-     * Runtime must NOT continue unless the
-     * external evidence is verified.
+     * We NEVER fabricate live facts.
+     *
+     * But an unavailable or unverified Web layer
+     * must not prevent the normal Runtime from
+     * performing non-live reasoning.
+     *
+     * Runtime receives the actual Web context,
+     * including success/verified/source metadata.
+     * executor.ts already exposes this metadata.
      */
 
     if (
       !webContext.success ||
       !webContext.verified
     ) {
-      return {
-        success: false,
-
-        content:
-          webUnavailableMessage(
-            locale,
-          ),
-
-        error:
-          webContext.error ??
-          (
-            webContext.success
-              ? "Web Intelligence returned evidence but it did not pass multi-source verification."
-              : "WEB_INTELLIGENCE_FAILED"
-          ),
-
-        code:
-          webContext.success
-            ? "WEB_INTELLIGENCE_UNVERIFIED"
-            : "WEB_INTELLIGENCE_FAILED",
-
-        execution: {
-          provider:
-            "web-intelligence",
-
-          capabilityTrace: [
-            "chat",
-            "web-intelligence",
-            "web-verification-gate",
-          ],
-
-          webIntelligence: {
-            required: true,
-            success:
-              webContext.success,
-            verified:
-              webContext.verified,
-            sourceCount:
-              webContext.sourceCount,
-            sourceHosts:
-              webContext.sourceHosts,
-          },
+      console.warn(
+        "[AIOS Web Intelligence] Live evidence unavailable or unverified; continuing with explicit evidence boundary.",
+        {
+          success:
+            webContext.success,
+          verified:
+            webContext.verified,
+          sourceCount:
+            webContext.sourceCount,
+          sourceHosts:
+            webContext.sourceHosts,
+          error:
+            webContext.error,
         },
-      };
+      );
     }
   }
-
-  /*
-   * Existing normal AIOS Runtime path.
-   *
-   * Locale remains trusted transport metadata.
-   * It is never appended to the user's prompt.
-   *
-   * Verified web evidence is passed separately
-   * into Runtime.
-   */
 
   return executeRuntime({
     prompt,
@@ -608,6 +775,8 @@ export async function GET(
           founderGitHubRead: true,
           webIntelligence: true,
           commercialOperatingLayer: true,
+          commercialGap: true,
+          commercialDeadline: true,
         },
         identity: {
           userId:
@@ -772,10 +941,10 @@ export async function POST(
             result.success
               ? 200
               : resultCode ===
-                  "WEB_INTELLIGENCE_FAILED" ||
-                resultCode ===
-                  "WEB_INTELLIGENCE_UNVERIFIED"
-                ? 503
+                    "GITHUB_READ_ROUTE_NOT_CONFIRMED" ||
+                  resultCode ===
+                    "PLANNER_GITHUB_READ_FAILED"
+                ? 500
                 : 500,
           headers: {
             "Cache-Control":
