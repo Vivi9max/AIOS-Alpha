@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "verify": "node scripts/verify.mjs",
+    "verify:locale": "node scripts/verify-locale.mjs"
     "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
