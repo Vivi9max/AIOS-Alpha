@@ -88,6 +88,14 @@ export interface RuntimeResponse {
     sourceHosts: string[];
   };
 
+  liveDecision?: {
+    success: boolean;
+    ready: boolean;
+    priority?: string;
+    conclusion?: string;
+    nextStep?: string;
+  };
+
   timestamp: number;
 
   latencyMs: number;
@@ -295,6 +303,8 @@ export async function executeRuntime(
       capabilityTrace,
       webIntelligence:
         result.webIntelligence,
+      liveDecision:
+        result.liveDecision,
       timestamp,
       latencyMs,
       locale,
@@ -407,6 +417,7 @@ export async function executeRuntime(
                   .sourceHosts,
             }
           : undefined,
+      liveDecision: undefined,
       timestamp,
       latencyMs,
       locale,
