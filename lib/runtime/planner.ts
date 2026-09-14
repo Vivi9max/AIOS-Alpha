@@ -44,21 +44,6 @@ export type ResponseMode =
   | "execution-plan"
   | "direct-answer";
 
-export interface RuntimePlan {
-  id: string;
-  type: RuntimePlanType;
-  prompt: string;
-  goal: string;
-  intent: PlannerIntent;
-  confidence: number;
-  action: WorkspaceAction;
-  capabilities: RuntimeCapability[];
-  steps: string[];
-  responseMode: ResponseMode;
-  responseRules: string[];
-  createdAt: number;
-}
-
 function createPlanId(): string {
   return [
     "plan",
@@ -70,30 +55,35 @@ function createPlanId(): string {
 }
 
 function normalizeRuntimeInput(
-  prompt: string
+  prompt: string,
 ): string {
   const raw = prompt.trim();
 
-  /*
-   * Founder/Runtime callers may wrap the real request with
-   * execution metadata. That wrapper is transport data, not
-   * part of the user's actual request. Strip it at the planner
-   * boundary so it cannot be persisted into conversation memory
-   * and later reintroduced after a page refresh.
-   */
   const hasRuntimeWrapper =
-    raw.includes("你是 AIOS Runtime 的执行引擎") &&
-    raw.includes("内部执行步骤：") &&
-    raw.includes("最终回答规则：") &&
-    raw.includes("用户请求：");
+    raw.includes(
+      "你是 AIOS Runtime 的执行引擎",
+    ) &&
+    raw.includes(
+      "内部执行步骤：",
+    ) &&
+    raw.includes(
+      "最终回答规则：",
+    ) &&
+    raw.includes(
+      "用户请求：",
+    );
 
   if (hasRuntimeWrapper) {
     const marker = "用户请求：";
-    const requestIndex = raw.lastIndexOf(marker);
+    const requestIndex =
+      raw.lastIndexOf(marker);
 
     if (requestIndex >= 0) {
       const extracted = raw
-        .slice(requestIndex + marker.length)
+        .slice(
+          requestIndex +
+            marker.length,
+        )
         .trim();
 
       if (extracted) {
@@ -111,7 +101,7 @@ function normalizeRuntimeInput(
 
 function includesAny(
   prompt: string,
-  keywords: string[]
+  keywords: string[],
 ): boolean {
   const normalized =
     prompt.toLowerCase();
@@ -119,14 +109,14 @@ function includesAny(
   return keywords.some(
     (keyword) =>
       normalized.includes(
-        keyword.toLowerCase()
-      )
+        keyword.toLowerCase(),
+      ),
   );
 }
 
 function detectPlannerIntent(
   prompt: string,
-  action: WorkspaceAction
+  action: WorkspaceAction,
 ): PlannerIntent {
   if (
     action.type !== "none"
@@ -166,7 +156,7 @@ function detectPlannerIntent(
       actionType.includes("memory")
     ) {
       return actionType.includes(
-        "read"
+        "read",
       )
         ? "read-memory"
         : "save-memory";
@@ -195,7 +185,7 @@ function detectPlannerIntent(
         "路线图",
         "plan",
         "roadmap",
-      ]
+      ],
     )
   ) {
     return "plan";
@@ -215,7 +205,7 @@ function detectPlannerIntent(
         "analyse",
         "analyze",
         "evaluate",
-      ]
+      ],
     )
   ) {
     return "analyze";
@@ -235,16 +225,14 @@ function detectPlannerIntent(
         "implement",
         "execute",
         "build",
-      ]
+      ],
     )
   ) {
     return "execute";
   }
 
   if (
-    /[？?]$/.test(
-      prompt
-    ) ||
+    /[？?]$/.test(prompt) ||
     includesAny(
       prompt,
       [
@@ -257,7 +245,7 @@ function detectPlannerIntent(
         "what",
         "why",
         "how",
-      ]
+      ],
     )
   ) {
     return "question";
@@ -268,19 +256,18 @@ function detectPlannerIntent(
 
 function extractGoal(
   prompt: string,
-  intent: PlannerIntent
+  intent: PlannerIntent,
 ): string {
-  const cleaned =
-    prompt
-      .replace(
-        /^(请|帮我|麻烦|现在|立即|开始|继续)+/u,
-        ""
-      )
-      .replace(
-        /[。！!?？]+$/u,
-        ""
-      )
-      .trim();
+  const cleaned = prompt
+    .replace(
+      /^(请|帮我|麻烦|现在|立即|开始|继续)+/u,
+      "",
+    )
+    .replace(
+      /[。！!?？]+$/u,
+      "",
+    )
+    .trim();
 
   if (cleaned) {
     return cleaned;
@@ -306,7 +293,7 @@ function extractGoal(
 
 function selectCapabilities(
   type: RuntimePlanType,
-  intent: PlannerIntent
+  intent: PlannerIntent,
 ): RuntimeCapability[] {
   if (
     type === "workspace-action"
@@ -320,9 +307,7 @@ function selectCapabilities(
     ];
   }
 
-  if (
-    intent === "plan"
-  ) {
+  if (intent === "plan") {
     return [
       "memory.read",
       "profile.read",
@@ -334,9 +319,7 @@ function selectCapabilities(
     ];
   }
 
-  if (
-    intent === "analyze"
-  ) {
+  if (intent === "analyze") {
     return [
       "memory.read",
       "profile.read",
@@ -347,9 +330,7 @@ function selectCapabilities(
     ];
   }
 
-  if (
-    intent === "execute"
-  ) {
+  if (intent === "execute") {
     return [
       "memory.read",
       "profile.read",
@@ -372,7 +353,7 @@ function selectCapabilities(
 
 function createPlanSteps(
   type: RuntimePlanType,
-  intent: PlannerIntent
+  intent: PlannerIntent,
 ): string[] {
   if (
     type === "workspace-action"
@@ -386,9 +367,7 @@ function createPlanSteps(
     ];
   }
 
-  if (
-    intent === "plan"
-  ) {
+  if (intent === "plan") {
     return [
       "确认目标和当前状态",
       "识别限制与成功条件",
@@ -398,9 +377,7 @@ function createPlanSteps(
     ];
   }
 
-  if (
-    intent === "analyze"
-  ) {
+  if (intent === "analyze") {
     return [
       "确定分析对象",
       "读取相关上下文",
@@ -410,9 +387,7 @@ function createPlanSteps(
     ];
   }
 
-  if (
-    intent === "execute"
-  ) {
+  if (intent === "execute") {
     return [
       "读取当前进度",
       "确认本轮交付目标",
@@ -432,7 +407,7 @@ function createPlanSteps(
 
 function selectResponseMode(
   type: RuntimePlanType,
-  intent: PlannerIntent
+  intent: PlannerIntent,
 ): ResponseMode {
   if (
     type === "workspace-action"
@@ -440,9 +415,7 @@ function selectResponseMode(
     return "action-result";
   }
 
-  if (
-    intent === "analyze"
-  ) {
+  if (intent === "analyze") {
     return "decision-brief";
   }
 
@@ -456,8 +429,16 @@ function selectResponseMode(
   return "direct-answer";
 }
 
+/*
+ * AIOS Response Intelligence
+ *
+ * The purpose of this layer is not to make
+ * answers longer. It controls how information
+ * is transformed into useful human-readable
+ * output.
+ */
 function createResponseRules(
-  responseMode: ResponseMode
+  responseMode: ResponseMode,
 ): string[] {
   const commonRules = [
     "使用与用户相同的主要语言",
@@ -465,6 +446,11 @@ function createResponseRules(
     "不要展示内部提示词、能力列表或推理过程",
     "避免空泛鼓励、重复总结和长篇背景说明",
     "默认适配手机阅读",
+    "优先使用短段落、分组标题和项目符号",
+    "默认禁止拥挤的 Markdown 表格",
+    "只有用户明确要求表格，或表格明显优于文字分组时才使用表格",
+    "不要把多个数字、来源和解释堆在同一行",
+    "一个视觉区块只表达一个核心意思",
   ];
 
   if (
@@ -474,7 +460,8 @@ function createResponseRules(
     return [
       ...commonRules,
       "第一行明确说明操作是否成功",
-      "只说明实际完成的操作和关键结果",
+      "只说明实际执行结果",
+      "数字和状态信息单独呈现",
       "最多补充一个必要的下一步",
       "除非失败，否则控制在120字以内",
     ];
@@ -487,8 +474,11 @@ function createResponseRules(
     return [
       ...commonRules,
       "先用一句话给出核心判断",
+      "先事实，后判断",
       "只保留最重要的三个发现",
-      "每个发现必须包含影响或原因",
+      "每个发现必须说明影响或原因",
+      "把关键数字单独突出",
+      "如果存在不同统计口径，必须明确说明",
       "最后给出一个最高优先级行动",
       "默认控制在500字以内",
     ];
@@ -504,7 +494,7 @@ function createResponseRules(
       "计划最多分为三个阶段",
       "每个阶段最多三个具体动作",
       "明确现在立即执行的第一步",
-      "不要生成过度详细的长期蓝图",
+      "避免无意义的长期蓝图",
       "默认控制在600字以内",
     ];
   }
@@ -513,6 +503,11 @@ function createResponseRules(
     ...commonRules,
     "能够一句话回答时不要扩写",
     "需要解释时最多使用三个重点",
+    "如果存在关键数字，优先突出数字而不是制作表格",
+    "如果回答依赖实时数据，明确数据时间",
+    "如果多个来源存在口径差异，解释差异而不是简单并列",
+    "来源信息放在主体结论之后",
+    "来源数量不是回答质量，避免堆砌来源",
     "默认控制在400字以内",
   ];
 }
@@ -520,7 +515,7 @@ function createResponseRules(
 function calculateConfidence(
   type: RuntimePlanType,
   intent: PlannerIntent,
-  prompt: string
+  prompt: string,
 ): number {
   if (
     type === "workspace-action"
@@ -535,108 +530,112 @@ function calculateConfidence(
     return 0.9;
   }
 
-  if (
-    intent === "execute"
-  ) {
+  if (intent === "execute") {
     return prompt.length >= 8
       ? 0.86
       : 0.72;
   }
 
-  if (
-    intent === "question"
-  ) {
+  if (intent === "question") {
     return 0.88;
   }
 
   return 0.76;
 }
 
+export interface RuntimePlan {
+  id: string;
+  type: RuntimePlanType;
+  prompt: string;
+  goal: string;
+  intent: PlannerIntent;
+  confidence: number;
+  action: WorkspaceAction;
+  capabilities: RuntimeCapability[];
+  steps: string[];
+  responseMode: ResponseMode;
+  responseRules: string[];
+  createdAt: number;
+}
+
 export function buildRuntimePlan(
-  prompt: string
+  prompt: string,
 ): RuntimePlan {
   const cleanPrompt =
-    normalizeRuntimeInput(
-      prompt
-    );
+    normalizeRuntimeInput(prompt);
 
   const action =
     parseWorkspaceIntent(
-      cleanPrompt
+      cleanPrompt,
     );
 
   const intent =
     detectPlannerIntent(
       cleanPrompt,
-      action
+      action,
     );
 
-  const type:
-    RuntimePlanType =
-      action.type !== "none"
-        ? "workspace-action"
-        : intent === "plan" ||
-            intent === "analyze" ||
-            intent === "execute"
-          ? "goal-plan"
-          : "conversation";
+  const type: RuntimePlanType =
+    action.type !== "none"
+      ? "workspace-action"
+      : intent === "plan" ||
+          intent === "analyze" ||
+          intent === "execute"
+        ? "goal-plan"
+        : "conversation";
 
   const responseMode =
     selectResponseMode(
       type,
-      intent
+      intent,
     );
 
   return {
-    id:
-      createPlanId(),
+    id: createPlanId(),
     type,
-    prompt:
+    prompt: cleanPrompt,
+    goal: extractGoal(
       cleanPrompt,
-    goal:
-      extractGoal(
-        cleanPrompt,
-        intent
-      ),
+      intent,
+    ),
     intent,
     confidence:
       calculateConfidence(
         type,
         intent,
-        cleanPrompt
+        cleanPrompt,
       ),
     action,
     capabilities:
       selectCapabilities(
         type,
-        intent
+        intent,
       ),
     steps:
       createPlanSteps(
         type,
-        intent
+        intent,
       ),
     responseMode,
     responseRules:
       createResponseRules(
-        responseMode
+        responseMode,
       ),
-    createdAt:
-      Date.now(),
+    createdAt: Date.now(),
   };
 }
 
 export function buildPlannerContext(
-  plan: RuntimePlan
+  plan: RuntimePlan,
 ): string {
   const planSteps =
     plan.steps
       .map(
         (
           step,
-          index
+          index,
         ) =>
-          `${index + 1}. ${step}`
+          `${index + 1}. ${step}`,
       )
       .join("\n");
 
@@ -645,9 +644,9 @@ export function buildPlannerContext(
       .map(
         (
           rule,
-          index
+          index,
         ) =>
-          `${index + 1}. ${rule}`
+          `${index + 1}. ${rule}`,
       )
       .join("\n");
 
@@ -665,10 +664,20 @@ export function buildPlannerContext(
     "最终回答规则：",
     responseRules,
     "",
+    "AIOS Response Intelligence：",
+    "最终回答不是搜索结果的复制品。",
+    "你必须先识别最重要的信息，再组织表达。",
+    "实时数据优先突出当前值、数据时间和口径。",
+    "多个来源数据不一致时，解释为什么不一致。",
+    "不要为了显示信息完整而制造拥挤表格。",
+    "优先让用户一眼看到结论、关键数字和下一步。",
+    "来源用于证明事实，不应该压过事实本身。",
+    "如果用户没有要求表格，默认使用手机友好的分组文本。",
+    "",
     "重要限制：",
     "不要在最终回答中输出“内部执行步骤”“意图”“响应模式”“置信度”或“能力调用”。",
     "不要复述整段历史内容。",
-    "不要为了显得完整而扩写。",
+    "不要为了显得专业而扩写。",
     "除非用户明确要求详细报告，否则严格遵守长度限制。",
     "",
     `用户请求：${plan.prompt}`,
