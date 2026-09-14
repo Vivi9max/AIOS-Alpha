@@ -62,6 +62,10 @@ import {
   detectCommercialChatIntent,
 } from "@/lib/commercial/chat-intent";
 
+import {
+  executeChatCommercialBridge,
+} from "@/lib/runtime/chat-commercial-bridge";
+
 export const dynamic =
   "force-dynamic";
 
@@ -386,6 +390,14 @@ async function executeChatPrompt(
         locale,
       );
 
+    const liveCommercial =
+      await executeChatCommercialBridge({
+        prompt,
+        objectiveId:
+          objective.id,
+        locale,
+      });
+
     const currency =
       objective.currency;
 
@@ -432,6 +444,12 @@ async function executeChatPrompt(
         "",
         "Objective → Outcome → Milestone → Task → Gap → Next Action の運用ループを準備しました。",
         "Runtime は検証済みの商業結果のみを Actual に反映します。",
+        ...(liveCommercial.content
+          ? [
+              "",
+              liveCommercial.content,
+            ]
+          : []),
       ].join("\n");
     } else if (
       locale === "zh-CN"
@@ -458,6 +476,12 @@ async function executeChatPrompt(
         "",
         "Objective → Outcome → Milestone → Task → Gap → Next Action 已建立。",
         "Runtime 只会将经过验证的商业结果写入 Actual，不会虚构收入、客户或成本。",
+        ...(liveCommercial.content
+          ? [
+              "",
+              liveCommercial.content,
+            ]
+          : []),
       ].join("\n");
     } else {
       content = [
@@ -482,7 +506,65 @@ async function executeChatPrompt(
         "",
         "Objective → Outcome → Milestone → Task → Gap → Next Action is ready.",
         "Runtime only records verified commercial results as Actuals and never fabricates revenue, customers, or costs.",
+        ...(liveCommercial.content
+          ? [
+              "",
+              liveCommercial.content,
+            ]
+          : []),
       ].join("\n");
+    }
+
+    if (
+      liveCommercial.shouldRunLiveOpportunity
+    ) {
+      return {
+        success:
+          liveCommercial.success,
+        content,
+        code:
+          liveCommercial.success
+            ? "C143_32_3_CHAT_LIVE_COMMERCIAL_PASS"
+            : "C143_32_3_CHAT_LIVE_COMMERCIAL_BLOCKED",
+        commercial: {
+          detected: true,
+          objective,
+          loop,
+          nextAction,
+          liveOpportunity:
+            liveCommercial.opportunity,
+          liveBridge: {
+            detected:
+              liveCommercial.detected,
+            status:
+              liveCommercial.status,
+            shouldRun:
+              liveCommercial.shouldRunLiveOpportunity,
+          },
+        },
+        execution: {
+          provider:
+            "chat-commercial-live-runtime",
+          capabilityTrace: [
+            "chat",
+            "commercial-intent",
+            "commercial-objective",
+            "deadline",
+            "commercial-gap",
+            "outcome",
+            "milestone",
+            "task",
+            "gap-engine",
+            "next-action",
+            "live-commercial-request",
+            "live-commercial-opportunity",
+            "web-intelligence",
+            "verified-evidence",
+            "live-decision",
+            "commercial-runtime",
+          ],
+        },
+      };
     }
 
     return {
@@ -495,6 +577,16 @@ async function executeChatPrompt(
         objective,
         loop,
         nextAction,
+        liveOpportunity:
+          null,
+        liveBridge: {
+          detected:
+            liveCommercial.detected,
+          status:
+            liveCommercial.status,
+          shouldRun:
+            liveCommercial.shouldRunLiveOpportunity,
+        },
       },
       execution: {
         provider:
@@ -510,6 +602,7 @@ async function executeChatPrompt(
           "task",
           "gap-engine",
           "next-action",
+          "live-commercial-opportunity-not-requested",
         ],
       },
     };
@@ -721,6 +814,7 @@ export async function GET(
           commercialOperatingLayer: true,
           commercialGap: true,
           commercialDeadline: true,
+          liveCommercialOpportunity: true,
         },
         identity: {
           userId:
