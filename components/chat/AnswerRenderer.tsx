@@ -69,22 +69,23 @@ if (isTableSeparator(line)) {
   continue;
 }
 if (isTableLine(line)) {
-  if (!tableMode) {
-    const cells = line
-      .split("|")
-      .map((item) => cleanInline(item))
-      .filter(Boolean);
-    if (cells.length > 0) {
-      output.push(
-        cells
-          .map((cell) => `• ${cell}`)
-          .join("\n"),
-      );
-    }
+  const cells = line
+    .split("|")
+    .map((item) => cleanInline(item))
+    .filter(Boolean);
+  if (cells.length > 0) {
+    output.push(
+      cells
+        .map((cell) => `• ${cell}`)
+        .join("\n"),
+    );
   }
+  tableMode = true;
   continue;
 }
-tableMode = false;
+if (tableMode && !line) {
+  tableMode = false;
+}
 output.push(rawLine);
 
 }
@@ -94,7 +95,6 @@ return output.join(”\n”);
 
 function parseBlocks(content: string): Block[] {
 const normalized = normalizeContent(content);
-
 const lines = normalized.split(”\n”);
 const blocks: Block[] = [];
 
@@ -169,7 +169,9 @@ flushParagraph();
 return blocks;
 }
 
-function renderInline(text: string): React.ReactNode {
+function renderInline(
+text: string,
+): React.ReactNode {
 const parts = text.split(
 /(**[^*]+**|[^_]+|[^]+`)/g,
 );
@@ -293,8 +295,7 @@ margin: “4px 0”,
           style={{
             marginTop:
               index === 0 ? 0 : 8,
-            padding:
-              "9px 11px",
+            padding: "9px 11px",
             borderLeft:
               "3px solid #111827",
             border:
@@ -308,9 +309,7 @@ margin: “4px 0”,
               "-0.01em",
           }}
         >
-          {renderInline(
-            block.text,
-          )}
+          {renderInline(block.text)}
         </div>
       );
     }
@@ -323,8 +322,7 @@ margin: “4px 0”,
             alignItems:
               "flex-start",
             gap: 9,
-            padding:
-              "3px 2px",
+            padding: "3px 2px",
             fontSize: 14,
             lineHeight: 1.65,
           }}
@@ -336,16 +334,12 @@ margin: “4px 0”,
               height: 6,
               flexShrink: 0,
               marginTop: 9,
-              borderRadius:
-                "50%",
-              background:
-                "#64748b",
+              borderRadius: "50%",
+              background: "#64748b",
             }}
           />
           <span>
-            {renderInline(
-              block.text,
-            )}
+            {renderInline(block.text)}
           </span>
         </div>
       );
@@ -359,14 +353,11 @@ margin: “4px 0”,
         match?.[0]
           .replace(/[.)\s]/g, "") ??
         "";
-      const text =
-        match
-          ? block.text
-              .slice(
-                match[0].length,
-              )
-              .trim()
-          : block.text;
+      const text = match
+        ? block.text
+            .slice(match[0].length)
+            .trim()
+        : block.text;
       return (
         <div
           key={index}
@@ -375,8 +366,7 @@ margin: “4px 0”,
             alignItems:
               "flex-start",
             gap: 9,
-            padding:
-              "3px 2px",
+            padding: "3px 2px",
             fontSize: 14,
             lineHeight: 1.65,
           }}
@@ -386,20 +376,15 @@ margin: “4px 0”,
               width: 22,
               height: 22,
               flexShrink: 0,
-              display:
-                "flex",
-              alignItems:
-                "center",
+              display: "flex",
+              alignItems: "center",
               justifyContent:
                 "center",
-              borderRadius:
-                "50%",
-              background:
-                "#f1f5f9",
+              borderRadius: "50%",
+              background: "#f1f5f9",
               border:
                 "1px solid #cbd5e1",
-              color:
-                "#334155",
+              color: "#334155",
               fontSize: 11,
               fontWeight: 800,
             }}
@@ -407,9 +392,7 @@ margin: “4px 0”,
             {number}
           </span>
           <span>
-            {renderInline(
-              text,
-            )}
+            {renderInline(text)}
           </span>
         </div>
       );
@@ -421,15 +404,11 @@ margin: “4px 0”,
           margin: 0,
           fontSize: 14,
           lineHeight: 1.7,
-          whiteSpace:
-            "pre-wrap",
-          overflowWrap:
-            "anywhere",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
         }}
       >
-        {renderInline(
-          block.text,
-        )}
+        {renderInline(block.text)}
       </p>
     );
   })}
