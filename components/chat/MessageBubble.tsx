@@ -73,8 +73,7 @@ AI
     {isUser ? (
       <div
         style={{
-          whiteSpace:
-            "pre-wrap",
+          whiteSpace: "pre-wrap",
           fontSize: 14,
           lineHeight: 1.65,
         }}
