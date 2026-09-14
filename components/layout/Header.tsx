@@ -24,6 +24,10 @@ import type {
   MessageKey,
 } from "@/lib/i18n";
 
+import {
+  runtimeStatusCopy,
+} from "@/lib/i18n/runtime-status";
+
 type RuntimeStatus =
   | "checking"
   | "online"
@@ -79,19 +83,20 @@ const initialStatus:
 
 export default function Header() {
   const {
+    locale,
     t,
   } = useLanguage();
 
   const pathname =
     usePathname();
 
-  const [
-    runtime,
-    setRuntime,
-  ] =
+  const [runtime, setRuntime] =
     useState<RuntimeState>(
       initialStatus
     );
+
+  const copy =
+    runtimeStatusCopy[locale];
 
   const pageTitle =
     t(
@@ -121,7 +126,7 @@ export default function Header() {
           !response.ok
         ) {
           throw new Error(
-            "Runtime unavailable."
+            copy.unavailable
           );
         }
 
@@ -184,19 +189,19 @@ export default function Header() {
         interval
       );
     };
-  }, []);
+  }, [copy.unavailable]);
 
   const statusLabel =
     runtime.status ===
     "checking"
-      ? t("runtime.checking")
+      ? copy.checking
       : runtime.status ===
           "online"
-        ? t("runtime.online")
+        ? copy.online
         : runtime.status ===
             "degraded"
-          ? "Degraded"
-          : t("runtime.offline");
+          ? copy.degraded
+          : copy.offline;
 
   const statusIsHealthy =
     runtime.status ===
@@ -379,14 +384,9 @@ export default function Header() {
             ·
           </span>
 
-          <span
-            style={{
-              textTransform:
-                "capitalize",
-            }}
-          >
-            {t("runtime.provider")}:
-            {" "}
+          <span>
+            {copy.provider}
+            {": "}
             {runtime.provider}
           </span>
 
