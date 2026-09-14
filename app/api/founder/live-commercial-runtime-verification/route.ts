@@ -20,6 +20,10 @@ import {
 } from "@/lib/runtime/engine";
 
 import {
+  retrieveWebEvidence,
+} from "@/lib/web-intelligence";
+
+import {
   buildLiveDecision,
 } from "@/lib/runtime/live-decision";
 
@@ -137,9 +141,8 @@ export async function GET(
      * STEP 1
      * Real Main Runtime
      *
-     * The decision used below must come from
-     * real external intelligence returned by
-     * executeRuntime.
+     * The Main Runtime must actually route
+     * the request into Web Intelligence.
      */
     const runtimeStartedAt =
       Date.now();
@@ -165,32 +168,35 @@ export async function GET(
 
     /*
      * STEP 2
-     * Real Web Intelligence
+     * Verify the Main Runtime's Web route.
+     *
+     * runtime.webIntelligence is intentionally
+     * treated as a summary only.
      */
-    const web =
+    const runtimeWeb =
       runtime.webIntelligence;
 
-const webPass =
-  web !== undefined &&
-  web.required === true &&
-  web.success === true &&
-  web.verified === true &&
-  web.sourceCount >= 2 &&
-  web.sourceHosts.length >= 2;
+    const runtimeWebPass =
+      runtimeWeb !== undefined &&
+      runtimeWeb.required === true &&
+      runtimeWeb.success === true &&
+      runtimeWeb.verified === true &&
+      runtimeWeb.sourceCount >= 2 &&
+      runtimeWeb.sourceHosts.length >= 2;
 
     check(
       checks,
-      "Web Intelligence",
-      webPass,
-      webPass
-        ? `Verified external evidence from ${web?.sourceCount ?? 0} source(s) and ${web?.sourceHosts?.length ?? 0} host(s).`
-        : "Verified Web Intelligence was not returned.",
+      "Runtime Web Route",
+      runtimeWebPass,
+      runtimeWebPass
+        ? `Main Runtime routed to verified Web Intelligence with ${runtimeWeb.sourceCount} source(s) and ${runtimeWeb.sourceHosts.length} host(s).`
+        : "Main Runtime did not return a verified Web Intelligence route.",
       runtimeStartedAt,
     );
 
     if (
-      !webPass ||
-      !web
+      !runtimeWebPass ||
+      !runtimeWeb
     ) {
       return json(
         {
@@ -217,8 +223,85 @@ const webPass =
 
     /*
      * STEP 3
+     * Retrieve the complete WebIntelligenceResult.
+     *
+     * The Main Runtime response intentionally
+     * exposes only a safe summary. The Decision
+     * Layer requires the complete verified result,
+     * including evidence.
+     *
+     * No casting or fabricated fields are used.
+     */
+    const webStartedAt =
+      Date.now();
+
+    const web =
+      await retrieveWebEvidence(
+        "What is the current USD to CNY exchange rate today? Use live external web information and verify multiple independent sources.",
+      );
+
+    const webPass =
+      web.success === true &&
+      web.verified === true &&
+      web.sourceCount >= 2 &&
+      web.sourceHosts.length >= 2 &&
+      web.evidence.length >= 2;
+
+    check(
+      checks,
+      "Full Web Intelligence",
+      webPass,
+      webPass
+        ? `Complete verified Web Intelligence returned ${web.evidence.length} evidence item(s) from ${web.sourceCount} source(s) and ${web.sourceHosts.length} host(s).`
+        : web.error ??
+            "Complete verified Web Intelligence was not returned.",
+      webStartedAt,
+    );
+
+    if (!webPass) {
+      return json(
+        {
+          success: false,
+          verified: false,
+          code:
+            "C143_31_FULL_WEB_INTELLIGENCE_FAILED",
+          stage:
+            "full-web-intelligence",
+          runtime:
+            APP_CONFIG.runtimeId,
+          runtimeVersion:
+            APP_CONFIG.version,
+          checks,
+          web: {
+            success:
+              web.success,
+            verified:
+              web.verified,
+            sourceCount:
+              web.sourceCount,
+            sourceHosts:
+              web.sourceHosts,
+            evidenceCount:
+              web.evidence.length,
+            error:
+              web.error ??
+              null,
+          },
+          timestamp:
+            Date.now(),
+          latencyMs:
+            Date.now() -
+            startedAt,
+        },
+        503,
+      );
+    }
+
+    /*
+     * STEP 4
      * Build the actual Decision Layer
-     * directly from the verified Web result.
+     * directly from the complete verified
+     * WebIntelligenceResult.
      */
     const decisionStartedAt =
       Date.now();
@@ -280,13 +363,14 @@ const webPass =
     }
 
     /*
-     * STEP 4
+     * STEP 5
      * Create a real Commercial Objective.
      *
      * This is intentionally a small validation
      * objective. It creates real persistence so
-     * the Runtime can prove Objective -> Outcome
-     * -> Task linkage.
+     * the Runtime can prove:
+     *
+     * Objective -> Outcome -> Task
      */
     const objectiveStartedAt =
       Date.now();
@@ -361,12 +445,14 @@ const webPass =
     }
 
     /*
-     * STEP 5
+     * STEP 6
      * Execute the unified commercial runtime.
      *
-     * No external side effect is fabricated here.
-     * The expected result is a persistent internal
-     * Task entering "doing".
+     * No external side effect is fabricated.
+     *
+     * Expected result:
+     * persistent internal Task enters
+     * "doing" or remains "done".
      */
     const commercialStartedAt =
       Date.now();
@@ -412,12 +498,14 @@ const webPass =
     );
 
     /*
-     * STEP 6
+     * STEP 7
      * Explicitly verify that an unverified
      * commercial result is blocked.
      *
-     * This proves AIOS does not invent revenue,
-     * customers or cost.
+     * This proves AIOS does not invent:
+     * - revenue
+     * - customers
+     * - cost
      */
     const integrityStartedAt =
       Date.now();
@@ -468,7 +556,7 @@ const webPass =
     );
 
     /*
-     * STEP 7
+     * STEP 8
      * Final runtime readiness.
      */
     const readinessStartedAt =
@@ -526,6 +614,18 @@ const webPass =
           failed:
             checks.length -
             passed,
+        },
+        web: {
+          runtimeRouteVerified:
+            runtimeWebPass,
+          fullResultVerified:
+            webPass,
+          sourceCount:
+            web.sourceCount,
+          sourceHosts:
+            web.sourceHosts,
+          evidenceCount:
+            web.evidence.length,
         },
         objective: {
           id:
