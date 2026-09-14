@@ -46,6 +46,7 @@ interface ChatApiResponse {
   error?: string;
   content?: string;
   latencyMs?: number;
+  conversation?: MemoryRecord[];
 }
 
 interface RuntimeStatusResponse {
@@ -82,16 +83,18 @@ const providerLabels: Record<
   claude: "Claude",
 };
 
-const defaultProviderState: ProviderViewState = {
+const defaultProviderState:
+  ProviderViewState = {
   provider: "mock",
   requestedProvider: "mock",
   fallbackUsed: false,
 };
 
 function isRuntimeWrapper(
-  content: string
+  content: string,
 ): boolean {
-  const raw = content.trim();
+  const raw =
+    content.trim();
 
   if (!raw) {
     return false;
@@ -99,19 +102,19 @@ function isRuntimeWrapper(
 
   return (
     raw.includes(
-      "你是 AIOS Runtime 的执行引擎"
+      "你是 AIOS Runtime 的执行引擎",
     ) &&
     raw.includes(
-      "内部执行步骤："
+      "内部执行步骤：",
     ) &&
     raw.includes(
-      "最终回答规则："
+      "最终回答规则：",
     )
   );
 }
 
 function sanitizeRestoredMessages(
-  memory: MemoryRecord[]
+  memory: MemoryRecord[],
 ): ChatMessage[] {
   return memory
     .filter(
@@ -121,8 +124,8 @@ function sanitizeRestoredMessages(
           item.role === "assistant"
         ) &&
         !isRuntimeWrapper(
-          item.content
-        )
+          item.content,
+        ),
     )
     .map((item) => ({
       id: item.id,
@@ -133,7 +136,7 @@ function sanitizeRestoredMessages(
 
 function normalizeProvider(
   value: unknown,
-  fallback: ProviderName = "mock"
+  fallback: ProviderName = "mock",
 ): ProviderName {
   if (
     value === "mock" ||
@@ -161,7 +164,7 @@ export default function ChatPanel() {
     messages,
     setMessages,
   ] = useState<ChatMessage[]>(
-    []
+    [],
   );
 
   const [
@@ -177,36 +180,20 @@ export default function ChatPanel() {
   const [
     providerState,
     setProviderState,
-  ] = useState<ProviderViewState>(
-    defaultProviderState
-  );
+  ] =
+    useState<ProviderViewState>(
+      defaultProviderState,
+    );
 
   const bottomRef =
     useRef<HTMLDivElement | null>(
-      null
+      null,
     );
 
-  /*
-   * C143.2
-   *
-   * The server is the canonical source
-   * of conversation state.
-   *
-   * Chat rehydrates after every successful
-   * mutation so client state contains the
-   * same persisted IDs and content as the
-   * server.
-   *
-   * This prevents:
-   * 1. messages changing after refresh;
-   * 2. Delete appearing only after refresh;
-   * 3. temporary client messages diverging
-   *    from persisted records.
-   */
   const loadConversation =
     useCallback(
       async (
-        showLoading = false
+        showLoading = false,
       ): Promise<
         ChatMessage[] | null
       > => {
@@ -227,12 +214,12 @@ export default function ChatPanel() {
                   "Cache-Control":
                     "no-cache",
                 },
-              }
+              },
             );
 
           if (!response.ok) {
             throw new Error(
-              "Failed to load chat history."
+              "Failed to load chat history.",
             );
           }
 
@@ -242,14 +229,14 @@ export default function ChatPanel() {
           const memory:
             MemoryRecord[] =
             Array.isArray(
-              data.items
+              data.items,
             )
               ? data.items
               : [];
 
           const restoredMessages =
             sanitizeRestoredMessages(
-              memory
+              memory,
             );
 
           const nextMessages =
@@ -266,26 +253,26 @@ export default function ChatPanel() {
                 ];
 
           setMessages(
-            nextMessages
+            nextMessages,
           );
 
           return nextMessages;
         } catch (error) {
           console.error(
             "[AIOS Chat History]",
-            error
+            error,
           );
 
           return null;
         } finally {
           if (showLoading) {
             setHistoryLoading(
-              false
+              false,
             );
           }
         }
       },
-      [copy.welcome]
+      [copy.welcome],
     );
 
   const loadRuntimeStatus =
@@ -300,7 +287,7 @@ export default function ChatPanel() {
                   "no-store",
                 credentials:
                   "same-origin",
-              }
+              },
             );
 
           if (!response.ok) {
@@ -308,7 +295,8 @@ export default function ChatPanel() {
           }
 
           const runtimeData =
-            (await response.json()) as RuntimeStatusResponse;
+            (await response.json()) as
+              RuntimeStatusResponse;
 
           const runtime =
             runtimeData.providerRuntime;
@@ -316,19 +304,19 @@ export default function ChatPanel() {
           const activeProvider =
             normalizeProvider(
               runtimeData.provider,
-              "mock"
+              "mock",
             );
 
           const actualProvider =
             normalizeProvider(
               runtime?.provider,
-              activeProvider
+              activeProvider,
             );
 
           const requestedProvider =
             normalizeProvider(
               runtime?.requestedProvider,
-              activeProvider
+              activeProvider,
             );
 
           setProviderState({
@@ -346,11 +334,11 @@ export default function ChatPanel() {
         } catch (error) {
           console.error(
             "[AIOS Runtime Status]",
-            error
+            error,
           );
         }
       },
-      []
+      [],
     );
 
   useEffect(() => {
@@ -384,7 +372,7 @@ export default function ChatPanel() {
           historyLoading
             ? "auto"
             : "smooth",
-      }
+      },
     );
   }, [
     messages,
@@ -393,7 +381,7 @@ export default function ChatPanel() {
   ]);
 
   async function handleSend(
-    prompt: string
+    prompt: string,
   ) {
     const cleanPrompt =
       prompt.trim();
@@ -405,14 +393,6 @@ export default function ChatPanel() {
       return;
     }
 
-    /*
-     * Optimistic user rendering is retained
-     * for responsiveness.
-     *
-     * The canonical server conversation
-     * is loaded immediately after the
-     * successful Chat response.
-     */
     setMessages(
       (current) => [
         ...current,
@@ -421,7 +401,7 @@ export default function ChatPanel() {
           content:
             cleanPrompt,
         },
-      ]
+      ],
     );
 
     setLoading(true);
@@ -440,26 +420,28 @@ export default function ChatPanel() {
             },
             credentials:
               "same-origin",
-            body: JSON.stringify({
-              prompt:
-                cleanPrompt,
-            }),
-          }
+            body:
+              JSON.stringify({
+                prompt:
+                  cleanPrompt,
+              }),
+          },
         );
 
       const data =
-        (await response.json()) as ChatApiResponse;
+        (await response.json()) as
+          ChatApiResponse;
 
       const actualProvider =
         normalizeProvider(
           data.provider,
-          "mock"
+          "mock",
         );
 
       const requestedProvider =
         normalizeProvider(
           data.requestedProvider,
-          actualProvider
+          actualProvider,
         );
 
       setProviderState({
@@ -478,51 +460,71 @@ export default function ChatPanel() {
       if (!response.ok) {
         throw new Error(
           data.content ??
-            copy.runtimeError
+            copy.runtimeError,
         );
       }
 
       /*
-       * C143.2 canonical rehydration.
+       * C143.10
        *
-       * Do NOT append a second temporary
-       * assistant message.
+       * The Chat API now returns the
+       * canonical persisted conversation
+       * in the same response.
        *
-       * Instead reload the exact
-       * server-backed conversation.
+       * This means the newly created user
+       * and assistant messages already have
+       * their real persistent IDs.
        *
-       * This guarantees that the newly
-       * created user/assistant records
-       * contain their real persistent IDs
-       * immediately.
+       * Delete therefore becomes available
+       * immediately without a refresh.
        */
-      const canonical =
-        await loadConversation(
-          false
-        );
+      if (
+        Array.isArray(
+          data.conversation,
+        )
+      ) {
+        const canonical =
+          sanitizeRestoredMessages(
+            data.conversation,
+          );
 
-      /*
-       * If the server reload unexpectedly
-       * fails, retain a usable response
-       * instead of leaving the user with
-       * no assistant answer.
-       *
-       * The next refresh can recover
-       * canonical state.
-       */
-      if (!canonical) {
         setMessages(
-          (current) => [
-            ...current,
-            {
-              role:
-                "assistant",
-              content:
-                data.content ??
-                copy.unknownResponse,
-            },
-          ]
+          canonical.length > 0
+            ? canonical
+            : [
+                {
+                  role:
+                    "assistant",
+                  content:
+                    copy.welcome,
+                },
+              ],
         );
+      } else {
+        /*
+         * Compatibility fallback for an
+         * older deployment that does not
+         * yet return conversation.
+         */
+        const canonical =
+          await loadConversation(
+            false,
+          );
+
+        if (!canonical) {
+          setMessages(
+            (current) => [
+              ...current,
+              {
+                role:
+                  "assistant",
+                content:
+                  data.content ??
+                  copy.unknownResponse,
+              },
+            ],
+          );
+        }
       }
     } catch (error) {
       const message =
@@ -539,17 +541,11 @@ export default function ChatPanel() {
             content:
               message,
           },
-        ]
+        ],
       );
     } finally {
       setLoading(false);
 
-      /*
-       * Refresh Runtime status after
-       * every request so the provider
-       * indicator reflects the latest
-       * execution.
-       */
       void loadRuntimeStatus();
     }
   }
