@@ -10,45 +10,14 @@ import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
 
-import type {
-  Locale,
-} from "@/lib/i18n";
+import {
+  chatInputCopy,
+} from "@/lib/i18n/chat-input";
 
 interface Props {
   loading: boolean;
   onSend: (text: string) => void;
 }
-
-const inputCopy: Record<
-  Locale,
-  {
-    placeholder: string;
-    ariaLabel: string;
-    send: string;
-    sending: string;
-  }
-> = {
-  en: {
-    placeholder: "Message AIOS…",
-    ariaLabel: "Message AIOS",
-    send: "Send message",
-    sending: "Sending",
-  },
-
-  "zh-CN": {
-    placeholder: "输入消息……",
-    ariaLabel: "输入消息",
-    send: "发送消息",
-    sending: "正在发送",
-  },
-
-  ja: {
-    placeholder: "メッセージを入力してください…",
-    ariaLabel: "AIOS へのメッセージ入力",
-    send: "メッセージを送信",
-    sending: "送信しています",
-  },
-};
 
 export default function ChatInput({
   loading,
@@ -59,10 +28,12 @@ export default function ChatInput({
   } = useLanguage();
 
   const copy =
-    inputCopy[locale];
+    chatInputCopy[locale];
 
-  const [value, setValue] =
-    useState("");
+  const [
+    value,
+    setValue,
+  ] = useState("");
 
   const [
     isTouchDevice,
