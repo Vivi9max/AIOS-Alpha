@@ -1,433 +1,352 @@
-import “server\-only”;
+import “server-only”;
 
-import \{
+import {
 getCommercialObjective,
 type CommercialObjective,
-\} from “@/lib/commercial/operating\-layer”;
+} from “@/lib/commercial/operating-layer”;
 
-import \{
+import {
 retrieveWebEvidence,
 type WebIntelligenceResult,
-\} from “@/lib/web\-intelligence”;
+} from “@/lib/web-intelligence”;
 
-import \{
+import {
 buildLiveDecision,
 type LiveDecision,
-\} from “@/lib/runtime/live\-decision”;
+} from “@/lib/runtime/live-decision”;
 
-import \{
+import {
 executeLiveCommercialRuntime,
 isLiveCommercialRuntimeReady,
 type LiveCommercialRuntimeResult,
-\} from “@/lib/runtime/live\-commercial\-runtime”;
+} from “@/lib/runtime/live-commercial-runtime”;
 
 export type LiveCommercialOpportunityStatus =
-\| “ready”
-\| “blocked”
-\| “objective\-not\-found”
-\| “web\-failed”
-\| “decision\-blocked”
-\| “runtime\-blocked”;
+| “ready”
+| “blocked”
+| “objective-not-found”
+| “web-failed”
+| “decision-blocked”
+| “runtime-blocked”;
 
-export interface LiveCommercialOpportunityInput \{
+export interface LiveCommercialOpportunityInput {
 objectiveId: string;
+prompt?: string;
+}
 
-/\*\*
-
-- Optional market/commercial question\.
-- 
-- When omitted, AIOS derives a question from
-- the commercial objective itself\.
-  \*/
-  prompt?: string;
-  \}
-
-export interface LiveCommercialOpportunityResult \{
+export interface LiveCommercialOpportunityResult {
 success: boolean;
-
 status: LiveCommercialOpportunityStatus;
-
 objectiveId: string;
-
-objective: CommercialObjective \| null;
-
-web: WebIntelligenceResult \| null;
-
-decision: LiveDecision \| null;
-
-runtime: LiveCommercialRuntimeResult \| null;
-
+objective: CommercialObjective | null;
+web: WebIntelligenceResult | null;
+decision: LiveDecision | null;
+runtime: LiveCommercialRuntimeResult | null;
 conclusion: string;
-
 nextStep: string;
-
 timestamp: number;
-\}
+}
 
-function normalizeText&#40;
+function normalizeText(
 value: unknown,
 maxLength = 2000,
-&#41;: string \{
-if &#40;typeof value \!== “string”&#41; \{
+): string {
+if (typeof value !== “string”) {
 return “”;
-\}
+}
 
 return value
-\.replace&#40;/\\s\+/g, “ “&#41;
-\.trim&#40;&#41;
-\.slice&#40;0, maxLength&#41;;
-\}
+.replace(/\s+/g, “ “)
+.trim()
+.slice(0, maxLength);
+}
 
-function buildObjectiveMarketPrompt&#40;
+function buildObjectiveMarketPrompt(
 objective: CommercialObjective,
-&#41;: string \{
-const parts = &#91;
-`Commercial objective: ${objective.title}.`,
-`Description: ${objective.description}.`,
-`Stage: ${objective.stage}.`,
-`Revenue target: ${objective.revenueTarget} ${objective.currency}.`,
-`Customer target: ${objective.customerTarget}.`,
-`Cost target: ${objective.costTarget} ${objective.currency}.`,
-`Success criteria: ${objective.successCriteria}.`,
+): string {
+return [
+Commercial objective: ${objective.title}.,
+Description: ${objective.description}.,
+Stage: ${objective.stage}.,
+Revenue target: ${objective.revenueTarget} ${objective.currency}.,
+Customer target: ${objective.customerTarget}.,
+Cost target: ${objective.costTarget} ${objective.currency}.,
+Success criteria: ${objective.successCriteria}.,
 “”,
-“Use current external web information\.”,
-“Identify the most relevant current market evidence\.”,
-“Verify the evidence using multiple independent sources\.”,
-“Determine what this means for the commercial objective\.”,
-“Produce one concrete, measurable next commercial action\.”,
-&#93;;
+“Use current external web information.”,
+“Identify the most relevant current market evidence.”,
+“Verify the evidence using multiple independent sources.”,
+“Determine what this means for the commercial objective.”,
+“Produce one concrete, measurable next commercial action.”,
+].join(”\n”);
+}
 
-return parts\.join&#40;”\\n”&#41;;
-\}
-
-function buildBlockedResult&#40;
+function buildBlockedResult(
 input: LiveCommercialOpportunityInput,
-objective: CommercialObjective \| null,
+objective: CommercialObjective | null,
 status: LiveCommercialOpportunityStatus,
 conclusion: string,
 nextStep: string,
-web: WebIntelligenceResult \| null = null,
-decision: LiveDecision \| null = null,
-runtime: LiveCommercialRuntimeResult \| null = null,
-&#41;: LiveCommercialOpportunityResult \{
-return \{
+web: WebIntelligenceResult | null = null,
+decision: LiveDecision | null = null,
+runtime: LiveCommercialRuntimeResult | null = null,
+): LiveCommercialOpportunityResult {
+return {
 success: false,
 status,
-objectiveId: input\.objectiveId,
+objectiveId: input.objectiveId,
 objective,
 web,
 decision,
 runtime,
 conclusion,
 nextStep,
-timestamp: Date\.now&#40;&#41;,
-\};
-\}
+timestamp: Date.now(),
+};
+}
 
-/\*\*
+/**
 
-- C143\.32
-- 
-- Converts an existing Commercial Objective into a
-- live, evidence\-backed commercial decision and then
-- into the existing Commercial Runtime\.
-- 
-- Pipeline:
-- 
-- Commercial Objective
-- ```
-    ->
-  ```
-- Live Web Intelligence
-- ```
-    ->
-  ```
-- Evidence Verification
-- ```
-    ->
-  ```
-- Live Decision
-- ```
-    ->
-  ```
-- Commercial Runtime
-- ```
-    ->
-  ```
-- Execution Task
-- 
-- This function does not fabricate:
-- 
-  - market evidence
-- 
-  - customer demand
-- 
-  - revenue
-- 
-  - costs
-- 
-  - business results
-- 
-- Real commercial actuals remain protected by the
-- existing verified\-result gate\.
-  \*/
-  export async function executeLiveCommercialOpportunity&#40;
-  input: LiveCommercialOpportunityInput,
-  &#41;: Promise  <LiveCommercialOpportunityResult> \{
-  const objective =
-  await getCommercialObjective&#40;
-  input\.objectiveId,
-  &#41;;
+* C143.32
+* Commercial Objective
+* -> Live Web Intelligence
+* -> Verified Evidence
+* -> Live Decision
+* -> Commercial Runtime
+* -> Execution Task
+* This layer never fabricates:
+* ●	market evidence
+* ●	customer demand
+* ●	revenue
+* ●	costs
+* ●	commercial results
+        */
+        export async function executeLiveCommercialOpportunity(
+        input: LiveCommercialOpportunityInput,
+        ): Promise {
+        const objective =
+        await getCommercialObjective(
+        input.objectiveId,
+        );
 
-if &#40;\!objective&#41; \{
-return buildBlockedResult&#40;
+if (!objective) {
+return buildBlockedResult(
 input,
 null,
-“objective\-not\-found”,
-“The commercial objective could not be found\.”,
-“Create or restore the commercial objective before requesting live commercial intelligence\.”,
-&#41;;
-\}
+“objective-not-found”,
+“The commercial objective could not be found.”,
+“Create or restore the commercial objective before requesting live commercial intelligence.”,
+);
+}
 
 const prompt =
-normalizeText&#40;
-input\.prompt,
-&#41; \|\|
-buildObjectiveMarketPrompt&#40;
+normalizeText(input.prompt) ||
+buildObjectiveMarketPrompt(
 objective,
-&#41;;
+);
 
-/\*
+const web =
+await retrieveWebEvidence(prompt);
 
-- Step 1:
-- Obtain fresh external evidence\.
-  \*/
-  const web =
-  await retrieveWebEvidence&#40;
-  prompt,
-  &#41;;
-
-if &#40;
-\!web\.success \|\|
-\!web\.verified \|\|
-web\.evidence\.length < 2 \|\|
-web\.sourceCount < 2 \|\|
-web\.sourceHosts\.length < 2
-&#41; \{
-return buildBlockedResult&#40;
+if (
+!web.success ||
+!web.verified ||
+web.evidence.length < 2 ||
+web.sourceCount < 2 ||
+web.sourceHosts.length < 2
+) {
+return buildBlockedResult(
 input,
 objective,
-“web\-failed”,
-“The commercial opportunity is blocked because current external evidence is insufficiently verified\.”,
-“Strengthen the live evidence before converting it into a commercial decision\.”,
+“web-failed”,
+“The commercial opportunity is blocked because current external evidence is insufficiently verified.”,
+“Strengthen the live evidence before converting it into a commercial decision.”,
 web,
-&#41;;
-\}
+);
+}
 
-/\*
+const decision =
+buildLiveDecision(web);
 
-- Step 2:
-- Convert verified evidence into a structured
-- AIOS decision\.
-  \*/
-  const decision =
-  buildLiveDecision&#40;
-  web,
-  &#41;;
-
-if &#40;
-\!decision\.success \|\|
-decision\.verification?\.verified \!== true \|\|
-decision\.evidence\.length < 2 \|\|
-\!normalizeText&#40;
-decision\.conclusion,
-&#41; \|\|
-\!normalizeText&#40;
-decision\.nextStep,
-&#41; \|\|
-decision\.recommendedActions\.length === 0
-&#41; \{
-return buildBlockedResult&#40;
+if (
+!decision.success ||
+decision.verification?.verified !== true ||
+decision.evidence.length < 2 ||
+!normalizeText(
+decision.conclusion,
+) ||
+!normalizeText(
+decision.nextStep,
+) ||
+decision.recommendedActions.length === 0
+) {
+return buildBlockedResult(
 input,
 objective,
-“decision\-blocked”,
-“Verified market evidence was obtained, but AIOS could not produce a usable commercial decision\.”,
-“Generate a concrete measurable action before starting commercial execution\.”,
+“decision-blocked”,
+“Verified market evidence was obtained, but AIOS could not produce a usable commercial decision.”,
+“Generate a concrete measurable action before starting commercial execution.”,
 web,
 decision,
-&#41;;
-\}
+);
+}
 
-/\*
+const runtime =
+await executeLiveCommercialRuntime({
+objectiveId: objective.id,
+decision,
+});
 
-- Step 3:
-- Send the verified decision into the existing
-- Commercial Runtime\.
-- 
-- No commercial result is supplied here\.
-- Therefore the runtime can only create/start
-- the execution task\. It cannot fabricate actuals\.
-  \*/
-  const runtime =
-  await executeLiveCommercialRuntime&#40;\{
-  objectiveId:
-  objective\.id,
-  decision,
-  \}&#41;;
-
-if &#40;
-\!isLiveCommercialRuntimeReady&#40;
+if (
+!isLiveCommercialRuntimeReady(
 runtime,
-&#41;
-&#41; \{
-return buildBlockedResult&#40;
+)
+) {
+return buildBlockedResult(
 input,
 objective,
-“runtime\-blocked”,
-runtime\.conclusion \|\|
-“The verified commercial decision could not be converted into a ready execution state\.”,
-runtime\.nextStep \|\|
-“Resolve the commercial runtime block before execution\.”,
+“runtime-blocked”,
+runtime.conclusion ||
+“The verified commercial decision could not be converted into a ready execution state.”,
+runtime.nextStep ||
+“Resolve the commercial runtime block before execution.”,
 web,
 decision,
 runtime,
-&#41;;
-\}
+);
+}
 
-return \{
+return {
 success: true,
 status: “ready”,
-objectiveId:
-objective\.id,
+objectiveId: objective.id,
 objective,
 web,
 decision,
 runtime,
 conclusion:
-runtime\.conclusion \|\|
-decision\.conclusion,
+runtime.conclusion ||
+decision.conclusion,
 nextStep:
-runtime\.nextStep \|\|
-decision\.nextStep,
-timestamp: Date\.now&#40;&#41;,
-\};
-\}
+runtime.nextStep ||
+decision.nextStep,
+timestamp: Date.now(),
+};
+}
 
-export function isLiveCommercialOpportunityReady&#40;
+export function isLiveCommercialOpportunityReady(
 result: LiveCommercialOpportunityResult,
-&#41;: boolean \{
-if &#40;\!result\.success&#41; \{
+): boolean {
+if (!result.success) {
 return false;
-\}
+}
 
-if &#40;
-result\.status \!== “ready”
-&#41; \{
+if (result.status !== “ready”) {
 return false;
-\}
+}
 
-if &#40;\!result\.objective&#41; \{
+if (!result.objective) {
 return false;
-\}
+}
 
-if &#40;
-\!result\.web \|\|
-\!result\.web\.success \|\|
-\!result\.web\.verified \|\|
-result\.web\.evidence\.length < 2
-&#41; \{
+if (
+!result.web ||
+!result.web.success ||
+!result.web.verified ||
+result.web.evidence.length < 2
+) {
 return false;
-\}
+}
 
-if &#40;
-\!result\.decision \|\|
-\!result\.decision\.success \|\|
-result\.decision\.verification?\.verified \!== true \|\|
-result\.decision\.evidence\.length < 2
-&#41; \{
+if (
+!result.decision ||
+!result.decision.success ||
+result.decision.verification?.verified !== true ||
+result.decision.evidence.length < 2
+) {
 return false;
-\}
+}
 
-if &#40;\!result\.runtime&#41; \{
+if (!result.runtime) {
 return false;
-\}
+}
 
-return isLiveCommercialRuntimeReady&#40;
-result\.runtime,
-&#41;;
-\}
+return isLiveCommercialRuntimeReady(
+result.runtime,
+);
+}
 
-export function buildLiveCommercialOpportunityContext&#40;
+export function buildLiveCommercialOpportunityContext(
 result: LiveCommercialOpportunityResult,
-&#41;: string \{
-const lines = &#91;
+): string {
+const lines = [
 “AIOS LIVE COMMERCIAL OPPORTUNITY”,
 “”,
 “PIPELINE:”,
-“COMMERCIAL OBJECTIVE \-\> LIVE INTELLIGENCE \-\> VERIFIED EVIDENCE \-\> DECISION \-\> COMMERCIAL RUNTIME”,
+“COMMERCIAL OBJECTIVE -> LIVE INTELLIGENCE -> VERIFIED EVIDENCE -> DECISION -> COMMERCIAL RUNTIME”,
 “”,
-`STATUS: ${result.status}`,
-`SUCCESS: ${result.success ? "YES" : "NO"}`,
-`OBJECTIVE ID: ${result.objectiveId}`,
-&#93;;
+STATUS: ${result.status},
+SUCCESS: ${result.success ? "YES" : "NO"},
+OBJECTIVE ID: ${result.objectiveId},
+];
 
-if &#40;result\.objective&#41; \{
-lines\.push&#40;
-`OBJECTIVE: ${result.objective.title}`,
-`STAGE: ${result.objective.stage}`,
-`CURRENCY: ${result.objective.currency}`,
-`REVENUE TARGET: ${result.objective.revenueTarget}`,
-`CUSTOMER TARGET: ${result.objective.customerTarget}`,
-`COST TARGET: ${result.objective.costTarget}`,
-&#41;;
-\}
+if (result.objective) {
+lines.push(
+OBJECTIVE: ${result.objective.title},
+STAGE: ${result.objective.stage},
+CURRENCY: ${result.objective.currency},
+REVENUE TARGET: ${result.objective.revenueTarget},
+CUSTOMER TARGET: ${result.objective.customerTarget},
+COST TARGET: ${result.objective.costTarget},
+);
+}
 
-if &#40;result\.web&#41; \{
-lines\.push&#40;
+if (result.web) {
+lines.push(
 “”,
 “LIVE WEB INTELLIGENCE:”,
-`SUCCESS: ${result.web.success ? "YES" : "NO"}`,
-`VERIFIED: ${result.web.verified ? "YES" : "NO"}`,
-`EVIDENCE COUNT: ${result.web.evidence.length}`,
-`SOURCE COUNT: ${result.web.sourceCount}`,
-`INDEPENDENT HOSTS: ${result.web.sourceHosts.length}`,
-&#41;;
-\}
+SUCCESS: ${result.web.success ? "YES" : "NO"},
+VERIFIED: ${result.web.verified ? "YES" : "NO"},
+EVIDENCE COUNT: ${result.web.evidence.length},
+SOURCE COUNT: ${result.web.sourceCount},
+INDEPENDENT HOSTS: ${result.web.sourceHosts.length},
+);
+}
 
-if &#40;result\.decision&#41; \{
-lines\.push&#40;
+if (result.decision) {
+lines.push(
 “”,
 “LIVE DECISION:”,
-`SUCCESS: ${result.decision.success ? "YES" : "NO"}`,
-`VERIFIED: ${ result.decision.verification?.verified ? "YES" : "NO" }`,
-`PRIORITY: ${result.decision.priority}`,
-`CONCLUSION: ${result.decision.conclusion}`,
-`NEXT STEP: ${result.decision.nextStep}`,
-`ACTIONS: ${result.decision.recommendedActions.length}`,
-&#41;;
-\}
+SUCCESS: ${result.decision.success ? "YES" : "NO"},
+VERIFIED: ${ result.decision.verification?.verified ? "YES" : "NO" },
+PRIORITY: ${result.decision.priority},
+CONCLUSION: ${result.decision.conclusion},
+NEXT STEP: ${result.decision.nextStep},
+ACTIONS: ${result.decision.recommendedActions.length},
+);
+}
 
-if &#40;result\.runtime&#41; \{
-lines\.push&#40;
+if (result.runtime) {
+lines.push(
 “”,
 “COMMERCIAL RUNTIME:”,
-`STATUS: ${result.runtime.status}`,
-`SUCCESS: ${result.runtime.success ? "YES" : "NO"}`,
-`TASK ID: ${result.runtime.taskId ?? "NOT LINKED"}`,
-`OUTCOME ID: ${result.runtime.outcomeId ?? "NOT LINKED"}`,
-`MILESTONE ID: ${result.runtime.milestoneId ?? "NOT LINKED"}`,
-&#41;;
-\}
+STATUS: ${result.runtime.status},
+SUCCESS: ${result.runtime.success ? "YES" : "NO"},
+TASK ID: ${result.runtime.taskId ?? "NOT LINKED"},
+OUTCOME ID: ${result.runtime.outcomeId ?? "NOT LINKED"},
+MILESTONE ID: ${result.runtime.milestoneId ?? "NOT LINKED"},
+);
+}
 
-lines\.push&#40;
+lines.push(
 “”,
-`CONCLUSION: ${result.conclusion}`,
-`NEXT STEP: ${result.nextStep}`,
+CONCLUSION: ${result.conclusion},
+NEXT STEP: ${result.nextStep},
 “”,
 “RESULT INTEGRITY:”,
-“No revenue, customer, cost, or other commercial actual is fabricated by this layer\.”,
-“Commercial actuals remain writable only through the verified\-result gate\.”,
-&#41;;
+“No revenue, customer, cost, or other commercial actual is fabricated by this layer.”,
+“Commercial actuals remain writable only through the verified-result gate.”,
+);
 
-return lines\.join&#40;”\\n”&#41;;
-\}
+return lines.join(”\n”);
+}
