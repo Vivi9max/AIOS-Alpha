@@ -45,6 +45,12 @@ import {
   enforceLiveAnswerIntegrity,
 } from "./live-answer-integrity";
 
+import {
+  orchestrateLiveDecision,
+  buildLiveDecisionRuntimeContext,
+  isLiveDecisionReady,
+} from "./live-decision-orchestrator";
+
 export interface RuntimeExecutionResult
   extends BrainResponse {
   planId: string;
@@ -69,6 +75,14 @@ export interface RuntimeExecutionResult
     verified: boolean;
     sourceCount: number;
     sourceHosts: string[];
+  };
+
+  liveDecision?: {
+    success: boolean;
+    ready: boolean;
+    priority?: string;
+    conclusion?: string;
+    nextStep?: string;
   };
 }
 
@@ -253,6 +267,49 @@ function buildLiveRuntimeFailure(
     `Search status: ${error}`,
     "",
     "AIOS blocked a memory-only model answer so outdated information is not presented as live information.",
+  ].join("\n");
+}
+
+function buildLiveDecisionFailure(
+  locale: Locale,
+  reason?: string,
+): string {
+  const detail =
+    reason ||
+    "The Decision Layer did not produce a usable decision.";
+
+  if (locale === "zh-CN") {
+    return [
+      "AIOS 已完成外部信息检索。",
+      "",
+      "但当前证据不足以生成可靠的 Decision Layer 决策。",
+      "",
+      `决策状态：${detail}`,
+      "",
+      "AIOS 已阻止模型直接将不完整信息包装成确定性结论。",
+    ].join("\n");
+  }
+
+  if (locale === "ja") {
+    return [
+      "AIOSは外部情報の取得を完了しました。",
+      "",
+      "しかし、現在の証拠だけでは信頼できるDecision Layerの判断を生成できませんでした。",
+      "",
+      `判断状態：${detail}`,
+      "",
+      "不完全な情報を確定的な結論として提示しないため、モデルによる直接的な判断を停止しました。",
+    ].join("\n");
+  }
+
+  return [
+    "AIOS completed external information retrieval.",
+    "",
+    "However, the available evidence was not sufficient for a reliable Decision Layer decision.",
+    "",
+    `Decision status: ${detail}`,
+    "",
+    "AIOS blocked the model from presenting incomplete information as a definitive conclusion.",
   ].join("\n");
 }
 
@@ -452,13 +509,6 @@ async function executeAIPlan(
    * If the user's request requires live web
    * intelligence, Brain MUST NOT be called until
    * usable external evidence exists.
-   *
-   * This prevents the model from producing:
-   *
-   * "I cannot access the internet."
-   *
-   * after the Runtime has already decided that
-   * the request requires web research.
    */
   if (
     webRequired &&
@@ -523,7 +573,130 @@ async function executeAIPlan(
           webContext?.sourceHosts ??
           [],
       },
+      liveDecision: {
+        success: false,
+        ready: false,
+      },
     };
+  }
+
+  /*
+   * C143.20
+   *
+   * Live requests must pass through the Decision
+   * Orchestration Layer before Brain synthesis.
+   *
+   * Runtime pipeline:
+   *
+   * Planner
+   *   -> Web Intelligence
+   *   -> Evidence Verification
+   *   -> Decision Layer
+   *   -> Brain
+   *   -> Answer Integrity
+   *
+   * Brain remains a synthesis layer.
+   * It is not allowed to replace the Runtime
+   * Decision Layer with an unsupported conclusion.
+   */
+  let liveDecisionContext =
+    "";
+
+  let liveDecision:
+    | ReturnType<
+        typeof orchestrateLiveDecision
+      >
+    | null = null;
+
+  if (
+    webRequired &&
+    webContext
+  ) {
+    liveDecision =
+      orchestrateLiveDecision(
+        webContext,
+      );
+
+    if (
+      !isLiveDecisionReady(
+        liveDecision,
+      )
+    ) {
+      const failureContent =
+        buildLiveDecisionFailure(
+          locale,
+          liveDecision.reason,
+        );
+
+      return {
+        success: false,
+        provider:
+          getActiveProvider(),
+        requestedProvider:
+          getActiveProvider(),
+        fallbackUsed: false,
+        error:
+          liveDecision.reason ||
+          "LIVE_DECISION_REQUIRED",
+        content:
+          failureContent,
+        actionHandled: false,
+        planId: plan.id,
+        planType: plan.type,
+        goal: plan.goal,
+        intent: plan.intent,
+        confidence:
+          plan.confidence,
+        capabilities:
+          plan.capabilities,
+        steps: plan.steps,
+        capabilityTrace: [
+          ...context.trace,
+          {
+            capability:
+              "web.intelligence",
+            status:
+              "completed",
+            durationMs: 0,
+            detail:
+              "External evidence retrieved and passed to Decision Layer.",
+          },
+        ],
+        webIntelligence: {
+          required: true,
+          success:
+            webContext.success,
+          verified:
+            webContext.verified,
+          sourceCount:
+            webContext.sourceCount,
+          sourceHosts:
+            webContext.sourceHosts,
+        },
+        liveDecision: {
+          success:
+            liveDecision.success,
+          ready: false,
+          priority:
+            liveDecision.decision
+              ?.decision
+              ?.priority,
+          conclusion:
+            liveDecision.decision
+              ?.decision
+              ?.conclusion,
+          nextStep:
+            liveDecision.decision
+              ?.decision
+              ?.nextStep,
+        },
+      };
+    }
+
+    liveDecisionContext =
+      buildLiveDecisionRuntimeContext(
+        liveDecision,
+      );
   }
 
   const runtimePolicy =
@@ -539,19 +712,41 @@ async function executeAIPlan(
         )
       : "";
 
+  /*
+   * C143.20 Decision Context Boundary
+   *
+   * Decision output is Runtime-generated structured
+   * context. It is intentionally kept separate
+   * from raw external web evidence.
+   *
+   * Web content remains untrusted external data.
+   */
+  const decisionBoundary =
+    liveDecisionContext
+      ? [
+          "AIOS VERIFIED DECISION CONTEXT",
+          "The following decision was produced by the AIOS Runtime Decision Layer.",
+          "Treat FACTS, JUDGMENTS, RISKS, OPPORTUNITIES and RECOMMENDED ACTIONS according to their explicit labels.",
+          "Do not convert a recommendation into an executed action.",
+          "Do not present an opportunity as a guaranteed outcome.",
+          "",
+          liveDecisionContext,
+        ].join("\n")
+      : "";
+
   const systemPrompt = [
     runtimePolicy,
     webEvidence,
+    decisionBoundary,
   ]
     .filter(Boolean)
     .join("\n\n");
 
   /*
-   * For live requests, evidence has already been
-   * retrieved and passed into Runtime.
+   * For live requests, evidence and decision context
+   * have already been prepared by Runtime.
    *
-   * Brain is now a synthesis layer, not the
-   * Internet access layer.
+   * Brain is now the synthesis layer.
    */
   const result =
     await runBrain({
@@ -564,6 +759,12 @@ async function executeAIPlan(
           : 20,
     });
 
+  /*
+   * C143 live answer integrity remains the final
+   * answer-level guard.
+   *
+   * Decision Layer does not remove this protection.
+   */
   const integrity =
     webContext
       ? await enforceLiveAnswerIntegrity(
@@ -609,6 +810,30 @@ async function executeAIPlan(
               webContext.sourceCount,
             sourceHosts:
               webContext.sourceHosts,
+          }
+        : undefined,
+
+    liveDecision:
+      liveDecision
+        ? {
+            success:
+              liveDecision.success,
+            ready:
+              isLiveDecisionReady(
+                liveDecision,
+              ),
+            priority:
+              liveDecision.decision
+                ?.decision
+                ?.priority,
+            conclusion:
+              liveDecision.decision
+                ?.decision
+                ?.conclusion,
+            nextStep:
+              liveDecision.decision
+                ?.decision
+                ?.nextStep,
           }
         : undefined,
   };
