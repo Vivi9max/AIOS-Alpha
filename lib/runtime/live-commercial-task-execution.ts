@@ -105,8 +105,36 @@ export async function startLiveCommercialTaskExecution(
     };
   }
 
+  /*
+   * The readiness helper validates the
+   * operating loop at runtime, but TypeScript
+   * does not infer that property narrowing.
+   *
+   * Re-check explicitly before dereferencing.
+   */
+  const operatingLoop =
+    bridge.operatingLoop;
+
+  if (!operatingLoop) {
+    return {
+      success: false,
+      status: "blocked",
+      objectiveId,
+      taskId: null,
+      outcomeId: null,
+      milestoneId: null,
+      taskStatus: null,
+      bridge,
+      conclusion:
+        "The commercial execution bridge reported ready, but no operating loop was available.",
+      nextStep:
+        "Repair the commercial operating loop link before execution.",
+      timestamp: Date.now(),
+    };
+  }
+
   const taskId =
-    bridge.operatingLoop.taskId;
+    operatingLoop.taskId;
 
   const task =
     await getTask(
@@ -120,9 +148,9 @@ export async function startLiveCommercialTaskExecution(
       objectiveId,
       taskId,
       outcomeId:
-        bridge.operatingLoop.outcomeId,
+        operatingLoop.outcomeId,
       milestoneId:
-        bridge.operatingLoop.milestoneId,
+        operatingLoop.milestoneId,
       taskStatus: null,
       bridge,
       conclusion:
@@ -142,9 +170,9 @@ export async function startLiveCommercialTaskExecution(
       objectiveId,
       taskId,
       outcomeId:
-        bridge.operatingLoop.outcomeId,
+        operatingLoop.outcomeId,
       milestoneId:
-        bridge.operatingLoop.milestoneId,
+        operatingLoop.milestoneId,
       taskStatus: "done",
       bridge,
       conclusion:
@@ -164,9 +192,9 @@ export async function startLiveCommercialTaskExecution(
       objectiveId,
       taskId,
       outcomeId:
-        bridge.operatingLoop.outcomeId,
+        operatingLoop.outcomeId,
       milestoneId:
-        bridge.operatingLoop.milestoneId,
+        operatingLoop.milestoneId,
       taskStatus: "doing",
       bridge,
       conclusion:
@@ -193,9 +221,9 @@ export async function startLiveCommercialTaskExecution(
         objectiveId,
         taskId,
         outcomeId:
-          bridge.operatingLoop.outcomeId,
+          operatingLoop.outcomeId,
         milestoneId:
-          bridge.operatingLoop.milestoneId,
+          operatingLoop.milestoneId,
         taskStatus: null,
         bridge,
         conclusion:
@@ -212,9 +240,9 @@ export async function startLiveCommercialTaskExecution(
       objectiveId,
       taskId,
       outcomeId:
-        bridge.operatingLoop.outcomeId,
+        operatingLoop.outcomeId,
       milestoneId:
-        bridge.operatingLoop.milestoneId,
+        operatingLoop.milestoneId,
       taskStatus: "doing",
       bridge,
       conclusion:
@@ -230,9 +258,9 @@ export async function startLiveCommercialTaskExecution(
       objectiveId,
       taskId,
       outcomeId:
-        bridge.operatingLoop.outcomeId,
+        operatingLoop.outcomeId,
       milestoneId:
-        bridge.operatingLoop.milestoneId,
+        operatingLoop.milestoneId,
       taskStatus:
         task.status,
       bridge,
