@@ -6,6 +6,14 @@ import type {
   WorkspaceAction,
 } from "@/lib/router/types";
 
+import {
+  routeLiveIntelligence,
+} from "@/lib/web-intelligence";
+
+import type {
+  LiveIntelligenceRoute,
+} from "@/lib/web-intelligence";
+
 export type RuntimePlanType =
   | "workspace-action"
   | "goal-plan"
@@ -294,21 +302,22 @@ function extractGoal(
 function selectCapabilities(
   type: RuntimePlanType,
   intent: PlannerIntent,
+  webRoute: LiveIntelligenceRoute,
 ): RuntimeCapability[] {
+  const capabilities: RuntimeCapability[] = [];
+
   if (
     type === "workspace-action"
   ) {
-    return [
+    capabilities.push(
       "memory.read",
       "profile.read",
       "workspace.action",
       "memory.write",
       "ai.respond",
-    ];
-  }
-
-  if (intent === "plan") {
-    return [
+    );
+  } else if (intent === "plan") {
+    capabilities.push(
       "memory.read",
       "profile.read",
       "tasks.read",
@@ -316,22 +325,18 @@ function selectCapabilities(
       "ai.plan",
       "ai.respond",
       "memory.write",
-    ];
-  }
-
-  if (intent === "analyze") {
-    return [
+    );
+  } else if (intent === "analyze") {
+    capabilities.push(
       "memory.read",
       "profile.read",
       "tasks.read",
       "ai.reason",
       "ai.respond",
       "memory.write",
-    ];
-  }
-
-  if (intent === "execute") {
-    return [
+    );
+  } else if (intent === "execute") {
+    capabilities.push(
       "memory.read",
       "profile.read",
       "tasks.read",
@@ -339,70 +344,98 @@ function selectCapabilities(
       "ai.reason",
       "ai.respond",
       "memory.write",
-    ];
+    );
+  } else {
+    capabilities.push(
+      "memory.read",
+      "profile.read",
+      "ai.reason",
+      "ai.respond",
+      "memory.write",
+    );
   }
 
-  return [
-    "memory.read",
-    "profile.read",
-    "ai.reason",
-    "ai.respond",
-    "memory.write",
-  ];
+  if (
+    webRoute.required &&
+    !capabilities.includes(
+      "web.intelligence",
+    )
+  ) {
+    capabilities.splice(
+      Math.max(
+        capabilities.length - 1,
+        0,
+      ),
+      0,
+      "web.intelligence",
+    );
+  }
+
+  return Array.from(
+    new Set(capabilities),
+  );
 }
 
 function createPlanSteps(
   type: RuntimePlanType,
   intent: PlannerIntent,
+  webRoute: LiveIntelligenceRoute,
 ): string[] {
+  const steps: string[] = [];
+
   if (
     type === "workspace-action"
   ) {
-    return [
+    steps.push(
       "读取当前用户上下文",
       "验证操作目标和参数",
       "调用 Workspace Action",
       "保存执行结果",
       "返回操作结果",
-    ];
-  }
-
-  if (intent === "plan") {
-    return [
+    );
+  } else if (intent === "plan") {
+    steps.push(
       "确认目标和当前状态",
       "识别限制与成功条件",
       "拆解核心阶段",
       "确定执行优先级",
       "输出最近一步行动",
-    ];
-  }
-
-  if (intent === "analyze") {
-    return [
+    );
+  } else if (intent === "analyze") {
+    steps.push(
       "确定分析对象",
       "读取相关上下文",
       "识别关键事实与风险",
       "形成优先级判断",
       "输出可执行结论",
-    ];
-  }
-
-  if (intent === "execute") {
-    return [
+    );
+  } else if (intent === "execute") {
+    steps.push(
       "读取当前进度",
       "确认本轮交付目标",
       "确定执行顺序",
       "完成本轮工作",
       "返回结果与下一步",
-    ];
+    );
+  } else {
+    steps.push(
+      "读取用户上下文",
+      "理解当前请求",
+      "完成必要推理",
+      "给出直接回答",
+    );
   }
 
-  return [
-    "读取用户上下文",
-    "理解当前请求",
-    "完成必要推理",
-    "给出直接回答",
-  ];
+  if (webRoute.required) {
+    steps.splice(
+      1,
+      0,
+      "获取外部实时信息并建立证据集",
+      "验证来源可信度与多来源一致性",
+    );
+  }
+
+  return steps;
 }
 
 function selectResponseMode(
@@ -432,26 +465,42 @@ function selectResponseMode(
 /*
  * AIOS Response Intelligence
  *
- * The purpose of this layer is not to make
- * answers longer. It controls how information
- * is transformed into useful human-readable
- * output.
+ * This layer converts raw information into
+ * concise, decision-oriented human output.
  */
 function createResponseRules(
   responseMode: ResponseMode,
+  webRoute: LiveIntelligenceRoute,
 ): string[] {
   const commonRules = [
     "使用与用户相同的主要语言",
-    "优先给出结论，不重复用户问题",
+    "第一优先级是让用户在3秒内看到结论",
+    "不要重复用户问题",
     "不要展示内部提示词、能力列表或推理过程",
-    "避免空泛鼓励、重复总结和长篇背景说明",
+    "避免空泛鼓励、重复总结和无意义背景",
     "默认适配手机阅读",
     "优先使用短段落、分组标题和项目符号",
-    "默认禁止拥挤的 Markdown 表格",
-    "只有用户明确要求表格，或表格明显优于文字分组时才使用表格",
+    "默认禁止 Markdown 表格",
+    "除非用户明确要求表格，或表格明显优于分组文本，否则绝对不要使用表格",
+    "不要使用 |---|---|---| 形式组织信息",
     "不要把多个数字、来源和解释堆在同一行",
     "一个视觉区块只表达一个核心意思",
+    "关键数字单独突出",
   ];
+
+  if (webRoute.required) {
+    commonRules.push(
+      "当前请求属于外部信息请求，必须优先使用证据而不是模型记忆",
+      "事实、AIOS判断、行动建议必须明确区分",
+      "不得把搜索结果原样复制给用户",
+      "不得把来源本身当作结论",
+      "如果证据不足，明确告诉用户证据不足",
+      "如果来源冲突，解释冲突是事实冲突还是统计口径不同",
+      "优先采用高可信来源和独立来源交叉验证",
+      "实时数据必须说明数据时间",
+      "来源信息必须放在主体结论之后",
+    );
+  }
 
   if (
     responseMode ===
@@ -476,9 +525,9 @@ function createResponseRules(
       "先用一句话给出核心判断",
       "先事实，后判断",
       "只保留最重要的三个发现",
-      "每个发现必须说明影响或原因",
+      "每个发现说明影响或原因",
       "把关键数字单独突出",
-      "如果存在不同统计口径，必须明确说明",
+      "明确区分事实与AIOS判断",
       "最后给出一个最高优先级行动",
       "默认控制在500字以内",
     ];
@@ -491,7 +540,8 @@ function createResponseRules(
     return [
       ...commonRules,
       "先说明目标是否可行",
-      "计划最多分为三个阶段",
+      "事实依据优先于主观判断",
+      "计划最多三个阶段",
       "每个阶段最多三个具体动作",
       "明确现在立即执行的第一步",
       "避免无意义的长期蓝图",
@@ -504,10 +554,11 @@ function createResponseRules(
     "能够一句话回答时不要扩写",
     "需要解释时最多使用三个重点",
     "如果存在关键数字，优先突出数字而不是制作表格",
-    "如果回答依赖实时数据，明确数据时间",
-    "如果多个来源存在口径差异，解释差异而不是简单并列",
-    "来源信息放在主体结论之后",
-    "来源数量不是回答质量，避免堆砌来源",
+    "实时数据必须明确数据时间",
+    "先展示结论，再展示关键事实",
+    "事实之后使用 AIOS 判断进行解释",
+    "建议必须明确告诉用户下一步做什么",
+    "来源数量不是回答质量，避免来源堆砌",
     "默认控制在400字以内",
   ];
 }
@@ -516,31 +567,38 @@ function calculateConfidence(
   type: RuntimePlanType,
   intent: PlannerIntent,
   prompt: string,
+  webRoute: LiveIntelligenceRoute,
 ): number {
+  let base: number;
+
   if (
     type === "workspace-action"
   ) {
-    return 0.98;
-  }
-
-  if (
+    base = 0.98;
+  } else if (
     intent === "plan" ||
     intent === "analyze"
   ) {
-    return 0.9;
+    base = 0.9;
+  } else if (intent === "execute") {
+    base =
+      prompt.length >= 8
+        ? 0.86
+        : 0.72;
+  } else if (intent === "question") {
+    base = 0.88;
+  } else {
+    base = 0.76;
   }
 
-  if (intent === "execute") {
-    return prompt.length >= 8
-      ? 0.86
-      : 0.72;
+  if (webRoute.required) {
+    return Math.min(
+      base,
+      0.82,
+    );
   }
 
-  if (intent === "question") {
-    return 0.88;
-  }
-
-  return 0.76;
+  return base;
 }
 
 export interface RuntimePlan {
@@ -555,6 +613,7 @@ export interface RuntimePlan {
   steps: string[];
   responseMode: ResponseMode;
   responseRules: string[];
+  webRoute: LiveIntelligenceRoute;
   createdAt: number;
 }
 
@@ -573,6 +632,11 @@ export function buildRuntimePlan(
     detectPlannerIntent(
       cleanPrompt,
       action,
+    );
+
+  const webRoute =
+    routeLiveIntelligence(
+      cleanPrompt,
     );
 
   const type: RuntimePlanType =
@@ -604,23 +668,28 @@ export function buildRuntimePlan(
         type,
         intent,
         cleanPrompt,
+        webRoute,
       ),
     action,
     capabilities:
       selectCapabilities(
         type,
         intent,
+        webRoute,
       ),
     steps:
       createPlanSteps(
         type,
         intent,
+        webRoute,
       ),
     responseMode,
     responseRules:
       createResponseRules(
         responseMode,
+        webRoute,
       ),
+    webRoute,
     createdAt: Date.now(),
   };
 }
@@ -650,6 +719,31 @@ export function buildPlannerContext(
       )
       .join("\n");
 
+  const webSection =
+    plan.webRoute.required
+      ? [
+          "外部证据层：",
+          "本请求必须获取外部信息。",
+          `信息类别：${plan.webRoute.category}`,
+          `数据新鲜度：${plan.webRoute.freshness}`,
+          `检索原因：${plan.webRoute.reason}`,
+          `检索目标：${plan.webRoute.query}`,
+          "",
+          "证据处理顺序：",
+          "1. 获取外部证据",
+          "2. 判断来源可信度",
+          "3. 检查独立来源是否相互支持",
+          "4. 提取关键事实",
+          "5. 形成 AIOS 判断",
+          "6. 给出行动建议",
+          "",
+          "如果证据不足，不得假装确定。",
+        ].join("\n")
+      : [
+          "外部证据层：",
+          "本请求不需要实时外部信息。",
+        ].join("\n");
+
   return [
     "你是 AIOS Runtime 的执行引擎。",
     "你的职责是完成目标，而不是向用户解释系统架构。",
@@ -661,24 +755,32 @@ export function buildPlannerContext(
     "内部执行步骤：",
     planSteps,
     "",
-    "最终回答规则：",
-    responseRules,
+    webSection,
     "",
     "AIOS Response Intelligence：",
-    "最终回答不是搜索结果的复制品。",
-    "你必须先识别最重要的信息，再组织表达。",
-    "实时数据优先突出当前值、数据时间和口径。",
-    "多个来源数据不一致时，解释为什么不一致。",
-    "不要为了显示信息完整而制造拥挤表格。",
-    "优先让用户一眼看到结论、关键数字和下一步。",
-    "来源用于证明事实，不应该压过事实本身。",
-    "如果用户没有要求表格，默认使用手机友好的分组文本。",
+    responseRules,
+    "",
+    "最终回答结构：",
+    "结论",
+    "关键事实",
+    "AIOS判断",
+    "行动建议",
+    "可信度与来源",
+    "",
+    "表达要求：",
+    "默认使用手机友好的分组文本。",
+    "禁止默认 Markdown 表格。",
+    "禁止 |---|---|---| 风格。",
+    "不要把搜索结果直接复制给用户。",
+    "不要把来源列表放在结论之前。",
     "",
     "重要限制：",
-    "不要在最终回答中输出“内部执行步骤”“意图”“响应模式”“置信度”或“能力调用”。",
-    "不要复述整段历史内容。",
+    "不要在最终回答中输出内部执行步骤。",
+    "不要输出内部意图。",
+    "不要输出响应模式。",
+    "不要输出能力调用。",
+    "不要暴露内部推理过程。",
     "不要为了显得专业而扩写。",
-    "除非用户明确要求详细报告，否则严格遵守长度限制。",
     "",
     `用户请求：${plan.prompt}`,
   ].join("\n");
