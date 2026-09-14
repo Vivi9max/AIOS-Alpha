@@ -73,12 +73,18 @@ interface BraveResponse {
   grounding?: {
     generic?: BraveGenericResult[];
   };
-  sources?: Record<
-    string,
-    BraveSourceMetadata
-  >;
+  sources?: Record<string, BraveSourceMetadata>;
   web?: {
     results?: BraveWebResult[];
+  };
+}
+
+interface BraveErrorResponse {
+  error?: {
+    id?: unknown;
+    status?: unknown;
+    detail?: unknown;
+    code?: unknown;
   };
 }
 
@@ -355,80 +361,52 @@ const LIVE_SIGNAL_GROUPS: Array<{
   },
 ];
 
-function normalizePrompt(
-  prompt: string,
-): string {
-  return prompt
-    .replace(/\s+/g, " ")
-    .trim();
+function normalizePrompt(prompt: string): string {
+  return prompt.replace(/\s+/g, " ").trim();
 }
 
-function findMatchedSignals(
-  normalized: string,
-): string[] {
-  const lower =
-    normalized.toLowerCase();
-
+function findMatchedSignals(normalized: string): string[] {
+  const lower = normalized.toLowerCase();
   const matches: string[] = [];
 
-  for (
-    const group of LIVE_SIGNAL_GROUPS
-  ) {
-    for (
-      const signal of group.signals
-    ) {
-      if (
-        lower.includes(
-          signal.toLowerCase(),
-        )
-      ) {
+  for (const group of LIVE_SIGNAL_GROUPS) {
+    for (const signal of group.signals) {
+      if (lower.includes(signal.toLowerCase())) {
         matches.push(signal);
       }
     }
   }
 
-  return Array.from(
-    new Set(matches),
-  );
+  return Array.from(new Set(matches));
 }
 
 function resolveCategory(
   normalized: string,
 ): LiveIntelligenceCategory {
-  const lower =
-    normalized.toLowerCase();
+  const lower = normalized.toLowerCase();
 
-  const priority:
-    LiveIntelligenceCategory[] = [
-      "finance",
-      "weather",
-      "news",
-      "policy",
-      "market",
-      "product",
-      "technology",
-    ];
+  const priority: LiveIntelligenceCategory[] = [
+    "finance",
+    "weather",
+    "news",
+    "policy",
+    "market",
+    "product",
+    "technology",
+  ];
 
-  for (
-    const category of priority
-  ) {
-    const group =
-      LIVE_SIGNAL_GROUPS.find(
-        (item) =>
-          item.category ===
-          category,
-      );
+  for (const category of priority) {
+    const group = LIVE_SIGNAL_GROUPS.find(
+      (item) => item.category === category,
+    );
 
     if (!group) {
       continue;
     }
 
     if (
-      group.signals.some(
-        (signal) =>
-          lower.includes(
-            signal.toLowerCase(),
-          ),
+      group.signals.some((signal) =>
+        lower.includes(signal.toLowerCase()),
       )
     ) {
       return category;
@@ -438,13 +416,8 @@ function resolveCategory(
   return "general";
 }
 
-function resolveFreshness(
-  prompt: string,
-): WebFreshness {
-  const normalized =
-    normalizePrompt(
-      prompt,
-    ).toLowerCase();
+function resolveFreshness(prompt: string): WebFreshness {
+  const normalized = normalizePrompt(prompt).toLowerCase();
 
   if (
     [
@@ -462,12 +435,7 @@ function resolveFreshness(
       "live",
       "now",
       "today",
-    ].some(
-      (value) =>
-        normalized.includes(
-          value,
-        ),
-    )
+    ].some((value) => normalized.includes(value))
   ) {
     return "24h";
   }
@@ -485,12 +453,7 @@ function resolveFreshness(
       "latest news",
       "breaking news",
       "this week",
-    ].some(
-      (value) =>
-        normalized.includes(
-          value,
-        ),
-    )
+    ].some((value) => normalized.includes(value))
   ) {
     return "7d";
   }
@@ -503,12 +466,7 @@ function resolveFreshness(
       "近期发生",
       "recent",
       "recently",
-    ].some(
-      (value) =>
-        normalized.includes(
-          value,
-        ),
-    )
+    ].some((value) => normalized.includes(value))
   ) {
     return "30d";
   }
@@ -516,14 +474,9 @@ function resolveFreshness(
   return "general";
 }
 
-function buildFinanceQuery(
-  prompt: string,
-): string {
-  const normalized =
-    normalizePrompt(prompt);
-
-  const lower =
-    normalized.toLowerCase();
+function buildFinanceQuery(prompt: string): string {
+  const normalized = normalizePrompt(prompt);
+  const lower = normalized.toLowerCase();
 
   if (
     lower.includes("金价") ||
@@ -547,9 +500,7 @@ function buildFinanceQuery(
 
   if (
     lower.includes("汇率") ||
-    lower.includes(
-      "exchange rate",
-    ) ||
+    lower.includes("exchange rate") ||
     lower.includes("兑")
   ) {
     return [
@@ -566,9 +517,7 @@ function buildFinanceQuery(
     lower.includes("股票") ||
     lower.includes("股价") ||
     lower.includes("stock") ||
-    lower.includes(
-      "share price",
-    )
+    lower.includes("share price")
   ) {
     return [
       normalized,
@@ -579,30 +528,20 @@ function buildFinanceQuery(
       .slice(0, 400);
   }
 
-  return normalized.slice(
-    0,
-    400,
-  );
+  return normalized.slice(0, 400);
 }
 
 function buildSearchQuery(
   prompt: string,
   category: LiveIntelligenceCategory,
 ): string {
-  if (
-    category === "finance"
-  ) {
-    return buildFinanceQuery(
-      prompt,
-    );
+  if (category === "finance") {
+    return buildFinanceQuery(prompt);
   }
 
-  const normalized =
-    normalizePrompt(prompt);
+  const normalized = normalizePrompt(prompt);
 
-  if (
-    category === "weather"
-  ) {
+  if (category === "weather") {
     return [
       normalized,
       "current weather",
@@ -611,91 +550,69 @@ function buildSearchQuery(
       .slice(0, 400);
   }
 
-  return normalized.slice(
-    0,
-    400,
-  );
+  return normalized.slice(0, 400);
 }
 
 export function routeLiveIntelligence(
   prompt: string,
 ): LiveIntelligenceRoute {
-  const normalized =
-    normalizePrompt(prompt);
-
-  const lower =
-    normalized.toLowerCase();
+  const normalized = normalizePrompt(prompt);
+  const lower = normalized.toLowerCase();
 
   const matchedSignals =
-    findMatchedSignals(
-      normalized,
-    );
+    findMatchedSignals(normalized);
 
   const category =
-    resolveCategory(
-      normalized,
-    );
+    resolveCategory(normalized);
 
-  const explicitSearch =
-    [
-      "查询",
-      "查一下",
-      "帮我查",
-      "搜索",
-      "搜一下",
-      "搜索一下",
-      "帮我搜索",
-      "帮我搜",
-      "查找",
-      "找一下",
-      "帮我找",
-      "联网",
-      "网上查",
-      "在线查询",
-      "search",
-      "search for",
-      "look up",
-      "find",
-      "find out",
-      "check online",
-      "online",
-      "web search",
-      "research",
-    ].some(
-      (signal) =>
-        lower.includes(
-          signal.toLowerCase(),
-        ),
-    );
+  const explicitSearch = [
+    "查询",
+    "查一下",
+    "帮我查",
+    "搜索",
+    "搜一下",
+    "搜索一下",
+    "帮我搜索",
+    "帮我搜",
+    "查找",
+    "找一下",
+    "帮我找",
+    "联网",
+    "网上查",
+    "在线查询",
+    "search",
+    "search for",
+    "look up",
+    "find",
+    "find out",
+    "check online",
+    "online",
+    "web search",
+    "research",
+  ].some((signal) =>
+    lower.includes(signal.toLowerCase()),
+  );
 
   const required =
     matchedSignals.length > 0 ||
     explicitSearch;
 
-  const freshness =
-    required
-      ? resolveFreshness(
-          normalized,
-        )
-      : "general";
+  const freshness = required
+    ? resolveFreshness(normalized)
+    : "general";
 
-  const query =
-    required
-      ? buildSearchQuery(
-          normalized,
-          category,
-        )
-      : normalized.slice(
-          0,
-          400,
-        );
+  const query = required
+    ? buildSearchQuery(
+        normalized,
+        category,
+      )
+    : normalized.slice(0, 400);
 
-  const reason =
-    required
-      ? explicitSearch
-        ? "The user explicitly requested external web information."
-        : `Live information detected: ${matchedSignals.join(", ")}.`
-      : "The request can be answered without live external information.";
+  const reason = required
+    ? explicitSearch
+      ? "The user explicitly requested external web information."
+      : `Live information detected: ${matchedSignals.join(", ")}.`
+    : "The request can be answered without live external information.";
 
   return {
     required,
@@ -710,28 +627,26 @@ export function routeLiveIntelligence(
 export function requiresWebIntelligence(
   prompt: string,
 ): boolean {
-  return routeLiveIntelligence(
-    prompt,
-  ).required;
+  return routeLiveIntelligence(prompt).required;
 }
 
+/*
+ * Brave accepts a 2+ character language code.
+ *
+ * We deliberately use the language preference only as a
+ * hint. If the API rejects the language value, retrieval
+ * automatically retries without search_lang rather than
+ * treating the whole Internet layer as unavailable.
+ */
 function resolveSearchLanguage(
   prompt: string,
 ): string {
-  if (
-    /[\u3040-\u30ff]/u.test(
-      prompt,
-    )
-  ) {
+  if (/[\u3040-\u30ff]/u.test(prompt)) {
     return "ja";
   }
 
-  if (
-    /[\u4e00-\u9fff]/u.test(
-      prompt,
-    )
-  ) {
-    return "zh";
+  if (/[\u4e00-\u9fff]/u.test(prompt)) {
+    return "zh-hans";
   }
 
   return "en";
@@ -743,69 +658,55 @@ function normalizeHostname(
   return hostname
     .trim()
     .toLowerCase()
-    .replace(
-      /^www\./,
-      "",
-    );
+    .replace(/^www\./, "");
 }
 
 function normalizeSourceDomain(
   hostname: string,
 ): string {
   const normalized =
-    normalizeHostname(
-      hostname,
-    );
+    normalizeHostname(hostname);
 
   const parts =
     normalized
       .split(".")
       .filter(Boolean);
 
-  if (
-    parts.length <= 2
-  ) {
+  if (parts.length <= 2) {
     return normalized;
   }
 
-  const compound =
-    new Set([
-      "co.uk",
-      "org.uk",
-      "ac.uk",
-      "gov.uk",
-      "com.cn",
-      "net.cn",
-      "org.cn",
-      "gov.cn",
-      "com.hk",
-      "net.hk",
-      "org.hk",
-      "gov.hk",
-      "com.jp",
-      "net.jp",
-      "org.jp",
-      "co.jp",
-      "go.jp",
-    ]);
+  const compound = new Set([
+    "co.uk",
+    "org.uk",
+    "ac.uk",
+    "gov.uk",
+    "com.cn",
+    "net.cn",
+    "org.cn",
+    "gov.cn",
+    "com.hk",
+    "net.hk",
+    "org.hk",
+    "gov.hk",
+    "com.jp",
+    "net.jp",
+    "org.jp",
+    "co.jp",
+    "go.jp",
+  ]);
 
   const suffix =
-    parts
-      .slice(-2)
-      .join(".");
+    parts.slice(-2).join(".");
 
   if (
     compound.has(suffix) &&
     parts.length >= 3
   ) {
-    return parts
-      .slice(-3)
-      .join(".");
+    return parts.slice(-3).join(".");
   }
 
-  return parts
-    .slice(-2)
-    .join(".");
+  return parts.slice(-2).join(".");
 }
 
 function calculateConfidence(
@@ -818,53 +719,29 @@ function calculateConfidence(
       : 0.65;
 
   if (
-    hostname.endsWith(
-      ".gov",
-    ) ||
-    hostname.endsWith(
-      ".go.jp",
-    ) ||
-    hostname.endsWith(
-      ".gov.hk",
-    ) ||
-    hostname.endsWith(
-      ".gov.cn",
-    )
+    hostname.endsWith(".gov") ||
+    hostname.endsWith(".go.jp") ||
+    hostname.endsWith(".gov.hk") ||
+    hostname.endsWith(".gov.cn")
   ) {
     score += 0.12;
   }
 
-  if (
-    hostname.includes(
-      "official",
-    )
-  ) {
+  if (hostname.includes("official")) {
     score += 0.05;
   }
 
-  return Math.min(
-    0.98,
-    score,
-  );
+  return Math.min(0.98, score);
 }
 
 function sanitizeSnippet(
   value: string,
 ): string {
   return value
-    .replace(
-      /\u0000/g,
-      "",
-    )
-    .replace(
-      /\s+/g,
-      " ",
-    )
+    .replace(/\u0000/g, "")
+    .replace(/\s+/g, " ")
     .trim()
-    .slice(
-      0,
-      2400,
-    );
+    .slice(0, 2400);
 }
 
 function extractContextEvidence(
@@ -872,98 +749,75 @@ function extractContextEvidence(
   freshness: WebFreshness,
 ): WebEvidence[] {
   const generic =
-    Array.isArray(
-      raw.grounding?.generic,
-    )
+    Array.isArray(raw.grounding?.generic)
       ? raw.grounding.generic
       : [];
 
-  const retrievedAt =
-    Date.now();
+  const retrievedAt = Date.now();
 
   return generic
-    .map(
-      (
-        item,
-        index,
-      ) => {
-        const url =
-          typeof item.url ===
-          "string"
-            ? item.url
-            : "";
+    .map((item, index) => {
+      const url =
+        typeof item.url === "string"
+          ? item.url
+          : "";
 
-        if (!url) {
-          return null;
-        }
+      if (!url) {
+        return null;
+      }
 
-        let hostname = "";
+      let hostname = "";
 
-        try {
-          hostname =
-            new URL(
-              url,
-            ).hostname;
-        } catch {
-          return null;
-        }
+      try {
+        hostname =
+          new URL(url).hostname;
+      } catch {
+        return null;
+      }
 
-        const snippets =
-          Array.isArray(
-            item.snippets,
-          )
-            ? item.snippets
-                .filter(
-                  (
-                    value,
-                  ): value is string =>
-                    typeof value ===
-                    "string",
-                )
-                .map(
-                  sanitizeSnippet,
-                )
-                .filter(Boolean)
-            : [];
+      const snippets =
+        Array.isArray(item.snippets)
+          ? item.snippets
+              .filter(
+                (
+                  value,
+                ): value is string =>
+                  typeof value === "string",
+              )
+              .map(sanitizeSnippet)
+              .filter(Boolean)
+          : [];
 
-        if (
-          snippets.length ===
-          0
-        ) {
-          return null;
-        }
+      if (snippets.length === 0) {
+        return null;
+      }
 
-        return {
-          id:
-            `web-${retrievedAt}-${index}`,
-          url,
-          title:
-            typeof item.title ===
-            "string"
-              ? item.title
-              : hostname,
-          hostname,
-          snippets,
-          freshness,
-          retrievedAt,
-          confidence:
-            calculateConfidence(
-              hostname,
-              generic.length,
-            ),
-        };
-      },
-    )
+      return {
+        id:
+          `web-${retrievedAt}-${index}`,
+        url,
+        title:
+          typeof item.title === "string"
+            ? item.title
+            : hostname,
+        hostname,
+        snippets,
+        freshness,
+        retrievedAt,
+        confidence:
+          calculateConfidence(
+            hostname,
+            generic.length,
+          ),
+      };
+    })
     .filter(
       (
         item,
       ): item is WebEvidence =>
         item !== null,
     )
-    .slice(
-      0,
-      12,
-    );
+    .slice(0, 12);
 }
 
 function extractWebSearchEvidence(
@@ -971,197 +825,124 @@ function extractWebSearchEvidence(
   freshness: WebFreshness,
 ): WebEvidence[] {
   const results =
-    Array.isArray(
-      raw.web?.results,
-    )
+    Array.isArray(raw.web?.results)
       ? raw.web.results
       : [];
 
-  const retrievedAt =
-    Date.now();
+  const retrievedAt = Date.now();
 
   return results
-    .map(
-      (
-        item,
-        index,
-      ) => {
-        const url =
-          typeof item.url ===
-          "string"
-            ? item.url
-            : "";
+    .map((item, index) => {
+      const url =
+        typeof item.url === "string"
+          ? item.url
+          : "";
 
-        if (!url) {
-          return null;
-        }
+      if (!url) {
+        return null;
+      }
 
-        let hostname = "";
+      let hostname = "";
 
-        try {
-          hostname =
-            new URL(
-              url,
-            ).hostname;
-        } catch {
-          return null;
-        }
+      try {
+        hostname =
+          new URL(url).hostname;
+      } catch {
+        return null;
+      }
 
-        const snippets: string[] = [];
+      const snippets: string[] = [];
 
-        if (
-          typeof item.description ===
-          "string"
+      if (
+        typeof item.description ===
+        "string"
+      ) {
+        snippets.push(
+          sanitizeSnippet(
+            item.description,
+          ),
+        );
+      }
+
+      if (
+        Array.isArray(
+          item.extra_snippets,
+        )
+      ) {
+        for (
+          const value of
+            item.extra_snippets
         ) {
-          snippets.push(
-            sanitizeSnippet(
-              item.description,
-            ),
-          );
-        }
-
-        if (
-          Array.isArray(
-            item.extra_snippets,
-          )
-        ) {
-          for (
-            const value of
-              item.extra_snippets
+          if (
+            typeof value === "string"
           ) {
-            if (
-              typeof value ===
-              "string"
-            ) {
-              const clean =
-                sanitizeSnippet(
-                  value,
-                );
+            const clean =
+              sanitizeSnippet(value);
 
-              if (clean) {
-                snippets.push(
-                  clean,
-                );
-              }
+            if (clean) {
+              snippets.push(clean);
             }
           }
         }
+      }
 
-        const uniqueSnippets =
-          Array.from(
-            new Set(
-              snippets.filter(
-                Boolean,
-              ),
-            ),
-          );
+      const uniqueSnippets =
+        Array.from(
+          new Set(
+            snippets.filter(Boolean),
+          ),
+        );
 
-        if (
-          uniqueSnippets.length ===
-          0
-        ) {
-          return null;
-        }
+      if (
+        uniqueSnippets.length === 0
+      ) {
+        return null;
+      }
 
-        return {
-          id:
-            `web-search-${retrievedAt}-${index}`,
-          url,
-          title:
-            typeof item.title ===
-            "string"
-              ? item.title
-              : hostname,
-          hostname,
-          snippets:
-            uniqueSnippets,
-          freshness,
-          retrievedAt,
-          confidence:
-            calculateConfidence(
-              hostname,
-              results.length,
-            ),
-        };
-      },
-    )
+      return {
+        id:
+          `web-search-${retrievedAt}-${index}`,
+        url,
+        title:
+          typeof item.title === "string"
+            ? item.title
+            : hostname,
+        hostname,
+        snippets:
+          uniqueSnippets,
+        freshness,
+        retrievedAt,
+        confidence:
+          calculateConfidence(
+            hostname,
+            results.length,
+          ),
+      };
+    })
     .filter(
       (
         item,
       ): item is WebEvidence =>
         item !== null,
     )
-    .slice(
-      0,
-      12,
-    );
+    .slice(0, 12);
 }
 
 async function callBrave(
   endpointPath: string,
   query: string,
-  searchLang: string,
+  searchLang?: string,
   freshness?: string,
 ): Promise<{
   response: Response;
   raw: BraveResponse;
+  errorDetail?: string;
 }> {
   const endpoint =
-    new URL(
-      `https://api.search.brave.com/res/v1/${endpointPath}`,
-    );
-
-  endpoint.searchParams.set(
-    "q",
-    query,
-  );
-
-  endpoint.searchParams.set(
-    "count",
-    "10",
-  );
-
-  endpoint.searchParams.set(
-    "search_lang",
-    searchLang,
-  );
-
-  if (freshness) {
-    endpoint.searchParams.set(
-      "freshness",
-      freshness,
-    );
-  }
-
-  if (
-    endpointPath ===
-    "llm/context"
-  ) {
-    endpoint.searchParams.set(
-      "maximum_number_of_tokens",
-      "8192",
-    );
-
-    endpoint.searchParams.set(
-      "maximum_number_of_urls",
-      "12",
-    );
-
-    endpoint.searchParams.set(
-      "maximum_number_of_snippets",
-      "40",
-    );
-
-    endpoint.searchParams.set(
-      "enable_source_metadata",
-      "true",
-    );
-  }
+    `https://api.search.brave.com/res/v1/${endpointPath}`;
 
   const apiKey =
-    process.env
-      .BRAVE_SEARCH_API_KEY
-      ?.trim();
+    process.env.BRAVE_SEARCH_API_KEY?.trim();
 
   if (!apiKey) {
     throw new Error(
@@ -1169,73 +950,121 @@ async function callBrave(
     );
   }
 
+  const body: Record<string, unknown> = {
+    q: query,
+    count: 10,
+  };
+
+  if (searchLang) {
+    body.search_lang = searchLang;
+  }
+
+  if (freshness) {
+    body.freshness = freshness;
+  }
+
+  if (endpointPath === "llm/context") {
+    body.maximum_number_of_tokens = 8192;
+    body.maximum_number_of_urls = 12;
+    body.maximum_number_of_snippets = 40;
+    body.enable_source_metadata = true;
+  }
+
   const controller =
     new AbortController();
 
   const timeout =
     setTimeout(
-      () =>
-        controller.abort(),
+      () => controller.abort(),
       30000,
     );
 
   try {
     const response =
       await fetch(
-        endpoint.toString(),
+        endpoint,
         {
-          method: "GET",
+          method: "POST",
           headers: {
             Accept:
+              "application/json",
+            "Content-Type":
               "application/json",
             "Accept-Encoding":
               "gzip",
             "X-Subscription-Token":
               apiKey,
           },
-          cache:
-            "no-store",
+          body:
+            JSON.stringify(body),
+          cache: "no-store",
           signal:
             controller.signal,
         },
       );
 
-    const raw =
-      (await response.json()) as BraveResponse;
+    const json =
+      await response.json();
+
+    if (!response.ok) {
+      const errorBody =
+        json as BraveErrorResponse;
+
+      const detail =
+        typeof errorBody.error?.detail ===
+        "string"
+          ? errorBody.error.detail
+          : typeof errorBody.error?.code ===
+              "string"
+            ? errorBody.error.code
+            : undefined;
+
+      return {
+        response,
+        raw: {},
+        errorDetail: detail,
+      };
+    }
 
     return {
       response,
-      raw,
+      raw:
+        json as BraveResponse,
     };
   } finally {
-    clearTimeout(
-      timeout,
-    );
+    clearTimeout(timeout);
   }
 }
 
 function freshnessToBraveValue(
   freshness: WebFreshness,
 ): string | undefined {
-  if (
-    freshness === "24h"
-  ) {
+  if (freshness === "24h") {
     return "pd";
   }
 
-  if (
-    freshness === "7d"
-  ) {
+  if (freshness === "7d") {
     return "pw";
   }
 
-  if (
-    freshness === "30d"
-  ) {
+  if (freshness === "30d") {
     return "pm";
   }
 
   return undefined;
+}
+
+function formatBraveError(
+  label: string,
+  response: Response,
+  detail?: string,
+): string {
+  return [
+    `${label} failed with HTTP ${response.status}.`,
+    detail,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function retrieveWithContext(
@@ -1246,14 +1075,13 @@ async function retrieveWithContext(
   error?: string;
 }> {
   const freshness =
-    route.category ===
-    "finance"
+    route.category === "finance"
       ? undefined
       : freshnessToBraveValue(
           route.freshness,
         );
 
-  const first =
+  let first =
     await callBrave(
       "llm/context",
       route.query,
@@ -1269,14 +1097,38 @@ async function retrieveWithContext(
         )
       : [];
 
+  /*
+   * If Brave rejects the language parameter,
+   * retry once without search_lang.
+   */
   if (
-    evidence.length === 0
+    !first.response.ok &&
+    first.response.status === 422 &&
+    searchLang
   ) {
+    first =
+      await callBrave(
+        "llm/context",
+        route.query,
+        undefined,
+        freshness,
+      );
+
+    evidence =
+      first.response.ok
+        ? extractContextEvidence(
+            first.raw,
+            route.freshness,
+          )
+        : [];
+  }
+
+  if (evidence.length === 0) {
     const retry =
       await callBrave(
         "llm/context",
         route.query,
-        searchLang,
+        undefined,
       );
 
     evidence =
@@ -1287,22 +1139,22 @@ async function retrieveWithContext(
           )
         : [];
 
-    if (
-      evidence.length === 0
-    ) {
+    if (evidence.length === 0) {
       return {
         evidence: [],
         error:
           retry.response.ok
             ? "LLM Context returned no usable evidence."
-            : `LLM Context failed with HTTP ${retry.response.status}.`,
+            : formatBraveError(
+                "LLM Context",
+                retry.response,
+                retry.errorDetail,
+              ),
       };
     }
   }
 
-  return {
-    evidence,
-  };
+  return { evidence };
 }
 
 async function retrieveWithWebSearch(
@@ -1317,7 +1169,7 @@ async function retrieveWithWebSearch(
       route.freshness,
     );
 
-  const first =
+  let first =
     await callBrave(
       "web/search",
       route.query,
@@ -1334,13 +1186,33 @@ async function retrieveWithWebSearch(
       : [];
 
   if (
-    evidence.length === 0
+    !first.response.ok &&
+    first.response.status === 422 &&
+    searchLang
   ) {
+    first =
+      await callBrave(
+        "web/search",
+        route.query,
+        undefined,
+        freshness,
+      );
+
+    evidence =
+      first.response.ok
+        ? extractWebSearchEvidence(
+            first.raw,
+            route.freshness,
+          )
+        : [];
+  }
+
+  if (evidence.length === 0) {
     const retry =
       await callBrave(
         "web/search",
         route.query,
-        searchLang,
+        undefined,
       );
 
     evidence =
@@ -1351,36 +1223,32 @@ async function retrieveWithWebSearch(
           )
         : [];
 
-    if (
-      evidence.length === 0
-    ) {
+    if (evidence.length === 0) {
       return {
         evidence: [],
         error:
           retry.response.ok
             ? "Standard Web Search returned no usable evidence."
-            : `Standard Web Search failed with HTTP ${retry.response.status}.`,
+            : formatBraveError(
+                "Standard Web Search",
+                retry.response,
+                retry.errorDetail,
+              ),
       };
     }
   }
 
-  return {
-    evidence,
-  };
+  return { evidence };
 }
 
 export async function retrieveWebEvidence(
   prompt: string,
 ): Promise<WebIntelligenceResult> {
   const route =
-    routeLiveIntelligence(
-      prompt,
-    );
+    routeLiveIntelligence(prompt);
 
   const searchLang =
-    resolveSearchLanguage(
-      prompt,
-    );
+    resolveSearchLanguage(prompt);
 
   if (!route.required) {
     return {
@@ -1398,13 +1266,6 @@ export async function retrieveWebEvidence(
   }
 
   try {
-    /*
-     * Primary path:
-     * Brave LLM Context.
-     *
-     * This is the preferred path because it returns
-     * pre-extracted web content designed for AI grounding.
-     */
     const contextResult =
       await retrieveWithContext(
         route,
@@ -1421,17 +1282,11 @@ export async function retrieveWebEvidence(
         ? "llm-context"
         : "web-search";
 
-    /*
-     * Fallback path:
-     * Standard Brave Web Search.
-     *
-     * This makes Internet Research resilient when
-     * LLM Context returns empty grounding content.
-     */
-    if (
-      evidence.length ===
-      0
-    ) {
+    let webSearchError:
+      | string
+      | undefined;
+
+    if (evidence.length === 0) {
       const webSearchResult =
         await retrieveWithWebSearch(
           route,
@@ -1441,48 +1296,42 @@ export async function retrieveWebEvidence(
       evidence =
         webSearchResult.evidence;
 
-      if (
-        evidence.length > 0
-      ) {
+      webSearchError =
+        webSearchResult.error;
+
+      if (evidence.length > 0) {
         retrievalMode =
           "web-search";
       }
+    }
 
-      if (
-        evidence.length ===
-        0
-      ) {
-        return {
-          success: false,
-          query:
-            route.query,
-          verified: false,
-          provider: "brave",
-          evidence: [],
-          sourceCount: 0,
-          sourceHosts: [],
-          route,
-          error: [
-            contextResult.error,
-            webSearchResult.error,
-          ]
-            .filter(Boolean)
-            .join(
-              " | ",
-            ),
-        };
-      }
+    if (evidence.length === 0) {
+      return {
+        success: false,
+        query: route.query,
+        verified: false,
+        provider: "brave",
+        evidence: [],
+        sourceCount: 0,
+        sourceHosts: [],
+        route,
+        error: [
+          contextResult.error,
+          webSearchError,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      };
     }
 
     const sourceHosts =
       Array.from(
         new Set(
           evidence
-            .map(
-              (item) =>
-                normalizeHostname(
-                  item.hostname,
-                ),
+            .map((item) =>
+              normalizeHostname(
+                item.hostname,
+              ),
             )
             .filter(Boolean),
         ),
@@ -1492,11 +1341,10 @@ export async function retrieveWebEvidence(
       Array.from(
         new Set(
           evidence
-            .map(
-              (item) =>
-                normalizeSourceDomain(
-                  item.hostname,
-                ),
+            .map((item) =>
+              normalizeSourceDomain(
+                item.hostname,
+              ),
             )
             .filter(Boolean),
         ),
