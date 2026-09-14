@@ -33,6 +33,7 @@ export type RuntimeCapability =
   | "tasks.read"
   | "tasks.write"
   | "workspace.action"
+  | "web.intelligence"
   | "ai.reason"
   | "ai.plan"
   | "ai.respond";
