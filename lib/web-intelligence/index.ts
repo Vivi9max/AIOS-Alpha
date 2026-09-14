@@ -47,12 +47,20 @@ export interface WebIntelligenceResult {
   sourceHosts: string[];
   error?: string;
   route?: LiveIntelligenceRoute;
+  retrievalMode?: "llm-context" | "web-search";
 }
 
 interface BraveGenericResult {
   url?: unknown;
   title?: unknown;
   snippets?: unknown;
+}
+
+interface BraveWebResult {
+  url?: unknown;
+  title?: unknown;
+  description?: unknown;
+  extra_snippets?: unknown;
 }
 
 interface BraveSourceMetadata {
@@ -69,6 +77,9 @@ interface BraveResponse {
     string,
     BraveSourceMetadata
   >;
+  web?: {
+    results?: BraveWebResult[];
+  };
 }
 
 const LIVE_SIGNAL_GROUPS: Array<{
@@ -299,45 +310,47 @@ const LIVE_SIGNAL_GROUPS: Array<{
   {
     category: "general",
     signals: [
-      "现在",
-      "目前",
-      "当前",
-      "最新",
-      "实时",
-      "今天",
-      "今日",
-      "本周",
-      "近期",
-      "最近",
-      "刚刚",
-      "刚才",
-      "截至目前",
-      "截至今天",
-      "截至现在",
       "查询",
       "查一下",
       "帮我查",
       "帮我查询",
       "搜索",
       "搜一下",
+      "搜索一下",
+      "帮我搜索",
+      "帮我搜",
+      "查找",
+      "找一下",
+      "帮我找",
       "联网查询",
       "网上查",
       "在线查询",
-      "current",
-      "currently",
-      "latest",
-      "live",
-      "real-time",
-      "realtime",
-      "today",
-      "now",
-      "recent",
-      "recently",
-      "this week",
+      "互联网",
+      "网上信息",
+      "网络信息",
+      "资料",
+      "资料查询",
+      "信息查询",
+      "官网",
+      "官方网站",
+      "网站",
+      "网页",
+      "链接",
+      "来源",
+      "source",
+      "sources",
       "search",
+      "search for",
       "look up",
+      "find",
+      "find out",
       "check online",
       "online",
+      "web",
+      "website",
+      "official website",
+      "information",
+      "research",
     ],
   },
 ];
@@ -353,6 +366,9 @@ function normalizePrompt(
 function findMatchedSignals(
   normalized: string,
 ): string[] {
+  const lower =
+    normalized.toLowerCase();
+
   const matches: string[] = [];
 
   for (
@@ -362,7 +378,7 @@ function findMatchedSignals(
       const signal of group.signals
     ) {
       if (
-        normalized.includes(
+        lower.includes(
           signal.toLowerCase(),
         )
       ) {
@@ -379,6 +395,9 @@ function findMatchedSignals(
 function resolveCategory(
   normalized: string,
 ): LiveIntelligenceCategory {
+  const lower =
+    normalized.toLowerCase();
+
   const priority:
     LiveIntelligenceCategory[] = [
       "finance",
@@ -407,7 +426,7 @@ function resolveCategory(
     if (
       group.signals.some(
         (signal) =>
-          normalized.includes(
+          lower.includes(
             signal.toLowerCase(),
           ),
       )
@@ -521,7 +540,6 @@ function buildFinanceQuery(
       "RMB",
       "per gram",
       "Au99.99",
-      "Shanghai Gold Exchange",
     ]
       .join(" ")
       .slice(0, 400);
@@ -529,7 +547,9 @@ function buildFinanceQuery(
 
   if (
     lower.includes("汇率") ||
-    lower.includes("exchange rate") ||
+    lower.includes(
+      "exchange rate",
+    ) ||
     lower.includes("兑")
   ) {
     return [
@@ -546,7 +566,9 @@ function buildFinanceQuery(
     lower.includes("股票") ||
     lower.includes("股价") ||
     lower.includes("stock") ||
-    lower.includes("share price")
+    lower.includes(
+      "share price",
+    )
   ) {
     return [
       normalized,
@@ -599,9 +621,10 @@ export function routeLiveIntelligence(
   prompt: string,
 ): LiveIntelligenceRoute {
   const normalized =
-    normalizePrompt(
-      prompt,
-    ).toLowerCase();
+    normalizePrompt(prompt);
+
+  const lower =
+    normalized.toLowerCase();
 
   const matchedSignals =
     findMatchedSignals(
@@ -613,8 +636,41 @@ export function routeLiveIntelligence(
       normalized,
     );
 
+  const explicitSearch =
+    [
+      "查询",
+      "查一下",
+      "帮我查",
+      "搜索",
+      "搜一下",
+      "搜索一下",
+      "帮我搜索",
+      "帮我搜",
+      "查找",
+      "找一下",
+      "帮我找",
+      "联网",
+      "网上查",
+      "在线查询",
+      "search",
+      "search for",
+      "look up",
+      "find",
+      "find out",
+      "check online",
+      "online",
+      "web search",
+      "research",
+    ].some(
+      (signal) =>
+        lower.includes(
+          signal.toLowerCase(),
+        ),
+    );
+
   const required =
-    matchedSignals.length > 0;
+    matchedSignals.length > 0 ||
+    explicitSearch;
 
   const freshness =
     required
@@ -626,7 +682,7 @@ export function routeLiveIntelligence(
   const query =
     required
       ? buildSearchQuery(
-          prompt,
+          normalized,
           category,
         )
       : normalized.slice(
@@ -636,7 +692,9 @@ export function routeLiveIntelligence(
 
   const reason =
     required
-      ? `Live information detected: ${matchedSignals.join(", ")}. External web evidence is required before answering time-sensitive facts.`
+      ? explicitSearch
+        ? "The user explicitly requested external web information."
+        : `Live information detected: ${matchedSignals.join(", ")}.`
       : "The request can be answered without live external information.";
 
   return {
@@ -798,13 +856,18 @@ function sanitizeSnippet(
       /\u0000/g,
       "",
     )
+    .replace(
+      /\s+/g,
+      " ",
+    )
+    .trim()
     .slice(
       0,
       2400,
     );
 }
 
-function extractEvidence(
+function extractContextEvidence(
   raw: BraveResponse,
   freshness: WebFreshness,
 ): WebEvidence[] {
@@ -897,10 +960,145 @@ function extractEvidence(
       ): item is WebEvidence =>
         item !== null,
     )
-    .slice(0, 8);
+    .slice(
+      0,
+      12,
+    );
 }
 
-async function callBraveContext(
+function extractWebSearchEvidence(
+  raw: BraveResponse,
+  freshness: WebFreshness,
+): WebEvidence[] {
+  const results =
+    Array.isArray(
+      raw.web?.results,
+    )
+      ? raw.web.results
+      : [];
+
+  const retrievedAt =
+    Date.now();
+
+  return results
+    .map(
+      (
+        item,
+        index,
+      ) => {
+        const url =
+          typeof item.url ===
+          "string"
+            ? item.url
+            : "";
+
+        if (!url) {
+          return null;
+        }
+
+        let hostname = "";
+
+        try {
+          hostname =
+            new URL(
+              url,
+            ).hostname;
+        } catch {
+          return null;
+        }
+
+        const snippets: string[] = [];
+
+        if (
+          typeof item.description ===
+          "string"
+        ) {
+          snippets.push(
+            sanitizeSnippet(
+              item.description,
+            ),
+          );
+        }
+
+        if (
+          Array.isArray(
+            item.extra_snippets,
+          )
+        ) {
+          for (
+            const value of
+              item.extra_snippets
+          ) {
+            if (
+              typeof value ===
+              "string"
+            ) {
+              const clean =
+                sanitizeSnippet(
+                  value,
+                );
+
+              if (clean) {
+                snippets.push(
+                  clean,
+                );
+              }
+            }
+          }
+        }
+
+        const uniqueSnippets =
+          Array.from(
+            new Set(
+              snippets.filter(
+                Boolean,
+              ),
+            ),
+          );
+
+        if (
+          uniqueSnippets.length ===
+          0
+        ) {
+          return null;
+        }
+
+        return {
+          id:
+            `web-search-${retrievedAt}-${index}`,
+          url,
+          title:
+            typeof item.title ===
+            "string"
+              ? item.title
+              : hostname,
+          hostname,
+          snippets:
+            uniqueSnippets,
+          freshness,
+          retrievedAt,
+          confidence:
+            calculateConfidence(
+              hostname,
+              results.length,
+            ),
+        };
+      },
+    )
+    .filter(
+      (
+        item,
+      ): item is WebEvidence =>
+        item !== null,
+    )
+    .slice(
+      0,
+      12,
+    );
+}
+
+async function callBrave(
+  endpointPath: string,
   query: string,
   searchLang: string,
   freshness?: string,
@@ -910,7 +1108,7 @@ async function callBraveContext(
 }> {
   const endpoint =
     new URL(
-      "https://api.search.brave.com/res/v1/llm/context",
+      `https://api.search.brave.com/res/v1/${endpointPath}`,
     );
 
   endpoint.searchParams.set(
@@ -920,12 +1118,7 @@ async function callBraveContext(
 
   endpoint.searchParams.set(
     "count",
-    "8",
-  );
-
-  endpoint.searchParams.set(
-    "maximum_number_of_tokens",
-    "6000",
+    "10",
   );
 
   endpoint.searchParams.set(
@@ -933,15 +1126,35 @@ async function callBraveContext(
     searchLang,
   );
 
-  endpoint.searchParams.set(
-    "enable_source_metadata",
-    "true",
-  );
-
   if (freshness) {
     endpoint.searchParams.set(
       "freshness",
       freshness,
+    );
+  }
+
+  if (
+    endpointPath ===
+    "llm/context"
+  ) {
+    endpoint.searchParams.set(
+      "maximum_number_of_tokens",
+      "8192",
+    );
+
+    endpoint.searchParams.set(
+      "maximum_number_of_urls",
+      "12",
+    );
+
+    endpoint.searchParams.set(
+      "maximum_number_of_snippets",
+      "40",
+    );
+
+    endpoint.searchParams.set(
+      "enable_source_metadata",
+      "true",
     );
   }
 
@@ -1001,6 +1214,161 @@ async function callBraveContext(
   }
 }
 
+function freshnessToBraveValue(
+  freshness: WebFreshness,
+): string | undefined {
+  if (
+    freshness === "24h"
+  ) {
+    return "pd";
+  }
+
+  if (
+    freshness === "7d"
+  ) {
+    return "pw";
+  }
+
+  if (
+    freshness === "30d"
+  ) {
+    return "pm";
+  }
+
+  return undefined;
+}
+
+async function retrieveWithContext(
+  route: LiveIntelligenceRoute,
+  searchLang: string,
+): Promise<{
+  evidence: WebEvidence[];
+  error?: string;
+}> {
+  const freshness =
+    route.category ===
+    "finance"
+      ? undefined
+      : freshnessToBraveValue(
+          route.freshness,
+        );
+
+  const first =
+    await callBrave(
+      "llm/context",
+      route.query,
+      searchLang,
+      freshness,
+    );
+
+  let evidence =
+    first.response.ok
+      ? extractContextEvidence(
+          first.raw,
+          route.freshness,
+        )
+      : [];
+
+  if (
+    evidence.length === 0
+  ) {
+    const retry =
+      await callBrave(
+        "llm/context",
+        route.query,
+        searchLang,
+      );
+
+    evidence =
+      retry.response.ok
+        ? extractContextEvidence(
+            retry.raw,
+            route.freshness,
+          )
+        : [];
+
+    if (
+      evidence.length === 0
+    ) {
+      return {
+        evidence: [],
+        error:
+          retry.response.ok
+            ? "LLM Context returned no usable evidence."
+            : `LLM Context failed with HTTP ${retry.response.status}.`,
+      };
+    }
+  }
+
+  return {
+    evidence,
+  };
+}
+
+async function retrieveWithWebSearch(
+  route: LiveIntelligenceRoute,
+  searchLang: string,
+): Promise<{
+  evidence: WebEvidence[];
+  error?: string;
+}> {
+  const freshness =
+    freshnessToBraveValue(
+      route.freshness,
+    );
+
+  const first =
+    await callBrave(
+      "web/search",
+      route.query,
+      searchLang,
+      freshness,
+    );
+
+  let evidence =
+    first.response.ok
+      ? extractWebSearchEvidence(
+          first.raw,
+          route.freshness,
+        )
+      : [];
+
+  if (
+    evidence.length === 0
+  ) {
+    const retry =
+      await callBrave(
+        "web/search",
+        route.query,
+        searchLang,
+      );
+
+    evidence =
+      retry.response.ok
+        ? extractWebSearchEvidence(
+            retry.raw,
+            route.freshness,
+          )
+        : [];
+
+    if (
+      evidence.length === 0
+    ) {
+      return {
+        evidence: [],
+        error:
+          retry.response.ok
+            ? "Standard Web Search returned no usable evidence."
+            : `Standard Web Search failed with HTTP ${retry.response.status}.`,
+      };
+    }
+  }
+
+  return {
+    evidence,
+  };
+}
+
 export async function retrieveWebEvidence(
   prompt: string,
 ): Promise<WebIntelligenceResult> {
@@ -1014,93 +1382,96 @@ export async function retrieveWebEvidence(
       prompt,
     );
 
+  if (!route.required) {
+    return {
+      success: false,
+      query: route.query,
+      verified: false,
+      provider: "brave",
+      evidence: [],
+      sourceCount: 0,
+      sourceHosts: [],
+      route,
+      error:
+        "Web intelligence was not required for this request.",
+    };
+  }
+
   try {
     /*
-     * PASS 1
+     * Primary path:
+     * Brave LLM Context.
      *
-     * Normal live retrieval.
-     *
-     * Important:
-     * Finance current-value queries deliberately do NOT
-     * use the page-age freshness filter.
-     *
-     * A financial page can contain today's value while
-     * its webpage itself was published weeks or months ago.
+     * This is the preferred path because it returns
+     * pre-extracted web content designed for AI grounding.
      */
-    let result =
-      await callBraveContext(
-        route.query,
+    const contextResult =
+      await retrieveWithContext(
+        route,
         searchLang,
-        route.category ===
-          "finance"
-          ? undefined
-          : route.freshness ===
-              "24h"
-            ? "pd"
-            : route.freshness ===
-                "7d"
-              ? "pw"
-              : route.freshness ===
-                  "30d"
-                ? "pm"
-                : undefined,
       );
 
     let evidence =
-      result.response.ok
-        ? extractEvidence(
-            result.raw,
-            route.freshness,
-          )
-        : [];
+      contextResult.evidence;
+
+    let retrievalMode:
+      | "llm-context"
+      | "web-search" =
+      evidence.length > 0
+        ? "llm-context"
+        : "web-search";
 
     /*
-     * PASS 2
+     * Fallback path:
+     * Standard Brave Web Search.
      *
-     * If no evidence was returned, retry without any
-     * freshness restriction.
-     *
-     * This protects against the important distinction:
-     *
-     * "current information"
-     * is not the same thing as
-     * "a webpage published recently".
+     * This makes Internet Research resilient when
+     * LLM Context returns empty grounding content.
      */
     if (
-      evidence.length === 0
+      evidence.length ===
+      0
     ) {
-      result =
-        await callBraveContext(
-          route.query,
+      const webSearchResult =
+        await retrieveWithWebSearch(
+          route,
           searchLang,
         );
 
       evidence =
-        result.response.ok
-          ? extractEvidence(
-              result.raw,
-              route.freshness,
-            )
-          : [];
-    }
+        webSearchResult.evidence;
 
-    if (
-      evidence.length === 0
-    ) {
-      return {
-        success: false,
-        query: route.query,
-        verified: false,
-        provider: "brave",
-        evidence: [],
-        sourceCount: 0,
-        sourceHosts: [],
-        error:
-          result.response.ok
-            ? "No usable web evidence was returned after retry."
-            : `Brave Web Intelligence failed with HTTP ${result.response.status}.`,
-        route,
-      };
+      if (
+        evidence.length > 0
+      ) {
+        retrievalMode =
+          "web-search";
+      }
+
+      if (
+        evidence.length ===
+        0
+      ) {
+        return {
+          success: false,
+          query:
+            route.query,
+          verified: false,
+          provider: "brave",
+          evidence: [],
+          sourceCount: 0,
+          sourceHosts: [],
+          route,
+          error: [
+            contextResult.error,
+            webSearchResult.error,
+          ]
+            .filter(Boolean)
+            .join(
+              " | ",
+            ),
+        };
+      }
     }
 
     const sourceHosts =
@@ -1145,10 +1516,11 @@ export async function retrieveWebEvidence(
         evidence.length,
       sourceHosts,
       route,
+      retrievalMode,
       error:
         verified
           ? undefined
-          : "Web evidence was returned, but it did not contain enough independent source domains for verification.",
+          : "Web evidence was returned, but independent source verification is limited.",
     };
   } catch (error) {
     return {
