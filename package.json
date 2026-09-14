@@ -11,6 +11,7 @@
     "verify:locale:surface": "node scripts/verify-locale-surface.mjs",
     "verify:locale:quality": "node scripts/verify-locale-quality.mjs",
     "verify:product-language": "node scripts/verify-product-language.mjs",
+    "verify:locale:routes": "node scripts/verify-locale-routes.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
