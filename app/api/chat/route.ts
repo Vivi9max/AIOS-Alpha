@@ -41,6 +41,10 @@ import {
 } from "@/lib/web-intelligence";
 
 import {
+  getPersistentMemory,
+} from "@/lib/memory/store";
+
+import {
   createCommercialObjective,
   listCommercialObjectives,
   updateCommercialObjective,
@@ -142,17 +146,12 @@ function formatCommercialGap(
     objective.deadlineAt;
 
   const daysRemaining =
-    deadlineAt !==
-      undefined
+    deadlineAt !== undefined
       ? Math.max(
           0,
           Math.ceil(
-            (deadlineAt -
-              now) /
-              (24 *
-                60 *
-                60 *
-                1000),
+            (deadlineAt - now) /
+              (24 * 60 * 60 * 1000),
           ),
         )
       : null;
@@ -161,10 +160,9 @@ function formatCommercialGap(
     daysRemaining !== null &&
     daysRemaining > 0
       ? Math.round(
-          (
-            revenueGap /
-            daysRemaining
-          ) * 100,
+          (revenueGap /
+            daysRemaining) *
+            100,
         ) / 100
       : revenueGap;
 
@@ -257,25 +255,10 @@ async function executeChatPrompt(
     let objective;
 
     if (existing) {
-      /*
-       * C143.17.2
-       *
-       * Do not blindly reuse an old objective.
-       *
-       * Explicit values from the current request
-       * reconcile the existing objective.
-       *
-       * This fixes:
-       *
-       * old objective = CNY
-       * new request = USD
-       *
-       * without creating duplicate objectives.
-       */
-
-      const updates: Parameters<
-        typeof updateCommercialObjective
-      >[1] = {};
+      const updates:
+        Parameters<
+          typeof updateCommercialObjective
+        >[1] = {};
 
       if (
         commercialIntent.currency !==
@@ -350,8 +333,7 @@ async function executeChatPrompt(
       }
 
       objective =
-        Object.keys(updates)
-          .length > 0
+        Object.keys(updates).length > 0
           ? await updateCommercialObjective(
               existing.id,
               updates,
@@ -362,37 +344,26 @@ async function executeChatPrompt(
         await createCommercialObjective({
           title:
             commercialIntent.title,
-
           description:
             commercialIntent.description,
-
           status:
             "active",
-
           stage:
             commercialIntent.stage,
-
           currency:
             commercialIntent.currency,
-
           revenueTarget:
             commercialIntent.revenueTarget,
-
           costTarget:
             commercialIntent.costTarget,
-
           customerTarget:
             commercialIntent.customerTarget,
-
           deadlineDays:
             commercialIntent.deadlineDays,
-
           successCriteria:
             commercialIntent.successCriteria,
-
           outcomeId:
             null,
-
           taskId:
             null,
         });
@@ -422,21 +393,16 @@ async function executeChatPrompt(
       objective.deadlineAt;
 
     const daysRemaining =
-      deadlineAt !==
-        undefined
+      deadlineAt !== undefined
         ? Math.max(
             0,
             Math.ceil(
-              (
-                deadlineAt -
-                Date.now()
-              ) /
-                (
-                  24 *
+              (deadlineAt -
+                Date.now()) /
+                (24 *
                   60 *
                   60 *
-                  1000
-                ),
+                  1000),
             ),
           )
         : null;
@@ -467,7 +433,9 @@ async function executeChatPrompt(
         "Objective → Outcome → Milestone → Task → Gap → Next Action の運用ループを準備しました。",
         "Runtime は検証済みの商業結果のみを Actual に反映します。",
       ].join("\n");
-    } else if (locale === "zh-CN") {
+    } else if (
+      locale === "zh-CN"
+    ) {
       content = [
         "商业目标已建立/更新。",
         "",
@@ -519,26 +487,18 @@ async function executeChatPrompt(
 
     return {
       success: true,
-
       content,
-
       code:
         "C143_17_2_COMMERCIAL_OBJECTIVE_RECONCILED",
-
       commercial: {
         detected: true,
-
         objective,
-
         loop,
-
         nextAction,
       },
-
       execution: {
         provider:
           "commercial-operating-layer",
-
         capabilityTrace: [
           "chat",
           "commercial-intent",
@@ -575,10 +535,10 @@ async function executeChatPrompt(
         success: false,
         content:
           locale === "ja"
-            ? "AIOS GitHub READ ルートでリクエストを確認できませんでした。リポジトリ内容を推測しないため、今回の実行を停止しました。"
+            ? "AIOS GitHub READ ルートでリクエストを確認できませんでした。"
             : locale === "zh-CN"
               ? "AIOS GitHub READ 路由未能确认该请求。为避免猜测仓库内容，本次执行已停止。"
-              : "AIOS could not confirm the GitHub READ route for this request. Execution was stopped to avoid guessing repository content.",
+              : "AIOS could not confirm the GitHub READ route for this request.",
         error:
           "GitHub READ request was detected but the Planner GitHub Read Bridge did not confirm the task.",
         code:
@@ -606,7 +566,7 @@ async function executeChatPrompt(
         success: false,
         content:
           locale === "ja"
-            ? "GitHub READ の実行に失敗しました。AIOS はモデルによるリポジトリ内容の推測を行っていません。"
+            ? "GitHub READ の実行に失敗しました。"
             : locale === "zh-CN"
               ? "GitHub READ 执行失败。AIOS 没有使用模型猜测仓库内容。"
               : "GitHub READ execution failed. AIOS did not use the model to guess repository content.",
@@ -694,29 +654,12 @@ async function executeChatPrompt(
         prompt,
       );
 
-    /*
-     * C143.17.2
-     *
-     * Web verification is now evidence quality,
-     * not a global Chat kill-switch.
-     *
-     * We NEVER fabricate live facts.
-     *
-     * But an unavailable or unverified Web layer
-     * must not prevent the normal Runtime from
-     * performing non-live reasoning.
-     *
-     * Runtime receives the actual Web context,
-     * including success/verified/source metadata.
-     * executor.ts already exposes this metadata.
-     */
-
     if (
       !webContext.success ||
       !webContext.verified
     ) {
       console.warn(
-        "[AIOS Web Intelligence] Live evidence unavailable or unverified; continuing with explicit evidence boundary.",
+        "[AIOS Web Intelligence] Live evidence unavailable or unverified.",
         {
           success:
             webContext.success,
@@ -757,7 +700,8 @@ export async function GET(
         success: true,
         service:
           "AIOS Alpha Chat API",
-        status: "online",
+        status:
+          "online",
         runtime:
           APP_CONFIG.runtimeId,
         runtimeStage:
@@ -783,7 +727,8 @@ export async function GET(
             identity.userId,
           mode:
             "anonymous-alpha",
-          isolated: true,
+          isolated:
+            true,
         },
         methods: {
           GET:
@@ -909,6 +854,24 @@ export async function POST(
           ),
       );
 
+    /*
+     * C143.10
+     *
+     * Return the canonical conversation
+     * in the same response that completes
+     * the chat request.
+     *
+     * ChatPanel can therefore receive the
+     * real persistent IDs immediately,
+     * without waiting for a second GET.
+     */
+    const conversation =
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          getPersistentMemory(),
+      );
+
     const resultCode =
       "code" in result
         ? result.code
@@ -918,11 +881,13 @@ export async function POST(
       NextResponse.json(
         {
           ...result,
+          conversation,
           userId:
             identity.userId,
           identityMode:
             "anonymous-alpha",
-          dataIsolated: true,
+          dataIsolated:
+            true,
           locale,
           runtime:
             APP_CONFIG.runtimeId,
