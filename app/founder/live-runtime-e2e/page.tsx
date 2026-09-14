@@ -20,6 +20,7 @@ type ScenarioResult = {
   planId?: string;
   planType?: string;
   intent?: string;
+
   webIntelligence?: {
     required?: boolean;
     success?: boolean;
@@ -27,6 +28,7 @@ type ScenarioResult = {
     sourceCount?: number;
     sourceHosts?: string[];
   };
+
   liveDecision?: {
     success?: boolean;
     ready?: boolean;
@@ -34,6 +36,7 @@ type ScenarioResult = {
     conclusion?: string;
     nextStep?: string;
   };
+
   answerPresent?: boolean;
   nativeDecisionAnswer?: boolean;
   capabilityDenial?: boolean;
@@ -52,36 +55,52 @@ type VerificationResponse = {
   pipeline?: string;
   scenarios?: string[];
   checks?: VerificationCheck[];
+
   summary?: {
     passed?: number;
     total?: number;
     failed?: number;
   };
+
   scenarioResults?: Record<
     string,
     ScenarioResult
   >;
+
   error?: string;
 };
 
 function Status({
   value,
+  label,
 }: {
-  value?: boolean;
+  value: boolean;
+  label?: string;
 }) {
   return (
     <span
       style={{
         fontWeight: 950,
-        color:
-          value
-            ? "#166534"
-            : "#b91c1c",
+        color: value
+          ? "#166534"
+          : "#b91c1c",
       }}
     >
-      {value
-        ? "PASS"
-        : "FAIL"}
+      {label ??
+        (value ? "PASS" : "FAIL")}
+    </span>
+  );
+}
+
+function OffStatus() {
+  return (
+    <span
+      style={{
+        fontWeight: 950,
+        color: "#64748b",
+      }}
+    >
+      OFF
     </span>
   );
 }
@@ -99,15 +118,46 @@ function ScenarioCard({
   const decision =
     result.liveDecision;
 
+  const normalQuestion =
+    name === "Normal Question";
+
+  const webExpectedOff =
+    normalQuestion &&
+    !web;
+
+  const decisionExpectedOff =
+    normalQuestion &&
+    !decision;
+
+  const runtimePass =
+    result.success === true;
+
+  const answerPass =
+    result.answerPresent === true;
+
+  const scenarioPass =
+    runtimePass &&
+    result.capabilityDenial !== true &&
+    result.crowdedMarkdownTable !== true;
+
+  const webPass =
+    web?.success === true &&
+    web?.verified === true;
+
+  const decisionPass =
+    decision?.success === true &&
+    decision?.ready === true;
+
   return (
     <article
       style={{
         padding: 18,
         border:
-          "1px solid #dbe3f0",
+          scenarioPass
+            ? "1px solid #dbe3f0"
+            : "1px solid #fecaca",
         borderRadius: 20,
-        background:
-          "#ffffff",
+        background: "#ffffff",
       }}
     >
       <div
@@ -116,8 +166,7 @@ function ScenarioCard({
           justifyContent:
             "space-between",
           gap: 12,
-          alignItems:
-            "center",
+          alignItems: "center",
         }}
       >
         <div
@@ -130,15 +179,24 @@ function ScenarioCard({
         </div>
 
         <Status
-          value={
-            result.success === true &&
-            result.capabilityDenial !==
-              true &&
-            result.crowdedMarkdownTable !==
-              true
-          }
+          value={scenarioPass}
         />
       </div>
+
+      {normalQuestion && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#64748b",
+            lineHeight: 1.5,
+          }}
+        >
+          Normal question regression:
+          Web Intelligence and Live Decision
+          are expected to remain OFF.
+        </div>
+      )}
 
       <div
         style={{
@@ -153,8 +211,7 @@ function ScenarioCard({
           style={{
             padding: 11,
             borderRadius: 13,
-            background:
-              "#f8fafc",
+            background: "#f8fafc",
           }}
         >
           <div
@@ -166,15 +223,14 @@ function ScenarioCard({
           >
             RUNTIME
           </div>
+
           <div
             style={{
               marginTop: 4,
             }}
           >
             <Status
-              value={
-                result.success === true
-              }
+              value={runtimePass}
             />
           </div>
         </div>
@@ -183,8 +239,7 @@ function ScenarioCard({
           style={{
             padding: 11,
             borderRadius: 13,
-            background:
-              "#f8fafc",
+            background: "#f8fafc",
           }}
         >
           <div
@@ -196,26 +251,39 @@ function ScenarioCard({
           >
             WEB
           </div>
+
           <div
             style={{
               marginTop: 4,
             }}
           >
-            <Status
-              value={
-                web?.success === true &&
-                web?.verified === true
-              }
-            />
+            {webExpectedOff ? (
+              <OffStatus />
+            ) : (
+              <Status
+                value={webPass}
+              />
+            )}
           </div>
+
+          {webExpectedOff && (
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 10,
+                color: "#94a3b8",
+              }}
+            >
+              expected
+            </div>
+          )}
         </div>
 
         <div
           style={{
             padding: 11,
             borderRadius: 13,
-            background:
-              "#f8fafc",
+            background: "#f8fafc",
           }}
         >
           <div
@@ -227,26 +295,39 @@ function ScenarioCard({
           >
             DECISION
           </div>
+
           <div
             style={{
               marginTop: 4,
             }}
           >
-            <Status
-              value={
-                decision?.success === true &&
-                decision?.ready === true
-              }
-            />
+            {decisionExpectedOff ? (
+              <OffStatus />
+            ) : (
+              <Status
+                value={decisionPass}
+              />
+            )}
           </div>
+
+          {decisionExpectedOff && (
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 10,
+                color: "#94a3b8",
+              }}
+            >
+              expected
+            </div>
+          )}
         </div>
 
         <div
           style={{
             padding: 11,
             borderRadius: 13,
-            background:
-              "#f8fafc",
+            background: "#f8fafc",
           }}
         >
           <div
@@ -258,15 +339,14 @@ function ScenarioCard({
           >
             ANSWER
           </div>
+
           <div
             style={{
               marginTop: 4,
             }}
           >
             <Status
-              value={
-                result.answerPresent === true
-              }
+              value={answerPass}
             />
           </div>
         </div>
@@ -278,8 +358,7 @@ function ScenarioCard({
             marginTop: 14,
             padding: 13,
             borderRadius: 14,
-            background:
-              "#f0fdf4",
+            background: "#f0fdf4",
             color: "#166534",
             fontSize: 13,
             lineHeight: 1.6,
@@ -288,6 +367,7 @@ function ScenarioCard({
           <strong>
             Conclusion
           </strong>
+
           <div
             style={{
               marginTop: 4,
@@ -304,8 +384,7 @@ function ScenarioCard({
             marginTop: 9,
             padding: 13,
             borderRadius: 14,
-            background:
-              "#eff6ff",
+            background: "#eff6ff",
             color: "#1d4ed8",
             fontSize: 13,
             lineHeight: 1.6,
@@ -314,6 +393,7 @@ function ScenarioCard({
           <strong>
             Next Step
           </strong>
+
           <div
             style={{
               marginTop: 4,
@@ -325,8 +405,7 @@ function ScenarioCard({
       )}
 
       {web?.sourceHosts &&
-        web.sourceHosts.length >
-          0 && (
+        web.sourceHosts.length > 0 && (
           <div
             style={{
               marginTop: 12,
@@ -365,13 +444,11 @@ function ScenarioCard({
               marginTop: 8,
               padding: 12,
               borderRadius: 12,
-              background:
-                "#f8fafc",
+              background: "#f8fafc",
               color: "#475569",
               fontSize: 12,
               lineHeight: 1.7,
-              whiteSpace:
-                "pre-wrap",
+              whiteSpace: "pre-wrap",
             }}
           >
             {result.answerPreview}
@@ -507,18 +584,18 @@ export default function LiveRuntimeE2EPage() {
   const scenarioResults =
     result?.scenarioResults ?? {};
 
+  const checks =
+    result?.checks ?? [];
+
   return (
     <main
       style={{
         minHeight: "100vh",
         padding:
           "24px 18px 60px",
-        boxSizing:
-          "border-box",
-        background:
-          "#f4f6fb",
-        color:
-          "#0f172a",
+        boxSizing: "border-box",
+        background: "#f4f6fb",
+        color: "#0f172a",
       }}
     >
       <div
@@ -560,8 +637,8 @@ export default function LiveRuntimeE2EPage() {
               lineHeight: 1.6,
             }}
           >
-            C143.25.1 Main Runtime
-            End-to-End Regression
+            C143.25.2 Main Runtime
+            End-to-End Regression Console
           </p>
         </header>
 
@@ -572,8 +649,7 @@ export default function LiveRuntimeE2EPage() {
             border:
               "1px solid #dbe3f0",
             borderRadius: 22,
-            background:
-              "#ffffff",
+            background: "#ffffff",
           }}
         >
           <div
@@ -596,8 +672,9 @@ export default function LiveRuntimeE2EPage() {
               lineHeight: 1.6,
             }}
           >
-            自动复用当前 Founder Session，
-            不需要在 URL 中输入或暴露 Access Key。
+            自动复用当前 Founder Session。
+            不需要在 URL 中输入或暴露
+            Access Key。
           </p>
 
           <button
@@ -627,7 +704,7 @@ export default function LiveRuntimeE2EPage() {
           >
             {loading
               ? "正在执行真实 Runtime E2E 验证..."
-              : "▶ Run C143.25 E2E Verification"}
+              : "Run C143.25 E2E Verification"}
           </button>
 
           {error && (
@@ -636,8 +713,7 @@ export default function LiveRuntimeE2EPage() {
                 marginTop: 14,
                 padding: 14,
                 borderRadius: 14,
-                background:
-                  "#fff1f2",
+                background: "#fff1f2",
                 color: "#be123c",
                 fontSize: 13,
                 lineHeight: 1.6,
@@ -659,8 +735,7 @@ export default function LiveRuntimeE2EPage() {
                     ? "1px solid #86efac"
                     : "1px solid #fecaca",
                 borderRadius: 22,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
               }}
             >
               <div
@@ -690,148 +765,164 @@ export default function LiveRuntimeE2EPage() {
                 {" / "}
                 {result.summary?.total ??
                   0}
-                {" checks passed"}
-                {" · "}
+                {" checks passed · "}
                 {result.summary?.failed ??
                   0}
-                {" failed"}
-                {" · "}
+                {" failed · "}
                 {result.latencyMs ??
                   0}
                 ms
               </div>
 
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 13,
-                  background:
-                    "#f8fafc",
-                  color: "#475569",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                }}
-              >
-                {result.pipeline ??
-                  "executeRuntime E2E pipeline"}
-              </div>
-            </section>
+              {result.pipeline && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 13,
+                    borderRadius: 14,
+                    background:
+                      "#f8fafc",
+                    color: "#475569",
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {result.pipeline}
+                </div>
+              )}
 
-            <section
-              style={{
-                marginTop: 18,
-                display: "grid",
-                gap: 12,
-              }}
-            >
-              {Object.entries(
-                scenarioResults,
-              ).map(
-                ([
-                  name,
-                  scenarioResult,
-                ]) => (
-                  <ScenarioCard
-                    key={name}
-                    name={name}
-                    result={
-                      scenarioResult
-                    }
-                  />
-                ),
+              {result.code && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11,
+                    color: "#94a3b8",
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  }}
+                >
+                  {result.code}
+                </div>
               )}
             </section>
 
-            <section
-              style={{
-                marginTop: 18,
-                padding: 18,
-                border:
-                  "1px solid #dbe3f0",
-                borderRadius: 20,
-                background:
-                  "#ffffff",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 16,
-                  fontWeight: 900,
-                }}
-              >
-                Detailed Checks
-              </div>
+            {Object.entries(
+              scenarioResults,
+            ).map(
+              ([
+                name,
+                scenario,
+              ]) => (
+                <section
+                  key={name}
+                  style={{
+                    marginTop: 14,
+                  }}
+                >
+                  <ScenarioCard
+                    name={name}
+                    result={scenario}
+                  />
+                </section>
+              ),
+            )}
 
-              <div
+            {checks.length > 0 && (
+              <section
                 style={{
-                  marginTop: 12,
-                  display: "grid",
-                  gap: 8,
+                  marginTop: 18,
+                  padding: 18,
+                  border:
+                    "1px solid #dbe3f0",
+                  borderRadius: 20,
+                  background:
+                    "#ffffff",
                 }}
               >
-                {result.checks?.map(
-                  (check) => (
-                    <div
-                      key={`${check.name}-${check.latencyMs}`}
-                      style={{
-                        display:
-                          "flex",
-                        justifyContent:
-                          "space-between",
-                        gap: 12,
-                        padding:
-                          "11px 12px",
-                        borderRadius:
-                          12,
-                        background:
-                          "#f8fafc",
-                      }}
-                    >
-                      <div>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 950,
+                  }}
+                >
+                  Detailed Checks
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  {checks.map(
+                    (check) => (
+                      <div
+                        key={
+                          check.name
+                        }
+                        style={{
+                          padding: 12,
+                          borderRadius: 12,
+                          background:
+                            "#f8fafc",
+                        }}
+                      >
                         <div
                           style={{
-                            fontSize:
-                              13,
-                            fontWeight:
-                              800,
+                            display:
+                              "flex",
+                            justifyContent:
+                              "space-between",
+                            gap: 10,
                           }}
                         >
-                          {check.name}
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 850,
+                            }}
+                          >
+                            {check.name}
+                          </div>
+
+                          <Status
+                            value={
+                              check.pass
+                            }
+                          />
                         </div>
 
                         <div
                           style={{
-                            marginTop:
-                              3,
+                            marginTop: 5,
+                            fontSize: 12,
                             color:
                               "#64748b",
-                            fontSize:
-                              11,
                             lineHeight:
-                              1.5,
+                              1.55,
                           }}
                         >
                           {check.detail}
                         </div>
-                      </div>
 
-                      <div
-                        style={{
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Status
-                          value={
-                            check.pass
-                          }
-                        />
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            color:
+                              "#94a3b8",
+                          }}
+                        >
+                          {check.latencyMs}
+                          ms
+                        </div>
                       </div>
-                    </div>
-                  ),
-                )}
-              </div>
-            </section>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
           </>
         )}
       </div>
