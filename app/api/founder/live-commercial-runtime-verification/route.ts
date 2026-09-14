@@ -170,13 +170,13 @@ export async function GET(
     const web =
       runtime.webIntelligence;
 
-    const webPass =
-      Boolean(web) &&
-      web.required === true &&
-      web.success === true &&
-      web.verified === true &&
-      web.sourceCount >= 2 &&
-      web.sourceHosts.length >= 2;
+const webPass =
+  web !== undefined &&
+  web.required === true &&
+  web.success === true &&
+  web.verified === true &&
+  web.sourceCount >= 2 &&
+  web.sourceHosts.length >= 2;
 
     check(
       checks,
