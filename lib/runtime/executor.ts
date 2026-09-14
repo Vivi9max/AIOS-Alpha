@@ -213,6 +213,49 @@ function buildWebEvidenceContext(
   ].join("\n");
 }
 
+function buildLiveRuntimeFailure(
+  locale: Locale,
+  web?: WebIntelligenceResult,
+): string {
+  const error =
+    web?.error ||
+    "Web Intelligence did not return usable evidence.";
+
+  if (locale === "zh-CN") {
+    return [
+      "AIOS 已识别这是一个需要联网检索的请求。",
+      "",
+      "但本次 Runtime 没有获得可用的外部网页证据。",
+      "",
+      `检索状态：${error}`,
+      "",
+      "AIOS 已阻止模型直接凭记忆回答，以避免把过时信息伪装成实时信息。",
+    ].join("\n");
+  }
+
+  if (locale === "ja") {
+    return [
+      "AIOSは、このリクエストがWeb検索を必要とすることを検出しました。",
+      "",
+      "しかし今回のRuntimeでは利用可能な外部Web証拠を取得できませんでした。",
+      "",
+      `検索状態：${error}`,
+      "",
+      "古い知識をリアルタイム情報として回答しないため、モデルによる直接回答を停止しました。",
+    ].join("\n");
+  }
+
+  return [
+    "AIOS detected that this request requires live web research.",
+    "",
+    "However, Runtime did not receive usable external web evidence.",
+    "",
+    `Search status: ${error}`,
+    "",
+    "AIOS blocked a memory-only model answer so outdated information is not presented as live information.",
+  ].join("\n");
+}
+
 async function executeWorkspacePlan(
   plan: RuntimePlan,
 ): Promise<RuntimeExecutionResult> {
@@ -340,10 +383,6 @@ async function resolveRuntimeWebContext(
 ): Promise<
   WebIntelligenceResult | undefined
 > {
-  if (provided) {
-    return provided;
-  }
-
   const required =
     requiresWebIntelligence(
       plan.prompt,
@@ -353,16 +392,19 @@ async function resolveRuntimeWebContext(
     return undefined;
   }
 
+  if (provided) {
+    return provided;
+  }
+
   /*
-   * C143 Runtime Web Ownership
+   * C143.9 Runtime Web Hard Gate
    *
-   * Web Intelligence is a Runtime capability.
+   * A live request is not allowed to reach Brain
+   * without first attempting Web Intelligence.
    *
-   * Chat may provide already-retrieved evidence,
-   * but Runtime must not depend on Chat to provide it.
-   *
-   * This closes the execution-path gap where a live
-   * request could reach Brain without web evidence.
+   * Runtime owns this capability.
+   * Chat may provide evidence, but Runtime does
+   * not depend on Chat to do so.
    */
   try {
     return await retrieveWebEvidence(
@@ -393,11 +435,96 @@ async function executeAIPlan(
       plan,
     );
 
+  const webRequired =
+    requiresWebIntelligence(
+      plan.prompt,
+    );
+
   const webContext =
     await resolveRuntimeWebContext(
       plan,
       providedWebContext,
     );
+
+  /*
+   * C143.9 HARD GATE
+   *
+   * If the user's request requires live web
+   * intelligence, Brain MUST NOT be called until
+   * usable external evidence exists.
+   *
+   * This prevents the model from producing:
+   *
+   * "I cannot access the internet."
+   *
+   * after the Runtime has already decided that
+   * the request requires web research.
+   */
+  if (
+    webRequired &&
+    (
+      !webContext ||
+      !webContext.success ||
+      webContext.evidence.length === 0
+    )
+  ) {
+    const failureContent =
+      buildLiveRuntimeFailure(
+        locale,
+        webContext,
+      );
+
+    return {
+      success: false,
+      provider:
+        getActiveProvider(),
+      requestedProvider:
+        getActiveProvider(),
+      fallbackUsed: false,
+      error:
+        webContext?.error ||
+        "LIVE_WEB_EVIDENCE_REQUIRED",
+      content:
+        failureContent,
+      actionHandled: false,
+      planId: plan.id,
+      planType: plan.type,
+      goal: plan.goal,
+      intent: plan.intent,
+      confidence:
+        plan.confidence,
+      capabilities:
+        plan.capabilities,
+      steps: plan.steps,
+      capabilityTrace: [
+        ...context.trace,
+        {
+          capability:
+            "web.intelligence",
+          status:
+            "failed",
+          durationMs: 0,
+          detail:
+            "Live request blocked before Brain because usable web evidence was unavailable.",
+        },
+      ],
+      webIntelligence: {
+        required: true,
+        success:
+          webContext?.success ??
+          false,
+        verified:
+          webContext?.verified ??
+          false,
+        sourceCount:
+          webContext?.sourceCount ??
+          0,
+        sourceHosts:
+          webContext?.sourceHosts ??
+          [],
+      },
+    };
+  }
 
   const runtimePolicy =
     buildTrustedRuntimePolicy(
@@ -419,12 +546,22 @@ async function executeAIPlan(
     .filter(Boolean)
     .join("\n\n");
 
+  /*
+   * For live requests, evidence has already been
+   * retrieved and passed into Runtime.
+   *
+   * Brain is now a synthesis layer, not the
+   * Internet access layer.
+   */
   const result =
     await runBrain({
       prompt:
         plan.prompt,
       systemPrompt,
-      historyLimit: 20,
+      historyLimit:
+        webRequired
+          ? 0
+          : 20,
     });
 
   const integrity =
@@ -462,7 +599,8 @@ async function executeAIPlan(
     webIntelligence:
       webContext
         ? {
-            required: true,
+            required:
+              webRequired,
             success:
               webContext.success,
             verified:
