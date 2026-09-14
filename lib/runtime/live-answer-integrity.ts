@@ -1,22 +1,28 @@
 import "server-only";
+
 import {
   runBrain,
   type BrainResponse,
 } from "@/lib/brain";
+
 import type {
   Locale,
 } from "@/lib/i18n";
+
 import type {
   RuntimePlan,
 } from "./planner";
+
 import type {
   WebIntelligenceResult,
 } from "@/lib/web-intelligence";
+
 export interface LiveAnswerIntegrityResult {
   content: string;
   repaired: boolean;
   reason?: string;
 }
+
 const CAPABILITY_DENIAL_PATTERNS = [
   /无法提供.*实时/iu,
   /无法获取.*当前/iu,
@@ -40,6 +46,7 @@ const CAPABILITY_DENIAL_PATTERNS = [
   /unable to provide.*real[- ]?time/iu,
   /unable to retrieve.*current/iu,
 ];
+
 function containsCapabilityDenial(
   content: string,
 ): boolean {
@@ -48,6 +55,7 @@ function containsCapabilityDenial(
       pattern.test(content),
   );
 }
+
 function buildEvidenceText(
   web: WebIntelligenceResult,
 ): string {
@@ -66,6 +74,7 @@ function buildEvidenceText(
     )
     .join("\n\n");
 }
+
 function buildEvidenceFirstPrompt(
   locale: Locale,
   web: WebIntelligenceResult,
@@ -76,10 +85,12 @@ function buildEvidenceFirstPrompt(
       : locale === "ja"
         ? "自然で読みやすい日本語で回答してください。"
         : "Respond naturally in clear English.";
+
   const verificationRule =
     web.verified
       ? "Multiple source domains were found. You may state the result with normal confidence while still noting meaningful discrepancies."
       : "The evidence is not fully cross-source verified. Do not overstate certainty.";
+
   return [
     "AIOS LIVE INTELLIGENCE — EVIDENCE FIRST ANSWER MODE",
     "",
@@ -115,6 +126,7 @@ function buildEvidenceFirstPrompt(
     buildEvidenceText(web),
   ].join("\n");
 }
+
 function buildLiveFailureMessage(
   locale: Locale,
 ): string {
@@ -125,6 +137,7 @@ function buildLiveFailureMessage(
       "请稍后重试。",
     ].join("\n");
   }
+
   if (locale === "ja") {
     return [
       "今回のリアルタイム検索では利用可能なデータを取得できませんでした。",
@@ -132,12 +145,14 @@ function buildLiveFailureMessage(
       "しばらくしてから再試行してください。",
     ].join("\n");
   }
+
   return [
     "The live search did not return usable data this time.",
     "AIOS will not invent or guess the current market value.",
     "Please try again later.",
   ].join("\n");
 }
+
 function buildEvidenceInsufficientMessage(
   locale: Locale,
   web: WebIntelligenceResult,
@@ -146,6 +161,7 @@ function buildEvidenceInsufficientMessage(
     web.sourceHosts.length > 0
       ? web.sourceHosts.join(", ")
       : "retrieved sources";
+
   if (locale === "zh-CN") {
     return [
       "已完成实时检索。",
@@ -153,6 +169,7 @@ function buildEvidenceInsufficientMessage(
       "但返回内容没有提供足够可靠的目标数据，因此 AIOS 不会编造一个当前数值。",
     ].join("\n");
   }
+
   if (locale === "ja") {
     return [
       "リアルタイム検索を実行しました。",
@@ -160,12 +177,14 @@ function buildEvidenceInsufficientMessage(
       "ただし、取得した内容だけでは対象データを十分に確認できないため、現在の数値を推測して提示することはしません。",
     ].join("\n");
   }
+
   return [
     "Live search was completed.",
     `Retrieved sources: ${hosts}.`,
     "However, the returned evidence does not contain enough reliable information for the requested value, so AIOS will not invent a current number.",
   ].join("\n");
 }
+
 function buildOriginalAnswerSafeFallback(
   locale: Locale,
   web: WebIntelligenceResult,
@@ -177,6 +196,7 @@ function buildOriginalAnswerSafeFallback(
       "为避免提供未经确认的实时数据，AIOS 不会编造数值。",
     ].join("\n");
   }
+
   if (locale === "ja") {
     return [
       "リアルタイム検索は完了しましたが、取得結果をモデルが十分に整理できませんでした。",
@@ -184,12 +204,14 @@ function buildOriginalAnswerSafeFallback(
       "未確認の数値を提示しないため、推測による回答は行いません。",
     ].join("\n");
   }
+
   return [
     "Live search completed, but the retrieved evidence could not be reliably synthesized.",
     `Sources: ${web.sourceHosts.join(", ") || "retrieved sources"}.`,
     "AIOS will not provide an unverified number.",
   ].join("\n");
 }
+
 async function synthesizeFromEvidence(
   plan: RuntimePlan,
   locale: Locale,
@@ -199,36 +221,35 @@ async function synthesizeFromEvidence(
     const result =
       await runBrain({
         prompt: plan.prompt,
+
         systemPrompt:
           buildEvidenceFirstPrompt(
             locale,
             web,
           ),
+
         historyLimit: 0,
       });
+
     if (
       !result.success ||
       !result.content.trim()
     ) {
       return null;
     }
+
     return result;
   } catch {
     return null;
   }
 }
+
 export async function enforceLiveAnswerIntegrity(
   plan: RuntimePlan,
   locale: Locale,
   web: WebIntelligenceResult,
   original: BrainResponse,
 ): Promise<LiveAnswerIntegrityResult> {
-  /*
-   * LIVE REQUIRED + SEARCH FAILURE
-   *
-   * Do not allow the model to convert a tool failure
-   * into a false claim that AIOS has no internet capability.
-   */
   if (
     !web.success ||
     web.evidence.length === 0
@@ -243,22 +264,14 @@ export async function enforceLiveAnswerIntegrity(
         "LIVE_SEARCH_FAILED_DETERMINISTIC_FALLBACK",
     };
   }
-  /*
-   * LIVE REQUIRED + EVIDENCE AVAILABLE
-   *
-   * Always synthesize from evidence for live-required
-   * requests. This is deliberately stronger than only
-   * repairing capability-denial responses.
-   *
-   * This prevents a model from ignoring valid live
-   * evidence even when its first answer looks plausible.
-   */
+
   const evidenceAnswer =
     await synthesizeFromEvidence(
       plan,
       locale,
       web,
     );
+
   if (
     evidenceAnswer &&
     !containsCapabilityDenial(
@@ -277,12 +290,7 @@ export async function enforceLiveAnswerIntegrity(
           : "LIVE_EVIDENCE_FIRST_ANSWER",
     };
   }
-  /*
-   * Evidence exists, but the synthesis model failed.
-   *
-   * Do not claim that the internet/search failed,
-   * because it did not. Use an evidence-bound fallback.
-   */
+
   return {
     content:
       buildOriginalAnswerSafeFallback(
@@ -294,65 +302,3 @@ export async function enforceLiveAnswerIntegrity(
       "LIVE_EVIDENCE_SYNTHESIS_FAILED",
   };
 }
-
-② 这次和上一版的本质区别
-
-上一版：
-
-模型回答“我不能联网”
-↓
-再问模型一次
-↓
-希望模型改变说法
-
-现在：
-
-只要 Live Router 已经拿到 Web Evidence
-
-↓
-
-强制进入 Evidence First Answer Mode
-
-↓
-
-模型只能使用 Evidence 组织答案
-
-↓
-
-禁止“我无法联网”
-
-↓
-
-禁止编造数字
-
-↓
-
-Evidence 不够就明确失败
-
-尤其增加了一个重要变化：
-
-不再只针对“模型说自己没联网”进行修复。
-
-即使模型第一次回答看起来正常，也会重新经过 Evidence-first synthesis。这样才是真正把：
-
-Brave → Evidence
-
-变成：
-
-Evidence → Answer
-
-而不是“搜索 API 跑了，但模型自己不用”。
-
-③ 上传后 Commit
-
-feat(C143.x): strengthen evidence-first live answer integrity
-
-上传并 Build Ready 后，下一步我们直接验证：
-
-今天金价多少？
-现在美元兑人民币汇率是多少？
-BTC现在多少钱？
-深圳今天的天气怎么样？
-今天有什么重要新闻？
-
-其中第一条 “今天金价多少？” 是本次核心验收项。
