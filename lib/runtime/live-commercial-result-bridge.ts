@@ -1,3 +1,5 @@
+import "server-only";
+
 import {
   getCommercialObjective,
 } from "@/lib/commercial/operating-layer";
@@ -127,41 +129,28 @@ export async function recordLiveCommercialResult(
   if (!input.verified) {
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         input.objectiveId,
-
       taskId:
         input.taskId,
-
       verified: false,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         "Commercial result was not verified, so no business actuals were mutated.",
-
       nextStep:
         "Verify the real commercial result before recording revenue, customers, or cost.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -174,41 +163,28 @@ export async function recordLiveCommercialResult(
   if (!objective) {
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         input.objectiveId,
-
       taskId:
         input.taskId,
-
       verified: true,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         "The commercial objective could not be found.",
-
       nextStep:
         "Create or restore the commercial objective before recording the result.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -219,41 +195,28 @@ export async function recordLiveCommercialResult(
   ) {
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         objective.id,
-
       taskId:
         input.taskId,
-
       verified: true,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         "The commercial operating loop is not linked to an Outcome and execution Task.",
-
       nextStep:
         "Link the commercial objective to its operating loop before recording the result.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -264,44 +227,30 @@ export async function recordLiveCommercialResult(
   ) {
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         objective.id,
-
       taskId:
         input.taskId,
-
       outcomeId:
         objective.outcomeId,
-
       verified: true,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         "The supplied task does not belong to the commercial objective.",
-
       nextStep:
         "Use the execution task linked to this commercial objective.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -319,104 +268,66 @@ export async function recordLiveCommercialResult(
   if (!task) {
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         objective.id,
-
       taskId:
         input.taskId,
-
       outcomeId:
         objective.outcomeId,
-
       verified: true,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         "The execution task could not be found.",
-
       nextStep:
         "Restore or recreate the execution task before recording the result.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
 
   /*
-   * Prevent duplicate result recording.
-   *
-   * A completed task already represents a recorded
-   * commercial result in the existing result loop.
+   * A completed task already represents
+   * a recorded commercial result.
    */
   if (task.status === "done") {
     return {
       success: true,
-
       status: "already-recorded",
-
       objectiveId:
         objective.id,
-
       taskId:
         input.taskId,
-
       outcomeId:
         objective.outcomeId,
-
       verified: true,
-
-      revenueAdded:
-        0,
-
-      customersAdded:
-        0,
-
-      costAdded:
-        0,
-
+      revenueAdded: 0,
+      customersAdded: 0,
+      costAdded: 0,
       revenueActual:
         objective.revenueActual,
-
       customerActual:
         objective.customerActual,
-
       costActual:
         objective.costActual,
-
-      taskCompleted:
-        true,
-
-      milestoneCompleted:
-        true,
-
+      taskCompleted: true,
+      milestoneCompleted: true,
       conclusion:
         "The commercial execution task has already been completed and its result has already been recorded.",
-
       nextStep:
         "Continue with the next commercial milestone instead of recording the same result again.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -426,22 +337,12 @@ export async function recordLiveCommercialResult(
       await recordCommercialResult({
         objectiveId:
           objective.id,
-
         taskId:
           input.taskId,
-
-        verified:
-          true,
-
-        revenue:
-          revenue,
-
-        customers:
-          customers,
-
-        cost:
-          cost,
-
+        verified: true,
+        revenue,
+        customers,
+        cost,
         note:
           input.note,
       });
@@ -449,62 +350,44 @@ export async function recordLiveCommercialResult(
     return {
       success:
         result.success,
-
       status:
         result.success
           ? "recorded"
           : "blocked",
-
       objectiveId:
         result.objectiveId,
-
       taskId:
         result.taskId,
-
       outcomeId:
         result.outcomeId,
-
       verified:
         result.verified,
-
       revenueAdded:
         result.revenueAdded,
-
       customersAdded:
         result.customersAdded,
-
       costAdded:
         result.costAdded,
-
       revenueActual:
         result.revenueActual,
-
       customerActual:
         result.customerActual,
-
       costActual:
         result.costActual,
-
       outcomeProgress:
         result.outcomeProgress,
-
       taskCompleted:
         result.taskCompleted,
-
       milestoneCompleted:
         result.milestoneCompleted,
-
       conclusion:
         "The verified commercial result has been recorded in the AIOS operating loop.",
-
       nextStep:
         result.milestoneCompleted
           ? "Move to the next commercial milestone and execute the next validated action."
           : "Continue the current commercial objective and verify the next result.",
-
       note:
         input.note,
-
       timestamp:
         result.timestamp,
     };
@@ -516,44 +399,30 @@ export async function recordLiveCommercialResult(
 
     return {
       success: false,
-
       status: "blocked",
-
       objectiveId:
         objective.id,
-
       taskId:
         input.taskId,
-
       outcomeId:
         objective.outcomeId,
-
       verified: true,
-
       revenueAdded:
         revenue,
-
       customersAdded:
         customers,
-
       costAdded:
         cost,
-
       taskCompleted:
         false,
-
       milestoneCompleted:
         false,
-
       conclusion:
         `The verified commercial result could not be recorded: ${message}.`,
-
       nextStep:
         "Inspect the commercial operating loop and retry only after the persistence issue is resolved.",
-
       note:
         input.note,
-
       timestamp,
     };
   }
@@ -564,7 +433,7 @@ export function isLiveCommercialResultRecorded(
     LiveCommercialResultBridge,
 ): boolean {
   return (
-    result.success &&
+    result.success === true &&
     (
       result.status ===
         "recorded" ||
