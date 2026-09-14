@@ -7,33 +7,20 @@ interface AnswerRendererProps {
 }
 
 type Block =
-  | {
-      type: "heading";
-      text: string;
-    }
-  | {
-      type: "paragraph";
-      text: string;
-    }
-  | {
-      type: "bullet";
-      text: string;
-    }
-  | {
-      type: "number";
-      text: string;
-    }
-  | {
-      type: "divider";
-    };
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "bullet"; text: string }
+  | { type: "number"; text: string }
+  | { type: "divider" };
 
 function cleanInline(value: string): string {
-  return value
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/__(.*?)__/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/$begin:math:display$\(\[\^$end:math:display$]+)\]$begin:math:text$\(\[\^\)\]\+\)$end:math:text$/g, "$1")
-    .trim();
+  let result = value.trim();
+
+  result = result.replace(/\*\*/g, "");
+  result = result.replace(/__/g, "");
+  result = result.replace(/`/g, "");
+
+  return result.trim();
 }
 
 function isTableSeparator(line: string): boolean {
@@ -45,7 +32,10 @@ function isTableSeparator(line: string): boolean {
 }
 
 function isTableLine(line: string): boolean {
-  return line.includes("|") && line.split("|").filter(Boolean).length >= 2;
+  return (
+    line.includes("|") &&
+    line.split("|").filter(Boolean).length >= 2
+  );
 }
 
 function normalizeContent(content: string): string {
@@ -92,8 +82,7 @@ function normalizeContent(content: string): string {
 }
 
 function parseBlocks(content: string): Block[] {
-  const normalized = normalizeContent(content);
-  const lines = normalized.split("\n");
+  const lines = normalizeContent(content).split("\n");
   const blocks: Block[] = [];
 
   let paragraph: string[] = [];
