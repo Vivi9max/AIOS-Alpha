@@ -1,10 +1,12 @@
 import "server-only";
+
 export type WebFreshness =
   | "realtime"
   | "24h"
   | "7d"
   | "30d"
   | "general";
+
 export type LiveIntelligenceCategory =
   | "finance"
   | "weather"
@@ -14,6 +16,7 @@ export type LiveIntelligenceCategory =
   | "product"
   | "technology"
   | "general";
+
 export interface LiveIntelligenceRoute {
   required: boolean;
   category: LiveIntelligenceCategory;
@@ -22,6 +25,7 @@ export interface LiveIntelligenceRoute {
   reason: string;
   matchedSignals: string[];
 }
+
 export interface WebEvidence {
   id: string;
   url: string;
@@ -32,6 +36,7 @@ export interface WebEvidence {
   retrievedAt: number;
   confidence: number;
 }
+
 export interface WebIntelligenceResult {
   success: boolean;
   query: string;
@@ -43,39 +48,29 @@ export interface WebIntelligenceResult {
   error?: string;
   route?: LiveIntelligenceRoute;
 }
+
 interface BraveGenericResult {
   url?: unknown;
   title?: unknown;
   snippets?: unknown;
 }
+
+interface BraveSourceMetadata {
+  title?: unknown;
+  hostname?: unknown;
+  age?: unknown;
+}
+
 interface BraveResponse {
   grounding?: {
     generic?: BraveGenericResult[];
   };
   sources?: Record<
     string,
-    {
-      title?: unknown;
-      hostname?: unknown;
-      age?: unknown;
-    }
+    BraveSourceMetadata
   >;
 }
-/*
- * C143.x
- *
- * Live Intelligence Router
- *
- * The router decides whether the user's request depends on
- * information that can change over time.
- *
- * Important:
- *
- * Tool availability is NOT inferred from model knowledge.
- *
- * If a request is classified as live-data dependent,
- * Runtime must attempt the Web Intelligence capability.
- */
+
 const LIVE_SIGNAL_GROUPS: Array<{
   category: LiveIntelligenceCategory;
   signals: string[];
@@ -346,6 +341,7 @@ const LIVE_SIGNAL_GROUPS: Array<{
     ],
   },
 ];
+
 function normalizePrompt(
   prompt: string,
 ): string {
@@ -353,12 +349,18 @@ function normalizePrompt(
     .replace(/\s+/g, " ")
     .trim();
 }
+
 function findMatchedSignals(
   normalized: string,
 ): string[] {
   const matches: string[] = [];
-  for (const group of LIVE_SIGNAL_GROUPS) {
-    for (const signal of group.signals) {
+
+  for (
+    const group of LIVE_SIGNAL_GROUPS
+  ) {
+    for (
+      const signal of group.signals
+    ) {
       if (
         normalized.includes(
           signal.toLowerCase(),
@@ -368,32 +370,40 @@ function findMatchedSignals(
       }
     }
   }
+
   return Array.from(
     new Set(matches),
   );
 }
+
 function resolveCategory(
   normalized: string,
 ): LiveIntelligenceCategory {
-  const priority: LiveIntelligenceCategory[] = [
-    "finance",
-    "weather",
-    "news",
-    "policy",
-    "market",
-    "product",
-    "technology",
-  ];
-  for (const category of priority) {
+  const priority:
+    LiveIntelligenceCategory[] = [
+      "finance",
+      "weather",
+      "news",
+      "policy",
+      "market",
+      "product",
+      "technology",
+    ];
+
+  for (
+    const category of priority
+  ) {
     const group =
       LIVE_SIGNAL_GROUPS.find(
         (item) =>
           item.category ===
           category,
       );
+
     if (!group) {
       continue;
     }
+
     if (
       group.signals.some(
         (signal) =>
@@ -405,8 +415,10 @@ function resolveCategory(
       return category;
     }
   }
+
   return "general";
 }
+
 function resolveFreshness(
   prompt: string,
 ): WebFreshness {
@@ -414,6 +426,7 @@ function resolveFreshness(
     normalizePrompt(
       prompt,
     ).toLowerCase();
+
   if (
     [
       "实时",
@@ -439,6 +452,7 @@ function resolveFreshness(
   ) {
     return "24h";
   }
+
   if (
     [
       "最新",
@@ -461,6 +475,7 @@ function resolveFreshness(
   ) {
     return "7d";
   }
+
   if (
     [
       "近期",
@@ -478,44 +493,108 @@ function resolveFreshness(
   ) {
     return "30d";
   }
+
   return "general";
 }
-/*
- * C143.x
- *
- * Query enrichment.
- *
- * Do not rewrite the user's question into a different intent.
- * Only add temporal context when the user explicitly asks
- * for current/today/latest information.
- */
-function buildSearchQuery(
+
+function buildFinanceQuery(
   prompt: string,
-  freshness: WebFreshness,
 ): string {
   const normalized =
-    normalizePrompt(
+    normalizePrompt(prompt);
+
+  const lower =
+    normalized.toLowerCase();
+
+  if (
+    lower.includes("金价") ||
+    lower.includes("黄金") ||
+    lower.includes("gold") ||
+    lower.includes("au99.99")
+  ) {
+    return [
+      normalized,
+      "gold price",
+      "today",
+      "current",
+      "CNY",
+      "RMB",
+      "per gram",
+      "Au99.99",
+      "Shanghai Gold Exchange",
+    ]
+      .join(" ")
+      .slice(0, 400);
+  }
+
+  if (
+    lower.includes("汇率") ||
+    lower.includes("exchange rate") ||
+    lower.includes("兑")
+  ) {
+    return [
+      normalized,
+      "current exchange rate",
+      "spot rate",
+      "today",
+    ]
+      .join(" ")
+      .slice(0, 400);
+  }
+
+  if (
+    lower.includes("股票") ||
+    lower.includes("股价") ||
+    lower.includes("stock") ||
+    lower.includes("share price")
+  ) {
+    return [
+      normalized,
+      "current stock price",
+      "today",
+    ]
+      .join(" ")
+      .slice(0, 400);
+  }
+
+  return normalized.slice(
+    0,
+    400,
+  );
+}
+
+function buildSearchQuery(
+  prompt: string,
+  category: LiveIntelligenceCategory,
+): string {
+  if (
+    category === "finance"
+  ) {
+    return buildFinanceQuery(
       prompt,
     );
-  if (
-    freshness === "general"
-  ) {
-    return normalized.slice(
-      0,
-      400,
-    );
   }
-  const dateHint =
-    new Date()
-      .toISOString()
-      .slice(0, 10);
-  return [
-    normalized,
-    `date=${dateHint}`,
-  ]
-    .join(" ")
-    .slice(0, 400);
+
+  const normalized =
+    normalizePrompt(prompt);
+
+  if (
+    category === "weather"
+  ) {
+    return [
+      normalized,
+      "current weather",
+    ]
+      .join(" ")
+      .slice(0, 400);
+  }
+
+  return normalized.slice(
+    0,
+    400,
+  );
 }
+
 export function routeLiveIntelligence(
   prompt: string,
 ): LiveIntelligenceRoute {
@@ -523,38 +602,43 @@ export function routeLiveIntelligence(
     normalizePrompt(
       prompt,
     ).toLowerCase();
+
   const matchedSignals =
     findMatchedSignals(
       normalized,
     );
+
   const category =
     resolveCategory(
       normalized,
     );
+
   const required =
-    matchedSignals.length >
-    0;
+    matchedSignals.length > 0;
+
   const freshness =
     required
       ? resolveFreshness(
           normalized,
         )
       : "general";
+
   const query =
     required
       ? buildSearchQuery(
           prompt,
-          freshness,
+          category,
         )
-      : normalizePrompt(
-          prompt,
-        ).slice(0, 400);
-  let reason =
-    "The request can be answered without live external information.";
-  if (required) {
-    reason =
-      `Live information detected: ${matchedSignals.join(", ")}. External web evidence is required before answering time-sensitive facts.`;
-  }
+      : normalized.slice(
+          0,
+          400,
+        );
+
+  const reason =
+    required
+      ? `Live information detected: ${matchedSignals.join(", ")}. External web evidence is required before answering time-sensitive facts.`
+      : "The request can be answered without live external information.";
+
   return {
     required,
     category,
@@ -564,13 +648,7 @@ export function routeLiveIntelligence(
     matchedSignals,
   };
 }
-/*
- * Backward-compatible public API.
- *
- * Existing Chat Runtime calls this function.
- * Keep it as a thin wrapper around the new Router so
- * existing callers do not need to change.
- */
+
 export function requiresWebIntelligence(
   prompt: string,
 ): boolean {
@@ -578,6 +656,7 @@ export function requiresWebIntelligence(
     prompt,
   ).required;
 }
+
 function resolveSearchLanguage(
   prompt: string,
 ): string {
@@ -588,6 +667,7 @@ function resolveSearchLanguage(
   ) {
     return "ja";
   }
+
   if (
     /[\u4e00-\u9fff]/u.test(
       prompt,
@@ -595,8 +675,10 @@ function resolveSearchLanguage(
   ) {
     return "zh";
   }
+
   return "en";
 }
+
 function normalizeHostname(
   hostname: string,
 ): string {
@@ -608,6 +690,7 @@ function normalizeHostname(
       "",
     );
 }
+
 function normalizeSourceDomain(
   hostname: string,
 ): string {
@@ -615,16 +698,19 @@ function normalizeSourceDomain(
     normalizeHostname(
       hostname,
     );
+
   const parts =
     normalized
       .split(".")
       .filter(Boolean);
+
   if (
     parts.length <= 2
   ) {
     return normalized;
   }
-  const compoundPublicSuffixes =
+
+  const compound =
     new Set([
       "co.uk",
       "org.uk",
@@ -644,24 +730,26 @@ function normalizeSourceDomain(
       "co.jp",
       "go.jp",
     ]);
+
   const suffix =
     parts
       .slice(-2)
       .join(".");
+
   if (
-    compoundPublicSuffixes.has(
-      suffix,
-    ) &&
+    compound.has(suffix) &&
     parts.length >= 3
   ) {
     return parts
       .slice(-3)
       .join(".");
   }
+
   return parts
     .slice(-2)
     .join(".");
 }
+
 function calculateConfidence(
   hostname: string,
   sourceCount: number,
@@ -670,6 +758,7 @@ function calculateConfidence(
     sourceCount >= 2
       ? 0.82
       : 0.65;
+
   if (
     hostname.endsWith(
       ".gov",
@@ -686,24 +775,21 @@ function calculateConfidence(
   ) {
     score += 0.12;
   }
+
   if (
-    hostname.includes(
-      "github.com",
-    ) ||
-    hostname.includes(
-      "docs.",
-    ) ||
     hostname.includes(
       "official",
     )
   ) {
     score += 0.05;
   }
+
   return Math.min(
     0.98,
     score,
   );
 }
+
 function sanitizeSnippet(
   value: string,
 ): string {
@@ -712,85 +798,174 @@ function sanitizeSnippet(
       /\u0000/g,
       "",
     )
-    .slice(0, 2400);
+    .slice(
+      0,
+      2400,
+    );
 }
-export async function retrieveWebEvidence(
-  prompt: string,
-): Promise<WebIntelligenceResult> {
-  const route =
-    routeLiveIntelligence(
-      prompt,
-    );
-  const query =
-    route.query;
-  const apiKey =
-    process.env
-      .BRAVE_SEARCH_API_KEY
-      ?.trim();
-  if (!apiKey) {
-    return {
-      success: false,
-      query,
-      verified: false,
-      provider: "brave",
-      evidence: [],
-      sourceCount: 0,
-      sourceHosts: [],
-      error:
-        "BRAVE_SEARCH_API_KEY is not configured.",
-      route,
-    };
-  }
-  const freshness =
-    route.freshness;
-  const searchLang =
-    resolveSearchLanguage(
-      prompt,
-    );
+
+function extractEvidence(
+  raw: BraveResponse,
+  freshness: WebFreshness,
+): WebEvidence[] {
+  const generic =
+    Array.isArray(
+      raw.grounding?.generic,
+    )
+      ? raw.grounding.generic
+      : [];
+
+  const retrievedAt =
+    Date.now();
+
+  return generic
+    .map(
+      (
+        item,
+        index,
+      ) => {
+        const url =
+          typeof item.url ===
+          "string"
+            ? item.url
+            : "";
+
+        if (!url) {
+          return null;
+        }
+
+        let hostname = "";
+
+        try {
+          hostname =
+            new URL(
+              url,
+            ).hostname;
+        } catch {
+          return null;
+        }
+
+        const snippets =
+          Array.isArray(
+            item.snippets,
+          )
+            ? item.snippets
+                .filter(
+                  (
+                    value,
+                  ): value is string =>
+                    typeof value ===
+                    "string",
+                )
+                .map(
+                  sanitizeSnippet,
+                )
+                .filter(Boolean)
+            : [];
+
+        if (
+          snippets.length ===
+          0
+        ) {
+          return null;
+        }
+
+        return {
+          id:
+            `web-${retrievedAt}-${index}`,
+          url,
+          title:
+            typeof item.title ===
+            "string"
+              ? item.title
+              : hostname,
+          hostname,
+          snippets,
+          freshness,
+          retrievedAt,
+          confidence:
+            calculateConfidence(
+              hostname,
+              generic.length,
+            ),
+        };
+      },
+    )
+    .filter(
+      (
+        item,
+      ): item is WebEvidence =>
+        item !== null,
+    )
+    .slice(0, 8);
+}
+
+async function callBraveContext(
+  query: string,
+  searchLang: string,
+  freshness?: string,
+): Promise<{
+  response: Response;
+  raw: BraveResponse;
+}> {
   const endpoint =
     new URL(
       "https://api.search.brave.com/res/v1/llm/context",
     );
+
   endpoint.searchParams.set(
     "q",
     query,
   );
+
   endpoint.searchParams.set(
     "count",
     "8",
   );
+
   endpoint.searchParams.set(
     "maximum_number_of_tokens",
     "6000",
   );
+
   endpoint.searchParams.set(
     "search_lang",
     searchLang,
   );
+
   endpoint.searchParams.set(
     "enable_source_metadata",
     "true",
   );
-  if (
-    freshness !== "general"
-  ) {
+
+  if (freshness) {
     endpoint.searchParams.set(
       "freshness",
-      freshness === "24h"
-        ? "pd"
-        : freshness === "7d"
-          ? "pw"
-          : "pm",
+      freshness,
     );
   }
+
+  const apiKey =
+    process.env
+      .BRAVE_SEARCH_API_KEY
+      ?.trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "BRAVE_SEARCH_API_KEY is not configured.",
+    );
+  }
+
   const controller =
     new AbortController();
+
   const timeout =
     setTimeout(
       () =>
         controller.abort(),
       30000,
     );
+
   try {
     const response =
       await fetch(
@@ -811,112 +986,123 @@ export async function retrieveWebEvidence(
             controller.signal,
         },
       );
+
     const raw =
       (await response.json()) as BraveResponse;
-    if (!response.ok) {
+
+    return {
+      response,
+      raw,
+    };
+  } finally {
+    clearTimeout(
+      timeout,
+    );
+  }
+}
+
+export async function retrieveWebEvidence(
+  prompt: string,
+): Promise<WebIntelligenceResult> {
+  const route =
+    routeLiveIntelligence(
+      prompt,
+    );
+
+  const searchLang =
+    resolveSearchLanguage(
+      prompt,
+    );
+
+  try {
+    /*
+     * PASS 1
+     *
+     * Normal live retrieval.
+     *
+     * Important:
+     * Finance current-value queries deliberately do NOT
+     * use the page-age freshness filter.
+     *
+     * A financial page can contain today's value while
+     * its webpage itself was published weeks or months ago.
+     */
+    let result =
+      await callBraveContext(
+        route.query,
+        searchLang,
+        route.category ===
+          "finance"
+          ? undefined
+          : route.freshness ===
+              "24h"
+            ? "pd"
+            : route.freshness ===
+                "7d"
+              ? "pw"
+              : route.freshness ===
+                  "30d"
+                ? "pm"
+                : undefined,
+      );
+
+    let evidence =
+      result.response.ok
+        ? extractEvidence(
+            result.raw,
+            route.freshness,
+          )
+        : [];
+
+    /*
+     * PASS 2
+     *
+     * If no evidence was returned, retry without any
+     * freshness restriction.
+     *
+     * This protects against the important distinction:
+     *
+     * "current information"
+     * is not the same thing as
+     * "a webpage published recently".
+     */
+    if (
+      evidence.length === 0
+    ) {
+      result =
+        await callBraveContext(
+          route.query,
+          searchLang,
+        );
+
+      evidence =
+        result.response.ok
+          ? extractEvidence(
+              result.raw,
+              route.freshness,
+            )
+          : [];
+    }
+
+    if (
+      evidence.length === 0
+    ) {
       return {
         success: false,
-        query,
+        query: route.query,
         verified: false,
         provider: "brave",
         evidence: [],
         sourceCount: 0,
         sourceHosts: [],
         error:
-          `Brave Web Intelligence failed with HTTP ${response.status}.`,
+          result.response.ok
+            ? "No usable web evidence was returned after retry."
+            : `Brave Web Intelligence failed with HTTP ${result.response.status}.`,
         route,
       };
     }
-    const generic =
-      Array.isArray(
-        raw.grounding?.generic,
-      )
-        ? raw.grounding
-            .generic
-        : [];
-    const retrievedAt =
-      Date.now();
-    const evidence =
-      generic
-        .map(
-          (
-            item,
-            index,
-          ) => {
-            const url =
-              typeof item.url ===
-              "string"
-                ? item.url
-                : "";
-            if (!url) {
-              return null;
-            }
-            let hostname =
-              "";
-            try {
-              hostname =
-                new URL(
-                  url,
-                ).hostname;
-            } catch {
-              hostname =
-                "";
-            }
-            if (!hostname) {
-              return null;
-            }
-            const snippets =
-              Array.isArray(
-                item.snippets,
-              )
-                ? item.snippets
-                    .filter(
-                      (
-                        value,
-                      ): value is string =>
-                        typeof value ===
-                        "string",
-                    )
-                    .map(
-                      sanitizeSnippet,
-                    )
-                    .filter(Boolean)
-                : [];
-            if (
-              snippets.length ===
-              0
-            ) {
-              return null;
-            }
-            return {
-              id:
-                `web-${retrievedAt}-${index}`,
-              url,
-              title:
-                typeof item.title ===
-                "string"
-                  ? item.title
-                  : hostname ||
-                    "Web source",
-              hostname,
-              snippets,
-              freshness,
-              retrievedAt,
-              confidence:
-                calculateConfidence(
-                  hostname,
-                  generic.length,
-                ),
-            };
-          },
-        )
-        .filter(
-          (
-            value,
-          ): value is WebEvidence =>
-            value !== null,
-        )
-        .slice(0, 8);
+
     const sourceHosts =
       Array.from(
         new Set(
@@ -930,6 +1116,7 @@ export async function retrieveWebEvidence(
             .filter(Boolean),
         ),
       );
+
     const sourceDomains =
       Array.from(
         new Set(
@@ -943,39 +1130,30 @@ export async function retrieveWebEvidence(
             .filter(Boolean),
         ),
       );
-    /*
-     * Verification Gate
-     *
-     * At least two evidence items from two independent
-     * source domains are required before live information
-     * is marked verified.
-     */
+
     const verified =
       evidence.length >= 2 &&
       sourceDomains.length >= 2;
+
     return {
-      success:
-        evidence.length > 0,
-      query,
+      success: true,
+      query: route.query,
       verified,
-      provider:
-        "brave",
+      provider: "brave",
       evidence,
       sourceCount:
         evidence.length,
       sourceHosts,
       route,
       error:
-        evidence.length === 0
-          ? "No usable web evidence was returned."
-          : verified
-            ? undefined
-            : "Web evidence was returned, but it did not contain enough independent source domains for verification.",
+        verified
+          ? undefined
+          : "Web evidence was returned, but it did not contain enough independent source domains for verification.",
     };
   } catch (error) {
     return {
       success: false,
-      query,
+      query: route.query,
       verified: false,
       provider: "brave",
       evidence: [],
@@ -987,9 +1165,5 @@ export async function retrieveWebEvidence(
           ? error.message
           : "Web Intelligence request failed.",
     };
-  } finally {
-    clearTimeout(
-      timeout,
-    );
   }
 }
