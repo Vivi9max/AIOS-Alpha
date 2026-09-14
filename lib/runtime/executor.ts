@@ -35,8 +35,10 @@ import {
   type CapabilityTrace,
 } from "./capability-router";
 
-import type {
-  WebIntelligenceResult,
+import {
+  requiresWebIntelligence,
+  retrieveWebEvidence,
+  type WebIntelligenceResult,
 } from "@/lib/web-intelligence";
 
 import {
@@ -81,7 +83,8 @@ function buildTrustedRuntimePolicy(
   plan: RuntimePlan,
   locale: Locale,
 ): string {
-  const mode = plan.responseMode;
+  const mode =
+    plan.responseMode;
 
   const policies: Record<
     RuntimePlan["responseMode"],
@@ -140,7 +143,7 @@ function buildTrustedRuntimePolicy(
       "中国語や英語の語順をそのまま日本語に置き換えるような直訳調の表現は避けてください。",
       "日本語として自然な語順、助詞、言い回しを使ってください。",
       "日常的な会話では、堅すぎる敬語や不自然に形式ばった表現を避け、自然で親しみやすい文章にしてください。",
-      "正式な説明や業務上の内容では、丁寧で落ち着いた表現を使ってください。ただし、過剰な敬語にはしないでください。",
+      "正式な説明や業務上の内容では、丁寧で落ち着いた表現を使ってください。",
       "UI、製品説明、エラーメッセージでは、日本のユーザーが実際のサービスで目にして違和感のない自然な表現を優先してください。",
       "技術的な識別子、コード、ファイルパス、Provider 名は原文のまま維持してください。",
       "ユーザーが別の言語を明示的に指定した場合は、その指定を優先してください。",
@@ -172,20 +175,27 @@ function buildWebEvidenceContext(
     return "";
   }
 
-  const sources = web.evidence
-    .map((item, index) =>
-      [
-        `SOURCE ${index + 1}`,
-        `title=${item.title}`,
-        `url=${item.url}`,
-        `hostname=${item.hostname}`,
-        `freshness=${item.freshness}`,
-        `confidence=${item.confidence}`,
-        "content:",
-        item.snippets.join("\n"),
-      ].join("\n"),
-    )
-    .join("\n\n");
+  const sources =
+    web.evidence
+      .map(
+        (
+          item,
+          index,
+        ) =>
+          [
+            `SOURCE ${index + 1}`,
+            `title=${item.title}`,
+            `url=${item.url}`,
+            `hostname=${item.hostname}`,
+            `freshness=${item.freshness}`,
+            `confidence=${item.confidence}`,
+            "content:",
+            item.snippets.join(
+              "\n",
+            ),
+          ].join("\n"),
+      )
+      .join("\n\n");
 
   return [
     "AIOS EXTERNAL WEB EVIDENCE",
@@ -216,7 +226,8 @@ async function executeWorkspacePlan(
   const activeProvider =
     getActiveProvider();
 
-  const startedAt = Date.now();
+  const startedAt =
+    Date.now();
 
   try {
     const execution =
@@ -241,7 +252,8 @@ async function executeWorkspacePlan(
 
     return {
       success: true,
-      provider: activeProvider,
+      provider:
+        activeProvider,
       requestedProvider:
         activeProvider,
       fallbackUsed: false,
@@ -252,7 +264,8 @@ async function executeWorkspacePlan(
       planType: plan.type,
       goal: plan.goal,
       intent: plan.intent,
-      confidence: plan.confidence,
+      confidence:
+        plan.confidence,
       capabilities:
         plan.capabilities,
       steps: plan.steps,
@@ -260,7 +273,8 @@ async function executeWorkspacePlan(
         {
           capability:
             "workspace.action",
-          status: "completed",
+          status:
+            "completed",
           durationMs:
             Date.now() -
             startedAt,
@@ -284,11 +298,13 @@ async function executeWorkspacePlan(
 
     return {
       success: false,
-      provider: activeProvider,
+      provider:
+        activeProvider,
       requestedProvider:
         activeProvider,
       fallbackUsed: false,
-      error: errorMessage,
+      error:
+        errorMessage,
       content:
         "The workspace action could not be completed.",
       actionHandled: true,
@@ -296,7 +312,8 @@ async function executeWorkspacePlan(
       planType: plan.type,
       goal: plan.goal,
       intent: plan.intent,
-      confidence: plan.confidence,
+      confidence:
+        plan.confidence,
       capabilities:
         plan.capabilities,
       steps: plan.steps,
@@ -304,13 +321,64 @@ async function executeWorkspacePlan(
         {
           capability:
             "workspace.action",
-          status: "failed",
+          status:
+            "failed",
           durationMs:
             Date.now() -
             startedAt,
-          detail: errorMessage,
+          detail:
+            errorMessage,
         },
       ],
+    };
+  }
+}
+
+async function resolveRuntimeWebContext(
+  plan: RuntimePlan,
+  provided?: WebIntelligenceResult,
+): Promise<
+  WebIntelligenceResult | undefined
+> {
+  if (provided) {
+    return provided;
+  }
+
+  const required =
+    requiresWebIntelligence(
+      plan.prompt,
+    );
+
+  if (!required) {
+    return undefined;
+  }
+
+  /*
+   * C143 Runtime Web Ownership
+   *
+   * Web Intelligence is a Runtime capability.
+   *
+   * Chat may provide already-retrieved evidence,
+   * but Runtime must not depend on Chat to provide it.
+   *
+   * This closes the execution-path gap where a live
+   * request could reach Brain without web evidence.
+   */
+  try {
+    return await retrieveWebEvidence(
+      plan.prompt,
+    );
+  } catch {
+    return {
+      success: false,
+      query: plan.prompt,
+      verified: false,
+      provider: "brave",
+      evidence: [],
+      sourceCount: 0,
+      sourceHosts: [],
+      error:
+        "Runtime Web Intelligence retrieval failed.",
     };
   }
 }
@@ -318,11 +386,17 @@ async function executeWorkspacePlan(
 async function executeAIPlan(
   plan: RuntimePlan,
   locale: Locale,
-  webContext?: WebIntelligenceResult,
+  providedWebContext?: WebIntelligenceResult,
 ): Promise<RuntimeExecutionResult> {
   const context =
     await buildRuntimeContext(
       plan,
+    );
+
+  const webContext =
+    await resolveRuntimeWebContext(
+      plan,
+      providedWebContext,
     );
 
   const runtimePolicy =
@@ -347,7 +421,8 @@ async function executeAIPlan(
 
   const result =
     await runBrain({
-      prompt: plan.prompt,
+      prompt:
+        plan.prompt,
       systemPrompt,
       historyLimit: 20,
     });
@@ -361,7 +436,8 @@ async function executeAIPlan(
           result,
         )
       : {
-          content: result.content,
+          content:
+            result.content,
           repaired: false,
         };
 
@@ -375,12 +451,14 @@ async function executeAIPlan(
     planType: plan.type,
     goal: plan.goal,
     intent: plan.intent,
-    confidence: plan.confidence,
+    confidence:
+      plan.confidence,
     capabilities:
       plan.capabilities,
     steps: plan.steps,
     capabilityTrace:
       context.trace,
+
     webIntelligence:
       webContext
         ? {
