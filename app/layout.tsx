@@ -8,6 +8,7 @@ import type {
 import PlannerProvider from "@/components/planner/PlannerProvider";
 import LanguageProvider from "@/components/i18n/LanguageProvider";
 import ProductLanguageNormalizer from "@/components/i18n/ProductLanguageNormalizer";
+import ProductLanguageRuntimeGuard from "@/components/i18n/ProductLanguageRuntimeGuard";
 
 export const metadata:
   Metadata = {
@@ -100,6 +101,8 @@ export default function RootLayout({
       <body>
         <LanguageProvider>
           <ProductLanguageNormalizer />
+
+          <ProductLanguageRuntimeGuard />
 
           <PlannerProvider
             autoRefresh={true}
