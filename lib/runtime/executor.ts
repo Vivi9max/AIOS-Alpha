@@ -39,6 +39,10 @@ import type {
   WebIntelligenceResult,
 } from "@/lib/web-intelligence";
 
+import {
+  enforceLiveAnswerIntegrity,
+} from "./live-answer-integrity";
+
 export interface RuntimeExecutionResult
   extends BrainResponse {
   planId: string;
@@ -348,8 +352,25 @@ async function executeAIPlan(
       historyLimit: 20,
     });
 
+  const integrity =
+    webContext
+      ? await enforceLiveAnswerIntegrity(
+          plan,
+          locale,
+          webContext,
+          result,
+        )
+      : {
+          content: result.content,
+          repaired: false,
+        };
+
   return {
     ...result,
+
+    content:
+      integrity.content,
+
     planId: plan.id,
     planType: plan.type,
     goal: plan.goal,
