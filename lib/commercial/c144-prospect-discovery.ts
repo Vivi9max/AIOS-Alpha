@@ -168,73 +168,18 @@ const EXCLUDED_TITLE_PATTERNS = [
   "市场规模",
 ];
 
-const BUSINESS_VERB_PATTERNS = [
-  "launches",
-  "launched",
-  "expands",
-  "expanded",
-  "expanding",
-  "enters",
-  "entered",
-  "entering",
-  "opens",
-  "opened",
-  "opening",
-  "partners",
-  "partnered",
-  "partnership",
-  "announces",
-  "announced",
-  "plans",
-  "planned",
-  "targets",
-  "targeting",
-  "seeks",
-  "seeking",
-  "grows",
-  "growing",
-  "sales",
-  "revenue",
-  "hiring",
-  "recruits",
-  "sets up",
-];
-
-const CHINESE_BUSINESS_VERBS = [
-  "进军",
-  "进入",
-  "拓展",
-  "扩张",
-  "布局",
-  "登陆",
-  "落地",
-  "发布",
-  "宣布",
-  "签约",
-  "合作",
-  "招聘",
-  "招募",
-  "销售",
-  "增长",
-  "出海",
-  "跨境",
-  "出口",
-  "海外",
-  "日本市场",
-];
-
 const DISCOVERY_PROMPTS = [
   [
     "中国内地跨境电商企业 日本市场 扩张 出海 品牌 最新 2026",
-    "Find real China-based companies, brands, manufacturers, exporters, or cross-border ecommerce sellers with current Japan or overseas expansion activity. Prefer named commercial organizations and current business signals. Exclude media, government, events, universities, generic market reports, and consulting firms.",
+    "Find real mainland China companies, brands, manufacturers, exporters, or cross-border ecommerce sellers with current Japan or overseas expansion activity. Prefer named commercial organizations and current business signals. Exclude media, government, events, universities, generic market reports, marketplaces, and consulting firms.",
   ],
   [
     "中国品牌 日本市场 电商 出海 招聘 渠道 合作 2026 企业",
-    "Find real mainland China companies or brands that currently show commercial signals connected to Japan ecommerce, overseas sales, distribution, hiring, partnerships, marketplace activity, or market entry. Prioritize companies that could realistically purchase commercial market intelligence or product validation services.",
+    "Find real mainland China companies or brands that currently show commercial signals connected to Japan ecommerce, overseas sales, distribution, hiring, partnerships, marketplace activity, or market entry. Prioritize businesses that could realistically purchase commercial market intelligence or product validation services.",
   ],
   [
     "深圳 广州 东莞 杭州 义乌 中国企业 日本市场 跨境电商 2026",
-    "Find real mainland Chinese businesses, especially SMEs or mid-market companies, showing current Japan-market, cross-border ecommerce, export, overseas distribution, or international expansion signals. Prefer businesses rather than large platforms or media organizations.",
+    "Find real mainland Chinese businesses, especially SMEs or mid-market companies, showing current Japan-market, cross-border ecommerce, export, overseas distribution, or international expansion signals. Prefer businesses rather than large platforms, media organizations, governments, or consultants.",
   ],
   [
     "中国工厂 品牌 外贸企业 日本市场 拓展 经销商 电商 2026",
@@ -316,6 +261,51 @@ function isExcludedSource(
   return false;
 }
 
+function isExcludedIdentity(
+  name: string,
+): boolean {
+  const lower =
+    name
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const excluded = [
+    "startup daily",
+    "business standard",
+    "small business expo",
+    "reuters",
+    "forbes",
+    "bloomberg",
+    "techcrunch",
+    "the verge",
+    "news",
+    "times",
+    "daily",
+    "journal",
+    "government",
+    "ministry",
+    "department",
+    "university",
+    "conference",
+    "expo",
+    "event",
+    "政府",
+    "政府部门",
+    "大学",
+    "研究院",
+    "协会",
+    "展会",
+    "会议",
+  ];
+
+  return excluded.some(
+    (item) =>
+      lower === item ||
+      lower.includes(item),
+  );
+}
+
 function extractBusinessIdentity(
   evidence: VerifiedWebEvidence,
 ): BusinessIdentity {
@@ -336,37 +326,39 @@ function extractBusinessIdentity(
   ].join(" ");
 
   const englishPatterns = [
-    /^([A-Z][A-Za-z0-9&.'’ -]{2,80}?)\s+(?:launches|launched|expands|expanded|expanding|enters|entered|entering|opens|opened|opening|partners|partnered|announces|announced|plans|planned|targets|targeting|seeks|seeking|grows|growing|hiring|recruits|sets up)\b/i,
+    /^([A-Z][A-Za-z0-9&.'’ -]{2,80}?)\s+(?:launches|launched|expands|expanded|expanding|enters|entered|entering|opens|opened|opening|partners|partnered|partnership|announces|announced|plans|planned|targets|targeting|seeks|seeking|grows|growing|sales|revenue|hiring|recruits|sets up)\b/i,
 
     /^([A-Z][A-Za-z0-9&.'’ -]{2,80}?)\s+(?:Japan|Japanese market|China|Chinese market|cross-border|overseas)\b/i,
   ];
 
   for (
-    const pattern of englishPatterns
+    const pattern of
+      englishPatterns
   ) {
     const match =
       title.match(pattern);
 
-    if (match?.[1]) {
-      const name =
-        normalizeText(
-          match[1],
-          120,
-        );
+    if (!match?.[1]) {
+      continue;
+    }
 
-      if (
-        name &&
-        name.length >= 2 &&
-        !isExcludedIdentity(name)
-      ) {
-        return {
-          name,
-          confidence: 0.78,
-          evidence: [
-            `The organization name "${name}" appears directly in the source title.`,
-          ],
-        };
-      }
+    const name =
+      normalizeText(
+        match[1],
+        120,
+      );
+
+    if (
+      name.length >= 2 &&
+      !isExcludedIdentity(name)
+    ) {
+      return {
+        name,
+        confidence: 0.78,
+        evidence: [
+          `The organization name "${name}" appears directly in the source title.`,
+        ],
+      };
     }
   }
 
@@ -388,7 +380,6 @@ function extractBusinessIdentity(
       );
 
     if (
-      name &&
       name.length >= 2 &&
       !isExcludedIdentity(name)
     ) {
@@ -420,7 +411,7 @@ function extractBusinessIdentity(
       );
 
     if (
-      name &&
+      name.length >= 2 &&
       !isExcludedIdentity(name)
     ) {
       return {
@@ -451,7 +442,7 @@ function extractBusinessIdentity(
       );
 
     if (
-      name &&
+      name.length >= 2 &&
       !isExcludedIdentity(name)
     ) {
       return {
@@ -469,41 +460,6 @@ function extractBusinessIdentity(
     confidence: 0,
     evidence: [],
   };
-}
-
-function isExcludedIdentity(
-  name: string,
-): boolean {
-  const lower =
-    name.toLowerCase();
-
-  const excluded = [
-    "startup daily",
-    "business standard",
-    "small business expo",
-    "reuters",
-    "forbes",
-    "bloomberg",
-    "techcrunch",
-    "the verge",
-    "news",
-    "times",
-    "daily",
-    "journal",
-    "政府",
-    "政府部门",
-    "大学",
-    "研究院",
-    "协会",
-    "展会",
-    "会议",
-  ];
-
-  return excluded.some(
-    (item) =>
-      lower === item ||
-      lower.includes(item),
-  );
 }
 
 function extractCommercialSignals(
@@ -636,8 +592,8 @@ function classifyCustomerType(
 
   if (
     text.includes("cross-border seller") ||
-    text.includes("跨境卖家") ||
-    text.includes("cross-border ecommerce seller")
+    text.includes("cross-border ecommerce seller") ||
+    text.includes("跨境卖家")
   ) {
     return "cross-border-seller";
   }
@@ -652,6 +608,7 @@ function classifyCustomerType(
   if (
     text.includes("manufacturer") ||
     text.includes("factory") ||
+    text.includes("manufacturer") ||
     text.includes("制造") ||
     text.includes("工厂")
   ) {
@@ -719,10 +676,10 @@ function buildSearchQuery(
 ): string {
   return [
     `"${companyName}"`,
+    "China",
     "Japan",
     "cross-border ecommerce",
     "market expansion",
-    "China",
     "2026",
   ].join(" ");
 }
@@ -768,20 +725,6 @@ async function corroborateBusiness(
     );
 }
 
-function sameHost(
-  left: DiscoverySource,
-  right: DiscoverySource,
-): boolean {
-  return (
-    normalizeHost(
-      left.evidence.hostname,
-    ) ===
-    normalizeHost(
-      right.evidence.hostname,
-    )
-  );
-}
-
 function buildCandidate(
   companyName: string,
   sources: DiscoverySource[],
@@ -813,15 +756,11 @@ function buildCandidate(
 
   const identityEvidence =
     uniqueStrings(
-      sources.flatMap(
-        (source) => {
-          const identity =
-            extractBusinessIdentity(
-              source.evidence,
-            );
-
-          return identity.evidence;
-        },
+      uniqueSources.flatMap(
+        (source) =>
+          extractBusinessIdentity(
+            source.evidence,
+          ).evidence,
       ),
     );
 
@@ -893,14 +832,11 @@ function buildCandidate(
       customerType,
     );
 
-  const paymentCapability =
-    "likely-domestic-rmb" as const;
-
   const validationReasons = [
     "The organization is identified from public source evidence and is not inferred from the source hostname alone.",
     `The candidate has ${sourceCount} supporting source(s) across ${independentHostCount} independent host(s).`,
     `Detected commercial signals: ${signals.length}.`,
-    "Payment capability is classified as likely domestic RMB because the target customer is a mainland China business; actual payment ability must still be confirmed manually.",
+    "Payment capability is classified as likely domestic RMB because the target customer is a mainland-China business; actual payment ability must still be confirmed manually.",
     "No contact, response, customer relationship, or payment is claimed by this discovery engine.",
   ];
 
@@ -915,7 +851,10 @@ function buildCandidate(
   return {
     id: "",
     rank: 0,
-    name: companyName,
+
+    name:
+      companyName,
+
     type:
       verifiedBusiness
         ? "business"
@@ -999,7 +938,8 @@ function buildCandidate(
 
     validationReasons,
 
-    paymentCapability,
+    paymentCapability:
+      "likely-domestic-rmb",
 
     paymentCurrency:
       "CNY",
@@ -1016,7 +956,8 @@ function collectCandidateSeeds(
   const seeds: CandidateSeed[] = [];
 
   for (
-    const source of sources
+    const source of
+      sources
   ) {
     const title =
       normalizeText(
@@ -1053,8 +994,11 @@ function collectCandidateSeeds(
     }
 
     seeds.push({
-      name: identity.name,
+      name:
+        identity.name,
+
       source,
+
       identity,
     });
   }
@@ -1066,7 +1010,8 @@ function collectCandidateSeeds(
     >();
 
   for (
-    const seed of seeds
+    const seed of
+      seeds
   ) {
     const key =
       seed.name
@@ -1101,8 +1046,8 @@ async function discoverSources(): Promise<
   const all: DiscoverySource[] = [];
 
   for (
-    const [index, prompt] of
-      DISCOVERY_PROMPTS.entries()
+    const prompt of
+      DISCOVERY_PROMPTS
   ) {
     const result =
       await retrieveWebEvidence(
@@ -1122,16 +1067,10 @@ async function discoverSources(): Promise<
     ) {
       all.push({
         evidence,
+
         searchIntent:
           prompt[0],
       });
-    }
-
-    if (
-      index >=
-      DISCOVERY_PROMPTS.length - 1
-    ) {
-      break;
     }
   }
 
@@ -1167,7 +1106,8 @@ function finalizeCandidates(
           null &&
         candidate.commercialSignals
           .length >= 2 &&
-        candidate.aiosFitScore >= 0.55,
+        candidate.aiosFitScore >=
+          0.55,
     )
     .sort(
       (a, b) =>
@@ -1180,8 +1120,10 @@ function finalizeCandidates(
     .map(
       (candidate, index) => ({
         ...candidate,
+
         id:
           `C144-PROSPECT-${index + 1}`,
+
         rank:
           index + 1,
       }),
@@ -1197,59 +1139,104 @@ export async function discoverC144Prospects(
   if (!project) {
     return {
       success: false,
-      status: "blocked",
-      project: null,
-      candidates: [],
-      sourceCount: 0,
-      independentHosts: 0,
+
+      status:
+        "blocked",
+
+      project:
+        null,
+
+      candidates:
+        [],
+
+      sourceCount:
+        0,
+
+      independentHosts:
+        0,
+
       conclusion:
         "The C144 commercial objective is unavailable.",
+
       nextStep:
         "Initialize the first cashflow project before discovering prospects.",
+
       integrity: {
-        fabricatedLead: false,
-        fabricatedContact: false,
-        fabricatedResponse: false,
-        fabricatedCustomer: false,
+        fabricatedLead:
+          false,
+
+        fabricatedContact:
+          false,
+
+        fabricatedResponse:
+          false,
+
+        fabricatedCustomer:
+          false,
       },
-      timestamp: Date.now(),
+
+      timestamp:
+        Date.now(),
     };
   }
 
   const sources =
     await discoverSources();
 
+  const discoveryHosts =
+    new Set(
+      sources.map(
+        (source) =>
+          normalizeHost(
+            source.evidence.hostname,
+          ),
+      ),
+    );
+
   if (
-    sources.length < 2
+    sources.length < 2 ||
+    discoveryHosts.size < 2
   ) {
     return {
-      success: false,
+      success:
+        false,
+
       status:
         "insufficient-evidence",
+
       project,
-      candidates: [],
+
+      candidates:
+        [],
+
       sourceCount:
         sources.length,
+
       independentHosts:
-        new Set(
-          sources.map(
-            (source) =>
-              normalizeHost(
-                source.evidence.hostname,
-              ),
-          ),
-        ).size,
+        discoveryHosts.size,
+
       conclusion:
         "Targeted mainland-China prospect discovery did not return enough verified external evidence.",
+
       nextStep:
-        "Run another verified prospect discovery cycle.",
+        "Run another verified prospect discovery cycle with fresh external sources.",
+
       integrity: {
-        fabricatedLead: false,
-        fabricatedContact: false,
-        fabricatedResponse: false,
-        fabricatedCustomer: false,
+        fabricatedLead:
+          false,
+
+        fabricatedContact:
+          false,
+
+        fabricatedResponse:
+          false,
+
+        fabricatedCustomer:
+          false,
       },
-      timestamp: Date.now(),
+
+      timestamp:
+        Date.now(),
     };
   }
 
@@ -1259,15 +1246,26 @@ export async function discoverC144Prospects(
     );
 
   const candidateList:
-    C144ProspectCandidate[] = [];
+    C144ProspectCandidate[] =
+    [];
 
   for (
-    const seed of seeds.slice(0, 10)
+    const seed of
+      seeds.slice(0, 12)
   ) {
-    const corroboration =
-      await corroborateBusiness(
-        seed.name,
-      );
+    let corroboration:
+      DiscoverySource[] =
+      [];
+
+    try {
+      corroboration =
+        await corroborateBusiness(
+          seed.name,
+        );
+    } catch {
+      corroboration =
+        [];
+    }
 
     const merged =
       mergeSources(
@@ -1307,30 +1305,20 @@ export async function discoverC144Prospects(
       candidateList,
     );
 
-  const allSources =
-    candidateList.flatMap(
-      (candidate) => [
-        candidate.hostname,
-        candidate.url,
-      ],
-    );
-
-  const sourceHosts =
+  const candidateHosts =
     new Set(
-      allSources
+      candidateList
+        .flatMap(
+          (candidate) => [
+            candidate.hostname,
+          ],
+        )
         .filter(Boolean)
         .map(
-          (value) => {
-            try {
-              return new URL(
-                value.startsWith("http")
-                  ? value
-                  : `https://${value}`,
-              ).hostname;
-            } catch {
-              return value;
-            }
-          },
+          (hostname) =>
+            normalizeHost(
+              hostname,
+            ),
         ),
     );
 
@@ -1338,39 +1326,54 @@ export async function discoverC144Prospects(
     candidates.length < 1
   ) {
     return {
-      success: false,
+      success:
+        false,
+
       status:
         "insufficient-evidence",
+
       project,
-      candidates: [],
+
+      candidates:
+        [],
+
       sourceCount:
         sources.length,
+
       independentHosts:
-        new Set(
-          sources.map(
-            (source) =>
-              normalizeHost(
-                source.evidence.hostname,
-              ),
-          ),
-        ).size,
+        Math.max(
+          discoveryHosts.size,
+          candidateHosts.size,
+        ),
+
       conclusion:
         "The engine found commercial signals but could not corroborate a sufficiently strong mainland-China business prospect.",
+
       nextStep:
         "Do not perform outreach. Run another targeted prospect discovery cycle with fresh external evidence.",
+
       integrity: {
-        fabricatedLead: false,
-        fabricatedContact: false,
-        fabricatedResponse: false,
-        fabricatedCustomer: false,
+        fabricatedLead:
+          false,
+
+        fabricatedContact:
+          false,
+
+        fabricatedResponse:
+          false,
+
+        fabricatedCustomer:
+          false,
       },
-      timestamp: Date.now(),
+
+      timestamp:
+        Date.now(),
     };
   }
 
   return {
     success:
-      candidates.length >= 1,
+      true,
 
     status:
       "ready",
@@ -1383,19 +1386,29 @@ export async function discoverC144Prospects(
       sources.length,
 
     independentHosts:
-      sourceHosts.size,
+      Math.max(
+        discoveryHosts.size,
+        candidateHosts.size,
+      ),
 
     conclusion:
       `C144.3.1 identified ${candidates.length} evidence-backed mainland-China commercial prospect candidate(s).`,
 
     nextStep:
-      "Manually validate candidate #1, including business identity, current need, mainland-China status, and CNY payment capability before any outreach.",
+      "Manually validate candidate #1, including business identity, current commercial need, mainland-China status, and CNY payment capability before any outreach.",
 
     integrity: {
-      fabricatedLead: false,
-      fabricatedContact: false,
-      fabricatedResponse: false,
-      fabricatedCustomer: false,
+      fabricatedLead:
+        false,
+
+      fabricatedContact:
+        false,
+
+      fabricatedResponse:
+        false,
+
+      fabricatedCustomer:
+        false,
     },
 
     timestamp:
@@ -1433,6 +1446,7 @@ export function isC144ProspectDiscoveryReady(
         "CNY" &&
       candidate.paymentCapability ===
         "likely-domestic-rmb" &&
-      candidate.aiosFitScore >= 0.55,
+      candidate.aiosFitScore >=
+        0.55,
   );
 }
