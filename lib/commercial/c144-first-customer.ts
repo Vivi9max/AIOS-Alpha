@@ -38,12 +38,16 @@ Current commercial objective:
 AIOS 30-Day First Cashflow Project.
 Target revenue: CNY 5,000.
 Target customers: 1.
+
 Primary offer:
-AIOS-powered cross-border market intelligence, product validation,
-competitive research, opportunity discovery, and market-entry decision support.
+AIOS-powered cross-border market intelligence,
+product validation, competitive research,
+opportunity discovery, and market-entry decision support.
 
 TARGET MARKET:
+
 Prioritize real businesses and organizations connected to:
+
 1. Chinese manufacturers, suppliers, exporters, sellers, brands, or small businesses.
 2. Companies seeking Japan market entry or expansion.
 3. Cross-border e-commerce businesses.
@@ -53,6 +57,7 @@ Prioritize real businesses and organizations connected to:
    overseas expansion,招商, sourcing, exporting, or market-entry activity.
 
 IMPORTANT:
+
 Do NOT return generic market theory.
 Do NOT return only consumer trends.
 Do NOT return only AI industry news.
@@ -61,9 +66,11 @@ Do NOT return only broad e-commerce statistics.
 We need evidence that can lead to a real paying business customer.
 
 LIVE WEB RESEARCH REQUIREMENTS:
+
 Use current external web information and prioritize recent information.
 
-Search for explicit current signals including:
+Search for explicit current commercial signals including:
+
 - market trend
 - sales
 - competitors
@@ -89,7 +96,8 @@ Search for explicit current signals including:
 - Japan sales
 - Japan distribution
 
-Use equivalent Chinese and Japanese search concepts where appropriate:
+Use equivalent Chinese and Japanese concepts where appropriate:
+
 - 市场趋势
 - 销量
 - 竞争对手
@@ -113,10 +121,12 @@ Use equivalent Chinese and Japanese search concepts where appropriate:
 - 产品验证
 
 COMPANY / CUSTOMER IDENTIFICATION:
+
 Look specifically for real companies, brands, manufacturers, exporters,
 cross-border sellers, e-commerce operators, distributors, and organizations.
 
 Where public information supports it, identify:
+
 - company or brand name
 - business type
 - relevant market
@@ -126,6 +136,7 @@ Where public information supports it, identify:
 - source supporting the signal
 
 Do not claim that a company is a qualified lead merely because it appears in a search result.
+
 Do not claim that a company wants AIOS.
 Do not claim that anyone has been contacted.
 Do not claim that anyone replied.
@@ -133,14 +144,16 @@ Do not claim a customer exists.
 Do not claim revenue exists.
 
 EVIDENCE REQUIREMENTS:
+
 Return multiple independent current public sources whenever possible.
 
 Prefer:
+
 - official company websites
 - company announcements
 - recruitment pages
 - public business information
-- reputable business/industry media
+- reputable business or industry media
 - credible market or e-commerce reports
 
 Avoid relying on a single source.
@@ -148,10 +161,12 @@ Avoid relying on a single source.
 The evidence must support an actual commercial opportunity rather than a generic topic.
 
 COMMERCIAL DECISION:
+
 From the verified evidence, determine the single highest-priority customer segment
 or business opportunity that AIOS can realistically approach first.
 
 Then produce:
+
 1. FACTS supported by current sources.
 2. COMMERCIAL JUDGMENT.
 3. KEY RISKS.
@@ -160,11 +175,13 @@ Then produce:
 6. The smallest practical manual customer-acquisition action.
 7. A measurable success signal.
 
-The recommended action should be realistic for a solo founder operating without
+The recommended action must be realistic for a solo founder operating without
 social-media, messaging, advertising, or marketplace execution APIs.
 
 CURRENT EXECUTION MODEL:
+
 AIOS performs:
+
 - live intelligence
 - evidence verification
 - analysis
@@ -177,6 +194,7 @@ AIOS performs:
 Founder performs external actions manually until authorized external adapters exist.
 
 Therefore:
+
 AIOS MUST NOT claim to have sent messages,
 published content,
 contacted prospects,
@@ -187,17 +205,16 @@ won customers,
 or generated revenue.
 
 FINAL OUTPUT OBJECTIVE:
+
 Convert verified live market intelligence into ONE highest-priority
 first-customer acquisition task that the founder can execute manually.
 
 The task should help identify and manually approach 5 highly relevant prospective
-customers or businesses based on verified evidence, with the goal of obtaining at
-least 1 qualified response or request for more information.
+customers or businesses based on verified evidence, with the goal of obtaining
+at least 1 qualified response or request for more information.
 `.trim();
 
-function buildTask(
-  objectiveId: string,
-): C144FirstCustomerTask {
+function buildTask(objectiveId: string): C144FirstCustomerTask {
   return {
     id: C144_TASK_ID,
     title: "Find and validate the first paying customer",
@@ -275,7 +292,20 @@ export async function discoverFirstCustomer(): Promise<C144FirstCustomerDiscover
   };
 }
 
-export function isC144FirstCustomerDiscoveryReady(
+/**
+ * Backward-compatible task execution entry point.
+ *
+ * Existing C144 founder routes already import this symbol.
+ * The actual commercial work is performed by discoverFirstCustomer().
+ */
+export async function executeC144FirstCustomerTask(): Promise<C144FirstCustomerDiscoveryResult> {
+  return discoverFirstCustomer();
+}
+
+/**
+ * Backward-compatible readiness check used by the existing founder routes.
+ */
+export function isC144FirstCustomerTaskReady(
   result: C144FirstCustomerDiscoveryResult,
 ): boolean {
   return (
@@ -287,4 +317,13 @@ export function isC144FirstCustomerDiscoveryReady(
     Boolean(result.opportunity) &&
     isLiveCommercialOpportunityReady(result.opportunity!)
   );
+}
+
+/**
+ * Discovery-level readiness check.
+ */
+export function isC144FirstCustomerDiscoveryReady(
+  result: C144FirstCustomerDiscoveryResult,
+): boolean {
+  return isC144FirstCustomerTaskReady(result);
 }
