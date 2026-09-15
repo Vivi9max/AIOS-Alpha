@@ -11,6 +11,7 @@ export interface C144FirstCustomerTask {
   priority: "critical";
   objectiveId: string;
   target: string;
+  measurableTarget: string;
   successSignal: string;
   executionMode: "manual-founder";
   externalSideEffectExecuted: false;
@@ -178,6 +179,8 @@ function buildTask(objectiveId: string): C144FirstCustomerTask {
     objectiveId,
     target:
       "Identify and manually approach 5 highly relevant prospective customers or businesses based on the verified opportunity.",
+    measurableTarget:
+      "Manually identify and approach 5 highly relevant prospective customers or businesses.",
     successSignal:
       "At least 1 prospective customer provides a qualified response or requests more information.",
     executionMode: "manual-founder",
@@ -252,6 +255,7 @@ export function isC144FirstCustomerTaskReady(
     Boolean(result.objectiveId) &&
     Boolean(result.task) &&
     result.task.status !== "blocked" &&
+    Boolean(result.task.measurableTarget) &&
     Boolean(result.opportunity) &&
     isLiveCommercialOpportunityReady(result.opportunity!)
   );
