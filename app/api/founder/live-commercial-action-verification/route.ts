@@ -21,6 +21,7 @@ import {
 
 import {
   retrieveWebEvidence,
+  type WebIntelligenceResult,
 } from "@/lib/web-intelligence";
 
 import {
@@ -43,6 +44,8 @@ export const runtime = "nodejs";
 
 const VERIFICATION_OBJECTIVE_TITLE =
   "C143.33.1 Live Commercial Action Verification";
+
+const MAX_WEB_ATTEMPTS = 3;
 
 async function getOrCreateVerificationObjective(): Promise<{
   objective: CommercialObjective;
@@ -101,18 +104,171 @@ async function getOrCreateVerificationObjective(): Promise<{
   };
 }
 
-function buildPrompt(
+function buildPrompts(
   objective: CommercialObjective,
-): string {
+): string[] {
   return [
-    `Commercial objective: ${objective.title}.`,
-    "Find a currently actionable commercial opportunity.",
-    "Use current external web information.",
-    "Verify the evidence using multiple independent sources.",
-    "Identify customer demand, competition, pricing, or market opportunity.",
-    "Produce a concrete measurable commercial action.",
-    "The action must be suitable for the smallest practical validation.",
-  ].join("\n");
+    [
+      `Commercial objective: ${objective.title}.`,
+      "Find a currently actionable commercial opportunity.",
+      "Use current external web information.",
+      "Verify the evidence using multiple independent sources.",
+      "Identify customer demand, competition, pricing, or market opportunity.",
+      "Produce a concrete measurable commercial action.",
+      "The action must be suitable for the smallest practical validation.",
+    ].join("\n"),
+
+    [
+      "Find current market signals for AI-powered ecommerce automation services.",
+      "Use recent external web information.",
+      "Focus on customer demand, competitor activity, pricing, adoption, and commercial opportunity.",
+      "Use multiple independent sources and verify the evidence.",
+      "Do not rely on a single source.",
+      "Produce a concrete measurable commercial validation action.",
+    ].join("\n"),
+
+    [
+      "What are the current ecommerce and AI automation market opportunities?",
+      "Use recent live web information from multiple independent sources.",
+      "Compare demand signals, competitive activity, pricing signals, and customer needs.",
+      "Prefer credible independent sources.",
+      "Verify the evidence before reaching a conclusion.",
+      "Turn the verified market signal into the smallest measurable commercial action.",
+    ].join("\n"),
+  ];
+}
+
+function isCommercialEvidenceReady(
+  web: WebIntelligenceResult,
+): boolean {
+  return (
+    web.success === true &&
+    web.verified === true &&
+    web.evidence.length >= 2 &&
+    web.sourceCount >= 2 &&
+    web.sourceHosts.length >= 2
+  );
+}
+
+function scoreWebResult(
+  web: WebIntelligenceResult,
+): number {
+  let score = 0;
+
+  if (web.success) {
+    score += 10;
+  }
+
+  if (web.verified) {
+    score += 50;
+  }
+
+  score +=
+    Math.min(web.evidence.length, 10) * 5;
+
+  score +=
+    Math.min(web.sourceCount, 10) * 3;
+
+  score +=
+    Math.min(web.sourceHosts.length, 10) * 5;
+
+  if (web.verification?.corroborated) {
+    score += 20;
+  }
+
+  return score;
+}
+
+async function retrieveCommercialEvidence(
+  objective: CommercialObjective,
+): Promise<{
+  web: WebIntelligenceResult;
+  attempts: Array<{
+    attempt: number;
+    evidenceCount: number;
+    sourceCount: number;
+    independentHosts: number;
+    verified: boolean;
+    success: boolean;
+  }>;
+}> {
+  const prompts =
+    buildPrompts(
+      objective,
+    );
+
+  let bestWeb:
+    | WebIntelligenceResult
+    | null = null;
+
+  const attempts: Array<{
+    attempt: number;
+    evidenceCount: number;
+    sourceCount: number;
+    independentHosts: number;
+    verified: boolean;
+    success: boolean;
+  }> = [];
+
+  for (
+    let index = 0;
+    index <
+      Math.min(
+        prompts.length,
+        MAX_WEB_ATTEMPTS,
+      );
+    index += 1
+  ) {
+    const web =
+      await retrieveWebEvidence(
+        prompts[index],
+      );
+
+    attempts.push({
+      attempt:
+        index + 1,
+      evidenceCount:
+        web.evidence.length,
+      sourceCount:
+        web.sourceCount,
+      independentHosts:
+        web.sourceHosts.length,
+      verified:
+        web.verified,
+      success:
+        web.success,
+    });
+
+    if (
+      !bestWeb ||
+      scoreWebResult(web) >
+        scoreWebResult(bestWeb)
+    ) {
+      bestWeb = web;
+    }
+
+    if (
+      isCommercialEvidenceReady(
+        web,
+      )
+    ) {
+      return {
+        web,
+        attempts,
+      };
+    }
+  }
+
+  if (!bestWeb) {
+    throw new Error(
+      "COMMERCIAL_WEB_RETRIEVAL_FAILED",
+    );
+  }
+
+  return {
+    web: bestWeb,
+    attempts,
+  };
 }
 
 function check(
@@ -149,22 +305,18 @@ export async function GET(
           const objective =
             objectiveResult.objective;
 
-          const prompt =
-            buildPrompt(
+          const retrieval =
+            await retrieveCommercialEvidence(
               objective,
             );
 
           const web =
-            await retrieveWebEvidence(
-              prompt,
-            );
+            retrieval.web;
 
           if (
-            !web.success ||
-            !web.verified ||
-            web.evidence.length < 2 ||
-            web.sourceCount < 2 ||
-            web.sourceHosts.length < 2
+            !isCommercialEvidenceReady(
+              web,
+            )
           ) {
             return {
               success: false,
@@ -172,6 +324,8 @@ export async function GET(
               reused:
                 objectiveResult.reused,
               web,
+              webAttempts:
+                retrieval.attempts,
               decision: null,
               executionPlan: null,
               actionPackage: null,
@@ -179,7 +333,7 @@ export async function GET(
                 check(
                   "LIVE_WEB_VERIFIED",
                   false,
-                  "Live web evidence is insufficiently verified.",
+                  `Commercial evidence remained insufficient after ${retrieval.attempts.length} retrieval attempt(s): evidence=${web.evidence.length}, sources=${web.sourceCount}, hosts=${web.sourceHosts.length}, verified=${web.verified}.`,
                 ),
               ],
             };
@@ -204,6 +358,8 @@ export async function GET(
               reused:
                 objectiveResult.reused,
               web,
+              webAttempts:
+                retrieval.attempts,
               decision,
               executionPlan: null,
               actionPackage: null,
@@ -211,7 +367,7 @@ export async function GET(
                 check(
                   "LIVE_WEB_VERIFIED",
                   true,
-                  `evidence=${web.evidence.length}, hosts=${web.sourceHosts.length}`,
+                  `evidence=${web.evidence.length}, hosts=${web.sourceHosts.length}, attempts=${retrieval.attempts.length}`,
                 ),
                 check(
                   "LIVE_DECISION_VERIFIED",
@@ -239,6 +395,8 @@ export async function GET(
               reused:
                 objectiveResult.reused,
               web,
+              webAttempts:
+                retrieval.attempts,
               decision,
               executionPlan,
               actionPackage: null,
@@ -279,7 +437,7 @@ export async function GET(
               "LIVE_WEB_VERIFIED",
               web.success === true &&
                 web.verified === true,
-              `verified=${web.verified}, evidence=${web.evidence.length}, hosts=${web.sourceHosts.length}`,
+              `verified=${web.verified}, evidence=${web.evidence.length}, hosts=${web.sourceHosts.length}, attempts=${retrieval.attempts.length}`,
             ),
 
             check(
@@ -363,6 +521,8 @@ export async function GET(
             reused:
               objectiveResult.reused,
             web,
+            webAttempts:
+              retrieval.attempts,
             decision,
             executionPlan,
             actionPackage,
@@ -442,6 +602,8 @@ export async function GET(
                 verification.web.sourceCount,
               independentHosts:
                 verification.web.sourceHosts.length,
+              attempts:
+                verification.webAttempts,
             }
           : null,
 
@@ -520,7 +682,9 @@ export async function GET(
 
       capabilityTrace: [
         "live-web-intelligence",
+        "commercial-evidence-retry",
         "verified-evidence",
+        "multi-source-verification",
         "live-decision",
         "commercial-execution-plan",
         "live-commercial-action-package",
