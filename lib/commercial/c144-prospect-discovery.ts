@@ -24,7 +24,7 @@ export const C144_PROSPECT_DISCOVERY_ID =
   "C144-PROSPECT-DISCOVERY";
 
 export const C144_PROSPECT_DISCOVERY_VERSION =
-  "C144.3.6";
+  "C144.3.6.2";
 
 type ProspectType =
   | "business"
@@ -430,7 +430,7 @@ function cleanBusinessName(
         "",
       )
       .replace(
-        /[,，:：;；|].*$/,
+        /[,;:|].*$/,
         "",
       ),
     120,
@@ -503,11 +503,8 @@ function extractIdentitySeeds(
 
   const seeds: IdentitySeed[] = [];
 
-  /*
-   * Chinese legal organization names.
-   */
   const chineseLegalPatterns = [
-    /([\u4e00-\u9fffA-Za-z0-9&（）()·.-]{2,40}(?:有限公司|股份有限公司|有限责任公司|集团公司|集团))/g,
+    /([\u4e00-\u9fffA-Za-z0-9&()·.-]{2,40}(?:有限公司|股份有限公司|有限责任公司|集团公司|集团))/g,
   ];
 
   for (const pattern of chineseLegalPatterns) {
@@ -528,9 +525,6 @@ function extractIdentitySeeds(
     }
   }
 
-  /*
-   * English legal organization names.
-   */
   const englishLegalPattern =
     /\b([A-Z][A-Za-z0-9&.-]{1,40}(?:\s+[A-Z][A-Za-z0-9&.-]{1,40}){0,5}\s+(?:Inc\.?|Ltd\.?|LLC|Corp\.?|Corporation|Company|Group|Holdings|PLC))\b/g;
 
@@ -552,13 +546,6 @@ function extractIdentitySeeds(
     }
   }
 
-  /*
-   * Brand/company + explicit commercial action.
-   *
-   * This is intentionally more permissive than requiring
-   * a legal suffix. Many genuine Chinese brands use a short
-   * public-facing brand name.
-   */
   const actionPattern =
     /\b([A-Z][A-Za-z0-9&.-]{1,30}(?:\s+[A-Z][A-Za-z0-9&.-]{1,30}){0,4})\s+(?:launches|launched|enters|entered|entering|expands|expanded|expanding|opens|opened|opening|partners|partnered|partners with|hired|hiring|recruits|recruiting|exports|exporting|sells|selling|distributes|distributed|invests|invested|announces|announced)\b/gi;
 
@@ -580,9 +567,6 @@ function extractIdentitySeeds(
     }
   }
 
-  /*
-   * Chinese brand + action.
-   */
   const chineseActionPattern =
     /([\u4e00-\u9fffA-Za-z0-9·&.-]{2,30})\s*(?:进入|进入了|拓展|拓展了|布局|布局了|开拓|开拓了|进军|进军了|扩大|扩大了|扩张|扩张了|合作|合作了|招聘|招聘了|销售|销售了|出口|出口了|出海|出海了|进入日本|拓展日本|日本市场)/g;
 
@@ -607,12 +591,8 @@ function extractIdentitySeeds(
     }
   }
 
-  /*
-   * Quoted/parenthetical company names frequently occur
-   * in news snippets.
-   */
   const quotedPattern =
-    /["“「]([^"”」]{2,80})["”」]/g;
+    /["“]([^"”]{2,80})["”]/g;
 
   for (const match of text.matchAll(
     quotedPattern,
@@ -952,7 +932,7 @@ function getCommercialSignals(
         "跨境电商",
         "跨境",
         "出海",
-      ],
+      ]
     )
   ) {
     signals.push(
@@ -995,7 +975,6 @@ function classifyCustomerType(
         "manufacturer",
         "manufacturing",
         "factory",
-        "manufacturer",
         "制造商",
         "工厂",
         "制造",
@@ -1241,6 +1220,9 @@ export async function discoverC144Prospects(
   const project =
     await initializeFirstCashflowProject();
 
+  const objective =
+    project.objective;
+
   if (
     !opportunity.success ||
     opportunity.status !== "ready"
@@ -1248,7 +1230,7 @@ export async function discoverC144Prospects(
     return {
       success: false,
       status: "blocked",
-      project,
+      project: objective,
       candidates: [],
       sourceCount: 0,
       independentHosts: 0,
@@ -1285,7 +1267,7 @@ export async function discoverC144Prospects(
     return {
       success: false,
       status: "insufficient-evidence",
-      project,
+      project: objective,
       candidates: [],
       sourceCount: sources.length,
       independentHosts,
@@ -1353,7 +1335,7 @@ export async function discoverC144Prospects(
     return {
       success: false,
       status: "insufficient-evidence",
-      project,
+      project: objective,
       candidates: [],
       sourceCount: sources.length,
       independentHosts,
@@ -1374,7 +1356,7 @@ export async function discoverC144Prospects(
   return {
     success: true,
     status: "ready",
-    project,
+    project: objective,
     candidates: ranked,
     sourceCount: sources.length,
     independentHosts,
