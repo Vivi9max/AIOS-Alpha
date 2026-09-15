@@ -4,6 +4,19 @@ import {
   isLiveCommercialOpportunityReady,
   type LiveCommercialOpportunityResult,
 } from "@/lib/runtime/live-commercial-opportunity";
+import type { CommercialObjective } from "@/lib/commercial/operating-layer";
+export interface C144FirstCustomerProject {
+  id: string;
+  title: string;
+  stage: CommercialObjective["stage"];
+  currency: string;
+  revenueTarget: number;
+  customerTarget: number;
+  costTarget: number;
+  revenueActual: number;
+  customerActual: number;
+  costActual: number;
+}
 export interface C144FirstCustomerTask {
   id: string;
   title: string;
@@ -21,8 +34,10 @@ export interface C144FirstCustomerDiscoveryResult {
   status: "ready" | "search-blocked" | "runtime-blocked";
   taskId: string;
   objectiveId: string;
+  project: C144FirstCustomerProject | null;
   task?: C144FirstCustomerTask;
   opportunity?: LiveCommercialOpportunityResult;
+  conclusion: string;
   nextStep: string;
 }
 const C144_TASK_ID = "C144-FIRST-CUSTOMER";
@@ -170,6 +185,22 @@ The task should help identify and manually approach 5 highly relevant prospectiv
 customers or businesses based on verified evidence, with the goal of obtaining
 at least 1 qualified response or request for more information.
 `.trim();
+function buildProject(
+  objective: CommercialObjective,
+): C144FirstCustomerProject {
+  return {
+    id: objective.id,
+    title: objective.title,
+    stage: objective.stage,
+    currency: objective.currency,
+    revenueTarget: objective.revenueTarget,
+    customerTarget: objective.customerTarget,
+    costTarget: objective.costTarget,
+    revenueActual: objective.revenueActual,
+    customerActual: objective.customerActual,
+    costActual: objective.costActual,
+  };
+}
 function buildTask(objectiveId: string): C144FirstCustomerTask {
   return {
     id: C144_TASK_ID,
@@ -190,6 +221,7 @@ function buildTask(objectiveId: string): C144FirstCustomerTask {
 function buildBlockedResult(
   status: "search-blocked" | "runtime-blocked",
   objectiveId: string,
+  project: C144FirstCustomerProject | null,
   opportunity?: LiveCommercialOpportunityResult,
 ): C144FirstCustomerDiscoveryResult {
   return {
@@ -197,7 +229,11 @@ function buildBlockedResult(
     status,
     taskId: C144_TASK_ID,
     objectiveId,
+    project,
     opportunity,
+    conclusion:
+      opportunity?.conclusion ||
+      "The first-customer discovery task is blocked before a verified commercial opportunity can be established.",
     nextStep:
       status === "search-blocked"
         ? "Strengthen the live evidence before converting it into a commercial decision."
@@ -205,18 +241,25 @@ function buildBlockedResult(
   };
 }
 export async function discoverFirstCustomer(): Promise<C144FirstCustomerDiscoveryResult> {
-  const project = await initializeFirstCashflowProject();
-  if (!project.success || !project.objective) {
+  const projectResult = await initializeFirstCashflowProject();
+  if (!projectResult.success || !projectResult.objective) {
     return {
       success: false,
       status: "runtime-blocked",
       taskId: C144_TASK_ID,
-      objectiveId: project.objective?.id ?? "",
+      objectiveId: projectResult.objective?.id ?? "",
+      project: projectResult.objective
+        ? buildProject(projectResult.objective)
+        : null,
+      conclusion:
+        "AIOS could not initialize the first cashflow commercial project.",
       nextStep:
         "Initialize the first cashflow commercial objective before running customer discovery.",
     };
   }
-  const objectiveId = project.objective.id;
+  const objective = projectResult.objective;
+  const objectiveId = objective.id;
+  const project = buildProject(objective);
   const opportunity = await executeLiveCommercialOpportunity({
     objectiveId,
     prompt: FIRST_CUSTOMER_DISCOVERY_PROMPT,
@@ -227,6 +270,7 @@ export async function discoverFirstCustomer(): Promise<C144FirstCustomerDiscover
         ? "search-blocked"
         : "runtime-blocked",
       objectiveId,
+      project,
       opportunity,
     );
   }
@@ -236,8 +280,12 @@ export async function discoverFirstCustomer(): Promise<C144FirstCustomerDiscover
     status: "ready",
     taskId: task.id,
     objectiveId,
+    project,
     task,
     opportunity,
+    conclusion:
+      opportunity.conclusion ||
+      "A verified commercial opportunity is ready for first-customer validation.",
     nextStep:
       "Manually validate and approach the 5 highest-priority prospective customers identified from the verified opportunity.",
   };
@@ -253,10 +301,12 @@ export function isC144FirstCustomerTaskReady(
     result.status === "ready" &&
     result.taskId === C144_TASK_ID &&
     Boolean(result.objectiveId) &&
+    Boolean(result.project) &&
     Boolean(result.task) &&
     result.task.status !== "blocked" &&
     Boolean(result.task.measurableTarget) &&
     Boolean(result.opportunity) &&
+    Boolean(result.conclusion) &&
     isLiveCommercialOpportunityReady(result.opportunity!)
   );
 }
