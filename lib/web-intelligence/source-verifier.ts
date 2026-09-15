@@ -1,12 +1,14 @@
 import type {
   WebEvidence,
 } from "@/lib/web-intelligence";
+
 export type SourceCredibilityTier =
   | "primary"
   | "authoritative"
   | "established"
   | "secondary"
   | "unknown";
+
 export interface VerifiedWebEvidence
   extends WebEvidence {
   credibilityTier: SourceCredibilityTier;
@@ -19,6 +21,7 @@ export interface VerifiedWebEvidence
     | "medium"
     | "limited";
 }
+
 const PRIMARY_HOSTS = [
   "gov.cn",
   "gov.hk",
@@ -37,6 +40,7 @@ const PRIMARY_HOSTS = [
   "imf.org",
   "worldbank.org",
 ];
+
 const AUTHORITATIVE_HOSTS = [
   "reuters.com",
   "apnews.com",
@@ -53,6 +57,7 @@ const AUTHORITATIVE_HOSTS = [
   "mainichi.jp",
   "jiji.com",
 ];
+
 const ESTABLISHED_HOSTS = [
   "investing.com",
   "tradingview.com",
@@ -79,6 +84,7 @@ const ESTABLISHED_HOSTS = [
   "linkedin.com",
   "glassdoor.com",
 ];
+
 const COMMERCIAL_HOST_HINTS = [
   "amazon.",
   "rakuten.",
@@ -102,6 +108,7 @@ const COMMERCIAL_HOST_HINTS = [
   "supplier.",
   "distributor.",
 ];
+
 const COMMERCIAL_SIGNAL_TERMS = [
   "sales",
   "sale",
@@ -195,6 +202,7 @@ const COMMERCIAL_SIGNAL_TERMS = [
   "合作",
   "扩张",
 ];
+
 function normalizeHost(
   hostname: string,
 ): string {
@@ -203,12 +211,14 @@ function normalizeHost(
     .toLowerCase()
     .replace(/^www\./, "");
 }
+
 function hostMatches(
   hostname: string,
   candidates: string[],
 ): boolean {
   const normalized =
     normalizeHost(hostname);
+
   return candidates.some(
     (candidate) =>
       normalized === candidate ||
@@ -217,11 +227,13 @@ function hostMatches(
       ),
   );
 }
+
 function resolveTier(
   hostname: string,
 ): SourceCredibilityTier {
   const normalized =
     normalizeHost(hostname);
+
   if (
     hostMatches(
       normalized,
@@ -230,6 +242,7 @@ function resolveTier(
   ) {
     return "primary";
   }
+
   if (
     hostMatches(
       normalized,
@@ -238,6 +251,7 @@ function resolveTier(
   ) {
     return "authoritative";
   }
+
   if (
     hostMatches(
       normalized,
@@ -246,6 +260,7 @@ function resolveTier(
   ) {
     return "established";
   }
+
   if (
     normalized.endsWith(".edu") ||
     normalized.endsWith(".ac.uk") ||
@@ -254,8 +269,10 @@ function resolveTier(
   ) {
     return "authoritative";
   }
+
   return "unknown";
 }
+
 function tierScore(
   tier: SourceCredibilityTier,
 ): number {
@@ -272,6 +289,7 @@ function tierScore(
       return 0.5;
   }
 }
+
 function normalizeText(
   value: string,
 ): string {
@@ -282,19 +300,27 @@ function normalizeText(
       " ",
     )
     .replace(
-      /[^\\p{L}\\p{N}%.$-]+/gu,
+      /[^\p{L}\p{N}%.$-]+/gu,
       " ",
     )
-    .replace(/\s+/g, " ")
+    .replace(
+      /\s+/g,
+      " ",
+    )
     .trim();
 }
+
 function compactText(
   value: string,
 ): string {
   return normalizeText(value)
-    .replace(/\s+/g, "")
+    .replace(
+      /\s+/g,
+      "",
+    )
     .trim();
 }
+
 function tokenize(
   value: string,
 ): Set<string> {
@@ -307,57 +333,74 @@ function tokenize(
       ),
   );
 }
+
 function calculateTextAgreement(
   left: string,
   right: string,
 ): number {
   const a = tokenize(left);
   const b = tokenize(right);
+
   if (
     a.size === 0 ||
     b.size === 0
   ) {
     return 0;
   }
+
   let intersection = 0;
+
   for (const token of a) {
     if (b.has(token)) {
       intersection += 1;
     }
   }
+
   const union =
     new Set([
       ...a,
       ...b,
     ]).size;
+
   if (union === 0) {
     return 0;
   }
+
   return intersection / union;
 }
+
 function calculateCharacterAgreement(
   left: string,
   right: string,
 ): number {
   const a = compactText(left);
   const b = compactText(right);
+
   if (
     a.length < 4 ||
     b.length < 4
   ) {
     return 0;
   }
+
   const maxWindow = Math.min(
     24,
-    Math.min(a.length, b.length),
+    Math.min(
+      a.length,
+      b.length,
+    ),
   );
+
   let best = 0;
+
   for (
     let size = maxWindow;
     size >= 4;
     size -= 2
   ) {
-    const seen = new Set<string>();
+    const seen =
+      new Set<string>();
+
     for (
       let index = 0;
       index + size <= a.length;
@@ -370,10 +413,13 @@ function calculateCharacterAgreement(
         ),
       );
     }
+
     if (seen.size === 0) {
       continue;
     }
+
     let common = 0;
+
     for (
       let index = 0;
       index + size <= b.length;
@@ -390,23 +436,28 @@ function calculateCharacterAgreement(
         common += 1;
       }
     }
+
     if (common > 0) {
       const score =
         Math.min(
           1,
           common / 3,
         );
+
       best = Math.max(
         best,
         score,
       );
     }
+
     if (best >= 1) {
       break;
     }
   }
+
   return best;
 }
+
 function extractNumbers(
   text: string,
 ): string[] {
@@ -418,6 +469,7 @@ function extractNumbers(
     ),
   );
 }
+
 function calculateNumericAgreement(
   left: string,
   right: string,
@@ -426,16 +478,20 @@ function calculateNumericAgreement(
     extractNumbers(left);
   const b =
     extractNumbers(right);
+
   if (
     a.length === 0 ||
     b.length === 0
   ) {
     return 0;
   }
+
   const common =
-    a.filter((value) =>
-      b.includes(value),
+    a.filter(
+      (value) =>
+        b.includes(value),
     ).length;
+
   return (
     common /
     Math.max(
@@ -444,20 +500,25 @@ function calculateNumericAgreement(
     )
   );
 }
+
 function calculateCommercialSignalScore(
   evidence: WebEvidence,
 ): number {
-  const text = normalizeText(
-    [
-      evidence.title,
-      evidence.hostname,
-      ...evidence.snippets,
-    ].join(" "),
-  );
+  const text =
+    normalizeText(
+      [
+        evidence.title,
+        evidence.hostname,
+        ...evidence.snippets,
+      ].join(" "),
+    );
+
   if (!text) {
     return 0;
   }
+
   let matches = 0;
+
   for (
     const term of COMMERCIAL_SIGNAL_TERMS
   ) {
@@ -469,11 +530,13 @@ function calculateCommercialSignalScore(
       matches += 1;
     }
   }
+
   const signalScore =
     Math.min(
       1,
       matches / 6,
     );
+
   const commercialHost =
     COMMERCIAL_HOST_HINTS.some(
       (hint) =>
@@ -483,6 +546,7 @@ function calculateCommercialSignalScore(
           hint.toLowerCase(),
         ),
     );
+
   return Math.min(
     1,
     signalScore +
@@ -491,6 +555,7 @@ function calculateCommercialSignalScore(
         : 0),
   );
 }
+
 function calculatePairAgreement(
   left: WebEvidence,
   right: WebEvidence,
@@ -501,40 +566,48 @@ function calculatePairAgreement(
       left.hostname,
       ...left.snippets,
     ].join(" ");
+
   const rightText =
     [
       right.title,
       right.hostname,
       ...right.snippets,
     ].join(" ");
+
   const textAgreement =
     calculateTextAgreement(
       leftText,
       rightText,
     );
+
   const characterAgreement =
     calculateCharacterAgreement(
       leftText,
       rightText,
     );
+
   const numericAgreement =
     calculateNumericAgreement(
       leftText,
       rightText,
     );
+
   const leftCommercial =
     calculateCommercialSignalScore(
       left,
     );
+
   const rightCommercial =
     calculateCommercialSignalScore(
       right,
     );
+
   const commercialAgreement =
     Math.min(
       leftCommercial,
       rightCommercial,
     );
+
   return Math.min(
     1,
     textAgreement * 0.35 +
@@ -543,6 +616,7 @@ function calculatePairAgreement(
       commercialAgreement * 0.25,
   );
 }
+
 function calculateCorroboration(
   evidence: WebEvidence[],
   targetIndex: number,
@@ -552,16 +626,19 @@ function calculateCorroboration(
 } {
   const target =
     evidence[targetIndex];
+
   if (!target) {
     return {
       count: 0,
       score: 0,
     };
   }
+
   const targetHost =
     normalizeHost(
       target.hostname,
     );
+
   const independent =
     evidence.filter(
       (item, index) =>
@@ -570,35 +647,42 @@ function calculateCorroboration(
           item.hostname,
         ) !== targetHost,
     );
+
   const agreements =
     independent
-      .map((item) =>
-        calculatePairAgreement(
-          target,
-          item,
-        ),
+      .map(
+        (item) =>
+          calculatePairAgreement(
+            target,
+            item,
+          ),
       )
       .filter(
         (score) =>
           score >= 0.12,
       );
+
   const count =
     agreements.length;
+
   if (count === 0) {
     return {
       count: 0,
       score: 0,
     };
   }
+
   const strongest =
     Math.max(
       ...agreements,
     );
+
   const independentBoost =
     Math.min(
       0.3,
       count * 0.1,
     );
+
   return {
     count,
     score: Math.min(
@@ -608,6 +692,7 @@ function calculateCorroboration(
     ),
   };
 }
+
 function resolveVerificationLabel(
   score: number,
 ):
@@ -617,11 +702,14 @@ function resolveVerificationLabel(
   if (score >= 0.78) {
     return "high";
   }
+
   if (score >= 0.55) {
     return "medium";
   }
+
   return "limited";
 }
+
 function hasIndependentHosts(
   evidence: WebEvidence[],
 ): boolean {
@@ -636,26 +724,33 @@ function hasIndependentHosts(
     ).size >= 2
   );
 }
+
 function hasStrongCommercialEvidence(
   evidence: WebEvidence[],
 ): boolean {
   if (
     evidence.length < 2 ||
-    !hasIndependentHosts(evidence)
+    !hasIndependentHosts(
+      evidence,
+    )
   ) {
     return false;
   }
+
   const commercialScores =
     evidence.map(
       calculateCommercialSignalScore,
     );
+
   const meaningfulSources =
     commercialScores.filter(
       (score) =>
         score >= 0.25,
     ).length;
+
   return meaningfulSources >= 2;
 }
+
 export function verifyWebEvidence(
   evidence: WebEvidence[],
 ): VerifiedWebEvidence[] {
@@ -665,44 +760,43 @@ export function verifyWebEvidence(
         resolveTier(
           item.hostname,
         );
+
       const baseCredibility =
         tierScore(tier);
+
       const corroboration =
         calculateCorroboration(
           evidence,
           index,
         );
+
       const freshnessScore =
-        item.freshness ===
-          "24h" ||
-        item.freshness ===
-          "realtime"
+        item.freshness === "24h" ||
+        item.freshness === "realtime"
           ? 1
-          : item.freshness ===
-              "7d"
+          : item.freshness === "7d"
             ? 0.9
-            : item.freshness ===
-                "30d"
+            : item.freshness === "30d"
               ? 0.78
               : 0.65;
+
       const commercialSignal =
         calculateCommercialSignalScore(
           item,
         );
+
       const verificationScore =
         Math.min(
           0.99,
           baseCredibility * 0.35 +
-            corroboration.score *
-              0.3 +
+            corroboration.score * 0.3 +
             freshnessScore * 0.15 +
-            commercialSignal *
-              0.2,
+            commercialSignal * 0.2,
         );
+
       return {
         ...item,
-        credibilityTier:
-          tier,
+        credibilityTier: tier,
         credibilityScore:
           baseCredibility,
         corroborationCount:
@@ -718,6 +812,7 @@ export function verifyWebEvidence(
     },
   );
 }
+
 export function calculateOverallVerification(
   evidence: VerifiedWebEvidence[],
 ): {
@@ -737,17 +832,20 @@ export function calculateOverallVerification(
       label: "limited",
     };
   }
+
   const scores =
     evidence.map(
       (item) =>
         item.verificationScore,
     );
+
   const average =
     scores.reduce(
       (sum, value) =>
         sum + value,
       0,
     ) / scores.length;
+
   const independentHosts =
     new Set(
       evidence.map(
@@ -757,45 +855,53 @@ export function calculateOverallVerification(
           ),
       ),
     ).size;
+
   const primaryExists =
     evidence.some(
       (item) =>
         item.credibilityTier ===
         "primary",
     );
+
   const authoritativeExists =
     evidence.some(
       (item) =>
         item.credibilityTier ===
         "authoritative",
     );
+
   const establishedExists =
     evidence.some(
       (item) =>
         item.credibilityTier ===
         "established",
     );
+
   const corroborated =
     evidence.some(
       (item) =>
-        item.corroborationCount >=
-        1,
+        item.corroborationCount >= 1,
     );
+
   const strongCommercialEvidence =
     hasStrongCommercialEvidence(
       evidence,
     );
+
   let score = average;
+
   if (
     independentHosts >= 2
   ) {
     score += 0.08;
   }
+
   if (
     independentHosts >= 3
   ) {
     score += 0.04;
   }
+
   if (primaryExists) {
     score += 0.05;
   } else if (
@@ -807,39 +913,50 @@ export function calculateOverallVerification(
   ) {
     score += 0.015;
   }
+
   if (corroborated) {
     score += 0.05;
   }
+
   if (
     strongCommercialEvidence
   ) {
     score += 0.08;
   }
+
   score = Math.min(
     0.99,
     score,
   );
+
   const label =
     score >= 0.78
       ? "high"
       : score >= 0.55
         ? "medium"
         : "limited";
+
   const minimumEvidence =
     evidence.length >= 2;
+
   const independentEvidence =
     independentHosts >= 2;
+
   const highEnoughScore =
     score >= 0.55;
+
   const commercialOverride =
     strongCommercialEvidence &&
     score >= 0.5;
+
   return {
     verified:
       minimumEvidence &&
       independentEvidence &&
-      (highEnoughScore ||
-        commercialOverride),
+      (
+        highEnoughScore ||
+        commercialOverride
+      ),
     score,
     label,
   };
