@@ -1,58 +1,251 @@
 import "server-only";
+
+import {
+  retrieveWebEvidence,
+} from "@/lib/web-intelligence";
+
 import type {
   CommercialObjective,
 } from "@/lib/commercial/operating-layer";
+
 import type {
   LiveCommercialOpportunityResult,
 } from "@/lib/runtime/live-commercial-opportunity";
+
+import type {
+  VerifiedWebEvidence,
+} from "@/lib/web-intelligence/source-verifier";
+
 export const C144_PROSPECT_DISCOVERY_ID =
   "C144-PROSPECT-DISCOVERY";
+
+export const C144_PROSPECT_DISCOVERY_VERSION =
+  "C144.3.1";
+
+type ProspectType =
+  | "business"
+  | "market-segment"
+  | "source-backed-opportunity";
+
+type QualificationStatus =
+  | "evidence-backed"
+  | "needs-manual-validation";
+
 export interface C144ProspectCandidate {
   id: string;
   rank: number;
   name: string;
-  type:
-    | "business"
-    | "market-segment"
-    | "source-backed-opportunity";
+  type: ProspectType;
+
   hostname: string;
   url: string;
   sourceTitle: string;
+
   evidence: string[];
   evidenceScore: number;
+
   credibilityTier: string;
   verificationLabel: string;
+
   whyRelevant: string;
-  qualificationStatus:
-    | "evidence-backed"
-    | "needs-manual-validation";
+
+  qualificationStatus: QualificationStatus;
+
   recommendedAction: string;
+
   businessName: string | null;
   businessIdentityEvidence: string[];
+
   commercialSignals: string[];
+
   contactChannel: string | null;
+
   validationReasons: string[];
+
+  paymentCapability:
+    | "likely-domestic-rmb"
+    | "unknown";
+
+  paymentCurrency:
+    | "CNY"
+    | "unknown";
+
+  customerType:
+    | "cross-border-seller"
+    | "brand"
+    | "manufacturer"
+    | "exporter"
+    | "traditional-business"
+    | "other"
+    | "unknown";
+
+  aiosFitScore: number;
 }
+
 export interface C144ProspectDiscoveryResult {
   success: boolean;
+
   status:
     | "ready"
     | "blocked"
     | "insufficient-evidence";
+
   project: CommercialObjective | null;
+
   candidates: C144ProspectCandidate[];
+
   sourceCount: number;
+
   independentHosts: number;
+
   conclusion: string;
+
   nextStep: string;
+
   integrity: {
     fabricatedLead: false;
     fabricatedContact: false;
     fabricatedResponse: false;
     fabricatedCustomer: false;
   };
+
   timestamp: number;
 }
+
+interface DiscoverySource {
+  evidence: VerifiedWebEvidence;
+  searchIntent: string;
+}
+
+interface BusinessIdentity {
+  name: string | null;
+  confidence: number;
+  evidence: string[];
+}
+
+interface CandidateSeed {
+  name: string;
+  source: DiscoverySource;
+  identity: BusinessIdentity;
+}
+
+const EXCLUDED_HOST_PATTERNS = [
+  "wikipedia.",
+  "facebook.",
+  "instagram.",
+  "youtube.",
+  "linkedin.",
+  "reddit.",
+  "google.",
+  "bing.",
+  "search.",
+];
+
+const EXCLUDED_TITLE_PATTERNS = [
+  "government",
+  "ministry",
+  "department",
+  "university",
+  "conference",
+  "expo",
+  "event",
+  "webinar",
+  "how to",
+  "what is",
+  "guide",
+  "report",
+  "market size",
+  "market outlook",
+  "政府",
+  "部门",
+  "大学",
+  "展会",
+  "展览",
+  "会议",
+  "活动",
+  "指南",
+  "报告",
+  "市场规模",
+];
+
+const BUSINESS_VERB_PATTERNS = [
+  "launches",
+  "launched",
+  "expands",
+  "expanded",
+  "expanding",
+  "enters",
+  "entered",
+  "entering",
+  "opens",
+  "opened",
+  "opening",
+  "partners",
+  "partnered",
+  "partnership",
+  "announces",
+  "announced",
+  "plans",
+  "planned",
+  "targets",
+  "targeting",
+  "seeks",
+  "seeking",
+  "grows",
+  "growing",
+  "sales",
+  "revenue",
+  "hiring",
+  "recruits",
+  "sets up",
+];
+
+const CHINESE_BUSINESS_VERBS = [
+  "进军",
+  "进入",
+  "拓展",
+  "扩张",
+  "布局",
+  "登陆",
+  "落地",
+  "发布",
+  "宣布",
+  "签约",
+  "合作",
+  "招聘",
+  "招募",
+  "销售",
+  "增长",
+  "出海",
+  "跨境",
+  "出口",
+  "海外",
+  "日本市场",
+];
+
+const DISCOVERY_PROMPTS = [
+  [
+    "中国内地跨境电商企业 日本市场 扩张 出海 品牌 最新 2026",
+    "Find real China-based companies, brands, manufacturers, exporters, or cross-border ecommerce sellers with current Japan or overseas expansion activity. Prefer named commercial organizations and current business signals. Exclude media, government, events, universities, generic market reports, and consulting firms.",
+  ],
+  [
+    "中国品牌 日本市场 电商 出海 招聘 渠道 合作 2026 企业",
+    "Find real mainland China companies or brands that currently show commercial signals connected to Japan ecommerce, overseas sales, distribution, hiring, partnerships, marketplace activity, or market entry. Prioritize companies that could realistically purchase commercial market intelligence or product validation services.",
+  ],
+  [
+    "深圳 广州 东莞 杭州 义乌 中国企业 日本市场 跨境电商 2026",
+    "Find real mainland Chinese businesses, especially SMEs or mid-market companies, showing current Japan-market, cross-border ecommerce, export, overseas distribution, or international expansion signals. Prefer businesses rather than large platforms or media organizations.",
+  ],
+  [
+    "中国工厂 品牌 外贸企业 日本市场 拓展 经销商 电商 2026",
+    "Find named China-based manufacturers, brands, exporters, or sellers with current commercial activity related to Japan or overseas markets. Look for concrete product launches, distribution, sales, hiring, partnerships, or expansion signals.",
+  ],
+  [
+    "中国跨境卖家 日本 Amazon Rakuten TikTok Shop 品牌 出海 2026 企业",
+    "Find real China-based cross-border ecommerce sellers or brands with current activity involving Japan, Amazon Japan, Rakuten, TikTok Shop, Japanese consumers, overseas ecommerce, or international expansion. Exclude marketplaces themselves and generic articles.",
+  ],
+] as const;
+
 function normalizeText(
   value: unknown,
   maxLength = 1000,
@@ -60,11 +253,13 @@ function normalizeText(
   if (typeof value !== "string") {
     return "";
   }
+
   return value
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
 }
+
 function uniqueStrings(
   values: string[],
 ): string[] {
@@ -78,20 +273,252 @@ function uniqueStrings(
     ),
   );
 }
-function containsAny(
-  text: string,
-  terms: string[],
+
+function normalizeHost(
+  hostname: string,
+): string {
+  return hostname
+    .toLowerCase()
+    .replace(/^www\./, "")
+    .trim();
+}
+
+function isExcludedSource(
+  title: string,
+  hostname: string,
 ): boolean {
-  const lower = text.toLowerCase();
-  return terms.some((term) =>
-    lower.includes(term.toLowerCase()),
+  const lowerTitle =
+    title.toLowerCase();
+
+  const lowerHost =
+    normalizeHost(hostname);
+
+  if (
+    EXCLUDED_HOST_PATTERNS.some(
+      (pattern) =>
+        lowerHost.includes(pattern),
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    EXCLUDED_TITLE_PATTERNS.some(
+      (pattern) =>
+        lowerTitle.includes(
+          pattern.toLowerCase(),
+        ),
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function extractBusinessIdentity(
+  evidence: VerifiedWebEvidence,
+): BusinessIdentity {
+  const title =
+    normalizeText(
+      evidence.title,
+      300,
+    );
+
+  const snippets =
+    uniqueStrings(
+      evidence.snippets || [],
+    ).slice(0, 5);
+
+  const text = [
+    title,
+    ...snippets,
+  ].join(" ");
+
+  const englishPatterns = [
+    /^([A-Z][A-Za-z0-9&.'’ -]{2,80}?)\s+(?:launches|launched|expands|expanded|expanding|enters|entered|entering|opens|opened|opening|partners|partnered|announces|announced|plans|planned|targets|targeting|seeks|seeking|grows|growing|hiring|recruits|sets up)\b/i,
+
+    /^([A-Z][A-Za-z0-9&.'’ -]{2,80}?)\s+(?:Japan|Japanese market|China|Chinese market|cross-border|overseas)\b/i,
+  ];
+
+  for (
+    const pattern of englishPatterns
+  ) {
+    const match =
+      title.match(pattern);
+
+    if (match?.[1]) {
+      const name =
+        normalizeText(
+          match[1],
+          120,
+        );
+
+      if (
+        name &&
+        name.length >= 2 &&
+        !isExcludedIdentity(name)
+      ) {
+        return {
+          name,
+          confidence: 0.78,
+          evidence: [
+            `The organization name "${name}" appears directly in the source title.`,
+          ],
+        };
+      }
+    }
+  }
+
+  const chinesePattern =
+    /^(.{2,40}?)(?:进军|进入|拓展|扩张|布局|登陆|落地|发布|宣布|签约|合作|招聘|招募|出海|跨境|出口|海外|日本市场)/;
+
+  const chineseMatch =
+    title.match(
+      chinesePattern,
+    );
+
+  if (
+    chineseMatch?.[1]
+  ) {
+    const name =
+      normalizeText(
+        chineseMatch[1],
+        100,
+      );
+
+    if (
+      name &&
+      name.length >= 2 &&
+      !isExcludedIdentity(name)
+    ) {
+      return {
+        name,
+        confidence: 0.74,
+        evidence: [
+          `The organization name "${name}" appears before a commercial activity verb in the source title.`,
+        ],
+      };
+    }
+  }
+
+  const companyPattern =
+    /([A-Z][A-Za-z0-9&.'’ -]{2,80}(?:Inc\.?|Ltd\.?|LLC|Corp\.?|Corporation|Co\.?|Company|Group|Holdings|GmbH))/;
+
+  const companyMatch =
+    text.match(
+      companyPattern,
+    );
+
+  if (
+    companyMatch?.[1]
+  ) {
+    const name =
+      normalizeText(
+        companyMatch[1],
+        120,
+      );
+
+    if (
+      name &&
+      !isExcludedIdentity(name)
+    ) {
+      return {
+        name,
+        confidence: 0.68,
+        evidence: [
+          `A business-like organization name "${name}" appears in the retrieved evidence.`,
+        ],
+      };
+    }
+  }
+
+  const chineseCompanyPattern =
+    /([\u4e00-\u9fffA-Za-z0-9·]{2,40}(?:有限公司|股份有限公司|集团|集团公司|株式会社|有限会社))/;
+
+  const chineseCompanyMatch =
+    text.match(
+      chineseCompanyPattern,
+    );
+
+  if (
+    chineseCompanyMatch?.[1]
+  ) {
+    const name =
+      normalizeText(
+        chineseCompanyMatch[1],
+        120,
+      );
+
+    if (
+      name &&
+      !isExcludedIdentity(name)
+    ) {
+      return {
+        name,
+        confidence: 0.76,
+        evidence: [
+          `A business-like organization name "${name}" appears in the retrieved evidence.`,
+        ],
+      };
+    }
+  }
+
+  return {
+    name: null,
+    confidence: 0,
+    evidence: [],
+  };
+}
+
+function isExcludedIdentity(
+  name: string,
+): boolean {
+  const lower =
+    name.toLowerCase();
+
+  const excluded = [
+    "startup daily",
+    "business standard",
+    "small business expo",
+    "reuters",
+    "forbes",
+    "bloomberg",
+    "techcrunch",
+    "the verge",
+    "news",
+    "times",
+    "daily",
+    "journal",
+    "政府",
+    "政府部门",
+    "大学",
+    "研究院",
+    "协会",
+    "展会",
+    "会议",
+  ];
+
+  return excluded.some(
+    (item) =>
+      lower === item ||
+      lower.includes(item),
   );
 }
+
 function extractCommercialSignals(
-  evidence: string[],
+  evidence: VerifiedWebEvidence[],
 ): string[] {
-  const joined = evidence.join(" ");
-  const signalGroups: Array<{
+  const text =
+    evidence
+      .flatMap((item) => [
+        item.title,
+        ...(item.snippets || []),
+      ])
+      .join(" ")
+      .toLowerCase();
+
+  const groups: Array<{
     label: string;
     terms: string[];
   }> = [
@@ -100,7 +527,7 @@ function extractCommercialSignals(
       terms: [
         "japan",
         "japanese market",
-        "日本市場",
+        "日本市场",
         "日本",
       ],
     },
@@ -110,8 +537,8 @@ function extractCommercialSignals(
         "cross-border",
         "cross border",
         "跨境",
+        "出海",
         "海外销售",
-        "海外市場",
         "overseas sales",
       ],
     },
@@ -123,7 +550,9 @@ function extractCommercialSignals(
         "online retail",
         "电商",
         "电子商务",
-        "ネット通販",
+        "amazon japan",
+        "rakuten",
+        "tiktok shop",
       ],
     },
     {
@@ -133,282 +562,638 @@ function extractCommercialSignals(
         "expand",
         "market entry",
         "market-entry",
-        "市场进入",
-        "市场拓展",
-        "海外展開",
-        "海外展開",
+        "进入",
+        "拓展",
+        "扩张",
+        "布局",
       ],
     },
     {
-      label: "product validation",
+      label: "distribution or partnership",
       terms: [
-        "product validation",
-        "product testing",
-        "产品验证",
-        "商品验证",
-        "商品検証",
+        "distribution",
+        "distributor",
+        "partnership",
+        "partner",
+        "distribution channel",
+        "经销商",
+        "渠道",
+        "合作",
       ],
     },
     {
-      label: "business growth",
+      label: "sales or growth",
       terms: [
+        "sales",
+        "revenue",
         "growth",
         "growing",
-        "sales growth",
-        "revenue growth",
+        "销售",
+        "营收",
         "增长",
-        "销售增长",
-        "売上",
       ],
     },
     {
-      label: "outsourcing or service demand",
+      label: "hiring or operational demand",
       terms: [
-        "outsourcing",
-        "agency",
-        "consulting",
-        "service provider",
-        "外包",
-        "咨询",
-        "代理",
-        "業務委託",
-        "コンサルティング",
+        "hiring",
+        "recruiting",
+        "recruits",
+        "招聘",
+        "招募",
+        "团队",
       ],
     },
   ];
-  return signalGroups
-    .filter((group) =>
-      containsAny(
-        joined,
-        group.terms,
-      ),
+
+  return groups
+    .filter(
+      (group) =>
+        group.terms.some(
+          (term) =>
+            text.includes(
+              term.toLowerCase(),
+            ),
+        ),
     )
-    .map((group) =>
-      group.label,
+    .map(
+      (group) =>
+        group.label,
     );
 }
-function detectBusinessIdentity(
-  title: string,
-  hostname: string,
-  evidence: string[],
-): {
-  businessName: string | null;
-  businessIdentityEvidence: string[];
-  validationReasons: string[];
-} {
-  const joined = [
-    title,
-    hostname,
-    ...evidence,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const identityEvidence: string[] = [];
-  const validationReasons: string[] = [];
-  const companyPattern =
-    /([A-Z][A-Za-z0-9&.' -]{2,80}(?:Inc\.?|Ltd\.?|LLC|Corp\.?|Corporation|Co\.?|Company|Group|Holdings|GmbH|KK|株式会社|有限会社))/;
-  const japaneseCompanyPattern =
-    /([\u4e00-\u9fff\u3040-\u30ffA-Za-z0-9・]{2,40}(?:株式会社|有限会社))/;
-  const chineseCompanyPattern =
-    /([\u4e00-\u9fff]{2,30}(?:有限公司|股份有限公司|集团|集团公司))/;
-  const match =
-    joined.match(
-      companyPattern,
-    ) ||
-    joined.match(
-      japaneseCompanyPattern,
-    ) ||
-    joined.match(
-      chineseCompanyPattern,
-    );
-  if (match?.[1]) {
-    const name =
-      normalizeText(
-        match[1],
-        160,
-      );
-    if (name) {
-      identityEvidence.push(
-        `A possible organization name appears in the retrieved evidence: ${name}.`,
-      );
-      validationReasons.push(
-        "A business-like organization name was detected, but the founder must confirm it against the original source.",
-      );
-      return {
-        businessName: name,
-        businessIdentityEvidence:
-          identityEvidence,
-        validationReasons,
-      };
-    }
-  }
+
+function classifyCustomerType(
+  evidence: VerifiedWebEvidence[],
+): C144ProspectCandidate["customerType"] {
+  const text =
+    evidence
+      .flatMap((item) => [
+        item.title,
+        ...(item.snippets || []),
+      ])
+      .join(" ")
+      .toLowerCase();
+
   if (
-    hostname &&
-    !hostname.includes("google.") &&
-    !hostname.includes("bing.") &&
-    !hostname.includes("search.") &&
-    hostname.includes(".")
+    text.includes("cross-border seller") ||
+    text.includes("跨境卖家") ||
+    text.includes("cross-border ecommerce seller")
   ) {
-    identityEvidence.push(
-      `The source is associated with the public domain ${hostname}.`,
+    return "cross-border-seller";
+  }
+
+  if (
+    text.includes("brand") ||
+    text.includes("品牌")
+  ) {
+    return "brand";
+  }
+
+  if (
+    text.includes("manufacturer") ||
+    text.includes("factory") ||
+    text.includes("制造") ||
+    text.includes("工厂")
+  ) {
+    return "manufacturer";
+  }
+
+  if (
+    text.includes("exporter") ||
+    text.includes("export") ||
+    text.includes("出口") ||
+    text.includes("外贸")
+  ) {
+    return "exporter";
+  }
+
+  if (
+    text.includes("traditional business") ||
+    text.includes("traditional company") ||
+    text.includes("传统企业")
+  ) {
+    return "traditional-business";
+  }
+
+  return "unknown";
+}
+
+function calculateAiosFitScore(
+  signals: string[],
+  customerType:
+    C144ProspectCandidate["customerType"],
+): number {
+  let score = 0.35;
+
+  score +=
+    Math.min(
+      0.3,
+      signals.length * 0.05,
     );
+
+  if (
+    customerType ===
+    "cross-border-seller"
+  ) {
+    score += 0.25;
+  }
+
+  if (
+    customerType === "brand" ||
+    customerType === "manufacturer" ||
+    customerType === "exporter"
+  ) {
+    score += 0.2;
+  }
+
+  return Number(
+    Math.min(
+      0.95,
+      score,
+    ).toFixed(2),
+  );
+}
+
+function buildSearchQuery(
+  companyName: string,
+): string {
+  return [
+    `"${companyName}"`,
+    "Japan",
+    "cross-border ecommerce",
+    "market expansion",
+    "China",
+    "2026",
+  ].join(" ");
+}
+
+async function corroborateBusiness(
+  companyName: string,
+): Promise<DiscoverySource[]> {
+  const result =
+    await retrieveWebEvidence(
+      buildSearchQuery(
+        companyName,
+      ),
+    );
+
+  if (
+    !result.success ||
+    !result.verified ||
+    result.evidence.length < 2
+  ) {
+    return [];
+  }
+
+  return result.evidence
+    .filter(
+      (item) =>
+        !isExcludedSource(
+          normalizeText(
+            item.title,
+            300,
+          ),
+          normalizeText(
+            item.hostname,
+            180,
+          ),
+        ),
+    )
+    .map(
+      (item) => ({
+        evidence: item,
+        searchIntent:
+          "business-corroboration",
+      }),
+    );
+}
+
+function sameHost(
+  left: DiscoverySource,
+  right: DiscoverySource,
+): boolean {
+  return (
+    normalizeHost(
+      left.evidence.hostname,
+    ) ===
+    normalizeHost(
+      right.evidence.hostname,
+    )
+  );
+}
+
+function buildCandidate(
+  companyName: string,
+  sources: DiscoverySource[],
+  objective: CommercialObjective,
+): C144ProspectCandidate {
+  const uniqueSources =
+    sources.filter(
+      (source, index) =>
+        sources.findIndex(
+          (other) =>
+            normalizeHost(
+              other.evidence.hostname,
+            ) ===
+              normalizeHost(
+                source.evidence.hostname,
+              ) &&
+            other.evidence.url ===
+              source.evidence.url,
+        ) === index,
+    );
+
+  const evidence =
+    uniqueSources.flatMap(
+      (source) =>
+        uniqueStrings(
+          source.evidence.snippets || [],
+        ).slice(0, 3),
+    );
+
+  const identityEvidence =
+    uniqueStrings(
+      sources.flatMap(
+        (source) => {
+          const identity =
+            extractBusinessIdentity(
+              source.evidence,
+            );
+
+          return identity.evidence;
+        },
+      ),
+    );
+
+  const signals =
+    extractCommercialSignals(
+      uniqueSources.map(
+        (source) =>
+          source.evidence,
+      ),
+    );
+
+  const customerType =
+    classifyCustomerType(
+      uniqueSources.map(
+        (source) =>
+          source.evidence,
+      ),
+    );
+
+  const hosts =
+    Array.from(
+      new Set(
+        uniqueSources.map(
+          (source) =>
+            normalizeHost(
+              source.evidence.hostname,
+            ),
+        ),
+      ),
+    );
+
+  const primary =
+    uniqueSources[0];
+
+  const sourceCount =
+    uniqueSources.length;
+
+  const independentHostCount =
+    hosts.length;
+
+  const verifiedBusiness =
+    sourceCount >= 2 &&
+    independentHostCount >= 2 &&
+    signals.length >= 2;
+
+  const evidenceScore =
+    Number(
+      Math.min(
+        0.99,
+        0.45 +
+          Math.min(
+            0.2,
+            sourceCount * 0.05,
+          ) +
+          Math.min(
+            0.2,
+            independentHostCount * 0.08,
+          ) +
+          Math.min(
+            0.14,
+            signals.length * 0.02,
+          ),
+      ).toFixed(3),
+    );
+
+  const aiosFitScore =
+    calculateAiosFitScore(
+      signals,
+      customerType,
+    );
+
+  const paymentCapability =
+    "likely-domestic-rmb" as const;
+
+  const validationReasons = [
+    "The organization is identified from public source evidence and is not inferred from the source hostname alone.",
+    `The candidate has ${sourceCount} supporting source(s) across ${independentHostCount} independent host(s).`,
+    `Detected commercial signals: ${signals.length}.`,
+    "Payment capability is classified as likely domestic RMB because the target customer is a mainland China business; actual payment ability must still be confirmed manually.",
+    "No contact, response, customer relationship, or payment is claimed by this discovery engine.",
+  ];
+
+  if (
+    !verifiedBusiness
+  ) {
     validationReasons.push(
-      "A public domain is available, but the domain alone does not prove that the organization is a qualified prospect.",
+      "The candidate does not yet meet the evidence threshold for an evidence-backed prospect and requires manual validation.",
     );
   }
-  validationReasons.push(
-    "No sufficiently strong business identity was extracted from the evidence.",
-  );
+
   return {
-    businessName: null,
+    id: "",
+    rank: 0,
+    name: companyName,
+    type:
+      verifiedBusiness
+        ? "business"
+        : "source-backed-opportunity",
+
+    hostname:
+      primary
+        ? normalizeText(
+            primary.evidence.hostname,
+            180,
+          )
+        : "",
+
+    url:
+      primary
+        ? normalizeText(
+            primary.evidence.url,
+            1000,
+          )
+        : "",
+
+    sourceTitle:
+      primary
+        ? normalizeText(
+            primary.evidence.title,
+            300,
+          )
+        : companyName,
+
+    evidence,
+
+    evidenceScore,
+
+    credibilityTier:
+      primary?.evidence
+        .credibilityTier ||
+      "unknown",
+
+    verificationLabel:
+      primary?.evidence
+        .verificationLabel ||
+      "limited",
+
+    whyRelevant: [
+      `${companyName} is a real business candidate identified from current public evidence.`,
+      `Commercial signals: ${signals.join(", ") || "not sufficiently established"}.`,
+      `AIOS fit score: ${aiosFitScore}.`,
+      `The current C144 objective targets ${objective.revenueTarget} ${objective.currency} revenue and ${objective.customerTarget} paying customer.`,
+      "The evidence supports prioritization but does not prove willingness to purchase.",
+    ].join(" "),
+
+    qualificationStatus:
+      verifiedBusiness
+        ? "evidence-backed"
+        : "needs-manual-validation",
+
+    recommendedAction: [
+      `Manually open the original sources and confirm that ${companyName} is the business described.`,
+      "Confirm that the company is actually based in mainland China.",
+      "Confirm the current cross-border, Japan, export, ecommerce, brand, or product-validation need.",
+      "Confirm that the company can pay in CNY through a domestic payment method.",
+      "Only after all checks pass, identify a public business contact channel.",
+      "Only after a real outreach action occurs should contact status be recorded.",
+    ].join(" "),
+
+    businessName:
+      companyName,
+
     businessIdentityEvidence:
-      identityEvidence,
+      identityEvidence.length > 0
+        ? identityEvidence
+        : [
+            `Business identity was corroborated using the organization name "${companyName}".`,
+          ],
+
+    commercialSignals:
+      signals,
+
+    contactChannel:
+      null,
+
     validationReasons,
+
+    paymentCapability,
+
+    paymentCurrency:
+      "CNY",
+
+    customerType,
+
+    aiosFitScore,
   };
 }
-function buildCandidateName(
-  businessName: string | null,
-  title: string,
-  hostname: string,
-  rank: number,
-): string {
-  if (businessName) {
-    return businessName;
+
+function collectCandidateSeeds(
+  sources: DiscoverySource[],
+): CandidateSeed[] {
+  const seeds: CandidateSeed[] = [];
+
+  for (
+    const source of sources
+  ) {
+    const title =
+      normalizeText(
+        source.evidence.title,
+        300,
+      );
+
+    const hostname =
+      normalizeText(
+        source.evidence.hostname,
+        180,
+      );
+
+    if (
+      !title ||
+      isExcludedSource(
+        title,
+        hostname,
+      )
+    ) {
+      continue;
+    }
+
+    const identity =
+      extractBusinessIdentity(
+        source.evidence,
+      );
+
+    if (
+      !identity.name ||
+      identity.confidence < 0.65
+    ) {
+      continue;
+    }
+
+    seeds.push({
+      name: identity.name,
+      source,
+      identity,
+    });
   }
-  const cleanTitle =
-    normalizeText(
-      title,
-      180,
-    );
-  if (cleanTitle) {
-    return `Opportunity ${rank}: ${cleanTitle}`;
+
+  const grouped =
+    new Map<
+      string,
+      CandidateSeed
+    >();
+
+  for (
+    const seed of seeds
+  ) {
+    const key =
+      seed.name
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9\u4e00-\u9fff]/g,
+          "",
+        );
+
+    if (!key) {
+      continue;
+    }
+
+    if (
+      !grouped.has(key)
+    ) {
+      grouped.set(
+        key,
+        seed,
+      );
+    }
   }
-  if (hostname) {
-    return `Opportunity ${rank}: ${hostname}`;
-  }
-  return `Source-backed opportunity ${rank}`;
-}
-function buildRelevance(
-  objective: CommercialObjective,
-  evidence: string[],
-  signals: string[],
-  businessName: string | null,
-): string {
-  const target =
-    `${objective.revenueTarget} ${objective.currency}`;
-  const signalText =
-    signals.length > 0
-      ? signals.join(", ")
-      : "general commercial activity";
-  const identityText =
-    businessName
-      ? `A possible business identity was detected as ${businessName}, but it still requires manual confirmation.`
-      : "No sufficiently strong business identity was extracted, so this remains a prospect hypothesis.";
-  return [
-    `Relevant commercial signals: ${signalText}.`,
-    identityText,
-    `The current objective targets ${target} revenue and ${objective.customerTarget} paying customer.`,
-    "The evidence can support prioritization, but it does not by itself prove willingness to purchase.",
-  ].join(" ");
-}
-function scoreEvidence(
-  item: {
-    verificationScore?: number;
-    credibilityScore?: number;
-    corroborationCount?: number;
-    corroborationScore?: number;
-    snippets?: string[];
-  },
-): number {
-  const verification =
-    typeof item.verificationScore ===
-    "number"
-      ? item.verificationScore
-      : 0;
-  const credibility =
-    typeof item.credibilityScore ===
-    "number"
-      ? item.credibilityScore
-      : 0;
-  const corroboration =
-    typeof item.corroborationScore ===
-    "number"
-      ? item.corroborationScore
-      : 0;
-  const corroborationCount =
-    typeof item.corroborationCount ===
-    "number"
-      ? item.corroborationCount
-      : 0;
-  const snippetBonus =
-    Math.min(
-      0.08,
-      (item.snippets?.length || 0) *
-        0.02,
-    );
-  const score =
-    verification * 0.45 +
-    credibility * 0.25 +
-    corroboration * 0.2 +
-    Math.min(
-      0.08,
-      corroborationCount * 0.04,
-    ) +
-    snippetBonus;
-  return Math.min(
-    0.99,
-    Number(
-      score.toFixed(3),
-    ),
+
+  return Array.from(
+    grouped.values(),
   );
 }
-function buildRecommendedAction(
-  candidate: C144ProspectCandidate,
-): string {
-  const identityAction =
-    candidate.businessName
-      ? `Manually confirm that ${candidate.businessName} is the organization described by the original source.`
-      : "Manually identify the actual organization or business represented by this source.";
-  return [
-    identityAction,
-    "Open the original source and verify the current business context.",
-    "Confirm a real connection to Japan, cross-border commerce, product validation, or market-entry activity.",
-    "Check whether the organization has a plausible commercial need for the AIOS market-intelligence and validation service.",
-    "Only after qualification, identify an appropriate public business contact channel.",
-    "Record the real external action separately after it is actually performed.",
-  ].join(" ");
+
+async function discoverSources(): Promise<
+  DiscoverySource[]
+> {
+  const all: DiscoverySource[] = [];
+
+  for (
+    const [index, prompt] of
+      DISCOVERY_PROMPTS.entries()
+  ) {
+    const result =
+      await retrieveWebEvidence(
+        prompt[1],
+      );
+
+    if (
+      !result.success ||
+      !result.verified
+    ) {
+      continue;
+    }
+
+    for (
+      const evidence of
+        result.evidence
+    ) {
+      all.push({
+        evidence,
+        searchIntent:
+          prompt[0],
+      });
+    }
+
+    if (
+      index >=
+      DISCOVERY_PROMPTS.length - 1
+    ) {
+      break;
+    }
+  }
+
+  return all;
 }
-function buildValidationReasons(
-  existing: string[],
-  signals: string[],
-  hostname: string,
-): string[] {
-  const reasons = [
-    ...existing,
+
+function mergeSources(
+  left: DiscoverySource[],
+  right: DiscoverySource[],
+): DiscoverySource[] {
+  const merged = [
+    ...left,
+    ...right,
   ];
-  if (signals.length >= 2) {
-    reasons.push(
-      "Multiple commercial signal categories were detected in the evidence.",
-    );
-  } else {
-    reasons.push(
-      "Commercial relevance remains limited until manually confirmed.",
-    );
-  }
-  if (hostname) {
-    reasons.push(
-      `Original-source domain available for manual verification: ${hostname}.`,
-    );
-  }
-  return uniqueStrings(
-    reasons,
+
+  return merged.filter(
+    (source, index) =>
+      merged.findIndex(
+        (other) =>
+          other.evidence.url ===
+          source.evidence.url,
+      ) === index,
   );
 }
-export function discoverC144Prospects(
+
+function finalizeCandidates(
+  candidates: C144ProspectCandidate[],
+): C144ProspectCandidate[] {
+  return candidates
+    .filter(
+      (candidate) =>
+        candidate.businessName !==
+          null &&
+        candidate.commercialSignals
+          .length >= 2 &&
+        candidate.aiosFitScore >= 0.55,
+    )
+    .sort(
+      (a, b) =>
+        b.aiosFitScore -
+        a.aiosFitScore ||
+        b.evidenceScore -
+        a.evidenceScore,
+    )
+    .slice(0, 5)
+    .map(
+      (candidate, index) => ({
+        ...candidate,
+        id:
+          `C144-PROSPECT-${index + 1}`,
+        rank:
+          index + 1,
+      }),
+    );
+}
+
+export async function discoverC144Prospects(
   opportunity: LiveCommercialOpportunityResult,
-): C144ProspectDiscoveryResult {
+): Promise<C144ProspectDiscoveryResult> {
   const project =
     opportunity.objective;
+
   if (!project) {
     return {
       success: false,
@@ -430,29 +1215,34 @@ export function discoverC144Prospects(
       timestamp: Date.now(),
     };
   }
-  const web =
-    opportunity.web;
+
+  const sources =
+    await discoverSources();
+
   if (
-    !web ||
-    !web.success ||
-    !web.verified ||
-    web.evidence.length < 2 ||
-    web.sourceCount < 2 ||
-    web.sourceHosts.length < 2
+    sources.length < 2
   ) {
     return {
       success: false,
-      status: "insufficient-evidence",
+      status:
+        "insufficient-evidence",
       project,
       candidates: [],
       sourceCount:
-        web?.sourceCount || 0,
+        sources.length,
       independentHosts:
-        web?.sourceHosts.length || 0,
+        new Set(
+          sources.map(
+            (source) =>
+              normalizeHost(
+                source.evidence.hostname,
+              ),
+          ),
+        ).size,
       conclusion:
-        "Verified external evidence is insufficient to produce prospect candidates.",
+        "Targeted mainland-China prospect discovery did not return enough verified external evidence.",
       nextStep:
-        "Run another verified commercial intelligence cycle before prospect discovery.",
+        "Run another verified prospect discovery cycle.",
       integrity: {
         fabricatedLead: false,
         fabricatedContact: false,
@@ -462,172 +1252,112 @@ export function discoverC144Prospects(
       timestamp: Date.now(),
     };
   }
-  const candidates =
-    web.evidence
-      .map(
-        (item, index) => {
-          const snippets =
-            uniqueStrings(
-              item.snippets || [],
-            ).slice(
-              0,
-              5,
-            );
-          const title =
-            normalizeText(
-              item.title,
-              300,
-            );
-          const hostname =
-            normalizeText(
-              item.hostname,
-              180,
-            );
-          const url =
-            normalizeText(
-              item.url,
-              1000,
-            );
-          const signals =
-            extractCommercialSignals(
-              [
-                title,
-                hostname,
-                ...snippets,
-              ],
-            );
-          const identity =
-            detectBusinessIdentity(
-              title,
-              hostname,
-              snippets,
-            );
-          const evidenceScore =
-            scoreEvidence(
-              item,
-            );
-          const candidateName =
-            buildCandidateName(
-              identity.businessName,
-              title,
-              hostname,
-              index + 1,
-            );
-          const qualificationStatus =
-            identity.businessName &&
-            signals.length >= 2
-              ? "evidence-backed"
-              : "needs-manual-validation";
-          const candidate:
-            C144ProspectCandidate = {
-              id:
-                `C144-PROSPECT-${index + 1}`,
-              rank: 0,
-              name:
-                candidateName,
-              type:
-                identity.businessName &&
-                signals.length >= 2
-                  ? "business"
-                  : "source-backed-opportunity",
-              hostname,
-              url,
-              sourceTitle:
-                title,
-              evidence:
-                snippets,
-              evidenceScore,
-              credibilityTier:
-                item.credibilityTier ||
-                "unknown",
-              verificationLabel:
-                item.verificationLabel ||
-                "limited",
-              whyRelevant:
-                buildRelevance(
-                  project,
-                  snippets,
-                  signals,
-                  identity.businessName,
-                ),
-              qualificationStatus,
-              recommendedAction:
-                "",
-              businessName:
-                identity.businessName,
-              businessIdentityEvidence:
-                identity.businessIdentityEvidence,
-              commercialSignals:
-                signals,
-              contactChannel:
-                null,
-              validationReasons:
-                buildValidationReasons(
-                  identity.validationReasons,
-                  signals,
-                  hostname,
-                ),
-            };
-          candidate.recommendedAction =
-            buildRecommendedAction(
-              candidate,
-            );
-          return candidate;
-        },
-      )
-      .sort(
-        (a, b) => {
-          if (
-            a.qualificationStatus !==
-            b.qualificationStatus
-          ) {
-            return a.qualificationStatus ===
-              "evidence-backed"
-              ? -1
-              : 1;
-          }
-          if (
-            b.commercialSignals.length !==
-            a.commercialSignals.length
-          ) {
-            return (
-              b.commercialSignals.length -
-              a.commercialSignals.length
-            );
-          }
-          return (
-            b.evidenceScore -
-            a.evidenceScore
-          );
-        },
-      )
-      .slice(
-        0,
-        5,
-      )
-      .map(
-        (candidate, index) => ({
-          ...candidate,
-          rank:
-            index + 1,
-        }),
+
+  const seeds =
+    collectCandidateSeeds(
+      sources,
+    );
+
+  const candidateList:
+    C144ProspectCandidate[] = [];
+
+  for (
+    const seed of seeds.slice(0, 10)
+  ) {
+    const corroboration =
+      await corroborateBusiness(
+        seed.name,
       );
+
+    const merged =
+      mergeSources(
+        [seed.source],
+        corroboration,
+      );
+
+    const candidate =
+      buildCandidate(
+        seed.name,
+        merged,
+        project,
+      );
+
+    const independentHosts =
+      new Set(
+        merged.map(
+          (source) =>
+            normalizeHost(
+              source.evidence.hostname,
+            ),
+        ),
+      ).size;
+
+    if (
+      independentHosts >= 2 &&
+      merged.length >= 2
+    ) {
+      candidateList.push(
+        candidate,
+      );
+    }
+  }
+
+  const candidates =
+    finalizeCandidates(
+      candidateList,
+    );
+
+  const allSources =
+    candidateList.flatMap(
+      (candidate) => [
+        candidate.hostname,
+        candidate.url,
+      ],
+    );
+
+  const sourceHosts =
+    new Set(
+      allSources
+        .filter(Boolean)
+        .map(
+          (value) => {
+            try {
+              return new URL(
+                value.startsWith("http")
+                  ? value
+                  : `https://${value}`,
+              ).hostname;
+            } catch {
+              return value;
+            }
+          },
+        ),
+    );
+
   if (
-    candidates.length === 0
+    candidates.length < 1
   ) {
     return {
       success: false,
-      status: "insufficient-evidence",
+      status:
+        "insufficient-evidence",
       project,
       candidates: [],
       sourceCount:
-        web.sourceCount,
+        sources.length,
       independentHosts:
-        web.sourceHosts.length,
+        new Set(
+          sources.map(
+            (source) =>
+              normalizeHost(
+                source.evidence.hostname,
+              ),
+          ),
+        ).size,
       conclusion:
-        "The verified web cycle returned no usable prospect hypotheses.",
+        "The engine found commercial signals but could not corroborate a sufficiently strong mainland-China business prospect.",
       nextStep:
-        "Broaden the commercial discovery query.",
+        "Do not perform outreach. Run another targeted prospect discovery cycle with fresh external evidence.",
       integrity: {
         fabricatedLead: false,
         fabricatedContact: false,
@@ -637,45 +1367,72 @@ export function discoverC144Prospects(
       timestamp: Date.now(),
     };
   }
+
   return {
-    success: true,
-    status: "ready",
+    success:
+      candidates.length >= 1,
+
+    status:
+      "ready",
+
     project,
+
     candidates,
+
     sourceCount:
-      web.sourceCount,
+      sources.length,
+
     independentHosts:
-      web.sourceHosts.length,
+      sourceHosts.size,
+
     conclusion:
-      "AIOS converted verified external evidence into ranked prospect hypotheses and distinguishes possible business identities from unqualified source-backed opportunities.",
+      `C144.3.1 identified ${candidates.length} evidence-backed mainland-China commercial prospect candidate(s).`,
+
     nextStep:
-      "Manually validate candidate #1 first, then continue in rank order until 5 real prospects have been validated.",
+      "Manually validate candidate #1, including business identity, current need, mainland-China status, and CNY payment capability before any outreach.",
+
     integrity: {
       fabricatedLead: false,
       fabricatedContact: false,
       fabricatedResponse: false,
       fabricatedCustomer: false,
     },
-    timestamp: Date.now(),
+
+    timestamp:
+      Date.now(),
   };
 }
+
 export function isC144ProspectDiscoveryReady(
   result: C144ProspectDiscoveryResult,
 ): boolean {
-  return (
-    result.success === true &&
-    result.status === "ready" &&
-    result.project !== null &&
-    result.candidates.length > 0 &&
-    result.sourceCount >= 2 &&
-    result.independentHosts >= 2 &&
-    result.integrity
-      .fabricatedLead === false &&
-    result.integrity
-      .fabricatedContact === false &&
-    result.integrity
-      .fabricatedResponse === false &&
-    result.integrity
-      .fabricatedCustomer === false
+  if (
+    !result.success ||
+    result.status !== "ready"
+  ) {
+    return false;
+  }
+
+  if (
+    result.candidates.length < 1
+  ) {
+    return false;
+  }
+
+  return result.candidates.every(
+    (candidate) =>
+      candidate.businessName !==
+        null &&
+      candidate.commercialSignals
+        .length >= 2 &&
+      candidate.qualificationStatus ===
+        "evidence-backed" &&
+      candidate.contactChannel ===
+        null &&
+      candidate.paymentCurrency ===
+        "CNY" &&
+      candidate.paymentCapability ===
+        "likely-domestic-rmb" &&
+      candidate.aiosFitScore >= 0.55,
   );
 }
