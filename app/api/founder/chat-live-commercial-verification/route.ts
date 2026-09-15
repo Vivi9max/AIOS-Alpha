@@ -1,31 +1,30 @@
 import "server-only";
-
-import { NextRequest, NextResponse } from "next/server";
-
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 import {
   createCommercialObjective,
+  listCommercialObjectives,
+  type CommercialObjective,
 } from "@/lib/commercial/operating-layer";
-
 import {
   executeChatCommercialBridge,
 } from "@/lib/runtime/chat-commercial-bridge";
-
 import {
   isLocale,
   type Locale,
 } from "@/lib/i18n";
-
 import {
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
-
 import {
   runWithUserContext,
 } from "@/lib/runtime/request-context";
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
+const VERIFICATION_OBJECTIVE_TITLE =
+  "C143.32.4 Chat Live Commercial Verification";
 function resolveLocale(
   request: NextRequest,
 ): Locale {
@@ -33,12 +32,10 @@ function resolveLocale(
     request.headers.get(
       "x-aios-locale",
     );
-
   return isLocale(value)
     ? value
     : "en";
 }
-
 function buildPrompt(
   locale: Locale,
 ): string {
@@ -50,7 +47,6 @@ function buildPrompt(
       "最终给出一个具体、可衡量、可以立即执行的获客或销售行动。",
     ].join("\n");
   }
-
   if (locale === "ja") {
     return [
       "現在実行可能な商業機会を探してください。",
@@ -59,7 +55,6 @@ function buildPrompt(
       "最後に、すぐ実行できる具体的で測定可能な集客または販売アクションを提示してください。",
     ].join("\n");
   }
-
   return [
     "Find a currently executable commercial opportunity.",
     "Analyze the current market, competition, customer demand, and pricing.",
@@ -67,7 +62,6 @@ function buildPrompt(
     "Finish with one concrete, measurable customer-acquisition or sales action that can be executed immediately.",
   ].join("\n");
 }
-
 function check(
   name: string,
   passed: boolean,
@@ -79,57 +73,80 @@ function check(
     detail,
   };
 }
-
+async function getOrCreateVerificationObjective(): Promise<{
+  objective: CommercialObjective;
+  reused: boolean;
+}> {
+  const objectives =
+    await listCommercialObjectives();
+  const existing =
+    objectives.find(
+      (item) =>
+        item.title.toLowerCase() ===
+          VERIFICATION_OBJECTIVE_TITLE.toLowerCase() &&
+        item.status !== "cancelled" &&
+        item.status !== "completed",
+    );
+  if (existing) {
+    return {
+      objective: existing,
+      reused: true,
+    };
+  }
+  const objective =
+    await createCommercialObjective({
+      title:
+        VERIFICATION_OBJECTIVE_TITLE,
+      description:
+        "Founder production verification of the real Chat commercial opportunity pipeline.",
+      status:
+        "active",
+      stage:
+        "validation",
+      currency:
+        "USD",
+      revenueTarget:
+        100,
+      costTarget:
+        25,
+      customerTarget:
+        1,
+      deadlineDays:
+        7,
+      successCriteria:
+        "Identify one verified commercial opportunity and one measurable next customer-acquisition action.",
+      outcomeId:
+        null,
+      taskId:
+        null,
+    });
+  return {
+    objective,
+    reused: false,
+  };
+}
 export async function GET(
   request: NextRequest,
 ) {
   const startedAt =
     Date.now();
-
   const identity =
     resolveAlphaIdentity(
       request,
     );
-
   const locale =
     resolveLocale(request);
-
   try {
-    const objective =
+    const objectiveResult =
       await runWithUserContext(
         identity.userId,
         () =>
-          createCommercialObjective({
-            title:
-              "C143.32.4 Chat Live Commercial Verification",
-            description:
-              "Founder production verification of the real Chat commercial opportunity pipeline.",
-            status:
-              "active",
-            stage:
-              "validation",
-            currency:
-              "USD",
-            revenueTarget:
-              100,
-            costTarget:
-              25,
-            customerTarget:
-              1,
-            deadlineDays:
-              7,
-            successCriteria:
-              "Identify one verified commercial opportunity and one measurable next customer-acquisition action.",
-            outcomeId:
-              null,
-            taskId:
-              null,
-          }),
+          getOrCreateVerificationObjective(),
       );
-
+    const objective =
+      objectiveResult.objective;
     const prompt =
       buildPrompt(locale);
-
     const result =
       await runWithUserContext(
         identity.userId,
@@ -141,19 +158,14 @@ export async function GET(
             locale,
           }),
       );
-
     const opportunity =
       result.opportunity;
-
     const web =
       opportunity?.web;
-
     const decision =
       opportunity?.decision;
-
     const runtime =
       opportunity?.runtime;
-
     const checks = [
       check(
         "CHAT_COMMERCIAL_BRIDGE_DETECTED",
@@ -202,143 +214,138 @@ export async function GET(
         "No revenue, customer, or cost Actual was fabricated.",
       ),
     ];
-
     const passed =
       checks.filter(
         (item) => item.passed,
       ).length;
-
     const failed =
       checks.length -
       passed;
-
     const success =
       failed === 0;
-
-    const response =
-      NextResponse.json(
-        {
-          success,
-          code:
-            success
-              ? "C143_32_4_CHAT_LIVE_COMMERCIAL_PASS"
-              : "C143_32_4_CHAT_LIVE_COMMERCIAL_FAILED",
-          verification:
-            "C143.32.4",
-          status:
-            success
-              ? "VERIFIED"
-              : "FAILED",
-          summary: {
-            total:
-              checks.length,
-            passed,
-            failed,
-            latencyMs:
-              Date.now() -
-              startedAt,
-          },
-          pipeline: [
-            "CHAT",
-            "COMMERCIAL_INTENT",
-            "OBJECTIVE",
-            "LIVE_WEB_INTELLIGENCE",
-            "VERIFIED_EVIDENCE",
-            "LIVE_DECISION",
-            "COMMERCIAL_RUNTIME",
-            "TASK",
-          ],
-          objective: {
-            id:
-              objective.id,
-            title:
-              objective.title,
-            currency:
-              objective.currency,
-          },
-          result: {
-            detected:
-              result.detected,
-            status:
-              result.status,
-            success:
-              result.success,
-            shouldRunLiveOpportunity:
-              result.shouldRunLiveOpportunity,
-          },
-          web: web
-            ? {
-                success:
-                  web.success,
-                verified:
-                  web.verified,
-                evidenceCount:
-                  web.evidence.length,
-                sourceCount:
-                  web.sourceCount,
-                independentHosts:
-                  web.sourceHosts.length,
-              }
-            : null,
-          decision: decision
-            ? {
-                success:
-                  decision.success,
-                verified:
-                  decision.verification?.verified ??
-                  false,
-                priority:
-                  decision.priority,
-                actionCount:
-                  decision.recommendedActions.length,
-                conclusion:
-                  decision.conclusion,
-                nextStep:
-                  decision.nextStep,
-              }
-            : null,
-          runtime: runtime
-            ? {
-                success:
-                  runtime.success,
-                status:
-                  runtime.status,
-                taskId:
-                  runtime.taskId ??
-                  null,
-                outcomeId:
-                  runtime.outcomeId ??
-                  null,
-                milestoneId:
-                  runtime.milestoneId ??
-                  null,
-              }
-            : null,
-          checks,
-          integrity: {
-            fabricatedActuals:
-              false,
-            verifiedResultGate:
-              true,
-          },
-          capabilityTrace:
-            result.capabilityTrace,
-          timestamp:
-            Date.now(),
+    return NextResponse.json(
+      {
+        success,
+        code:
+          success
+            ? "C143_32_4_CHAT_LIVE_COMMERCIAL_PASS"
+            : "C143_32_4_CHAT_LIVE_COMMERCIAL_FAILED",
+        verification:
+          "C143.32.4",
+        status:
+          success
+            ? "VERIFIED"
+            : "FAILED",
+        summary: {
+          total:
+            checks.length,
+          passed,
+          failed,
+          latencyMs:
+            Date.now() -
+            startedAt,
         },
-        {
-          status:
-            success
-              ? 200
-              : 500,
-          headers: {
-            "Cache-Control":
-              "no-store",
-          },
+        objective: {
+          id:
+            objective.id,
+          title:
+            objective.title,
+          currency:
+            objective.currency,
+          reused:
+            objectiveResult.reused,
         },
-      );
-
-    return response;
+        pipeline: [
+          "CHAT",
+          "COMMERCIAL_INTENT",
+          "OBJECTIVE",
+          "LIVE_WEB_INTELLIGENCE",
+          "VERIFIED_EVIDENCE",
+          "LIVE_DECISION",
+          "COMMERCIAL_RUNTIME",
+          "TASK",
+        ],
+        result: {
+          detected:
+            result.detected,
+          status:
+            result.status,
+          success:
+            result.success,
+          shouldRunLiveOpportunity:
+            result.shouldRunLiveOpportunity,
+        },
+        web: web
+          ? {
+              success:
+                web.success,
+              verified:
+                web.verified,
+              evidenceCount:
+                web.evidence.length,
+              sourceCount:
+                web.sourceCount,
+              independentHosts:
+                web.sourceHosts.length,
+            }
+          : null,
+        decision: decision
+          ? {
+              success:
+                decision.success,
+              verified:
+                decision.verification?.verified ??
+                false,
+              priority:
+                decision.priority,
+              actionCount:
+                decision.recommendedActions.length,
+              conclusion:
+                decision.conclusion,
+              nextStep:
+                decision.nextStep,
+            }
+          : null,
+        runtime: runtime
+          ? {
+              success:
+                runtime.success,
+              status:
+                runtime.status,
+              taskId:
+                runtime.taskId ??
+                null,
+              outcomeId:
+                runtime.outcomeId ??
+                null,
+              milestoneId:
+                runtime.milestoneId ??
+                null,
+            }
+          : null,
+        checks,
+        integrity: {
+          fabricatedActuals:
+            false,
+          verifiedResultGate:
+            true,
+        },
+        capabilityTrace:
+          result.capabilityTrace,
+        timestamp:
+          Date.now(),
+      },
+      {
+        status:
+          success
+            ? 200
+            : 500,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      },
+    );
   } catch (error) {
     return NextResponse.json(
       {
