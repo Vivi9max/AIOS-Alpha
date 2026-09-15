@@ -39,7 +39,9 @@ export async function GET(
     Date.now();
 
   const identity =
-    resolveAlphaIdentity(request);
+    resolveAlphaIdentity(
+      request,
+    );
 
   try {
     const result =
@@ -63,7 +65,7 @@ export async function GET(
           }
 
           const prospects =
-            discoverC144Prospects(
+            await discoverC144Prospects(
               customer.opportunity,
             );
 
@@ -107,7 +109,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success: ready,
+        success:
+          ready,
 
         code:
           ready
@@ -115,7 +118,7 @@ export async function GET(
             : "C144_PROSPECTS_BLOCKED",
 
         verification:
-          "C144.3",
+          "C144.3.1",
 
         status:
           ready
@@ -127,19 +130,24 @@ export async function GET(
           startedAt,
 
         candidates:
-          result.prospects?.candidates ||
+          result.prospects
+            ?.candidates ||
           [],
 
         outreachPackages:
-          result.packages || [],
+          result.packages ||
+          [],
 
         evidence:
           result.prospects
             ? {
                 sourceCount:
-                  result.prospects.sourceCount,
+                  result.prospects
+                    .sourceCount,
+
                 independentHosts:
-                  result.prospects.independentHosts,
+                  result.prospects
+                    .independentHosts,
               }
             : null,
 
@@ -147,37 +155,50 @@ export async function GET(
           result.customer
             ? {
                 success:
-                  result.customer.success,
+                  result.customer
+                    .success,
+
                 status:
-                  result.customer.status,
+                  result.customer
+                    .status,
+
                 taskId:
-                  result.customer.taskId,
+                  result.customer
+                    .taskId,
+
                 nextStep:
-                  result.customer.nextStep,
+                  result.customer
+                    .nextStep,
               }
             : null,
 
         integrity: {
           fabricatedLead:
             false,
+
           fabricatedContact:
             false,
+
           contactWasSent:
             false,
+
           responseWasReceived:
             false,
+
           fabricatedCustomer:
             false,
+
           fabricatedRevenue:
             false,
+
           note:
-            "C144.3 generates evidence-backed prospect hypotheses and manual outreach drafts only. No external contact is performed by this endpoint.",
+            "C144.3.1 discovers mainland-China commercial prospects using targeted verified web evidence. It does not contact prospects, fabricate contacts, fabricate responses, or claim payment.",
         },
 
         nextStep:
           ready
-            ? "Manually validate candidate #1 and send the appropriate outreach only after validation."
-            : "Resolve the verified-evidence or commercial-discovery block before prospect outreach.",
+            ? "Manually validate candidate #1: business identity, current commercial need, mainland-China status, and CNY payment capability. Only then use the outreach package."
+            : "Resolve the verified prospect-discovery block before outreach.",
       },
       {
         status:
@@ -190,16 +211,21 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
+
         code:
           "C144_PROSPECTS_ERROR",
+
         verification:
-          "C144.3",
+          "C144.3.1",
+
         status:
           "ERROR",
+
         message:
           error instanceof Error
             ? error.message
-            : "C144 prospect discovery failed.",
+            : "C144.3.1 prospect discovery failed.",
+
         latencyMs:
           Date.now() -
           startedAt,
