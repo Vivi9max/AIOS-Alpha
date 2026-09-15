@@ -796,10 +796,12 @@ function buildCandidate(
     return null;
   }
 
-  const combinedText =
-    usableSources
-      .map(sourceText)
-      .join(" ");
+const combinedText =
+  usableSources
+    .map((source) =>
+      sourceText(source.evidence),
+    )
+    .join(" ");
 
   const chinaSignal =
     containsAny(
