@@ -82,29 +82,26 @@ export async function GET(
           const verifiedCandidates =
             prospects.candidates.filter(
               (candidate) => {
-                const item =
+                const verified =
                   verification.find(
                     (entry) =>
                       entry.candidateId ===
-                      candidate.id,
+                        candidate.id &&
+                      isC144ProspectVerificationReady(
+                        entry,
+                      ),
                   );
                 return Boolean(
-                  item &&
-                  item.success &&
-                  item.qualificationStatus ===
-                    "verified-prospect" &&
-                  item.verifiedBusinessIdentity &&
-                  item.verifiedChinaBusiness &&
-                  item.verifiedCommercialSignal &&
-                  item.verifiedJapanOrCrossBorderSignal &&
-                  item.independentHosts >= 2 &&
-                  item.sourceCount >= 2,
+                  verified,
                 );
               },
             );
           const verificationReady =
-            isC144ProspectVerificationReady(
-              verification,
+            verification.some(
+              (entry) =>
+                isC144ProspectVerificationReady(
+                  entry,
+                ),
             );
           const packages =
             verifiedCandidates.map(
@@ -127,9 +124,11 @@ export async function GET(
         },
       );
     const verificationReady =
-      result.verification.length > 0 &&
-      isC144ProspectVerificationReady(
-        result.verification,
+      result.verification.some(
+        (entry) =>
+          isC144ProspectVerificationReady(
+            entry,
+          ),
       );
     const ready =
       result.success &&
