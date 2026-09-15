@@ -296,19 +296,39 @@ export async function executeC144FirstCustomerTask(): Promise<C144FirstCustomerD
 export function isC144FirstCustomerTaskReady(
   result: C144FirstCustomerDiscoveryResult,
 ): boolean {
-  return (
-    result.success === true &&
-    result.status === "ready" &&
-    result.taskId === C144_TASK_ID &&
-    Boolean(result.objectiveId) &&
-    Boolean(result.project) &&
-    Boolean(result.task) &&
-    result.task.status !== "blocked" &&
-    Boolean(result.task.measurableTarget) &&
-    Boolean(result.opportunity) &&
-    Boolean(result.conclusion) &&
-    isLiveCommercialOpportunityReady(result.opportunity!)
-  );
+  const task = result.task;
+  const opportunity = result.opportunity;
+  if (!result.success) {
+    return false;
+  }
+  if (result.status !== "ready") {
+    return false;
+  }
+  if (result.taskId !== C144_TASK_ID) {
+    return false;
+  }
+  if (!result.objectiveId) {
+    return false;
+  }
+  if (!result.project) {
+    return false;
+  }
+  if (!task) {
+    return false;
+  }
+  if (task.status === "blocked") {
+    return false;
+  }
+  if (!task.measurableTarget) {
+    return false;
+  }
+  if (!opportunity) {
+    return false;
+  }
+  if (!result.conclusion) {
+    return false;
+  }
+  return isLiveCommercialOpportunityReady(opportunity);
 }
 export function isC144FirstCustomerDiscoveryReady(
   result: C144FirstCustomerDiscoveryResult,
