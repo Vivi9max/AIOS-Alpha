@@ -1076,34 +1076,63 @@ export async function verifyC144Prospect(
   ) {
     return {
       success: false,
-      status: "rejected",
+
+      /*
+       * FIX:
+       * "rejected" is a qualification state,
+       * not a verification result status.
+       *
+       * The status union intentionally permits
+       * only verified / blocked /
+       * insufficient-evidence.
+       */
+      status: "insufficient-evidence",
+
       candidateId: candidate.id,
+
       businessName: null,
+
       verifiedBusinessIdentity: false,
       verifiedChinaBusiness: false,
       verifiedCommercialSignal: false,
       verifiedJapanOrCrossBorderSignal: false,
+
       independentHosts: 0,
       sourceCount: 0,
+
       evidence: [],
       sourceTitles: [],
+
       validationReasons: [
         "No concrete business identity was supplied by discovery.",
         "Candidate name is not allowed to substitute for business identity.",
       ],
+
+      /*
+       * Keep "rejected" here.
+       * This is the qualification decision,
+       * not the verification status.
+       */
       qualificationStatus:
         "rejected",
+
       paymentCapability:
         "unknown",
+
       paymentCurrency:
         "unknown",
+
       aiosFitScore: 0,
+
       conclusion:
         "The candidate does not contain a sufficiently concrete enterprise identity for verification.",
+
       nextStep:
         "Return to discovery and identify a real named mainland-China business before verification.",
+
       integrity:
         emptyIntegrity,
+
       timestamp,
     };
   }
@@ -1167,26 +1196,33 @@ export async function verifyC144Prospect(
       identity.verified
         ? "Business identity was corroborated across at least 2 independent hosts."
         : "Business identity could not be independently corroborated.",
+
       china.verified
         ? "Mainland-China relevance was tied to the named business across independent sources."
         : "Mainland-China business status was not sufficiently tied to the named business.",
+
       commercial.verified
         ? `Concrete commercial activity was detected with ${commercial.signals.length} signal(s).`
         : "Concrete commercial activity was not sufficiently verified.",
+
       japanOrCrossBorder.verified
         ? "Japan or cross-border relevance was independently corroborated."
         : "Japan or cross-border relevance was not sufficiently verified.",
+
       sourceCount >= 2
         ? `The candidate has ${sourceCount} usable source(s).`
         : "Fewer than 2 usable sources were available.",
+
       independentHosts >= 2
         ? `The candidate has ${independentHosts} independent host(s).`
         : "Fewer than 2 independent hosts were available.",
+
       "No contact, customer, payment, or revenue claim is created by verification.",
     ]);
 
   return {
     success: allGates,
+
     status:
       allGates
         ? "verified"
@@ -1295,38 +1331,60 @@ export async function verifyC144Prospects(
     } catch {
       results.push({
         success: false,
+
         status:
           "insufficient-evidence",
+
         candidateId:
           candidate.id,
+
         businessName:
           null,
+
         verifiedBusinessIdentity:
           false,
+
         verifiedChinaBusiness:
           false,
+
         verifiedCommercialSignal:
           false,
+
         verifiedJapanOrCrossBorderSignal:
           false,
-        independentHosts: 0,
-        sourceCount: 0,
+
+        independentHosts:
+          0,
+
+        sourceCount:
+          0,
+
         evidence: [],
+
         sourceTitles: [],
+
         validationReasons: [
           "Verification failed safely without promoting the candidate to a verified prospect.",
         ],
+
         qualificationStatus:
           "needs-manual-validation",
+
         paymentCapability:
           "unknown",
+
         paymentCurrency:
           "unknown",
-        aiosFitScore: 0,
+
+        aiosFitScore:
+          0,
+
         conclusion:
           "Verification failed safely.",
+
         nextStep:
           "Do not contact the candidate. Rerun discovery and verification.",
+
         integrity: {
           fabricatedBusiness: false,
           fabricatedLead: false,
@@ -1334,6 +1392,7 @@ export async function verifyC144Prospects(
           fabricatedCustomer: false,
           fabricatedRevenue: false,
         },
+
         timestamp:
           Date.now(),
       });
