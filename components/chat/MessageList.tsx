@@ -18,6 +18,12 @@ export interface ChatMessage {
 interface Props {
   messages:
     ChatMessage[];
+
+  onMessageDeleted?: (
+    id: number,
+  ) => void;
+
+  onConversationChanged?: () => void;
 }
 
 interface DeletedMemoryRecord {
@@ -31,6 +37,8 @@ interface DeletedMemoryRecord {
 
 export default function MessageList({
   messages,
+  onMessageDeleted,
+  onConversationChanged,
 }: Props) {
   const [
     deletedIds,
@@ -38,7 +46,7 @@ export default function MessageList({
   ] = useState<
     Set<number>
   >(
-    () => new Set()
+    () => new Set(),
   );
 
   const [
@@ -57,10 +65,6 @@ export default function MessageList({
   >(null);
 
   useEffect(() => {
-    /*
-     * Keep local deletion state valid when ChatPanel restores
-     * or replaces the conversation from the server.
-     */
     setDeletedIds(
       (current) => {
         const visibleIds =
@@ -68,15 +72,15 @@ export default function MessageList({
             messages
               .map(
                 (message) =>
-                  message.id
+                  message.id,
               )
               .filter(
                 (
-                  id
+                  id,
                 ): id is number =>
                   typeof id ===
-                  "number"
-              )
+                  "number",
+              ),
           );
 
         const next =
@@ -86,31 +90,26 @@ export default function MessageList({
           (id) => {
             if (
               visibleIds.has(
-                id
+                id,
               )
             ) {
               next.add(id);
             }
-          }
+          },
         );
 
         return next;
-      }
+      },
     );
   }, [messages]);
 
   async function handleDelete(
-    message: ChatMessage
+    message: ChatMessage,
   ) {
     if (
       typeof message.id !==
       "number"
     ) {
-      /*
-       * Older/temporary messages without a persisted id are not
-       * destructive targets. They disappear naturally when the
-       * server-backed history is refreshed.
-       */
       return;
     }
 
@@ -120,9 +119,43 @@ export default function MessageList({
       return;
     }
 
-    setActionLoading(
-      message.id
+    const id =
+      message.id;
+
+    const deletedRecord:
+      DeletedMemoryRecord = {
+      id,
+      role:
+        message.role,
+      content:
+        message.content,
+      timestamp:
+        Date.now(),
+    };
+
+    /*
+     * Optimistic UI:
+     * remove the message before the
+     * network request completes.
+     */
+    setDeletedIds(
+      (current) => {
+        const next =
+          new Set(
+            current,
+          );
+
+        next.add(id);
+
+        return next;
+      },
     );
+
+    setUndoRecord(
+      deletedRecord,
+    );
+
+    setActionLoading(id);
 
     try {
       const response =
@@ -131,18 +164,17 @@ export default function MessageList({
           {
             method:
               "DELETE",
-
             headers: {
               "Content-Type":
                 "application/json",
             },
-
+            credentials:
+              "same-origin",
             body:
               JSON.stringify({
-                id:
-                  message.id,
+                id,
               }),
-          }
+          },
         );
 
       const data =
@@ -154,53 +186,48 @@ export default function MessageList({
       ) {
         throw new Error(
           data.error ??
-            "Unable to delete this message."
+            "Unable to delete this message.",
         );
       }
 
-      const deleted =
-        data.deleted as
-          | DeletedMemoryRecord
-          | undefined;
+      onMessageDeleted?.(
+        id,
+      );
 
+      window.requestAnimationFrame(
+        () => {
+          onConversationChanged?.();
+        },
+      );
+    } catch (error) {
+      console.error(
+        "[AIOS Chat Delete]",
+        error,
+      );
+
+      /*
+       * Roll back the optimistic
+       * deletion if persistence fails.
+       */
       setDeletedIds(
         (current) => {
           const next =
             new Set(
-              current
+              current,
             );
 
-          next.add(
-            message.id as number
-          );
+          next.delete(id);
 
           return next;
-        }
+        },
       );
 
       setUndoRecord(
-        deleted ??
-          {
-            id:
-              message.id,
-            role:
-              message.role,
-            content:
-              message.content,
-            timestamp:
-              Date.now(),
-          }
-      );
-    } catch (
-      error
-    ) {
-      console.error(
-        "[AIOS Chat Delete]",
-        error
+        null,
       );
     } finally {
       setActionLoading(
-        null
+        null,
       );
     }
   }
@@ -213,8 +240,33 @@ export default function MessageList({
       return;
     }
 
+    const record =
+      undoRecord;
+
+    /*
+     * Optimistic restore.
+     */
+    setDeletedIds(
+      (current) => {
+        const next =
+          new Set(
+            current,
+          );
+
+        next.delete(
+          record.id,
+        );
+
+        return next;
+      },
+    );
+
+    setUndoRecord(
+      null,
+    );
+
     setActionLoading(
-      undoRecord.id
+      record.id,
     );
 
     try {
@@ -224,21 +276,19 @@ export default function MessageList({
           {
             method:
               "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
             },
-
+            credentials:
+              "same-origin",
             body:
               JSON.stringify({
                 action:
                   "undo",
-
-                record:
-                  undoRecord,
+                record,
               }),
-          }
+          },
         );
 
       const data =
@@ -250,38 +300,38 @@ export default function MessageList({
       ) {
         throw new Error(
           data.error ??
-            "Unable to undo deletion."
+            "Unable to undo deletion.",
         );
       }
+
+      onConversationChanged?.();
+    } catch (error) {
+      console.error(
+        "[AIOS Chat Undo]",
+        error,
+      );
 
       setDeletedIds(
         (current) => {
           const next =
             new Set(
-              current
+              current,
             );
 
-          next.delete(
-            undoRecord.id
+          next.add(
+            record.id,
           );
 
           return next;
-        }
+        },
       );
 
       setUndoRecord(
-        null
-      );
-    } catch (
-      error
-    ) {
-      console.error(
-        "[AIOS Chat Undo]",
-        error
+        record,
       );
     } finally {
       setActionLoading(
-        null
+        null,
       );
     }
   }
@@ -292,8 +342,8 @@ export default function MessageList({
         typeof message.id !==
           "number" ||
         !deletedIds.has(
-          message.id
-        )
+          message.id,
+        ),
     );
 
   return (
@@ -301,14 +351,14 @@ export default function MessageList({
       {visibleMessages.map(
         (
           message,
-          index
+          index,
         ) => (
           <div
             key={
               typeof message.id ===
               "number"
                 ? message.id
-                : `${message.role}-${index}`
+                : `${message.role}-${index}-${message.content.slice(0, 24)}`
             }
             style={{
               position:
@@ -336,18 +386,18 @@ export default function MessageList({
                       ? "flex-end"
                       : "flex-start",
                   marginTop:
-                    -10,
+                    -7,
                   marginBottom:
-                    10,
+                    12,
                   padding:
-                    "0 48px",
+                    "0 8px",
                 }}
               >
                 <button
                   type="button"
                   onClick={() =>
                     void handleDelete(
-                      message
+                      message,
                     )
                   }
                   disabled={
@@ -359,15 +409,15 @@ export default function MessageList({
                     border:
                       "1px solid #e5e7eb",
                     borderRadius:
-                      8,
+                      7,
                     background:
                       "#ffffff",
                     color:
-                      "#64748b",
+                      "#94a3b8",
                     padding:
-                      "5px 9px",
+                      "4px 8px",
                     fontSize:
-                      11,
+                      10,
                     cursor:
                       actionLoading !==
                       null
@@ -376,19 +426,19 @@ export default function MessageList({
                     opacity:
                       actionLoading ===
                       message.id
-                        ? 0.55
-                        : 1,
+                        ? 0.5
+                        : 0.9,
                   }}
                 >
                   {actionLoading ===
                   message.id
-                    ? "Deleting…"
+                    ? "Deleting..."
                     : "Delete"}
                 </button>
               </div>
             )}
           </div>
-        )
+        ),
       )}
 
       {undoRecord && (
@@ -397,7 +447,7 @@ export default function MessageList({
           style={{
             position:
               "sticky",
-            bottom: 12,
+            bottom: 10,
             zIndex: 5,
             display:
               "flex",
@@ -407,25 +457,25 @@ export default function MessageList({
               "space-between",
             gap: 12,
             margin:
-              "8px 0 14px",
+              "8px 0 12px",
             padding:
-              "10px 12px",
+              "9px 11px",
             border:
-              "1px solid #cbd5e1",
+              "1px solid #e2e8f0",
             borderRadius:
-              12,
+              10,
             background:
               "#ffffff",
             boxShadow:
-              "0 8px 24px rgba(15, 23, 42, 0.10)",
+              "0 6px 18px rgba(15, 23, 42, 0.08)",
           }}
         >
           <span
             style={{
               color:
-                "#475569",
+                "#64748b",
               fontSize:
-                12,
+                11,
             }}
           >
             Message deleted.
@@ -448,7 +498,7 @@ export default function MessageList({
               color:
                 "#2563eb",
               fontSize:
-                12,
+                11,
               fontWeight:
                 800,
               cursor:
@@ -460,7 +510,7 @@ export default function MessageList({
           >
             {actionLoading ===
             undoRecord.id
-              ? "Restoring…"
+              ? "Restoring..."
               : "Undo"}
           </button>
         </div>
