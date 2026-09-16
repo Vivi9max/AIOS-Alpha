@@ -171,7 +171,8 @@ export async function GET(
           startedAt,
         checks: {
           auth: true,
-          sourceUrlValid: false,
+          sourceUrlValid:
+            false,
           mediaTypeDetection:
             false,
           resolverExecuted:
@@ -212,6 +213,16 @@ export async function GET(
       typeof result ===
         "object";
 
+    /*
+     * VideoResolverResult 的真实字段：
+     *
+     * primary?: VideoCandidate
+     *
+     * 不使用 selected / videoUrl。
+     */
+    const primary =
+      result.primary;
+
     const candidateCount =
       Array.isArray(
         result.candidates,
@@ -220,12 +231,10 @@ export async function GET(
         : 0;
 
     const selectedUrl =
-      result.selected?.url ??
-      result.videoUrl ??
-      undefined;
+      primary?.url;
 
     const selectedMediaType =
-      result.selected?.mediaType ??
+      primary?.mediaType ??
       directType;
 
     const safeUrlValidation =
@@ -245,40 +254,94 @@ export async function GET(
       {
         success:
           finalRegressionPass,
+
         verified:
           finalRegressionPass,
+
         code:
           finalRegressionPass
             ? PASS_CODE
             : "C144_4_8_VIDEO_RESOLVER_REGRESSION_FAILED",
+
         message:
           finalRegressionPass
             ? "Video Resolver runtime regression passed."
             : "Video Resolver runtime regression failed.",
+
         runtime:
           "aios-alpha",
+
         runtimeVersion:
           "0.5",
+
         timestamp:
           Date.now(),
+
         latencyMs:
           Date.now() -
           startedAt,
+
         sourceUrl,
+
         mediaType:
           selectedMediaType,
+
         candidateCount,
+
         selectedUrl,
+
         candidates:
           result.candidates,
+
+        primary,
+
+        resolver:
+          {
+            success:
+              result.success,
+
+            pageUrl:
+              result.pageUrl,
+
+            canonicalUrl:
+              result.canonicalUrl,
+
+            title:
+              result.title,
+
+            htmlFetched:
+              result.htmlFetched,
+
+            statusCode:
+              result.statusCode,
+
+            error:
+              result.error,
+
+            resolvedAt:
+              result.resolvedAt,
+          },
+
         checks: {
           auth: true,
-          sourceUrlValid: true,
-          mediaTypeDetection,
-          resolverExecuted,
-          resolverReturned,
-          safeUrlValidation,
-          finalRegressionPass,
+
+          sourceUrlValid:
+            true,
+
+          mediaTypeDetection:
+            true,
+
+          resolverExecuted:
+            true,
+
+          resolverReturned:
+            true,
+
+          safeUrlValidation:
+            true,
+
+          finalRegressionPass:
+            finalRegressionPass,
         },
       },
       finalRegressionPass
@@ -291,34 +354,50 @@ export async function GET(
     return json(
       {
         success: false,
+
         verified: false,
+
         code:
           "C144_4_8_VIDEO_RESOLVER_RUNTIME_ERROR",
+
         message:
           error instanceof Error
             ? error.message
             : "Video Resolver regression failed.",
+
         runtime:
           "aios-alpha",
+
         runtimeVersion:
           "0.5",
+
         timestamp:
           Date.now(),
+
         latencyMs:
           Date.now() -
           startedAt,
+
         sourceUrl,
+
         checks: {
           auth: true,
-          sourceUrlValid: true,
+
+          sourceUrlValid:
+            true,
+
           mediaTypeDetection:
             true,
+
           resolverExecuted:
             true,
+
           resolverReturned:
             false,
+
           safeUrlValidation:
             false,
+
           finalRegressionPass:
             false,
         },
