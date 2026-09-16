@@ -258,24 +258,27 @@ export async function executeRuntime(
       const provider =
         getActiveProvider();
 
-      const capabilityTrace:
-        CapabilityTrace[] = [
-          {
-            capability:
-              "video.resolve",
-            status:
-              videoResult.success
-                ? "completed"
-                : "failed",
-            durationMs:
-              latencyMs,
-            detail:
-              videoResult.success
-                ? "Video page resolved and Primary media candidate selected."
-                : videoResult.error ??
-                  videoResult.code,
-          },
-        ];
+const capabilityTrace:
+  CapabilityTrace[] = [
+    {
+      capability:
+        plan.capabilities[0],
+      status:
+        videoResult.success
+          ? "completed"
+          : "failed",
+      durationMs:
+        latencyMs,
+      detail:
+        [
+          "video.resolve",
+          videoResult.success
+            ? "Video page resolved and Primary media candidate selected."
+            : videoResult.error ??
+              videoResult.code,
+        ].join(" | "),
+    },
+  ];
 
       updateProviderRuntimeStatus({
         provider,
@@ -372,10 +375,8 @@ export async function executeRuntime(
         confidence:
           plan.confidence,
 
-        capabilities: [
-          ...plan.capabilities,
-          "video.resolve",
-        ],
+        capabilities:
+          plan.capabilities,
 
         steps: [
           ...plan.steps,
