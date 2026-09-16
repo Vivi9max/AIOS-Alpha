@@ -203,7 +203,7 @@ function detectMediaType(
   const type =
     declaredType
       ?.toLowerCase()
-      .trim();
+      .trim() ?? "";
 
   if (
     type.includes("mpegurl") ||
