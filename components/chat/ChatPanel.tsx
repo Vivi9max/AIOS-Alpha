@@ -543,33 +543,64 @@ export default function ChatPanel() {
        * from hiding the just-generated answer before
        * the browser paints it.
        */
-      window.requestAnimationFrame(
-        () => {
-          if (
-            Array.isArray(
-              data.conversation,
-            )
-          ) {
-            const canonical =
-              sanitizeRestoredMessages(
-                data.conversation,
-              );
+window.requestAnimationFrame(
+  () => {
+    if (
+      !Array.isArray(
+        data.conversation,
+      )
+    ) {
+      return;
+    }
 
-            if (
-              canonical.length >
-              0
-            ) {
-              setMessages(
-                canonical,
-              );
-
-              scrollToBottom(
-                "smooth",
-              );
-            }
-          }
-        },
+    const canonical =
+      sanitizeRestoredMessages(
+        data.conversation,
       );
+
+    if (
+      canonical.length ===
+      0
+    ) {
+      return;
+    }
+
+    /*
+     * C144.4.9.1
+     *
+     * Runtime result preservation.
+     *
+     * /api/chat may return a conversation snapshot
+     * that was created before the newest Runtime result
+     * was persisted into memory.
+     *
+     * Never replace a freshly rendered Runtime response
+     * with an older canonical snapshot.
+     */
+    const canonicalHasLatestAssistant =
+      canonical.some(
+        (message) =>
+          message.role ===
+            "assistant" &&
+          message.content ===
+            assistantContent,
+      );
+
+    if (
+      !canonicalHasLatestAssistant
+    ) {
+      return;
+    }
+
+    setMessages(
+      canonical,
+    );
+
+    scrollToBottom(
+      "smooth",
+    );
+  },
+);
     } catch (error) {
       const message =
         error instanceof Error
