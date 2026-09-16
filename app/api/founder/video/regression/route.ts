@@ -2,26 +2,27 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
-
 import {
   resolveVideoFromPage,
 } from "@/lib/video/video-resolver";
-
 export const runtime = "nodejs";
-
 export const dynamic =
   "force-dynamic";
-
 const DEFAULT_SOURCE_URL =
-  "https://www.1688.com/";
-
+  "https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/multiple-video-formats.html";
 const PASS_CODE =
-  "C144_4_8_VIDEO_RESOLVER_REGRESSION_PASS";
-
+  "C144_4_8_1_VIDEO_RESOLVER_REGRESSION_PASS";
+const FAIL_CODE =
+  "C144_4_8_1_VIDEO_RESOLVER_REGRESSION_FAILED";
+const ALLOWED_MEDIA_TYPES = [
+  "mp4",
+  "webm",
+  "mov",
+  "m3u8",
+] as const;
 function json(
   body: Record<string, unknown>,
   status = 200,
@@ -37,14 +38,12 @@ function json(
     },
   );
 }
-
 function isHttpUrl(
   value: string,
 ): boolean {
   try {
     const parsed =
       new URL(value);
-
     return (
       parsed.protocol ===
         "http:" ||
@@ -55,60 +54,34 @@ function isHttpUrl(
     return false;
   }
 }
-
-function detectMediaTypeFromUrl(
-  value: string,
-): string {
-  try {
-    const pathname =
-      new URL(value)
-        .pathname
-        .toLowerCase();
-
-    if (
-      pathname.endsWith(
-        ".m3u8",
-      )
-    ) {
-      return "m3u8";
-    }
-
-    if (
-      pathname.endsWith(
-        ".mp4",
-      )
-    ) {
-      return "mp4";
-    }
-
-    if (
-      pathname.endsWith(
-        ".webm",
-      )
-    ) {
-      return "webm";
-    }
-
-    if (
-      pathname.endsWith(
-        ".mov",
-      )
-    ) {
-      return "mov";
-    }
-  } catch {
-    // Ignore malformed URL.
-  }
-
-  return "unknown";
+function isAllowedMediaType(
+  value: unknown,
+): boolean {
+  return (
+    typeof value === "string" &&
+    (
+      ALLOWED_MEDIA_TYPES as readonly string[]
+    ).includes(value)
+  );
 }
-
+function isSafeResolvedUrl(
+  value: unknown,
+): boolean {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    return false;
+  }
+  return isHttpUrl(
+    value.trim(),
+  );
+}
 export async function GET(
   request: NextRequest,
 ) {
   const startedAt =
     Date.now();
-
   if (
     !isFounderRequest(
       request,
@@ -135,20 +108,16 @@ export async function GET(
       401,
     );
   }
-
-  const sourceUrl =
-    (
-      request.nextUrl.searchParams.get(
-        "url",
-      ) ??
-      DEFAULT_SOURCE_URL
-    ).trim();
-
+  const sourceUrl = (
+    request.nextUrl.searchParams.get(
+      "url",
+    ) ??
+    DEFAULT_SOURCE_URL
+  ).trim();
   const sourceUrlValid =
     isHttpUrl(
       sourceUrl,
     );
-
   if (
     !sourceUrlValid
   ) {
@@ -179,6 +148,10 @@ export async function GET(
             false,
           resolverReturned:
             false,
+          candidateFound:
+            false,
+          primaryCandidate:
+            false,
           safeUrlValidation:
             false,
           finalRegressionPass:
@@ -188,158 +161,124 @@ export async function GET(
       400,
     );
   }
-
   try {
-    const directType =
-      detectMediaTypeFromUrl(
-        sourceUrl,
-      );
-
-    const mediaTypeDetection =
-      directType !==
-        "unknown" ||
-      sourceUrl.length > 0;
-
     const result =
       await resolveVideoFromPage(
         sourceUrl,
       );
-
     const resolverExecuted =
       true;
-
     const resolverReturned =
       result !== null &&
       typeof result ===
         "object";
-
-    /*
-     * VideoResolverResult 的真实字段：
-     *
-     * primary?: VideoCandidate
-     *
-     * 不使用 selected / videoUrl。
-     */
-    const primary =
-      result.primary;
-
-    const candidateCount =
+    const candidates =
       Array.isArray(
         result.candidates,
       )
-        ? result.candidates.length
-        : 0;
-
+        ? result.candidates
+        : [];
+    const candidateCount =
+      candidates.length;
+    const candidateFound =
+      candidateCount > 0;
+    const primary =
+      result.primary;
+    const primaryCandidate =
+      Boolean(
+        primary &&
+        typeof primary ===
+          "object",
+      );
     const selectedUrl =
       primary?.url;
-
     const selectedMediaType =
-      primary?.mediaType ??
-      directType;
-
+      primary?.mediaType;
+    const mediaTypeDetection =
+      isAllowedMediaType(
+        selectedMediaType,
+      );
     const safeUrlValidation =
-      !selectedUrl ||
-      isHttpUrl(
+      isSafeResolvedUrl(
         selectedUrl,
       );
-
+    const resolverSuccess =
+      result.success === true;
     const finalRegressionPass =
       resolverExecuted &&
       resolverReturned &&
+      candidateFound &&
+      primaryCandidate &&
       mediaTypeDetection &&
       safeUrlValidation &&
-      result.success === true;
-
+      resolverSuccess;
     return json(
       {
         success:
           finalRegressionPass,
-
         verified:
           finalRegressionPass,
-
         code:
           finalRegressionPass
             ? PASS_CODE
-            : "C144_4_8_VIDEO_RESOLVER_REGRESSION_FAILED",
-
+            : FAIL_CODE,
         message:
           finalRegressionPass
             ? "Video Resolver runtime regression passed."
             : "Video Resolver runtime regression failed.",
-
         runtime:
           "aios-alpha",
-
         runtimeVersion:
           "0.5",
-
         timestamp:
           Date.now(),
-
         latencyMs:
           Date.now() -
           startedAt,
-
         sourceUrl,
-
         mediaType:
-          selectedMediaType,
-
+          selectedMediaType ??
+          "unknown",
         candidateCount,
-
         selectedUrl,
-
-        candidates:
-          result.candidates,
-
         primary,
-
-        resolver:
-          {
-            success:
-              result.success,
-
-            pageUrl:
-              result.pageUrl,
-
-            canonicalUrl:
-              result.canonicalUrl,
-
-            title:
-              result.title,
-
-            htmlFetched:
-              result.htmlFetched,
-
-            statusCode:
-              result.statusCode,
-
-            error:
-              result.error,
-
-            resolvedAt:
-              result.resolvedAt,
-          },
-
+        candidates,
+        resolver: {
+          success:
+            result.success,
+          pageUrl:
+            result.pageUrl,
+          canonicalUrl:
+            result.canonicalUrl,
+          title:
+            result.title,
+          htmlFetched:
+            result.htmlFetched,
+          statusCode:
+            result.statusCode,
+          error:
+            result.error,
+          resolvedAt:
+            result.resolvedAt,
+        },
         checks: {
           auth: true,
-
           sourceUrlValid:
             true,
-
           mediaTypeDetection:
-            true,
-
+            mediaTypeDetection,
           resolverExecuted:
-            true,
-
+            resolverExecuted,
           resolverReturned:
-            true,
-
+            resolverReturned,
+          candidateFound:
+            candidateFound,
+          primaryCandidate:
+            primaryCandidate,
           safeUrlValidation:
-            true,
-
+            safeUrlValidation,
+          resolverSuccess:
+            resolverSuccess,
           finalRegressionPass:
             finalRegressionPass,
         },
@@ -354,50 +293,41 @@ export async function GET(
     return json(
       {
         success: false,
-
         verified: false,
-
         code:
-          "C144_4_8_VIDEO_RESOLVER_RUNTIME_ERROR",
-
+          "C144_4_8_1_VIDEO_RESOLVER_RUNTIME_ERROR",
         message:
           error instanceof Error
             ? error.message
             : "Video Resolver regression failed.",
-
         runtime:
           "aios-alpha",
-
         runtimeVersion:
           "0.5",
-
         timestamp:
           Date.now(),
-
         latencyMs:
           Date.now() -
           startedAt,
-
         sourceUrl,
-
         checks: {
           auth: true,
-
           sourceUrlValid:
             true,
-
           mediaTypeDetection:
-            true,
-
+            false,
           resolverExecuted:
             true,
-
           resolverReturned:
             false,
-
+          candidateFound:
+            false,
+          primaryCandidate:
+            false,
           safeUrlValidation:
             false,
-
+          resolverSuccess:
+            false,
           finalRegressionPass:
             false,
         },
