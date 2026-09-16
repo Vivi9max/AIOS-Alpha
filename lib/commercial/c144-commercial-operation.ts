@@ -705,11 +705,49 @@ export async function runC144CommercialOperation(): Promise<C144CommercialOperat
       buildIntegrity(),
 
     conclusion:
-      "AIOS has current verified external evidence and has prepared a first commercial experiment for founder execution. No customer, order, revenue, cost or profit is claimed.",
+      `C144.3.8 selected a smallest-first commercial experiment: ${selectedExperiment.title}. This is an experiment design, not evidence of a sale.`,
 
     nextStep:
       selectedExperiment.founderNextAction,
 
     generatedAt,
   };
+}
+
+export function isC144CommercialOperationReady(
+  result: C144CommercialOperationResult,
+): boolean {
+  return (
+    result.success &&
+    result.status ===
+      "ready" &&
+    result.version ===
+      C144_COMMERCIAL_OPERATION_VERSION &&
+    result.marketStrategy ===
+      "domestic-first" &&
+    result.projectId.length >
+      0 &&
+    result.objectiveId.length >
+      0 &&
+    result.web.success &&
+    result.web.verified &&
+    result.web.sourceCount >=
+      2 &&
+    result.web.independentHosts >=
+      2 &&
+    result.selectedExperiment !==
+      null &&
+    result.integrity.fabricatedCustomer ===
+      false &&
+    result.integrity.fabricatedOrder ===
+      false &&
+    result.integrity.fabricatedRevenue ===
+      false &&
+    result.integrity.fabricatedCost ===
+      false &&
+    result.integrity.fabricatedProfit ===
+      false &&
+    result.integrity.externalSideEffectExecuted ===
+      false
+  );
 }
