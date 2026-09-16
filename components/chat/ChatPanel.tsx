@@ -93,8 +93,7 @@ const defaultProviderState:
 function isRuntimeWrapper(
   content: string,
 ): boolean {
-  const raw =
-    content.trim();
+  const raw = content.trim();
 
   if (!raw) {
     return false;
@@ -185,9 +184,36 @@ export default function ChatPanel() {
       defaultProviderState,
     );
 
-  const bottomRef =
+  const scrollRef =
     useRef<HTMLDivElement | null>(
       null,
+    );
+
+  const scrollToBottom =
+    useCallback(
+      (
+        behavior:
+          | ScrollBehavior
+          = "smooth",
+      ) => {
+        window.requestAnimationFrame(
+          () => {
+            const element =
+              scrollRef.current;
+
+            if (!element) {
+              return;
+            }
+
+            element.scrollTo({
+              top:
+                element.scrollHeight,
+              behavior,
+            });
+          },
+        );
+      },
+      [],
     );
 
   const loadConversation =
@@ -353,6 +379,8 @@ export default function ChatPanel() {
       if (!active) {
         return;
       }
+
+      scrollToBottom("auto");
     }
 
     void loadInitialData();
@@ -363,22 +391,34 @@ export default function ChatPanel() {
   }, [
     loadConversation,
     loadRuntimeStatus,
+    scrollToBottom,
   ]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView(
-      {
-        behavior:
-          historyLoading
-            ? "auto"
-            : "smooth",
-      },
+    scrollToBottom(
+      historyLoading
+        ? "auto"
+        : "smooth",
     );
   }, [
     messages,
     loading,
     historyLoading,
+    scrollToBottom,
   ]);
+
+  function handleMessageDeleted(
+    messageId: number,
+  ) {
+    setMessages(
+      (current) =>
+        current.filter(
+          (message) =>
+            message.id !==
+            messageId,
+        ),
+    );
+  }
 
   async function handleSend(
     prompt: string,
@@ -405,6 +445,8 @@ export default function ChatPanel() {
     );
 
     setLoading(true);
+
+    scrollToBottom("smooth");
 
     try {
       const response =
@@ -465,67 +507,69 @@ export default function ChatPanel() {
       }
 
       /*
-       * C143.10
+       * Immediate rendering path.
        *
-       * The Chat API now returns the
-       * canonical persisted conversation
-       * in the same response.
-       *
-       * This means the newly created user
-       * and assistant messages already have
-       * their real persistent IDs.
-       *
-       * Delete therefore becomes available
-       * immediately without a refresh.
+       * Do not wait for the second history GET.
+       * The answer returned by /api/chat is rendered
+       * immediately so the user sees the result as
+       * soon as the HTTP response arrives.
        */
-      if (
-        Array.isArray(
-          data.conversation,
-        )
-      ) {
-        const canonical =
-          sanitizeRestoredMessages(
-            data.conversation,
-          );
+      const assistantContent =
+        typeof data.content ===
+          "string" &&
+        data.content.trim()
+          ? data.content.trim()
+          : copy.unknownResponse;
 
-        setMessages(
-          canonical.length > 0
-            ? canonical
-            : [
-                {
-                  role:
-                    "assistant",
-                  content:
-                    copy.welcome,
-                },
-              ],
-        );
-      } else {
-        /*
-         * Compatibility fallback for an
-         * older deployment that does not
-         * yet return conversation.
-         */
-        const canonical =
-          await loadConversation(
-            false,
-          );
+      setMessages(
+        (current) => [
+          ...current,
+          {
+            role:
+              "assistant",
+            content:
+              assistantContent,
+          },
+        ],
+      );
 
-        if (!canonical) {
-          setMessages(
-            (current) => [
-              ...current,
-              {
-                role:
-                  "assistant",
-                content:
-                  data.content ??
-                  copy.unknownResponse,
-              },
-            ],
-          );
-        }
-      }
+      scrollToBottom("smooth");
+
+      /*
+       * Persistence reconciliation is deliberately
+       * deferred by one animation frame.
+       *
+       * This prevents canonical-memory replacement
+       * from hiding the just-generated answer before
+       * the browser paints it.
+       */
+      window.requestAnimationFrame(
+        () => {
+          if (
+            Array.isArray(
+              data.conversation,
+            )
+          ) {
+            const canonical =
+              sanitizeRestoredMessages(
+                data.conversation,
+              );
+
+            if (
+              canonical.length >
+              0
+            ) {
+              setMessages(
+                canonical,
+              );
+
+              scrollToBottom(
+                "smooth",
+              );
+            }
+          }
+        },
+      );
     } catch (error) {
       const message =
         error instanceof Error
@@ -543,10 +587,19 @@ export default function ChatPanel() {
           },
         ],
       );
+
+      scrollToBottom("smooth");
     } finally {
       setLoading(false);
 
       void loadRuntimeStatus();
+
+      window.requestAnimationFrame(
+        () =>
+          scrollToBottom(
+            "smooth",
+          ),
+      );
     }
   }
 
@@ -562,15 +615,14 @@ export default function ChatPanel() {
 
   const providerSummary =
     providerState.fallbackUsed
-      ? `${actualProviderLabel} <- ${requestedProviderLabel} ${copy.failed}`
+      ? `${actualProviderLabel} <- ${requestedProviderLabel}`
       : actualProviderLabel;
 
   return (
     <section
-      key={locale}
       style={{
         minHeight:
-          "calc(100vh - 165px)",
+          "calc(100vh - 150px)",
         display: "flex",
         flexDirection:
           "column",
@@ -581,100 +633,123 @@ export default function ChatPanel() {
           "1px solid #e5e7eb",
         borderRadius: 18,
         boxShadow:
-          "0 12px 32px rgba(15, 23, 42, 0.06)",
+          "0 8px 28px rgba(15, 23, 42, 0.05)",
       }}
     >
-      <div
+      <header
         style={{
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "space-between",
+          gap: 12,
           padding:
-            "18px 20px",
+            "14px 18px",
           borderBottom:
-            "1px solid #e5e7eb",
+            "1px solid #eef2f7",
+          background:
+            "#ffffff",
         }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 21,
-          }}
-        >
-          AIOS Brain
-        </h1>
+        <div>
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "center",
+              gap: 8,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius:
+                  "50%",
+                background:
+                  providerState.fallbackUsed
+                    ? "#f59e0b"
+                    : "#22c55e",
+              }}
+            />
 
-        <p
-          style={{
-            margin:
-              "6px 0 0",
-            color:
-              providerState.fallbackUsed
-                ? "#b45309"
-                : "#6b7280",
-            fontSize: 13,
-            fontWeight:
-              providerState.fallbackUsed
-                ? 700
-                : 500,
-          }}
-        >
-          {copy.memoryConnected}
-          {" · "}
-          {providerSummary}
+            <strong
+              style={{
+                color:
+                  "#111827",
+                fontSize: 15,
+                letterSpacing:
+                  "-0.01em",
+              }}
+            >
+              AIOS
+            </strong>
+          </div>
 
-          {typeof providerState.latencyMs ===
-            "number" &&
-            ` · ${providerState.latencyMs}ms`}
-        </p>
+          <div
+            style={{
+              marginTop: 3,
+              color:
+                "#94a3b8",
+              fontSize: 11,
+            }}
+          >
+            {providerSummary}
+            {typeof providerState.latencyMs ===
+              "number" &&
+              ` · ${providerState.latencyMs}ms`}
+          </div>
+        </div>
 
         {providerState.fallbackUsed &&
           providerState.error && (
-            <div
+            <span
+              title={
+                providerState.error
+              }
               style={{
-                marginTop: 10,
-                padding:
-                  "10px 12px",
-                border:
-                  "1px solid #fed7aa",
-                borderRadius: 10,
-                background:
-                  "#fff7ed",
                 color:
-                  "#9a3412",
-                fontSize: 12,
-                lineHeight:
-                  1.55,
-                overflowWrap:
-                  "anywhere",
+                  "#b45309",
+                fontSize: 11,
+                fontWeight: 700,
               }}
             >
-              <strong>
-                {copy.providerFallback}
-              </strong>
-              {" "}
-              {providerState.error}
-            </div>
+              Fallback
+            </span>
           )}
-      </div>
+      </header>
 
       <div
+        ref={scrollRef}
         style={{
           flex: 1,
           minHeight: 0,
           overflowY:
             "auto",
           padding:
-            "22px 18px",
+            "24px 18px 30px",
           background:
-            "#f8fafc",
+            "#ffffff",
+          WebkitOverflowScrolling:
+            "touch",
         }}
       >
         {historyLoading ? (
           <div
             style={{
-              padding: 18,
-              color:
-                "#6b7280",
-              textAlign:
+              minHeight: 160,
+              display:
+                "flex",
+              alignItems:
                 "center",
+              justifyContent:
+                "center",
+              color:
+                "#94a3b8",
+              fontSize: 13,
             }}
           >
             {copy.restoring}
@@ -683,6 +758,15 @@ export default function ChatPanel() {
           <MessageList
             messages={
               messages
+            }
+            onMessageDeleted={
+              handleMessageDeleted
+            }
+            onConversationChanged={
+              () =>
+                void loadConversation(
+                  false,
+                )
             }
           />
         )}
@@ -696,32 +780,31 @@ export default function ChatPanel() {
               alignItems:
                 "center",
               gap: 10,
-              marginBottom:
-                18,
+              marginTop: 6,
               color:
-                "#6b7280",
-              fontSize: 14,
+                "#94a3b8",
+              fontSize: 13,
             }}
           >
             <span
               style={{
-                width: 34,
-                height: 34,
-                flexShrink: 0,
+                width: 28,
+                height: 28,
                 display:
                   "flex",
                 alignItems:
                   "center",
                 justifyContent:
                   "center",
+                flexShrink: 0,
                 borderRadius:
                   "50%",
                 background:
                   "#111827",
                 color:
                   "#ffffff",
-                fontWeight:
-                  800,
+                fontSize: 10,
+                fontWeight: 800,
               }}
             >
               AI
@@ -732,17 +815,14 @@ export default function ChatPanel() {
             </span>
           </div>
         )}
-
-        <div
-          ref={bottomRef}
-        />
       </div>
 
       <div
         style={{
-          padding: 14,
+          padding:
+            "12px 14px 14px",
           borderTop:
-            "1px solid #e5e7eb",
+            "1px solid #eef2f7",
           background:
             "#ffffff",
         }}
