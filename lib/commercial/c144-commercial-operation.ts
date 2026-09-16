@@ -56,6 +56,8 @@ export interface C144CommercialExperiment {
 
   confidence: number;
 
+  risk: "low" | "medium";
+
   requiresManualFounderAction: true;
   externalSideEffectExecuted: false;
 }
@@ -224,118 +226,59 @@ interface ExperimentLane {
 
 const EXPERIMENT_LANES: ExperimentLane[] = [
   {
-    id:
-      "research",
-
-    title:
-      "Verified Research Pack",
-
+    id: "research",
+    title: "Verified Research Pack",
     product:
       "A fixed-scope research result answering one concrete business question using current verified sources.",
-
     founderAction:
       "Find one existing buyer need or business request and offer a fixed-scope research result.",
-
-    price:
-      399,
-
-    directCost:
-      100,
-
-    risk:
-      "low",
+    price: 399,
+    directCost: 100,
+    risk: "low",
   },
-
   {
-    id:
-      "validation",
-
-    title:
-      "Product Validation Pack",
-
+    id: "validation",
+    title: "Product Validation Pack",
     product:
       "A compact demand, competitor and pricing validation result for one specific product.",
-
     founderAction:
       "Find a real seller or product owner with a validation problem and offer one paid test.",
-
-    price:
-      399,
-
-    directCost:
-      100,
-
-    risk:
-      "low",
+    price: 399,
+    directCost: 100,
+    risk: "low",
   },
-
   {
-    id:
-      "japan-localization",
-
-    title:
-      "Japan Localization Pack",
-
+    id: "japan-localization",
+    title: "Japan Localization Pack",
     product:
       "A small Japan-market localization result covering current market evidence, competitors and localized product copy.",
-
     founderAction:
       "Find one concrete product with a Japan localization need and manually propose a small paid test.",
-
-    price:
-      299,
-
-    directCost:
-      50,
-
-    risk:
-      "low",
+    price: 299,
+    directCost: 50,
+    risk: "low",
   },
-
   {
-    id:
-      "listing",
-
-    title:
-      "Product Listing Content Pack",
-
+    id: "listing",
+    title: "Product Listing Content Pack",
     product:
       "A product-page content package based on current competitor and market evidence.",
-
     founderAction:
       "Find one real seller or listing that needs improvement and offer one fixed-scope package.",
-
-    price:
-      299,
-
-    directCost:
-      50,
-
-    risk:
-      "medium",
+    price: 299,
+    directCost: 50,
+    risk: "medium",
   },
-
   {
-    id:
-      "supplier",
-
-    title:
-      "Supplier Validation Pack",
-
+    id: "supplier",
+    title: "Supplier Validation Pack",
     product:
       "A narrow supplier comparison and validation result for one concrete sourcing requirement.",
-
     founderAction:
       "Find one concrete sourcing request and offer a paid validation result rather than promising procurement.",
-
-    price:
-      499,
-
-    directCost:
-      100,
-
-    risk:
-      "medium",
+    price: 499,
+    directCost: 100,
+    risk: "medium",
   },
 ];
 
@@ -442,11 +385,25 @@ function buildExperiment(
 
     confidence,
 
+    risk:
+      lane.risk,
+
     requiresManualFounderAction:
       true,
 
     externalSideEffectExecuted:
       false,
+  };
+}
+
+function buildIntegrity() {
+  return {
+    fabricatedCustomer: false as const,
+    fabricatedOrder: false as const,
+    fabricatedRevenue: false as const,
+    fabricatedCost: false as const,
+    fabricatedProfit: false as const,
+    externalSideEffectExecuted: false as const,
   };
 }
 
@@ -510,25 +467,8 @@ export async function runC144CommercialOperation(): Promise<C144CommercialOperat
       selectedExperiment:
         null,
 
-      integrity: {
-        fabricatedCustomer:
-          false,
-
-        fabricatedOrder:
-          false,
-
-        fabricatedRevenue:
-          false,
-
-        fabricatedCost:
-          false,
-
-        fabricatedProfit:
-          false,
-
-        externalSideEffectExecuted:
-          false,
-      },
+      integrity:
+        buildIntegrity(),
 
       conclusion:
         project.message,
@@ -599,25 +539,8 @@ export async function runC144CommercialOperation(): Promise<C144CommercialOperat
       selectedExperiment:
         null,
 
-      integrity: {
-        fabricatedCustomer:
-          false,
-
-        fabricatedOrder:
-          false,
-
-        fabricatedRevenue:
-          false,
-
-        fabricatedCost:
-          false,
-
-        fabricatedProfit:
-          false,
-
-        externalSideEffectExecuted:
-          false,
-      },
+      integrity:
+        buildIntegrity(),
 
       conclusion:
         "AIOS did not retrieve enough current external evidence to design a safe commercial experiment.",
@@ -721,25 +644,8 @@ export async function runC144CommercialOperation(): Promise<C144CommercialOperat
       selectedExperiment:
         null,
 
-      integrity: {
-        fabricatedCustomer:
-          false,
-
-        fabricatedOrder:
-          false,
-
-        fabricatedRevenue:
-          false,
-
-        fabricatedCost:
-          false,
-
-        fabricatedProfit:
-          false,
-
-        externalSideEffectExecuted:
-          false,
-      },
+      integrity:
+        buildIntegrity(),
 
       conclusion:
         "Current evidence exists, but it is not sufficiently verified to select a first-profit experiment.",
@@ -795,70 +701,15 @@ export async function runC144CommercialOperation(): Promise<C144CommercialOperat
 
     selectedExperiment,
 
-    integrity: {
-      fabricatedCustomer:
-        false,
-
-      fabricatedOrder:
-        false,
-
-      fabricatedRevenue:
-        false,
-
-      fabricatedCost:
-        false,
-
-      fabricatedProfit:
-        false,
-
-      externalSideEffectExecuted:
-        false,
-    },
+    integrity:
+      buildIntegrity(),
 
     conclusion:
-      `C144.3.8 selected a smallest-first commercial experiment: ${selectedExperiment.title}. This is an experiment design, not evidence of a sale.`,
+      "AIOS has current verified external evidence and has prepared a first commercial experiment for founder execution. No customer, order, revenue, cost or profit is claimed.",
 
     nextStep:
       selectedExperiment.founderNextAction,
 
     generatedAt,
   };
-}
-
-export function isC144CommercialOperationReady(
-  result: C144CommercialOperationResult,
-): boolean {
-  return (
-    result.success &&
-    result.status ===
-      "ready" &&
-    result.version ===
-      C144_COMMERCIAL_OPERATION_VERSION &&
-    result.marketStrategy ===
-      "domestic-first" &&
-    result.projectId.length >
-      0 &&
-    result.objectiveId.length >
-      0 &&
-    result.web.success &&
-    result.web.verified &&
-    result.web.sourceCount >=
-      2 &&
-    result.web.independentHosts >=
-      2 &&
-    result.selectedExperiment !==
-      null &&
-    result.integrity.fabricatedCustomer ===
-      false &&
-    result.integrity.fabricatedOrder ===
-      false &&
-    result.integrity.fabricatedRevenue ===
-      false &&
-    result.integrity.fabricatedCost ===
-      false &&
-    result.integrity.fabricatedProfit ===
-      false &&
-    result.integrity.externalSideEffectExecuted ===
-      false
-  );
 }
