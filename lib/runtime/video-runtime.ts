@@ -13,36 +13,35 @@ import {
   type VideoMediaRuntimeResult,
 } from "./video-media-runtime";
 
+import {
+  executeRuntimeVideoProcessing,
+  type VideoProcessingRuntimeResult,
+} from "./video-processing-runtime";
+
 export interface RuntimeVideoResolutionResult {
   detected: boolean;
-
   success: boolean;
-
   code: string;
 
   sourceUrl?: string;
-
   selectedUrl?: string;
-
   mediaType?: string;
-
   title?: string;
 
   candidateCount: number;
 
   primary?: VideoCandidate;
-
   candidates: VideoCandidate[];
 
   htmlFetched: boolean;
-
   statusCode?: number;
-
   error?: string;
 
   content?: string;
 
   media?: VideoMediaRuntimeResult;
+
+  processing?: VideoProcessingRuntimeResult;
 }
 
 const VIDEO_INTENT_KEYWORDS = [
@@ -74,7 +73,6 @@ const VIDEO_INTENT_KEYWORDS = [
   "get video",
   "download video",
   "video link",
-  "video source",
 ];
 
 function extractHttpUrl(
@@ -109,10 +107,8 @@ function isHttpUrl(
       new URL(value);
 
     return (
-      parsed.protocol ===
-        "http:" ||
-      parsed.protocol ===
-        "https:"
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:"
     );
   } catch {
     return false;
@@ -131,6 +127,190 @@ function hasVideoIntent(
         keyword.toLowerCase(),
       ),
   );
+}
+
+function buildProcessingSummary(
+  processing:
+    | VideoProcessingRuntimeResult
+    | undefined,
+  locale:
+    | "en"
+    | "zh-CN"
+    | "ja",
+): string[] {
+  if (!processing) {
+    return [];
+  }
+
+  if (
+    locale === "zh-CN"
+  ) {
+    return [
+      "",
+      "媒体处理能力：",
+      `处理状态：${
+        processing.success
+          ? "成功"
+          : "未完成"
+      }`,
+      `处理代码：${processing.code}`,
+      ...(processing.container
+        ? [
+            `容器：${processing.container}`,
+          ]
+        : []),
+      ...(processing.durationSeconds !==
+      undefined
+        ? [
+            `时长：${processing.durationSeconds.toFixed(3)} 秒`,
+          ]
+        : []),
+      ...(processing.width !==
+        undefined &&
+      processing.height !==
+        undefined
+        ? [
+            `分辨率：${processing.width} × ${processing.height}`,
+          ]
+        : []),
+      ...(processing.frameRate !==
+      undefined
+        ? [
+            `FPS：${processing.frameRate.toFixed(3)}`,
+          ]
+        : []),
+      ...(processing.videoCodec
+        ? [
+            `视频编码：${processing.videoCodec}`,
+          ]
+        : []),
+      ...(processing.audioCodec
+        ? [
+            `音频编码：${processing.audioCodec}`,
+          ]
+        : []),
+      `视频轨道：${processing.videoTrackCount}`,
+      `音频轨道：${processing.audioTrackCount}`,
+      `处理读取字节：${processing.bytesRead}`,
+      ...(processing.error
+        ? [
+            `处理说明：${processing.error}`,
+          ]
+        : []),
+    ];
+  }
+
+  if (
+    locale === "ja"
+  ) {
+    return [
+      "",
+      "メディア処理能力：",
+      `処理状態：${
+        processing.success
+          ? "成功"
+          : "未完了"
+      }`,
+      `処理コード：${processing.code}`,
+      ...(processing.container
+        ? [
+            `コンテナ：${processing.container}`,
+          ]
+        : []),
+      ...(processing.durationSeconds !==
+      undefined
+        ? [
+            `長さ：${processing.durationSeconds.toFixed(3)} 秒`,
+          ]
+        : []),
+      ...(processing.width !==
+        undefined &&
+      processing.height !==
+        undefined
+        ? [
+            `解像度：${processing.width} × ${processing.height}`,
+          ]
+        : []),
+      ...(processing.frameRate !==
+      undefined
+        ? [
+            `FPS：${processing.frameRate.toFixed(3)}`,
+          ]
+        : []),
+      ...(processing.videoCodec
+        ? [
+            `映像コーデック：${processing.videoCodec}`,
+          ]
+        : []),
+      ...(processing.audioCodec
+        ? [
+            `音声コーデック：${processing.audioCodec}`,
+          ]
+        : []),
+      `映像トラック：${processing.videoTrackCount}`,
+      `音声トラック：${processing.audioTrackCount}`,
+      `処理読み取りバイト数：${processing.bytesRead}`,
+      ...(processing.error
+        ? [
+            `処理説明：${processing.error}`,
+          ]
+        : []),
+    ];
+  }
+
+  return [
+    "",
+    "Video processing capability:",
+    `Processing status: ${
+      processing.success
+        ? "success"
+        : "incomplete"
+    }`,
+    `Processing code: ${processing.code}`,
+    ...(processing.container
+      ? [
+          `Container: ${processing.container}`,
+        ]
+      : []),
+    ...(processing.durationSeconds !==
+    undefined
+      ? [
+          `Duration: ${processing.durationSeconds.toFixed(3)} seconds`,
+        ]
+      : []),
+    ...(processing.width !==
+      undefined &&
+    processing.height !==
+      undefined
+      ? [
+          `Resolution: ${processing.width} × ${processing.height}`,
+        ]
+      : []),
+    ...(processing.frameRate !==
+    undefined
+      ? [
+          `FPS: ${processing.frameRate.toFixed(3)}`,
+        ]
+      : []),
+    ...(processing.videoCodec
+      ? [
+          `Video codec: ${processing.videoCodec}`,
+        ]
+      : []),
+    ...(processing.audioCodec
+      ? [
+          `Audio codec: ${processing.audioCodec}`,
+        ]
+      : []),
+    `Video tracks: ${processing.videoTrackCount}`,
+    `Audio tracks: ${processing.audioTrackCount}`,
+    `Processing bytes read: ${processing.bytesRead}`,
+    ...(processing.error
+      ? [
+          `Processing note: ${processing.error}`,
+        ]
+      : []),
+  ];
 }
 
 function buildMediaSummary(
@@ -188,7 +368,7 @@ function buildMediaSummary(
           ]
         : []),
       ...(media.metadata?.hasMoov !==
-        undefined
+      undefined
         ? [
             `MP4 moov：${
               media.metadata.hasMoov
@@ -283,7 +463,7 @@ function buildMediaSummary(
         ]
       : []),
     ...(media.metadata?.hasMoov !==
-      undefined
+    undefined
       ? [
           `MP4 moov: ${
             media.metadata.hasMoov
@@ -303,6 +483,9 @@ function buildLocalizedContent(
   result: VideoResolverResult,
   media:
     | VideoMediaRuntimeResult
+    | undefined,
+  processing:
+    | VideoProcessingRuntimeResult
     | undefined,
 ): string {
   const primary =
@@ -327,7 +510,7 @@ function buildLocalizedContent(
       media?.success
     ) {
       return [
-        "视频解析与实际媒体读取完成。",
+        "视频解析、实际媒体读取与媒体处理完成。",
         "",
         `来源页面：${result.pageUrl}`,
         `视频类型：${mediaType}`,
@@ -336,9 +519,13 @@ function buildLocalizedContent(
         `主视频：${selectedUrl}`,
         "",
         "Runtime 已完成：",
-        "网页 → 视频候选 → 媒体类型识别 → Primary 视频选择 → 实际媒体请求 → 媒体字节读取 → 基础媒体验证。",
+        "网页 → 视频候选 → 媒体类型识别 → Primary 视频选择 → 实际媒体请求 → 媒体字节读取 → 基础媒体验证 → Metadata/Track 处理。",
         ...buildMediaSummary(
           media,
+          locale,
+        ),
+        ...buildProcessingSummary(
+          processing,
           locale,
         ),
       ].join("\n");
@@ -383,7 +570,7 @@ function buildLocalizedContent(
       media?.success
     ) {
       return [
-        "動画解析と実メディア読み取りが完了しました。",
+        "動画解析、実メディア読み取り、メディア処理が完了しました。",
         "",
         `ページ：${result.pageUrl}`,
         `動画形式：${mediaType}`,
@@ -392,9 +579,13 @@ function buildLocalizedContent(
         `Primary：${selectedUrl}`,
         "",
         "Runtime：",
-        "ページ → 動画候補 → メディア形式判定 → Primary選択 → 実メディア要求 → バイト読み取り → 基本メディア検証。",
+        "ページ → 動画候補 → メディア形式判定 → Primary選択 → 実メディア要求 → バイト読み取り → 基本検証 → Metadata/Track処理。",
         ...buildMediaSummary(
           media,
+          locale,
+        ),
+        ...buildProcessingSummary(
+          processing,
           locale,
         ),
       ].join("\n");
@@ -436,7 +627,7 @@ function buildLocalizedContent(
     media?.success
   ) {
     return [
-      "Video resolution and actual media reading completed.",
+      "Video resolution, actual media reading, and media processing completed.",
       "",
       `Source page: ${result.pageUrl}`,
       `Media type: ${mediaType}`,
@@ -445,9 +636,13 @@ function buildLocalizedContent(
       `Primary video: ${selectedUrl}`,
       "",
       "Runtime completed:",
-      "page → video candidates → media type detection → Primary selection → actual media request → media byte read → basic media validation.",
+      "page → video candidates → media type detection → Primary selection → actual media request → media byte read → basic validation → Metadata/Track processing.",
       ...buildMediaSummary(
         media,
+        locale,
+      ),
+      ...buildProcessingSummary(
+        processing,
         locale,
       ),
     ].join("\n");
@@ -522,25 +717,10 @@ function buildInvalidRequestContent(
   ].join("\n");
 }
 
-function buildPersistentMemoryContent(
-  content: string,
-): string {
-  return content.trim();
-}
-
 async function persistVideoConversation(
   prompt: string,
   content: string,
 ): Promise<void> {
-  /*
-   * C144.4.10
-   *
-   * Video Runtime returns directly from engine.ts before
-   * the normal Executor persistence path.
-   *
-   * Therefore Video Runtime must explicitly persist the
-   * real user request and real Runtime result here.
-   */
   await addAndSaveMemory(
     "user",
     prompt,
@@ -548,9 +728,7 @@ async function persistVideoConversation(
 
   await addAndSaveMemory(
     "assistant",
-    buildPersistentMemoryContent(
-      content,
-    ),
+    content.trim(),
   );
 }
 
@@ -583,6 +761,16 @@ export async function executeRuntimeVideoRequest(
     !sourceUrl ||
     !isHttpUrl(sourceUrl)
   ) {
+    const content =
+      buildInvalidRequestContent(
+        locale,
+      );
+
+    await persistVideoConversation(
+      prompt,
+      content,
+    );
+
     return {
       detected: true,
       success: false,
@@ -591,10 +779,7 @@ export async function executeRuntimeVideoRequest(
       candidateCount: 0,
       candidates: [],
       htmlFetched: false,
-      content:
-        buildInvalidRequestContent(
-          locale,
-        ),
+      content,
     };
   }
 
@@ -618,6 +803,7 @@ export async function executeRuntimeVideoRequest(
           locale,
           result,
           undefined,
+          undefined,
         );
 
       await persistVideoConversation(
@@ -629,18 +815,10 @@ export async function executeRuntimeVideoRequest(
         detected: true,
         success: false,
         code:
-          "C144_4_10_VIDEO_RESOLUTION_FAILED",
+          "C144_5_VIDEO_RESOLUTION_FAILED",
         sourceUrl,
-        mediaType:
-          result.primary
-            ?.mediaType,
-        title:
-          result.title,
         candidateCount:
-          result.candidates
-            .length,
-        primary:
-          result.primary,
+          result.candidates.length,
         candidates:
           result.candidates,
         htmlFetched:
@@ -653,39 +831,72 @@ export async function executeRuntimeVideoRequest(
       };
     }
 
-    const selectedUrl =
-      result.primary?.url;
-
-    if (!selectedUrl) {
-      throw new Error(
-        "VIDEO_PRIMARY_URL_MISSING",
-      );
-    }
+    const primary =
+      result.primary!;
 
     const media =
       await executeRuntimeVideoMedia(
-        selectedUrl,
-        result.primary
-          ?.mediaType ??
-          "unknown",
+        primary.url,
+        primary.mediaType,
       );
 
-    const success =
-      media.success === true;
+    if (!media.success) {
+      const content =
+        buildLocalizedContent(
+          locale,
+          result,
+          media,
+          undefined,
+        );
+
+      await persistVideoConversation(
+        prompt,
+        content,
+      );
+
+      return {
+        detected: true,
+        success: false,
+        code:
+          media.code,
+        sourceUrl,
+        selectedUrl:
+          primary.url,
+        mediaType:
+          primary.mediaType,
+        title:
+          result.title,
+        candidateCount:
+          result.candidates.length,
+        primary,
+        candidates:
+          result.candidates,
+        htmlFetched:
+          result.htmlFetched,
+        statusCode:
+          result.statusCode,
+        error:
+          media.error ??
+          media.code,
+        content,
+        media,
+      };
+    }
+
+    const processing =
+      await executeRuntimeVideoProcessing(
+        primary.url,
+        primary.mediaType,
+      );
 
     const content =
       buildLocalizedContent(
         locale,
         result,
         media,
+        processing,
       );
 
-    /*
-     * C144.4.10 persistence:
-     * The exact result visible to the user is the result
-     * that is persisted. Refresh therefore reconstructs
-     * the same Runtime answer instead of losing it.
-     */
     await persistVideoConversation(
       prompt,
       content,
@@ -693,104 +904,71 @@ export async function executeRuntimeVideoRequest(
 
     return {
       detected: true,
-
-      success,
-
-      code: success
-        ? "C144_4_10_VIDEO_MEDIA_PASS"
-        : "C144_4_10_VIDEO_MEDIA_FAILED",
-
+      success: true,
+      code:
+        processing.success
+          ? "C144_5_VIDEO_PROCESSING_PASS"
+          : "C144_5_VIDEO_MEDIA_PASS_PROCESSING_INCOMPLETE",
       sourceUrl,
-
-      selectedUrl,
-
+      selectedUrl:
+        primary.url,
       mediaType:
-        result.primary
-          ?.mediaType,
-
+        primary.mediaType,
       title:
         result.title,
-
       candidateCount:
         result.candidates.length,
-
-      primary:
-        result.primary,
-
+      primary,
       candidates:
         result.candidates,
-
       htmlFetched:
         result.htmlFetched,
-
       statusCode:
         result.statusCode,
-
-      error: success
-        ? undefined
-        : media.error ??
-          media.code,
-
       content,
-
       media,
+      processing,
     };
   } catch (error) {
     const errorMessage =
       error instanceof Error
         ? error.message
-        : "Video Runtime execution failed.";
+        : "Video Runtime failed.";
 
     const content =
       locale === "zh-CN"
         ? [
-            "Video Runtime 执行失败。",
+            "视频 Runtime 执行失败。",
             "",
-            `状态：${errorMessage}`,
+            `错误：${errorMessage}`,
           ].join("\n")
         : locale === "ja"
           ? [
-              "Video Runtime の実行に失敗しました。",
+              "動画 Runtime の実行に失敗しました。",
               "",
-              `状態：${errorMessage}`,
+              `エラー：${errorMessage}`,
             ].join("\n")
           : [
               "Video Runtime execution failed.",
               "",
-              `Status: ${errorMessage}`,
+              `Error: ${errorMessage}`,
             ].join("\n");
 
-    try {
-      await persistVideoConversation(
-        prompt,
-        content,
-      );
-    } catch (persistenceError) {
-      console.error(
-        "[AIOS Video Runtime Persistence]",
-        persistenceError,
-      );
-    }
+    await persistVideoConversation(
+      prompt,
+      content,
+    );
 
     return {
       detected: true,
-
       success: false,
-
       code:
-        "C144_4_10_VIDEO_RUNTIME_ERROR",
-
+        "C144_5_VIDEO_RUNTIME_ERROR",
       sourceUrl,
-
       candidateCount: 0,
-
       candidates: [],
-
       htmlFetched: false,
-
-      error:
-        errorMessage,
-
+      error: errorMessage,
       content,
     };
   }
