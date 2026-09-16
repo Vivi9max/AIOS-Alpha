@@ -31,7 +31,7 @@ export const C144_1688_PRODUCT_DISCOVERY_ID =
   "C144-1688-ONE-PIECE-DROPSHIPPING";
 
 export const C144_1688_PRODUCT_DISCOVERY_VERSION =
-  "C144.4.1";
+  "C144.4.2";
 
 export const C144_1688_PRODUCT_DISCOVERY_TASK_TITLE =
   "1688 One-Piece Dropshipping Product Discovery";
@@ -546,7 +546,8 @@ function validateCandidate(
         "1688",
       url:
         procurementUrl,
-      purchasePriceCny,
+      purchasePriceCny:
+        purchasePrice,
       moq:
         text(
           procurement?.moq,
@@ -838,7 +839,8 @@ export async function runC1441688ProductDiscovery(): Promise<C1441688ProductDisc
         },
       );
 
-      const blockedResult: C1441688ProductDiscoveryResult =
+      const blockedResult:
+        C1441688ProductDiscoveryResult =
         {
           success: false,
           status:
@@ -876,7 +878,8 @@ export async function runC1441688ProductDiscovery(): Promise<C1441688ProductDisc
       return blockedResult;
     }
 
-    const aggregateWeb: WebIntelligenceResult =
+    const aggregateWeb:
+      WebIntelligenceResult =
       {
         success: true,
         query:
@@ -1112,7 +1115,7 @@ export async function runC1441688ProductDiscovery(): Promise<C1441688ProductDisc
         error:
           error instanceof Error
             ? error.message
-            : "Unknown C144.4.1 discovery error.",
+            : "Unknown C144.4.2 discovery error.",
       };
 
     await storage.set(
