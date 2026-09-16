@@ -115,6 +115,21 @@ export interface RuntimeResponse {
     candidateCount: number;
   };
 
+  videoProcessing?: {
+    success: boolean;
+    code: string;
+    container?: string;
+    durationSeconds?: number;
+    width?: number;
+    height?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    frameRate?: number;
+    videoTrackCount: number;
+    audioTrackCount: number;
+    bytesRead: number;
+  };
+
   timestamp: number;
 
   latencyMs: number;
@@ -220,25 +235,6 @@ export async function executeRuntime(
     );
 
   try {
-    /*
-     * C144.4.9
-     *
-     * Video Resolver Runtime Bridge
-     *
-     * The Runtime first builds the normal Runtime Plan.
-     * Video requests are then routed to the dedicated
-     * Video Resolver capability instead of asking Brain
-     * to guess or fabricate a media URL.
-     *
-     * Runtime pipeline:
-     *
-     * User Request
-     *   -> Planner
-     *   -> Video Intent Detection
-     *   -> Video Resolver
-     *   -> Candidate Selection
-     *   -> Runtime Response
-     */
     const videoResult =
       await executeRuntimeVideoRequest(
         plan.prompt,
@@ -258,27 +254,27 @@ export async function executeRuntime(
       const provider =
         getActiveProvider();
 
-const capabilityTrace:
-  CapabilityTrace[] = [
-    {
-      capability:
-        plan.capabilities[0],
-      status:
-        videoResult.success
-          ? "completed"
-          : "failed",
-      durationMs:
-        latencyMs,
-      detail:
-        [
-          "video.resolve",
-          videoResult.success
-            ? "Video page resolved and Primary media candidate selected."
-            : videoResult.error ??
-              videoResult.code,
-        ].join(" | "),
-    },
-  ];
+      const capabilityTrace:
+        CapabilityTrace[] = [
+          {
+            capability:
+              plan.capabilities[0],
+            status:
+              videoResult.success
+                ? "completed"
+                : "failed",
+            durationMs:
+              latencyMs,
+            detail:
+              [
+                "video.resolve",
+                videoResult.success
+                  ? "Video page resolved, Primary media selected, actual media read, and video processing attempted."
+                  : videoResult.error ??
+                    videoResult.code,
+              ].join(" | "),
+          },
+        ];
 
       updateProviderRuntimeStatus({
         provider,
@@ -383,6 +379,9 @@ const capabilityTrace:
           "解析视频网页",
           "提取视频候选",
           "选择 Primary 视频",
+          "实际媒体读取",
+          "媒体 Metadata 处理",
+          "Video Track 处理",
         ],
 
         capabilityTrace,
@@ -419,6 +418,59 @@ const capabilityTrace:
             videoResult.candidateCount,
         },
 
+        videoProcessing:
+          videoResult.processing
+            ? {
+                success:
+                  videoResult.processing
+                    .success,
+
+                code:
+                  videoResult.processing
+                    .code,
+
+                container:
+                  videoResult.processing
+                    .container,
+
+                durationSeconds:
+                  videoResult.processing
+                    .durationSeconds,
+
+                width:
+                  videoResult.processing
+                    .width,
+
+                height:
+                  videoResult.processing
+                    .height,
+
+                videoCodec:
+                  videoResult.processing
+                    .videoCodec,
+
+                audioCodec:
+                  videoResult.processing
+                    .audioCodec,
+
+                frameRate:
+                  videoResult.processing
+                    .frameRate,
+
+                videoTrackCount:
+                  videoResult.processing
+                    .videoTrackCount,
+
+                audioTrackCount:
+                  videoResult.processing
+                    .audioTrackCount,
+
+                bytesRead:
+                  videoResult.processing
+                    .bytesRead,
+              }
+            : undefined,
+
         timestamp,
 
         latencyMs,
@@ -427,13 +479,6 @@ const capabilityTrace:
       };
     }
 
-    /*
-     * Existing Runtime execution path.
-     *
-     * Non-video requests continue through the existing
-     * Workspace / Web Intelligence / Decision / Brain
-     * pipeline without behavior changes.
-     */
     const result =
       await executeRuntimePlan(
         plan,
@@ -569,7 +614,8 @@ const capabilityTrace:
       Date.now();
 
     const latencyMs =
-      timestamp - startedAt;
+      timestamp -
+      startedAt;
 
     const errorMessage =
       error instanceof Error
@@ -626,53 +672,35 @@ const capabilityTrace:
 
     return {
       success: false,
-
       provider: "mock",
-
       requestedProvider:
         "deepseek",
-
       fallbackUsed: false,
-
       error:
         errorMessage,
-
       content:
         unavailableMessage,
-
       actionHandled: false,
-
       runtime:
         APP_CONFIG.runtimeId,
-
       runtimeVersion:
         APP_CONFIG.version,
-
       requestId,
-
       planId:
         plan.id,
-
       planType:
         plan.type,
-
       goal:
         plan.goal,
-
       intent:
         plan.intent,
-
       confidence:
         plan.confidence,
-
       capabilities:
         plan.capabilities,
-
       steps:
         plan.steps,
-
       capabilityTrace: [],
-
       webIntelligence:
         request.webContext
           ? {
@@ -691,14 +719,10 @@ const capabilityTrace:
                   .sourceHosts,
             }
           : undefined,
-
       liveDecision:
         undefined,
-
       timestamp,
-
       latencyMs,
-
       locale,
     };
   }
