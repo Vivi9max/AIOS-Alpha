@@ -41,6 +41,16 @@ export interface VideoFrameSample {
   width?: number;
   height?: number;
   checksum?: string;
+
+  /**
+   * Temporary in-memory representation for the
+   * visual understanding pipeline.
+   *
+   * This is intentionally not persisted into AIOS Memory
+   * and is not exposed through the normal RuntimeResponse.
+   */
+  imageBase64?: string;
+
   error?: string;
 }
 
@@ -81,6 +91,7 @@ interface FrameExtractionResult {
   mimeType?: string;
   width?: number;
   height?: number;
+  imageBase64?: string;
   error?: string;
 }
 
@@ -270,7 +281,7 @@ function runCommand(
               "SIGKILL",
             );
           } catch {
-            // Ignore cleanup failure.
+            // Best-effort process cleanup.
           }
 
           finish(() => {
@@ -679,6 +690,18 @@ async function extractFrame(
         data,
       );
 
+    /*
+     * C144.8.2:
+     * Preserve the decoded JPEG in-memory so the next
+     * visual evidence layer can consume it directly.
+     *
+     * The temporary file is still removed by the caller.
+     */
+    const imageBase64 =
+      data.toString(
+        "base64",
+      );
+
     return {
       success: true,
       bytesRead:
@@ -690,6 +713,7 @@ async function extractFrame(
         dimensions.width,
       height:
         dimensions.height,
+      imageBase64,
     };
   } catch (error) {
     return {
@@ -711,11 +735,10 @@ export async function executeRuntimeVideoFrames(
     decoderPath?: string;
   },
 ): Promise<VideoFrameRuntimeResult> {
-  const base =
-    {
-      mediaUrl,
-      mediaType,
-    };
+  const base = {
+    mediaUrl,
+    mediaType,
+  };
 
   let validatedUrl: URL;
 
@@ -815,7 +838,8 @@ export async function executeRuntimeVideoFrames(
         download.path,
       );
 
-    const frames: VideoFrameSample[] =
+    const frames:
+      VideoFrameSample[] =
       [];
 
     for (
@@ -868,6 +892,8 @@ export async function executeRuntimeVideoFrames(
           extracted.height,
         checksum:
           extracted.checksum,
+        imageBase64:
+          extracted.imageBase64,
         error:
           extracted.error,
       });
