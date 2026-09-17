@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "build": "next build",
+    "build": "node scripts/ensure-ffmpeg.mjs && next build",
     "start": "next start",
     "verify": "node scripts/verify.mjs",
     "verify:locale": "node scripts/verify-locale.mjs",
