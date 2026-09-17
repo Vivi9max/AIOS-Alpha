@@ -135,7 +135,7 @@ function isBlockedHostname(
 
 function assertSafeUrl(
   value: string,
-): URL {
+): void {
   if (!isHttpUrl(value)) {
     throw new Error(
       "Only HTTP and HTTPS media URLs are supported.",
@@ -153,43 +153,39 @@ function assertSafeUrl(
       "The requested media URL is not allowed.",
     );
   }
-
-  return url;
 }
 
-function normalizeContentType(
-  value: string | null,
-): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  return value
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
-}
-
-function parseContentLength(
-  value: string | null,
-): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-
+function ascii(
+  bytes: Uint8Array,
+  offset: number,
+  length: number,
+): string {
   if (
-    !Number.isFinite(parsed) ||
-    parsed < 0
+    offset < 0 ||
+    offset >= bytes.length
   ) {
-    return undefined;
+    return "";
   }
 
-  return parsed;
+  return Array.from(
+    bytes.slice(
+      offset,
+      Math.min(
+        offset + length,
+        bytes.length,
+      ),
+    ),
+  )
+    .map((value) =>
+      value >= 32 &&
+      value <= 126
+        ? String.fromCharCode(value)
+        : ".",
+    )
+    .join("");
 }
 
-function readUint32(
+function uint32(
   bytes: Uint8Array,
   offset: number,
 ): number {
@@ -208,42 +204,18 @@ function readUint32(
   );
 }
 
-function readUint16(
+function uint64(
   bytes: Uint8Array,
   offset: number,
 ): number {
-  if (
-    offset < 0 ||
-    offset + 2 > bytes.length
-  ) {
-    return 0;
-  }
-
-  return (
-    bytes[offset] * 0x100 +
-    bytes[offset + 1]
-  );
-}
-
-function readUint64(
-  bytes: Uint8Array,
-  offset: number,
-): number {
-  if (
-    offset < 0 ||
-    offset + 8 > bytes.length
-  ) {
-    return 0;
-  }
-
   const high =
-    readUint32(
+    uint32(
       bytes,
       offset,
     );
 
   const low =
-    readUint32(
+    uint32(
       bytes,
       offset + 4,
     );
@@ -254,46 +226,16 @@ function readUint64(
   );
 }
 
-function readFixed1616(
+function fixed1616(
   bytes: Uint8Array,
   offset: number,
 ): number {
   return (
-    readUint32(
+    uint32(
       bytes,
       offset,
     ) / 65536
   );
-}
-
-function ascii(
-  bytes: Uint8Array,
-  start: number,
-  length: number,
-): string {
-  if (
-    start < 0 ||
-    start >= bytes.length
-  ) {
-    return "";
-  }
-
-  return Array.from(
-    bytes.slice(
-      start,
-      Math.min(
-        start + length,
-        bytes.length,
-      ),
-    ),
-  )
-    .map((value) =>
-      value >= 32 &&
-      value <= 126
-        ? String.fromCharCode(value)
-        : ".",
-    )
-    .join("");
 }
 
 interface Mp4Box {
@@ -319,7 +261,7 @@ function parseBoxes(
     offset + 8 <= bytes.length
   ) {
     const size32 =
-      readUint32(
+      uint32(
         bytes,
         offset,
       );
@@ -348,14 +290,17 @@ function parseBoxes(
       }
 
       size =
-        readUint64(
+        uint64(
           bytes,
           offset + 8,
         );
 
       headerSize = 16;
-    } else if (size32 === 0) {
-      size = end - offset;
+    }
+
+    if (size32 === 0) {
+      size =
+        end - offset;
     }
 
     if (
@@ -382,7 +327,7 @@ function parseBoxes(
   return boxes;
 }
 
-function findChildren(
+function children(
   bytes: Uint8Array,
   box: Mp4Box,
 ): Mp4Box[] {
@@ -398,7 +343,7 @@ function findChild(
   box: Mp4Box,
   type: string,
 ): Mp4Box | undefined {
-  return findChildren(
+  return children(
     bytes,
     box,
   ).find(
@@ -424,7 +369,7 @@ function findDescendant(
   }
 
   for (
-    const child of findChildren(
+    const child of children(
       bytes,
       box,
     )
@@ -511,89 +456,30 @@ function parseMvhd(
     bytes[box.payloadStart];
 
   if (version === 1) {
-    const timescale =
-      readUint32(
-        bytes,
-        box.payloadStart + 20,
-      );
-
-    const duration =
-      readUint64(
-        bytes,
-        box.payloadStart + 24,
-      );
-
     return {
-      timescale,
-      duration,
-    };
-  }
-
-  const timescale =
-    readUint32(
-      bytes,
-      box.payloadStart + 12,
-    );
-
-  const duration =
-    readUint32(
-      bytes,
-      box.payloadStart + 16,
-    );
-
-  return {
-    timescale,
-    duration,
-  };
-}
-
-function parseTkhd(
-  bytes: Uint8Array,
-  box: Mp4Box,
-): {
-  width?: number;
-  height?: number;
-} {
-  const version =
-    bytes[box.payloadStart];
-
-  if (version === 1) {
-    const widthOffset =
-      box.payloadStart + 88;
-
-    const heightOffset =
-      box.payloadStart + 92;
-
-    return {
-      width:
-        readFixed1616(
+      timescale:
+        uint32(
           bytes,
-          widthOffset,
+          box.payloadStart + 20,
         ),
-      height:
-        readFixed1616(
+      duration:
+        uint64(
           bytes,
-          heightOffset,
+          box.payloadStart + 24,
         ),
     };
   }
 
-  const widthOffset =
-    box.payloadStart + 76;
-
-  const heightOffset =
-    box.payloadStart + 80;
-
   return {
-    width:
-      readFixed1616(
+    timescale:
+      uint32(
         bytes,
-        widthOffset,
+        box.payloadStart + 12,
       ),
-    height:
-      readFixed1616(
+    duration:
+      uint32(
         bytes,
-        heightOffset,
+        box.payloadStart + 16,
       ),
   };
 }
@@ -611,12 +497,12 @@ function parseMdhd(
   if (version === 1) {
     return {
       timescale:
-        readUint32(
+        uint32(
           bytes,
           box.payloadStart + 20,
         ),
       duration:
-        readUint64(
+        uint64(
           bytes,
           box.payloadStart + 24,
         ),
@@ -625,14 +511,53 @@ function parseMdhd(
 
   return {
     timescale:
-      readUint32(
+      uint32(
         bytes,
         box.payloadStart + 12,
       ),
     duration:
-      readUint32(
+      uint32(
         bytes,
         box.payloadStart + 16,
+      ),
+  };
+}
+
+function parseTkhd(
+  bytes: Uint8Array,
+  box: Mp4Box,
+): {
+  width?: number;
+  height?: number;
+} {
+  const version =
+    bytes[box.payloadStart];
+
+  if (version === 1) {
+    return {
+      width:
+        fixed1616(
+          bytes,
+          box.payloadStart + 88,
+        ),
+      height:
+        fixed1616(
+          bytes,
+          box.payloadStart + 92,
+        ),
+    };
+  }
+
+  return {
+    width:
+      fixed1616(
+        bytes,
+        box.payloadStart + 76,
+      ),
+    height:
+      fixed1616(
+        bytes,
+        box.payloadStart + 80,
       ),
   };
 }
@@ -656,7 +581,7 @@ function parseStsd(
   codecName?: string;
 } {
   const entryCount =
-    readUint32(
+    uint32(
       bytes,
       box.payloadStart + 4,
     );
@@ -677,12 +602,6 @@ function parseStsd(
     return {};
   }
 
-  const entrySize =
-    readUint32(
-      bytes,
-      entryStart,
-    );
-
   const codec =
     ascii(
       bytes,
@@ -690,10 +609,7 @@ function parseStsd(
       4,
     );
 
-  if (
-    entrySize < 8 ||
-    !codec
-  ) {
+  if (!codec) {
     return {};
   }
 
@@ -701,32 +617,17 @@ function parseStsd(
     string,
     string
   > = {
-    avc1:
-      "H.264 / AVC",
-    avc3:
-      "H.264 / AVC",
-    hvc1:
-      "H.265 / HEVC",
-    hev1:
-      "H.265 / HEVC",
-    av01:
-      "AV1",
-    vp09:
-      "VP9",
-    mp4v:
-      "MPEG-4 Visual",
-    mp4a:
-      "AAC",
-    ac-3:
-      "AC-3",
-    ec-3:
-      "E-AC-3",
-    opus:
-      "Opus",
-    alaw:
-      "G.711 A-law",
-    ulaw:
-      "G.711 μ-law",
+    avc1: "H.264 / AVC",
+    avc3: "H.264 / AVC",
+    hvc1: "H.265 / HEVC",
+    hev1: "H.265 / HEVC",
+    av01: "AV1",
+    vp09: "VP9",
+    mp4v: "MPEG-4 Visual",
+    mp4a: "AAC",
+    "ac-3": "AC-3",
+    "ec-3": "E-AC-3",
+    opus: "Opus",
   };
 
   return {
@@ -744,7 +645,7 @@ function parseStts(
   totalDuration: number;
 } {
   const entryCount =
-    readUint32(
+    uint32(
       bytes,
       box.payloadStart + 4,
     );
@@ -768,18 +669,19 @@ function parseStts(
     }
 
     const count =
-      readUint32(
+      uint32(
         bytes,
         offset,
       );
 
     const duration =
-      readUint32(
+      uint32(
         bytes,
         offset + 4,
       );
 
     sampleCount += count;
+
     totalDuration +=
       count * duration;
 
@@ -794,7 +696,10 @@ function parseStts(
 
 function parseMp4(
   bytes: Uint8Array,
-): VideoProcessingRuntimeResult {
+): Omit<
+  VideoProcessingRuntimeResult,
+  "mediaUrl" | "mediaType"
+> {
   const topLevel =
     parseBoxes(
       bytes,
@@ -819,9 +724,8 @@ function parseMp4(
       success: false,
       code:
         "C144_5_VIDEO_PROCESSING_MOOV_NOT_FOUND",
-      mediaUrl: "",
-      mediaType: "mp4",
-      bytesRead: bytes.length,
+      bytesRead:
+        bytes.length,
       rangeSupported: true,
       container: "mp4",
       videoTrackCount: 0,
@@ -863,7 +767,7 @@ function parseMp4(
       : {};
 
   const tracks =
-    findChildren(
+    children(
       bytes,
       moov,
     ).filter(
@@ -1037,20 +941,6 @@ function parseMp4(
   const primaryAudio =
     audioTracks[0];
 
-  let frameRate:
-    | number
-    | undefined;
-
-  if (
-    primaryVideo?.sampleCount &&
-    primaryVideo.durationSeconds &&
-    primaryVideo.durationSeconds > 0
-  ) {
-    frameRate =
-      primaryVideo.sampleCount /
-      primaryVideo.durationSeconds;
-  }
-
   const durationSeconds =
     movie.timescale &&
     movie.duration
@@ -1072,13 +962,26 @@ function parseMp4(
               b - a,
           )[0];
 
+  let frameRate:
+    | number
+    | undefined;
+
+  if (
+    primaryVideo?.sampleCount &&
+    primaryVideo.durationSeconds &&
+    primaryVideo.durationSeconds > 0
+  ) {
+    frameRate =
+      primaryVideo.sampleCount /
+      primaryVideo.durationSeconds;
+  }
+
   return {
     success: true,
     code:
       "C144_5_VIDEO_PROCESSING_PASS",
-    mediaUrl: "",
-    mediaType: "mp4",
-    bytesRead: bytes.length,
+    bytesRead:
+      bytes.length,
     rangeSupported: true,
     container: "mp4",
     durationSeconds,
@@ -1114,14 +1017,13 @@ function parseMp4(
   };
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
+async function fetchMedia(
+  mediaUrl: string,
 ): Promise<Response> {
   const controller =
     new AbortController();
 
-  const timer =
+  const timeout =
     setTimeout(
       () =>
         controller.abort(),
@@ -1130,39 +1032,61 @@ async function fetchWithTimeout(
 
   try {
     return await fetch(
-      url,
+      mediaUrl,
       {
-        ...init,
+        method: "GET",
+        headers: {
+          Range:
+            `bytes=0-${PROCESSING_PROBE_BYTES - 1}`,
+          Accept:
+            "video/*,application/octet-stream,*/*",
+        },
         redirect: "follow",
         signal:
           controller.signal,
       },
     );
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timeout);
   }
 }
 
-async function readProbe(
-  response: Response,
-): Promise<Uint8Array> {
-  const buffer =
-    await response.arrayBuffer();
+function normalizeContentType(
+  value: string | null,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
 
-  return new Uint8Array(
-    buffer.slice(
-      0,
-      Math.min(
-        buffer.byteLength,
-        PROCESSING_PROBE_BYTES,
-      ),
-    ),
-  );
+  return value
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+function contentLength(
+  value: string | null,
+): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(
+    parsed,
+  ) &&
+    parsed >= 0
+    ? parsed
+    : undefined;
 }
 
 export async function executeRuntimeVideoProcessing(
   mediaUrl: string,
-  mediaType: VideoMediaType | string = "unknown",
+  mediaType:
+    | VideoMediaType
+    | string = "unknown",
 ): Promise<VideoProcessingRuntimeResult> {
   try {
     assertSafeUrl(
@@ -1170,30 +1094,29 @@ export async function executeRuntimeVideoProcessing(
     );
 
     const response =
-      await fetchWithTimeout(
+      await fetchMedia(
         mediaUrl,
-        {
-          method: "GET",
-          headers: {
-            Range:
-              `bytes=0-${PROCESSING_PROBE_BYTES - 1}`,
-            Accept:
-              "video/*,application/octet-stream,*/*",
-          },
-        },
       );
 
-    const contentType =
+    const responseType =
       normalizeContentType(
         response.headers.get(
           "content-type",
         ),
       );
 
-    const contentLength =
-      parseContentLength(
+    const length =
+      contentLength(
         response.headers.get(
           "content-length",
+        ),
+      );
+
+    const rangeSupported =
+      response.status === 206 ||
+      Boolean(
+        response.headers.get(
+          "content-range",
         ),
       );
 
@@ -1206,10 +1129,12 @@ export async function executeRuntimeVideoProcessing(
         mediaType,
         httpStatus:
           response.status,
-        contentType,
-        contentLength,
+        contentType:
+          responseType,
+        contentLength:
+          length,
         bytesRead: 0,
-        rangeSupported: false,
+        rangeSupported,
         videoTrackCount: 0,
         audioTrackCount: 0,
         tracks: [],
@@ -1218,20 +1143,18 @@ export async function executeRuntimeVideoProcessing(
       };
     }
 
-    const contentRange =
-      response.headers.get(
-        "content-range",
-      );
-
-    const rangeSupported =
-      Boolean(
-        contentRange ||
-          response.status === 206,
+    const buffer =
+      new Uint8Array(
+        await response.arrayBuffer(),
       );
 
     const bytes =
-      await readProbe(
-        response,
+      buffer.slice(
+        0,
+        Math.min(
+          buffer.length,
+          PROCESSING_PROBE_BYTES,
+        ),
       );
 
     if (
@@ -1245,8 +1168,10 @@ export async function executeRuntimeVideoProcessing(
         mediaType,
         httpStatus:
           response.status,
-        contentType,
-        contentLength,
+        contentType:
+          responseType,
+        contentLength:
+          length,
         bytesRead: 0,
         rangeSupported,
         videoTrackCount: 0,
@@ -1274,8 +1199,10 @@ export async function executeRuntimeVideoProcessing(
         mediaType,
         httpStatus:
           response.status,
-        contentType,
-        contentLength,
+        contentType:
+          responseType,
+        contentLength:
+          length,
         bytesRead:
           bytes.length,
         rangeSupported,
@@ -1287,7 +1214,7 @@ export async function executeRuntimeVideoProcessing(
         audioTrackCount: 0,
         tracks: [],
         error:
-          "Media was readable, but detailed MP4 processing is not available for this container yet.",
+          "Media was readable, but detailed processing for this container is not implemented yet.",
       };
     }
 
@@ -1302,8 +1229,10 @@ export async function executeRuntimeVideoProcessing(
       mediaType,
       httpStatus:
         response.status,
-      contentType,
-      contentLength,
+      contentType:
+        responseType,
+      contentLength:
+        length,
       bytesRead:
         bytes.length,
       rangeSupported,
