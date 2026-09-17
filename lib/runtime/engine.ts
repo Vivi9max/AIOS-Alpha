@@ -55,11 +55,14 @@ import {
   type VideoFrameRuntimeResult,
 } from "./video-frame-runtime";
 
+import {
+  buildVideoVisualEvidence,
+  type VideoVisualEvidenceResult,
+} from "./video-visual-evidence-runtime";
+
 export interface RuntimeRequest {
   prompt: string;
-
   locale?: Locale;
-
   webContext?: WebIntelligenceResult;
 }
 
@@ -145,42 +148,40 @@ export interface RuntimeResponse {
   videoEvidence?: {
     success: boolean;
     code: string;
-
     sampleCount: number;
-
     successfulSampleCount: number;
-
     totalBytesRead: number;
-
     sampleTimesSeconds: number[];
-
     byteRangesVerified: boolean;
-
     temporalSamplingPlanned: boolean;
-
     visualFramesDecoded: boolean;
-
     audioDecoded: boolean;
-
     semanticUnderstandingReady: boolean;
   };
 
   videoFrames?: {
     success: boolean;
     code: string;
-
     frameCount: number;
-
     successfulFrameCount: number;
-
     totalBytesRead: number;
-
     framesDecoded: boolean;
-
     imagesExtracted: boolean;
-
     dimensionsDetected: boolean;
+    semanticUnderstandingReady: boolean;
+  };
 
+  videoVisualEvidence?: {
+    success: boolean;
+    code: string;
+    frameCount: number;
+    usableFrameCount: number;
+    totalImageBytes: number;
+    imagesAvailable: boolean;
+    checksumsAvailable: boolean;
+    dimensionsAvailable: boolean;
+    timelineAvailable: boolean;
+    visionReady: boolean;
     semanticUnderstandingReady: boolean;
   };
 
@@ -252,6 +253,29 @@ function buildVideoFrameTraceDetail(
   ].join(" | ");
 }
 
+function buildVideoVisualEvidenceTraceDetail(
+  visual:
+    | VideoVisualEvidenceResult
+    | undefined,
+): string {
+  if (!visual) {
+    return "Video visual evidence packaging was not executed.";
+  }
+
+  return [
+    "video.visual-evidence",
+    `status=${visual.code}`,
+    `frames=${visual.usableFrameCount}/${visual.frameCount}`,
+    `imageBytes=${visual.totalImageBytes}`,
+    `imagesAvailable=${visual.evidence.imagesAvailable}`,
+    `checksumsAvailable=${visual.evidence.checksumsAvailable}`,
+    `dimensionsAvailable=${visual.evidence.dimensionsAvailable}`,
+    `timelineAvailable=${visual.evidence.timelineAvailable}`,
+    `visionReady=${visual.evidence.visionReady}`,
+    `semanticUnderstandingReady=${visual.evidence.semanticUnderstandingReady}`,
+  ].join(" | ");
+}
+
 export async function executeRuntime(
   request: RuntimeRequest,
 ): Promise<RuntimeResponse> {
@@ -309,31 +333,19 @@ export async function executeRuntime(
 
     return {
       success: false,
-
       provider: "mock",
-
       requestedProvider: "mock",
-
       fallbackUsed: false,
-
       error: emptyMessage,
-
       content: emptyMessage,
-
       actionHandled: false,
-
       runtime:
         APP_CONFIG.runtimeId,
-
       runtimeVersion:
         APP_CONFIG.version,
-
       requestId,
-
       timestamp,
-
       latencyMs,
-
       locale,
     };
   }
@@ -364,6 +376,10 @@ export async function executeRuntime(
         | VideoFrameRuntimeResult
         | undefined;
 
+      let videoVisualEvidence:
+        | VideoVisualEvidenceResult
+        | undefined;
+
       if (
         videoResult.success &&
         videoResult.selectedUrl &&
@@ -372,15 +388,12 @@ export async function executeRuntime(
         videoEvidence =
           await executeRuntimeVideoEvidence(
             videoResult.selectedUrl,
-
             videoResult.mediaType ??
               "unknown",
-
             {
               durationSeconds:
                 videoResult.processing
                   .durationSeconds,
-
               contentLength:
                 videoResult.media
                   ?.contentLength,
@@ -396,15 +409,32 @@ export async function executeRuntime(
         videoFrames =
           await executeRuntimeVideoFrames(
             videoResult.selectedUrl,
-
             videoResult.mediaType ??
               "unknown",
-
             {
               durationSeconds:
                 videoResult.processing
                   .durationSeconds,
             },
+          );
+      }
+
+      /*
+       * C144.8:
+       *
+       * Consume decoded frame images while they are still
+       * available in the current request lifecycle.
+       *
+       * The actual Base64 image payload is intentionally
+       * NOT copied into RuntimeResponse.
+       */
+      if (
+        videoFrames?.success &&
+        videoFrames.frames.length > 0
+      ) {
+        videoVisualEvidence =
+          buildVideoVisualEvidence(
+            videoFrames.frames,
           );
       }
 
@@ -415,6 +445,25 @@ export async function executeRuntime(
         timestamp -
         startedAt;
 
+      const framePipelineSuccess =
+        !videoFrames ||
+        videoFrames.success ||
+        videoFrames.code ===
+          "C144_7_VIDEO_FRAME_DECODER_UNAVAILABLE";
+
+      const visualPipelineSuccess =
+        !videoVisualEvidence ||
+        videoVisualEvidence.success;
+
+      const runtimeSuccess =
+        videoResult.success &&
+        (
+          !videoEvidence ||
+          videoEvidence.success
+        ) &&
+        framePipelineSuccess &&
+        visualPipelineSuccess;
+
       const capabilityTrace:
         CapabilityTrace[] = [
           {
@@ -422,15 +471,7 @@ export async function executeRuntime(
               plan.capabilities[0],
 
             status:
-              videoResult.success &&
-              (
-                !videoEvidence ||
-                videoEvidence.success
-              ) &&
-              (
-                !videoFrames ||
-                videoFrames.success
-              )
+              runtimeSuccess
                 ? "completed"
                 : "failed",
 
@@ -453,24 +494,15 @@ export async function executeRuntime(
                 buildVideoFrameTraceDetail(
                   videoFrames,
                 ),
+
+                buildVideoVisualEvidenceTraceDetail(
+                  videoVisualEvidence,
+                ),
               ].join(
                 " | ",
               ),
           },
         ];
-
-      const runtimeSuccess =
-        videoResult.success &&
-        (
-          !videoEvidence ||
-          videoEvidence.success
-        ) &&
-        (
-          !videoFrames ||
-          videoFrames.success ||
-          videoFrames.code ===
-            "C144_7_VIDEO_FRAME_DECODER_UNAVAILABLE"
-        );
 
       updateProviderRuntimeStatus({
         provider,
@@ -538,6 +570,148 @@ export async function executeRuntime(
           timestamp,
       });
 
+      const contentParts: string[] =
+        [
+          videoResult.content ??
+            "",
+        ];
+
+      if (
+        videoEvidence
+      ) {
+        contentParts.push(
+          "",
+          "Video Evidence Sampling",
+          `处理代码：${videoEvidence.code}`,
+          `采样：${videoEvidence.successfulSampleCount}/${videoEvidence.sampleCount}`,
+          `采样字节：${videoEvidence.totalBytesRead}`,
+          `采样时间点：${
+            videoEvidence.timeline
+              ?.sampleTimesSeconds
+              ?.map(
+                (value) =>
+                  `${value.toFixed(3)}s`,
+              )
+              .join(", ") ??
+            "未提供"
+          }`,
+          `Byte Range 验证：${
+            videoEvidence.evidence
+              .byteRangesVerified
+              ? "成功"
+              : "未完成"
+          }`,
+          `Temporal Sampling：${
+            videoEvidence.evidence
+              .temporalSamplingPlanned
+              ? "已建立"
+              : "未建立"
+          }`,
+          `Visual Frames Decoded：${
+            videoEvidence.evidence
+              .visualFramesDecoded
+              ? "true"
+              : "false"
+          }`,
+          `Audio Decoded：${
+            videoEvidence.evidence
+              .audioDecoded
+              ? "true"
+              : "false"
+          }`,
+          `Semantic Understanding Ready：${
+            videoEvidence.evidence
+              .semanticUnderstandingReady
+              ? "true"
+              : "false"
+          }",
+        );
+      }
+
+      if (
+        videoFrames
+      ) {
+        contentParts.push(
+          "",
+          "Video Frame Extraction",
+          `处理代码：${videoFrames.code}`,
+          `Frame：${videoFrames.successfulFrameCount}/${videoFrames.frameCount}`,
+          `帧读取字节：${videoFrames.totalBytesRead}`,
+          `Frames Decoded：${
+            videoFrames.visualEvidence
+              .framesDecoded
+              ? "true"
+              : "false"
+          }`,
+          `Images Extracted：${
+            videoFrames.visualEvidence
+              .imagesExtracted
+              ? "true"
+              : "false"
+          }`,
+          `Dimensions Detected：${
+            videoFrames.visualEvidence
+              .dimensionsDetected
+              ? "true"
+              : "false"
+          }`,
+          `Semantic Understanding Ready：${
+            videoFrames.visualEvidence
+              .semanticUnderstandingReady
+              ? "true"
+              : "false"
+          }",
+        );
+      }
+
+      if (
+        videoVisualEvidence
+      ) {
+        contentParts.push(
+          "",
+          "Video Visual Evidence",
+          `处理代码：${videoVisualEvidence.code}`,
+          `可用图像：${videoVisualEvidence.usableFrameCount}/${videoVisualEvidence.frameCount}`,
+          `图像字节：${videoVisualEvidence.totalImageBytes}`,
+          `Images Available：${
+            videoVisualEvidence.evidence
+              .imagesAvailable
+              ? "true"
+              : "false"
+          }`,
+          `Checksums Available：${
+            videoVisualEvidence.evidence
+              .checksumsAvailable
+              ? "true"
+              : "false"
+          }`,
+          `Dimensions Available：${
+            videoVisualEvidence.evidence
+              .dimensionsAvailable
+              ? "true"
+              : "false"
+          }`,
+          `Timeline Available：${
+            videoVisualEvidence.evidence
+              .timelineAvailable
+              ? "true"
+              : "false"
+          }`,
+          `Vision Ready：${
+            videoVisualEvidence.evidence
+              .visionReady
+              ? "true"
+              : "false"
+          }`,
+          `Semantic Understanding Ready：${
+            videoVisualEvidence.evidence
+              .semanticUnderstandingReady
+              ? "true"
+              : "false"
+          }`,
+        );
+      }
+
       return {
         success:
           runtimeSuccess,
@@ -557,94 +731,9 @@ export async function executeRuntime(
               videoResult.code,
 
         content:
-          [
-            videoResult.content ??
-              "",
-
-            ...(videoEvidence
-              ? [
-                  "",
-                  "Video Evidence Sampling",
-                  `处理代码：${videoEvidence.code}`,
-                  `采样：${videoEvidence.successfulSampleCount}/${videoEvidence.sampleCount}`,
-                  `采样字节：${videoEvidence.totalBytesRead}`,
-                  `采样时间点：${
-                    videoEvidence.timeline
-                      ?.sampleTimesSeconds
-                      ?.map(
-                        (value) =>
-                          `${value.toFixed(3)}s`,
-                      )
-                      .join(", ") ??
-                    "未提供"
-                  }`,
-                  `Byte Range 验证：${
-                    videoEvidence.evidence
-                      .byteRangesVerified
-                      ? "成功"
-                      : "未完成"
-                  }`,
-                  `Temporal Sampling：${
-                    videoEvidence.evidence
-                      .temporalSamplingPlanned
-                      ? "已建立"
-                      : "未建立"
-                  }`,
-                  `Visual Frames Decoded：${
-                    videoEvidence.evidence
-                      .visualFramesDecoded
-                      ? "true"
-                      : "false"
-                  }`,
-                  `Audio Decoded：${
-                    videoEvidence.evidence
-                      .audioDecoded
-                      ? "true"
-                      : "false"
-                  }`,
-                  `Semantic Understanding Ready：${
-                    videoEvidence.evidence
-                      .semanticUnderstandingReady
-                      ? "true"
-                      : "false"
-                  }`,
-                ]
-              : []),
-
-            ...(videoFrames
-              ? [
-                  "",
-                  "Video Frame Extraction",
-                  `处理代码：${videoFrames.code}`,
-                  `Frame：${videoFrames.successfulFrameCount}/${videoFrames.frameCount}`,
-                  `帧读取字节：${videoFrames.totalBytesRead}`,
-                  `Frames Decoded：${
-                    videoFrames.visualEvidence
-                      .framesDecoded
-                      ? "true"
-                      : "false"
-                  }`,
-                  `Images Extracted：${
-                    videoFrames.visualEvidence
-                      .imagesExtracted
-                      ? "true"
-                      : "false"
-                  }`,
-                  `Dimensions Detected：${
-                    videoFrames.visualEvidence
-                      .dimensionsDetected
-                      ? "true"
-                      : "false"
-                  }`,
-                  `Semantic Understanding Ready：${
-                    videoFrames.visualEvidence
-                      .semanticUnderstandingReady
-                      ? "true"
-                      : "false"
-                  }`,
-                ]
-              : []),
-          ].join("\n"),
+          contentParts.join(
+            "\n",
+          ),
 
         actionHandled:
           false,
@@ -677,22 +766,15 @@ export async function executeRuntime(
 
         steps: [
           ...plan.steps,
-
           "解析视频网页",
-
           "提取视频候选",
-
           "选择 Primary 视频",
-
           "实际媒体读取",
-
           "媒体 Metadata 处理",
-
           "Video Track 处理",
-
           "Video Evidence Sampling",
-
           "Video Frame Extraction",
+          "Video Visual Evidence Packaging",
         ],
 
         capabilityTrace,
@@ -867,6 +949,52 @@ export async function executeRuntime(
               }
             : undefined,
 
+        videoVisualEvidence:
+          videoVisualEvidence
+            ? {
+                success:
+                  videoVisualEvidence.success,
+
+                code:
+                  videoVisualEvidence.code,
+
+                frameCount:
+                  videoVisualEvidence.frameCount,
+
+                usableFrameCount:
+                  videoVisualEvidence
+                    .usableFrameCount,
+
+                totalImageBytes:
+                  videoVisualEvidence
+                    .totalImageBytes,
+
+                imagesAvailable:
+                  videoVisualEvidence.evidence
+                    .imagesAvailable,
+
+                checksumsAvailable:
+                  videoVisualEvidence.evidence
+                    .checksumsAvailable,
+
+                dimensionsAvailable:
+                  videoVisualEvidence.evidence
+                    .dimensionsAvailable,
+
+                timelineAvailable:
+                  videoVisualEvidence.evidence
+                    .timelineAvailable,
+
+                visionReady:
+                  videoVisualEvidence.evidence
+                    .visionReady,
+
+                semanticUnderstandingReady:
+                  videoVisualEvidence.evidence
+                    .semanticUnderstandingReady,
+              }
+            : undefined,
+
         timestamp,
 
         latencyMs,
@@ -904,60 +1032,41 @@ export async function executeRuntime(
     updateProviderRuntimeStatus({
       provider:
         result.provider,
-
       requestedProvider,
-
       fallbackUsed,
-
       success:
         result.success,
-
       error:
         result.error,
-
       latencyMs,
-
       lastRequestAt:
         timestamp,
     });
 
     saveRuntimeTrace({
       requestId,
-
       planId:
         result.planId,
-
       promptPreview:
         createPromptPreview(
           prompt,
         ),
-
       goal:
         result.goal,
-
       intent:
         result.intent,
-
       planType:
         result.planType,
-
       provider:
         result.provider,
-
       success:
         result.success,
-
       fallbackUsed,
-
       latencyMs,
-
       capabilityTrace,
-
       error:
         result.error,
-
       startedAt,
-
       completedAt:
         timestamp,
     });
