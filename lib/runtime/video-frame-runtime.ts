@@ -4,13 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
-import ffmpegStatic from "ffmpeg-static";
-
 import type { VideoMediaType } from "./video-types";
+import {
+  executeVideoDecoderHealth,
+  type VideoDecoderSource,
+} from "./video-decoder-runtime";
 
 const FRAME_TIMEOUT_MS = 30_000;
-const MAX_FRAME_BYTES = 2 * 1024 * 1024;
+
+const MAX_FRAME_BYTES =
+  2 * 1024 * 1024;
+
 const MAX_FRAMES = 5;
+
 const MAX_VIDEO_DOWNLOAD_BYTES =
   100 * 1024 * 1024;
 
@@ -20,7 +26,10 @@ const SAMPLE_RATIOS = [
   0.5,
   0.75,
   0.95,
-];
+] as const;
+
+type DecoderSource =
+  | VideoDecoderSource;
 
 export interface VideoFrameSample {
   index: number;
@@ -40,35 +49,29 @@ export interface VideoFrameRuntimeResult {
   code: string;
   mediaUrl: string;
   mediaType: VideoMediaType | string;
+
   decoder: {
     available: boolean;
     name?: string;
     version?: string;
-    source?:
-      | "bundled"
-      | "environment"
-      | "system";
+    source?: DecoderSource;
+    path?: string;
   };
+
   frameCount: number;
   successfulFrameCount: number;
   totalBytesRead: number;
+
   frames: VideoFrameSample[];
+
   visualEvidence: {
     framesDecoded: boolean;
     imagesExtracted: boolean;
     dimensionsDetected: boolean;
     semanticUnderstandingReady: boolean;
   };
-  error?: string;
-}
 
-interface DecoderInfo {
-  path: string;
-  source:
-    | "bundled"
-    | "environment"
-    | "system";
-  version?: string;
+  error?: string;
 }
 
 interface FrameExtractionResult {
@@ -79,6 +82,12 @@ interface FrameExtractionResult {
   width?: number;
   height?: number;
   error?: string;
+}
+
+interface VideoDownloadResult {
+  path: string;
+  bytesRead: number;
+  contentType?: string;
 }
 
 function isPrivateIpv4(
@@ -102,13 +111,61 @@ function isPrivateIpv4(
 
   const [a, b] = parts;
 
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) {
+  if (a === 10) {
     return true;
   }
-  if (a === 192 && b === 168) {
+
+  if (a === 127) {
+    return true;
+  }
+
+  if (
+    a === 169 &&
+    b === 254
+  ) {
+    return true;
+  }
+
+  if (
+    a === 172 &&
+    b >= 16 &&
+    b <= 31
+  ) {
+    return true;
+  }
+
+  if (
+    a === 192 &&
+    b === 168
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isBlockedHostname(
+  hostname: string,
+): boolean {
+  const normalized =
+    hostname
+      .trim()
+      .toLowerCase();
+
+  if (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized.endsWith(
+      ".localhost",
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    normalized === "0.0.0.0" ||
+    normalized === "::"
+  ) {
     return true;
   }
 
@@ -118,7 +175,8 @@ function isPrivateIpv4(
 function validateMediaUrl(
   rawUrl: string,
 ): URL {
-  const parsed = new URL(rawUrl);
+  const parsed =
+    new URL(rawUrl);
 
   if (
     parsed.protocol !== "http:" &&
@@ -130,19 +188,24 @@ function validateMediaUrl(
   }
 
   const hostname =
-    parsed.hostname.toLowerCase();
+    parsed.hostname
+      .toLowerCase();
 
   if (
-    hostname === "localhost" ||
-    hostname === "::1" ||
-    hostname.endsWith(".localhost")
+    isBlockedHostname(
+      hostname,
+    )
   ) {
     throw new Error(
-      "Localhost media URLs are blocked.",
+      "Local media hosts are blocked.",
     );
   }
 
-  if (isPrivateIpv4(hostname)) {
+  if (
+    isPrivateIpv4(
+      hostname,
+    )
+  ) {
     throw new Error(
       "Private IPv4 media URLs are blocked.",
     );
@@ -170,62 +233,89 @@ function runCommand(
 }> {
   return new Promise(
     (resolve, reject) => {
-      const child = spawn(
-        command,
-        args,
-        {
-          stdio: [
-            "ignore",
-            "pipe",
-            "pipe",
-          ],
-        },
-      );
+      let settled = false;
+
+      const child =
+        spawn(
+          command,
+          args,
+          {
+            stdio: [
+              "ignore",
+              "pipe",
+              "pipe",
+            ],
+          },
+        );
 
       let stdout = "";
       let stderr = "";
 
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
+      const finish = (
+        callback: () => void,
+      ) => {
+        if (settled) {
+          return;
+        }
 
-        reject(
-          new Error(
-            `Command timed out after ${timeoutMs}ms.`,
-          ),
-        );
-      }, timeoutMs);
+        settled = true;
+        clearTimeout(timer);
+        callback();
+      };
+
+      const timer =
+        setTimeout(() => {
+          try {
+            child.kill(
+              "SIGKILL",
+            );
+          } catch {
+            // Ignore cleanup failure.
+          }
+
+          finish(() => {
+            reject(
+              new Error(
+                `Command timed out after ${timeoutMs}ms.`,
+              ),
+            );
+          });
+        }, timeoutMs);
 
       child.stdout.on(
         "data",
         (chunk) => {
-          stdout += chunk.toString();
+          stdout +=
+            chunk.toString();
         },
       );
 
       child.stderr.on(
         "data",
         (chunk) => {
-          stderr += chunk.toString();
+          stderr +=
+            chunk.toString();
         },
       );
 
       child.on(
         "error",
         (error) => {
-          clearTimeout(timer);
-          reject(error);
+          finish(() => {
+            reject(error);
+          });
         },
       );
 
       child.on(
         "close",
         (code) => {
-          clearTimeout(timer);
-
-          resolve({
-            stdout,
-            stderr,
-            code,
+          finish(() => {
+            resolve({
+              stdout,
+              stderr,
+              code,
+            });
           });
         },
       );
@@ -233,102 +323,104 @@ function runCommand(
   );
 }
 
-async function getDecoderVersion(
+function parseDimensions(
+  text: string,
+): {
+  width?: number;
+  height?: number;
+} {
+  const matches = [
+    ...text.matchAll(
+      /(\d{2,5})x(\d{2,5})/g,
+    ),
+  ];
+
+  if (
+    matches.length === 0
+  ) {
+    return {};
+  }
+
+  for (
+    let index = matches.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const width =
+      Number(
+        matches[index]?.[1],
+      );
+
+    const height =
+      Number(
+        matches[index]?.[2],
+      );
+
+    if (
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0
+    ) {
+      return {
+        width,
+        height,
+      };
+    }
+  }
+
+  return {};
+}
+
+async function probeVideoDimensions(
   decoderPath: string,
-): Promise<string | undefined> {
+  inputPath: string,
+): Promise<{
+  width?: number;
+  height?: number;
+}> {
   try {
     const result =
       await runCommand(
         decoderPath,
-        ["-version"],
-        10_000,
+        [
+          "-hide_banner",
+          "-loglevel",
+          "info",
+          "-i",
+          inputPath,
+          "-frames:v",
+          "1",
+          "-f",
+          "null",
+          "-",
+        ],
+        FRAME_TIMEOUT_MS,
       );
 
-    if (
-      result.code !== 0 &&
-      !result.stdout &&
-      !result.stderr
-    ) {
-      return undefined;
-    }
-
-    const combined =
-      `${result.stdout}\n${result.stderr}`;
-
-    const match =
-      combined.match(
-        /ffmpeg version\s+([^\s]+)/i,
-      );
-
-    return match?.[1];
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveDecoder(
-  requestedPath?: string,
-): Promise<DecoderInfo | null> {
-  const environmentPath =
-    requestedPath ??
-    process.env.FFMPEG_PATH?.trim();
-
-  if (environmentPath) {
-    const version =
-      await getDecoderVersion(
-        environmentPath,
-      );
-
-    if (version) {
-      return {
-        path: environmentPath,
-        source: "environment",
-        version,
-      };
-    }
-  }
-
-  if (ffmpegStatic) {
-    const version =
-      await getDecoderVersion(
-        ffmpegStatic,
-      );
-
-    if (version) {
-      return {
-        path: ffmpegStatic,
-        source: "bundled",
-        version,
-      };
-    }
-  }
-
-  const systemVersion =
-    await getDecoderVersion(
-      "ffmpeg",
+    return parseDimensions(
+      `${result.stdout}\n${result.stderr}`,
     );
-
-  if (systemVersion) {
-    return {
-      path: "ffmpeg",
-      source: "system",
-      version: systemVersion,
-    };
+  } catch {
+    return {};
   }
-
-  return null;
 }
 
 async function downloadVideo(
   mediaUrl: string,
   workspace: string,
-): Promise<string> {
+): Promise<VideoDownloadResult> {
+  const initialUrl =
+    validateMediaUrl(
+      mediaUrl,
+    );
+
   const response =
     await fetch(
-      mediaUrl,
+      initialUrl.toString(),
       {
         method: "GET",
-        redirect: "follow",
+        redirect: "manual",
         headers: {
           Accept:
             "video/*,application/octet-stream;q=0.9,*/*;q=0.1",
@@ -336,20 +428,86 @@ async function downloadVideo(
       },
     );
 
-  if (!response.ok) {
+  let finalResponse =
+    response;
+
+  if (
+    response.status >= 300 &&
+    response.status < 400
+  ) {
+    const location =
+      response.headers.get(
+        "location",
+      );
+
+    if (!location) {
+      throw new Error(
+        `Video redirect returned HTTP ${response.status} without a Location header.`,
+      );
+    }
+
+    const redirectedUrl =
+      new URL(
+        location,
+        initialUrl,
+      );
+
+    validateMediaUrl(
+      redirectedUrl.toString(),
+    );
+
+    finalResponse =
+      await fetch(
+        redirectedUrl.toString(),
+        {
+          method: "GET",
+          redirect: "manual",
+          headers: {
+            Accept:
+              "video/*,application/octet-stream;q=0.9,*/*;q=0.1",
+          },
+        },
+      );
+
+    if (
+      finalResponse.status >=
+        300 &&
+      finalResponse.status < 400
+    ) {
+      throw new Error(
+        "Multiple video redirects are not supported by the bounded frame runtime.",
+      );
+    }
+  }
+
+  if (
+    !finalResponse.ok
+  ) {
     throw new Error(
-      `Video download failed with HTTP ${response.status}.`,
+      `Video download failed with HTTP ${finalResponse.status}.`,
+    );
+  }
+
+  if (
+    !finalResponse.body
+  ) {
+    throw new Error(
+      "Video response body is unavailable.",
     );
   }
 
   const contentLengthHeader =
-    response.headers.get(
+    finalResponse.headers.get(
       "content-length",
     );
 
-  if (contentLengthHeader) {
+  if (
+    contentLengthHeader
+  ) {
     const contentLength =
-      Number(contentLengthHeader);
+      Number(
+        contentLengthHeader,
+      );
 
     if (
       Number.isFinite(
@@ -364,17 +522,13 @@ async function downloadVideo(
     }
   }
 
-  if (!response.body) {
-    throw new Error(
-      "Video response body is unavailable.",
-    );
-  }
+  const chunks: Buffer[] =
+    [];
 
-  const chunks: Buffer[] = [];
   let totalBytes = 0;
 
   const reader =
-    response.body.getReader();
+    finalResponse.body.getReader();
 
   try {
     while (true) {
@@ -414,7 +568,9 @@ async function downloadVideo(
     reader.releaseLock();
   }
 
-  if (totalBytes === 0) {
+  if (
+    totalBytes === 0
+  ) {
     throw new Error(
       "Video download returned no bytes.",
     );
@@ -428,10 +584,19 @@ async function downloadVideo(
 
   await fs.writeFile(
     outputPath,
-    Buffer.concat(chunks),
+    Buffer.concat(
+      chunks,
+    ),
   );
 
-  return outputPath;
+  return {
+    path: outputPath,
+    bytesRead: totalBytes,
+    contentType:
+      finalResponse.headers.get(
+        "content-type",
+      ) ?? undefined,
+  };
 }
 
 async function extractFrame(
@@ -439,6 +604,10 @@ async function extractFrame(
   inputPath: string,
   outputPath: string,
   timestampSeconds: number,
+  dimensions: {
+    width?: number;
+    height?: number;
+  },
 ): Promise<FrameExtractionResult> {
   try {
     const result =
@@ -465,7 +634,9 @@ async function extractFrame(
         FRAME_TIMEOUT_MS,
       );
 
-    if (result.code !== 0) {
+    if (
+      result.code !== 0
+    ) {
       return {
         success: false,
         bytesRead: 0,
@@ -480,7 +651,9 @@ async function extractFrame(
         outputPath,
       );
 
-    if (data.length === 0) {
+    if (
+      data.length === 0
+    ) {
       return {
         success: false,
         bytesRead: 0,
@@ -502,13 +675,21 @@ async function extractFrame(
     }
 
     const hash =
-      await checksum(data);
+      await checksum(
+        data,
+      );
 
     return {
       success: true,
-      bytesRead: data.length,
+      bytesRead:
+        data.length,
       checksum: hash,
-      mimeType: "image/jpeg",
+      mimeType:
+        "image/jpeg",
+      width:
+        dimensions.width,
+      height:
+        dimensions.height,
     };
   } catch (error) {
     return {
@@ -522,27 +703,6 @@ async function extractFrame(
   }
 }
 
-function estimateDimensions(
-  stderr: string,
-): {
-  width?: number;
-  height?: number;
-} {
-  const match =
-    stderr.match(
-      /(?:Stream #.*Video:.*?,\s*)?(\d{2,5})x(\d{2,5})/,
-    );
-
-  if (!match) {
-    return {};
-  }
-
-  return {
-    width: Number(match[1]),
-    height: Number(match[2]),
-  };
-}
-
 export async function executeRuntimeVideoFrames(
   mediaUrl: string,
   mediaType: VideoMediaType | string,
@@ -551,10 +711,11 @@ export async function executeRuntimeVideoFrames(
     decoderPath?: string;
   },
 ): Promise<VideoFrameRuntimeResult> {
-  const baseResult = {
-    mediaUrl,
-    mediaType,
-  };
+  const base =
+    {
+      mediaUrl,
+      mediaType,
+    };
 
   let validatedUrl: URL;
 
@@ -565,7 +726,7 @@ export async function executeRuntimeVideoFrames(
       );
   } catch (error) {
     return {
-      ...baseResult,
+      ...base,
       success: false,
       code:
         "C144_7_VIDEO_FRAME_EXTRACTION_ERROR",
@@ -589,14 +750,15 @@ export async function executeRuntimeVideoFrames(
     };
   }
 
-  const decoder =
-    await resolveDecoder(
-      options?.decoderPath,
-    );
+  const decoderHealth =
+    await executeVideoDecoderHealth();
 
-  if (!decoder) {
+  if (
+    !decoderHealth.success ||
+    !decoderHealth.decoder
+  ) {
     return {
-      ...baseResult,
+      ...base,
       success: false,
       code:
         "C144_7_VIDEO_FRAME_DECODER_UNAVAILABLE",
@@ -614,9 +776,13 @@ export async function executeRuntimeVideoFrames(
         semanticUnderstandingReady: false,
       },
       error:
+        decoderHealth.error ??
         "No usable FFmpeg decoder was found.",
     };
   }
+
+  const decoder =
+    decoderHealth.decoder;
 
   const workspace =
     await fs.mkdtemp(
@@ -627,7 +793,7 @@ export async function executeRuntimeVideoFrames(
     );
 
   try {
-    const inputPath =
+    const download =
       await downloadVideo(
         validatedUrl.toString(),
         workspace,
@@ -643,6 +809,12 @@ export async function executeRuntimeVideoFrames(
         ? options.durationSeconds
         : undefined;
 
+    const dimensions =
+      await probeVideoDimensions(
+        decoder.path,
+        download.path,
+      );
+
     const frames: VideoFrameSample[] =
       [];
 
@@ -650,7 +822,7 @@ export async function executeRuntimeVideoFrames(
       let index = 0;
       index <
         SAMPLE_RATIOS.length &&
-        index < MAX_FRAMES;
+      index < MAX_FRAMES;
       index += 1
     ) {
       const ratio =
@@ -660,7 +832,8 @@ export async function executeRuntimeVideoFrames(
         duration
           ? Math.min(
               duration,
-              duration * ratio,
+              duration *
+                ratio,
             )
           : 0;
 
@@ -673,52 +846,11 @@ export async function executeRuntimeVideoFrames(
       const extracted =
         await extractFrame(
           decoder.path,
-          inputPath,
+          download.path,
           outputPath,
           timestampSeconds,
+          dimensions,
         );
-
-      let width =
-        extracted.width;
-      let height =
-        extracted.height;
-
-      if (
-        extracted.success &&
-        (!width || !height)
-      ) {
-        try {
-          const probe =
-            await runCommand(
-              decoder.path,
-              [
-                "-hide_banner",
-                "-loglevel",
-                "info",
-                "-i",
-                inputPath,
-                "-frames:v",
-                "1",
-                "-f",
-                "null",
-                "-",
-              ],
-              FRAME_TIMEOUT_MS,
-            );
-
-          const dimensions =
-            estimateDimensions(
-              `${probe.stdout}\n${probe.stderr}`,
-            );
-
-          width =
-            dimensions.width;
-          height =
-            dimensions.height;
-        } catch {
-          // Best-effort dimension detection.
-        }
-      }
 
       frames.push({
         index,
@@ -730,13 +862,26 @@ export async function executeRuntimeVideoFrames(
           extracted.mimeType,
         bytesRead:
           extracted.bytesRead,
-        width,
-        height,
+        width:
+          extracted.width,
+        height:
+          extracted.height,
         checksum:
           extracted.checksum,
         error:
           extracted.error,
       });
+
+      try {
+        await fs.rm(
+          outputPath,
+          {
+            force: true,
+          },
+        );
+      } catch {
+        // Best-effort cleanup.
+      }
     }
 
     const successfulFrameCount =
@@ -747,93 +892,159 @@ export async function executeRuntimeVideoFrames(
 
     const totalBytesRead =
       frames.reduce(
-        (sum, frame) =>
-          sum + frame.bytesRead,
+        (
+          total,
+          frame,
+        ) =>
+          total +
+          frame.bytesRead,
         0,
       );
 
-    const framesDecoded =
-      successfulFrameCount > 0;
+    const dimensionsDetected =
+      frames.some(
+        (frame) =>
+          Boolean(
+            frame.width &&
+              frame.height,
+          ),
+      ) ||
+      Boolean(
+        dimensions.width &&
+          dimensions.height,
+      );
 
-    const imagesExtracted =
+    const allFramesDecoded =
       successfulFrameCount ===
         frames.length &&
-      frames.length > 0;
-
-    const dimensionsDetected =
-      successfulFrameCount > 0 &&
-      frames
-        .filter(
-          (frame) =>
-            frame.success,
-        )
-        .every(
-          (frame) =>
-            Boolean(frame.width) &&
-            Boolean(frame.height),
-        );
-
-    let code:
-      | "C144_7_VIDEO_FRAME_EXTRACTION_PASS"
-      | "C144_7_VIDEO_FRAME_EXTRACTION_PARTIAL"
-      | "C144_7_VIDEO_FRAME_EXTRACTION_ERROR";
+      frames.length ===
+        SAMPLE_RATIOS.length;
 
     if (
-      successfulFrameCount ===
-        frames.length &&
-      frames.length > 0
+      allFramesDecoded
     ) {
-      code =
-        "C144_7_VIDEO_FRAME_EXTRACTION_PASS";
-    } else if (
+      return {
+        ...base,
+        success: true,
+        code:
+          "C144_7_VIDEO_FRAME_EXTRACTION_PASS",
+        decoder: {
+          available: true,
+          name:
+            decoder.name,
+          version:
+            decoder.version,
+          source:
+            decoder.source,
+          path:
+            decoder.path,
+        },
+        frameCount:
+          frames.length,
+        successfulFrameCount,
+        totalBytesRead,
+        frames,
+        visualEvidence: {
+          framesDecoded: true,
+          imagesExtracted: true,
+          dimensionsDetected,
+          semanticUnderstandingReady: false,
+        },
+      };
+    }
+
+    if (
       successfulFrameCount > 0
     ) {
-      code =
-        "C144_7_VIDEO_FRAME_EXTRACTION_PARTIAL";
-    } else {
-      code =
-        "C144_7_VIDEO_FRAME_EXTRACTION_ERROR";
+      return {
+        ...base,
+        success: false,
+        code:
+          "C144_7_VIDEO_FRAME_EXTRACTION_PARTIAL",
+        decoder: {
+          available: true,
+          name:
+            decoder.name,
+          version:
+            decoder.version,
+          source:
+            decoder.source,
+          path:
+            decoder.path,
+        },
+        frameCount:
+          frames.length,
+        successfulFrameCount,
+        totalBytesRead,
+        frames,
+        visualEvidence: {
+          framesDecoded:
+            successfulFrameCount > 0,
+          imagesExtracted:
+            successfulFrameCount > 0,
+          dimensionsDetected,
+          semanticUnderstandingReady: false,
+        },
+        error:
+          "Only part of the requested video frame samples could be decoded.",
+      };
     }
 
     return {
-      ...baseResult,
-      success:
-        successfulFrameCount > 0,
-      code,
-      decoder: {
-        available: true,
-        name: "FFmpeg",
-        version:
-          decoder.version,
-        source:
-          decoder.source,
-      },
-      frameCount:
-        frames.length,
-      successfulFrameCount,
-      totalBytesRead,
-      frames,
-      visualEvidence: {
-        framesDecoded,
-        imagesExtracted,
-        dimensionsDetected,
-        semanticUnderstandingReady:
-          false,
-      },
-    };
-  } catch (error) {
-    return {
-      ...baseResult,
+      ...base,
       success: false,
       code:
         "C144_7_VIDEO_FRAME_EXTRACTION_ERROR",
       decoder: {
         available: true,
-        name: "FFmpeg",
+        name:
+          decoder.name,
         version:
           decoder.version,
         source:
           decoder.source,
+        path:
+          decoder.path,
+      },
+      frameCount:
+        frames.length,
+      successfulFrameCount: 0,
+      totalBytesRead,
+      frames,
+      visualEvidence: {
+        framesDecoded: false,
+        imagesExtracted: false,
+        dimensionsDetected,
+        semanticUnderstandingReady: false,
+      },
+      error:
+        frames
+          .map(
+            (frame) =>
+              frame.error,
+          )
+          .filter(
+            Boolean,
+          )
+          .join("; ") ||
+        "No video frames could be decoded.",
+    };
+  } catch (error) {
+    return {
+      ...base,
+      success: false,
+      code:
+        "C144_7_VIDEO_FRAME_EXTRACTION_ERROR",
+      decoder: {
+        available: true,
+        name:
+          decoder.name,
+        version:
+          decoder.version,
+        source:
+          decoder.source,
+        path:
+          decoder.path,
       },
       frameCount: 0,
       successfulFrameCount: 0,
@@ -843,21 +1054,24 @@ export async function executeRuntimeVideoFrames(
         framesDecoded: false,
         imagesExtracted: false,
         dimensionsDetected: false,
-        semanticUnderstandingReady:
-          false,
+        semanticUnderstandingReady: false,
       },
       error:
         error instanceof Error
           ? error.message
-          : "Unknown video frame runtime error.",
+          : "Unexpected video frame runtime error.",
     };
   } finally {
-    await fs.rm(
-      workspace,
-      {
-        recursive: true,
-        force: true,
-      },
-    );
+    try {
+      await fs.rm(
+        workspace,
+        {
+          recursive: true,
+          force: true,
+        },
+      );
+    } catch {
+      // Best-effort cleanup.
+    }
   }
 }
