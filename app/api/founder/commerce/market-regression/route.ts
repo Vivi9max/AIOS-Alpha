@@ -1,4 +1,8 @@
 import {
+  NextRequest,
+} from "next/server";
+
+import {
   isFounderRequest,
 } from "@/lib/founder/auth";
 
@@ -79,7 +83,7 @@ const TEST_PRODUCT: CommerceProductIntelligence = {
 };
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
 ) {
   const startedAt =
     Date.now();
