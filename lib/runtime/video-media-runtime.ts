@@ -1,101 +1,33 @@
-import type {
-  VideoMediaType,
-} from "@/lib/video/video-resolver";
+import { createHash } from "node:crypto";
 
-const MEDIA_TIMEOUT_MS = 20_000;
-const MEDIA_PROBE_BYTES = 4 * 1024 * 1024;
+import type { VideoMediaType } from "./video-types";
+
+const MAX_PROBE_BYTES = 4 * 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 20_000;
 
 export interface VideoMediaRuntimeResult {
   success: boolean;
-
   code: string;
-
   mediaUrl: string;
-
   mediaType: VideoMediaType | string;
-
-  httpStatus?: number;
-
+  statusCode?: number;
   contentType?: string;
-
   contentLength?: number;
-
   bytesRead: number;
-
   rangeSupported: boolean;
-
-  reachable: boolean;
-
-  metadata?: {
-    container?: string;
-    majorBrand?: string;
-    brands?: string[];
-    hasFtyp?: boolean;
-    hasMoov?: boolean;
-    hasVideoTrackHint?: boolean;
-    hasAudioTrackHint?: boolean;
-    playlist?: boolean;
-    playlistType?: "master" | "media" | "unknown";
-  };
-
+  container?: string;
+  majorBrand?: string;
+  brands?: string[];
+  moovFound?: boolean;
+  checksum?: string;
   error?: string;
 }
 
-function isHttpUrl(
-  value: string,
-): boolean {
-  try {
-    const url = new URL(value);
-
-    return (
-      url.protocol === "http:" ||
-      url.protocol === "https:"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isBlockedHostname(
-  hostname: string,
-): boolean {
-  const host =
-    hostname
-      .toLowerCase()
-      .replace(/\.$/, "");
+function isPrivateIpv4(hostname: string): boolean {
+  const parts = hostname.split(".").map(Number);
 
   if (
-    host === "localhost" ||
-    host ===
-      "localhost.localdomain" ||
-    host === "0.0.0.0" ||
-    host === "::1"
-  ) {
-    return true;
-  }
-
-  if (
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    host.endsWith(".localhost")
-  ) {
-    return true;
-  }
-
-  const ipv4 = host.match(
-    /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/,
-  );
-
-  if (!ipv4) {
-    return false;
-  }
-
-  const parts =
-    ipv4
-      .slice(1)
-      .map(Number);
-
-  if (
+    parts.length !== 4 ||
     parts.some(
       (part) =>
         !Number.isInteger(part) ||
@@ -103,634 +35,424 @@ function isBlockedHostname(
         part > 255,
     )
   ) {
-    return true;
+    return false;
   }
 
   const [a, b] = parts;
 
-  return (
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 &&
-      b >= 16 &&
-      b <= 31) ||
-    (a === 192 && b === 168)
-  );
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+
+  return false;
 }
 
-function assertSafeMediaUrl(
-  value: string,
-): URL {
-  if (!isHttpUrl(value)) {
+function validateMediaUrl(rawUrl: string): URL {
+  const parsed = new URL(rawUrl);
+
+  if (
+    parsed.protocol !== "http:" &&
+    parsed.protocol !== "https:"
+  ) {
     throw new Error(
-      "Only HTTP and HTTPS media URLs are supported.",
+      "Only HTTP(S) media URLs are supported.",
     );
   }
 
-  const url =
-    new URL(value);
+  const hostname = parsed.hostname.toLowerCase();
 
   if (
-    isBlockedHostname(
-      url.hostname,
-    )
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost")
   ) {
     throw new Error(
-      "The requested media URL is not allowed.",
+      "Localhost media URLs are blocked.",
     );
   }
 
-  return url;
-}
-
-function normalizeContentType(
-  value: string | null,
-): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  return value
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
-}
-
-function parseContentLength(
-  value: string | null,
-): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed =
-    Number(value);
-
-  if (
-    !Number.isFinite(parsed) ||
-    parsed < 0
-  ) {
-    return undefined;
+  if (isPrivateIpv4(hostname)) {
+    throw new Error(
+      "Private IPv4 media URLs are blocked.",
+    );
   }
 
   return parsed;
 }
 
-function bytesToAscii(
-  bytes: Uint8Array,
-  start: number,
+function readAscii(
+  buffer: Buffer,
+  offset: number,
   length: number,
 ): string {
-  return Array.from(
-    bytes.slice(
-      start,
-      start + length,
-    ),
-  )
-    .map((value) =>
-      value >= 32 &&
-      value <= 126
-        ? String.fromCharCode(
-            value,
-          )
-        : ".",
-    )
-    .join("");
-}
-
-function readUint32(
-  bytes: Uint8Array,
-  offset: number,
-): number {
   if (
-    offset + 4 >
-    bytes.length
+    offset < 0 ||
+    offset + length > buffer.length
   ) {
-    return 0;
+    return "";
   }
 
-  return (
-    bytes[offset] * 0x1000000 +
-    bytes[offset + 1] * 0x10000 +
-    bytes[offset + 2] * 0x100 +
-    bytes[offset + 3]
-  );
-}
-
-function parseMp4Metadata(
-  bytes: Uint8Array,
-): VideoMediaRuntimeResult["metadata"] {
-  let offset = 0;
-
-  let majorBrand:
-    | string
-    | undefined;
-
-  const brands: string[] = [];
-
-  let hasFtyp = false;
-  let hasMoov = false;
-  let hasVideoTrackHint =
-    false;
-  let hasAudioTrackHint =
-    false;
-
-  while (
-    offset + 8 <=
-    bytes.length
-  ) {
-    const size =
-      readUint32(
-        bytes,
-        offset,
-      );
-
-    const type =
-      bytesToAscii(
-        bytes,
-        offset + 4,
-        4,
-      );
-
-    if (!type) {
-      break;
-    }
-
-    if (
-      size < 8 ||
-      offset + size >
-        bytes.length
-    ) {
-      break;
-    }
-
-    if (type === "ftyp") {
-      hasFtyp = true;
-
-      majorBrand =
-        bytesToAscii(
-          bytes,
-          offset + 8,
-          4,
-        );
-
-      if (majorBrand) {
-        brands.push(
-          majorBrand,
-        );
-      }
-
-      let brandOffset =
-        offset + 16;
-
-      while (
-        brandOffset + 4 <=
-        offset + size
-      ) {
-        const brand =
-          bytesToAscii(
-            bytes,
-            brandOffset,
-            4,
-          );
-
-        if (
-          brand &&
-          brand !== "...." &&
-          !brands.includes(
-            brand,
-          )
-        ) {
-          brands.push(
-            brand,
-          );
-        }
-
-        brandOffset += 4;
-      }
-    }
-
-    if (type === "moov") {
-      hasMoov = true;
-    }
-
-    if (type === "trak") {
-      const sample =
-        bytesToAscii(
-          bytes,
-          offset,
-          Math.min(
-            size,
-            4096,
-          ),
-        );
-
-      if (
-        sample.includes(
-          "vide",
-        )
-      ) {
-        hasVideoTrackHint =
-          true;
-      }
-
-      if (
-        sample.includes(
-          "soun",
-        )
-      ) {
-        hasAudioTrackHint =
-          true;
-      }
-    }
-
-    offset += size;
-  }
-
-  return {
-    container: "mp4",
-    majorBrand,
-    brands,
-    hasFtyp,
-    hasMoov,
-    hasVideoTrackHint,
-    hasAudioTrackHint,
-  };
-}
-
-function parseWebmMetadata(
-  bytes: Uint8Array,
-): VideoMediaRuntimeResult["metadata"] {
-  const header =
-    bytesToAscii(
-      bytes,
-      0,
-      Math.min(
-        bytes.length,
-        64,
-      ),
-    );
-
-  return {
-    container: "webm",
-    hasFtyp: false,
-    hasMoov: false,
-    hasVideoTrackHint:
-      header.includes(
-        "V_VP8",
-      ) ||
-      header.includes(
-        "V_VP9",
-      ) ||
-      header.includes(
-        "V_AV1",
-      ),
-    hasAudioTrackHint:
-      header.includes(
-        "A_OPUS",
-      ) ||
-      header.includes(
-        "A_VORBIS",
-      ),
-  };
+  return buffer
+    .subarray(offset, offset + length)
+    .toString("ascii")
+    .replace(/\0/g, "");
 }
 
 function detectContainer(
-  bytes: Uint8Array,
-  mediaType: string,
+  buffer: Buffer,
   contentType?: string,
-): VideoMediaRuntimeResult["metadata"] {
-  if (
-    bytes.length >= 12 &&
-    bytesToAscii(
-      bytes,
-      4,
-      4,
-    ) === "ftyp"
-  ) {
-    return parseMp4Metadata(
-      bytes,
-    );
+): string {
+  if (buffer.length >= 12) {
+    const ftyp = readAscii(buffer, 4, 4);
+
+    if (ftyp === "ftyp") {
+      return "mp4";
+    }
   }
 
   if (
-    bytes.length >= 4 &&
-    bytes[0] === 0x1a &&
-    bytes[1] === 0x45 &&
-    bytes[2] === 0xdf &&
-    bytes[3] === 0xa3
+    buffer.length >= 4 &&
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
   ) {
-    return parseWebmMetadata(
-      bytes,
-    );
+    return "webm";
   }
 
-  const normalizedType =
-    (
-      contentType ??
-      ""
-    ).toLowerCase();
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0x49 &&
+    buffer[1] === 0x44 &&
+    buffer[2] === 0x33
+  ) {
+    return "audio";
+  }
 
   if (
-    mediaType === "m3u8" ||
-    normalizedType.includes(
-      "mpegurl",
-    ) ||
-    normalizedType.includes(
-      "m3u8",
-    )
+    contentType?.includes("mpegurl") ||
+    contentType?.includes("m3u8")
   ) {
-    const text =
-      new TextDecoder(
-        "utf-8",
-      ).decode(bytes);
+    return "hls";
+  }
 
-    const lines =
-      text
-        .split(/\r?\n/)
-        .map(
-          (line) =>
-            line.trim(),
-        )
-        .filter(Boolean);
+  if (
+    contentType?.includes("webm")
+  ) {
+    return "webm";
+  }
 
-    const master =
-      lines.some((line) =>
-        line.startsWith(
-          "#EXT-X-STREAM-INF",
-        ),
-      );
+  if (
+    contentType?.includes("quicktime")
+  ) {
+    return "mov";
+  }
 
-    const media =
-      lines.some((line) =>
-        line.startsWith(
-          "#EXTINF",
-        ),
-      );
+  if (
+    contentType?.includes("mp4")
+  ) {
+    return "mp4";
+  }
 
+  return "unknown";
+}
+
+function parseMp4Metadata(buffer: Buffer): {
+  majorBrand?: string;
+  brands?: string[];
+  moovFound: boolean;
+} {
+  if (buffer.length < 16) {
     return {
-      container: "hls",
-      playlist: true,
-      playlistType:
-        master
-          ? "master"
-          : media
-            ? "media"
-            : "unknown",
+      moovFound: false,
     };
   }
 
+  let majorBrand: string | undefined;
+  const brands: string[] = [];
+
+  let offset = 0;
+
+  while (offset + 8 <= buffer.length) {
+    const size = buffer.readUInt32BE(offset);
+    const type = readAscii(buffer, offset + 4, 4);
+
+    if (size < 8) {
+      break;
+    }
+
+    const end = Math.min(
+      buffer.length,
+      offset + size,
+    );
+
+    if (type === "ftyp" && end >= offset + 16) {
+      majorBrand = readAscii(
+        buffer,
+        offset + 8,
+        4,
+      );
+
+      for (
+        let brandOffset = offset + 16;
+        brandOffset + 4 <= end;
+        brandOffset += 4
+      ) {
+        const brand = readAscii(
+          buffer,
+          brandOffset,
+          4,
+        );
+
+        if (brand && !brands.includes(brand)) {
+          brands.push(brand);
+        }
+      }
+    }
+
+    offset = end;
+  }
+
+  const moovFound = buffer.includes(
+    Buffer.from("moov"),
+  );
+
   return {
-    container:
-      mediaType ||
-      "unknown",
+    majorBrand,
+    brands,
+    moovFound,
   };
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
-  const controller =
-    new AbortController();
+async function calculateChecksum(
+  buffer: Buffer,
+): Promise<string> {
+  return createHash("sha256")
+    .update(buffer)
+    .digest("hex");
+}
 
-  const timer =
-    setTimeout(
-      () =>
-        controller.abort(),
-      MEDIA_TIMEOUT_MS,
-    );
+async function fetchProbe(
+  url: URL,
+): Promise<{
+  response: Response;
+  buffer: Buffer;
+}> {
+  const controller = new AbortController();
+
+  const timer = setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS,
+  );
 
   try {
-    return await fetch(
-      url,
+    const response = await fetch(
+      url.toString(),
       {
-        ...init,
+        method: "GET",
         redirect: "follow",
-        signal:
-          controller.signal,
+        headers: {
+          Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
+          Accept:
+            "video/*,application/octet-stream;q=0.9,*/*;q=0.1",
+        },
+        signal: controller.signal,
       },
     );
+
+    if (!response.ok && response.status !== 206) {
+      return {
+        response,
+        buffer: Buffer.alloc(0),
+      };
+    }
+
+    if (!response.body) {
+      return {
+        response,
+        buffer: Buffer.alloc(0),
+      };
+    }
+
+    const reader = response.body.getReader();
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    try {
+      while (total < MAX_PROBE_BYTES) {
+        const { done, value } =
+          await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        if (!value || value.byteLength === 0) {
+          continue;
+        }
+
+        const remaining =
+          MAX_PROBE_BYTES - total;
+
+        const chunk =
+          value.byteLength > remaining
+            ? value.slice(0, remaining)
+            : value;
+
+        chunks.push(Buffer.from(chunk));
+        total += chunk.byteLength;
+
+        if (total >= MAX_PROBE_BYTES) {
+          break;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return {
+      response,
+      buffer: Buffer.concat(chunks),
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function readProbeBytes(
-  response: Response,
-): Promise<Uint8Array> {
-  const buffer =
-    await response.arrayBuffer();
-
-  return new Uint8Array(
-    buffer.slice(
-      0,
-      Math.min(
-        buffer.byteLength,
-        MEDIA_PROBE_BYTES,
-      ),
-    ),
-  );
-}
-
 export async function executeRuntimeVideoMedia(
   mediaUrl: string,
-  mediaType: VideoMediaType | string = "unknown",
+  mediaType: VideoMediaType | string,
 ): Promise<VideoMediaRuntimeResult> {
+  let url: URL;
+
   try {
-    assertSafeMediaUrl(
-      mediaUrl,
-    );
-
-    let head:
-      | Response
-      | undefined;
-
-    try {
-      head =
-        await fetchWithTimeout(
-          mediaUrl,
-          {
-            method: "HEAD",
-            headers: {
-              Accept:
-                "video/*,application/vnd.apple.mpegurl,application/x-mpegURL,*/*",
-            },
-          },
-        );
-    } catch {
-      head = undefined;
-    }
-
-    const headContentType =
-      normalizeContentType(
-        head?.headers.get(
-          "content-type",
-        ) ?? null,
-      );
-
-    const headLength =
-      parseContentLength(
-        head?.headers.get(
-          "content-length",
-        ) ?? null,
-      );
-
-    const headReachable =
-      Boolean(
-        head &&
-          head.status >= 200 &&
-          head.status < 400,
-      );
-
-    const rangeResponse =
-      await fetchWithTimeout(
-        mediaUrl,
-        {
-          method: "GET",
-          headers: {
-            Range:
-              `bytes=0-${MEDIA_PROBE_BYTES - 1}`,
-            Accept:
-              "video/*,application/vnd.apple.mpegurl,application/x-mpegURL,*/*",
-          },
-        },
-      );
-
-    if (
-      !rangeResponse.ok
-    ) {
-      return {
-        success: false,
-        code:
-          "C144_4_10_VIDEO_MEDIA_HTTP_FAILED",
-        mediaUrl,
-        mediaType,
-        httpStatus:
-          rangeResponse.status,
-        contentType:
-          normalizeContentType(
-            rangeResponse.headers.get(
-              "content-type",
-            ),
-          ),
-        contentLength:
-          parseContentLength(
-            rangeResponse.headers.get(
-              "content-length",
-            ),
-          ),
-        bytesRead: 0,
-        rangeSupported: false,
-        reachable:
-          headReachable,
-        error:
-          `Media request returned HTTP ${rangeResponse.status}.`,
-      };
-    }
-
-    const contentType =
-      normalizeContentType(
-        rangeResponse.headers.get(
-          "content-type",
-        ),
-      ) ??
-      headContentType;
-
-    const contentLength =
-      parseContentLength(
-        rangeResponse.headers.get(
-          "content-length",
-        ),
-      ) ??
-      headLength;
-
-    const contentRange =
-      rangeResponse.headers.get(
-        "content-range",
-      );
-
-    const rangeSupported =
-      Boolean(
-        contentRange ||
-          rangeResponse.status ===
-            206,
-      );
-
-    const bytes =
-      await readProbeBytes(
-        rangeResponse,
-      );
-
-    const metadata =
-      detectContainer(
-        bytes,
-        mediaType,
-        contentType,
-      );
-
-    const effectiveReachable =
-      headReachable ||
-      rangeResponse.status ===
-        200 ||
-      rangeResponse.status ===
-        206;
-
-    if (
-      bytes.length === 0
-    ) {
-      return {
-        success: false,
-        code:
-          "C144_4_10_VIDEO_MEDIA_EMPTY",
-        mediaUrl,
-        mediaType,
-        httpStatus:
-          rangeResponse.status,
-        contentType,
-        contentLength,
-        bytesRead: 0,
-        rangeSupported,
-        reachable:
-          effectiveReachable,
-        metadata,
-        error:
-          "The media endpoint was reachable but returned no readable bytes.",
-      };
-    }
-
-    return {
-      success: true,
-      code:
-        "C144_4_10_VIDEO_MEDIA_PASS",
-      mediaUrl,
-      mediaType,
-      httpStatus:
-        rangeResponse.status,
-      contentType,
-      contentLength,
-      bytesRead:
-        bytes.length,
-      rangeSupported,
-      reachable:
-        effectiveReachable,
-      metadata,
-    };
+    url = validateMediaUrl(mediaUrl);
   } catch (error) {
     return {
       success: false,
-      code:
-        "C144_4_10_VIDEO_MEDIA_ERROR",
+      code: "C144_4_10_VIDEO_MEDIA_ERROR",
       mediaUrl,
       mediaType,
       bytesRead: 0,
       rangeSupported: false,
-      reachable: false,
       error:
         error instanceof Error
           ? error.message
-          : "Video media runtime failed.",
+          : "Invalid media URL.",
+    };
+  }
+
+  try {
+    const { response, buffer } =
+      await fetchProbe(url);
+
+    if (
+      !response.ok &&
+      response.status !== 206
+    ) {
+      return {
+        success: false,
+        code: "C144_4_10_VIDEO_MEDIA_HTTP_FAILED",
+        mediaUrl,
+        mediaType,
+        statusCode: response.status,
+        contentType:
+          response.headers.get("content-type") ??
+          undefined,
+        bytesRead: 0,
+        rangeSupported: false,
+        error:
+          `Media request failed with HTTP ${response.status}.`,
+      };
+    }
+
+    if (buffer.length === 0) {
+      return {
+        success: false,
+        code: "C144_4_10_VIDEO_MEDIA_EMPTY",
+        mediaUrl,
+        mediaType,
+        statusCode: response.status,
+        contentType:
+          response.headers.get("content-type") ??
+          undefined,
+        bytesRead: 0,
+        rangeSupported:
+          response.status === 206,
+        error:
+          "Media response contained no readable bytes.",
+      };
+    }
+
+    const contentType =
+      response.headers.get("content-type") ??
+      undefined;
+
+    const contentLengthHeader =
+      response.headers.get("content-length");
+
+    const contentLength =
+      contentLengthHeader &&
+      Number.isFinite(Number(contentLengthHeader))
+        ? Number(contentLengthHeader)
+        : undefined;
+
+    const contentRange =
+      response.headers.get("content-range");
+
+    const rangeSupported =
+      response.status === 206 ||
+      Boolean(contentRange);
+
+    const container = detectContainer(
+      buffer,
+      contentType,
+    );
+
+    const mp4Metadata =
+      container === "mp4"
+        ? parseMp4Metadata(buffer)
+        : {
+            moovFound: false,
+          };
+
+    const digest =
+      await calculateChecksum(buffer);
+
+    return {
+      success: true,
+      code: "C144_4_10_VIDEO_MEDIA_PASS",
+      mediaUrl,
+      mediaType,
+      statusCode: response.status,
+      contentType,
+      contentLength,
+      bytesRead: buffer.length,
+      rangeSupported,
+      container,
+      majorBrand:
+        mp4Metadata.majorBrand,
+      brands:
+        mp4Metadata.brands,
+      moovFound:
+        mp4Metadata.moovFound,
+      checksum: digest,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      code: "C144_4_10_VIDEO_MEDIA_ERROR",
+      mediaUrl,
+      mediaType,
+      bytesRead: 0,
+      rangeSupported: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unknown media runtime error.",
     };
   }
 }
