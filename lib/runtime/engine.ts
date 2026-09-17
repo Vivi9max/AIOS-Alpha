@@ -465,9 +465,49 @@ export async function executeRuntime(
             : videoResult.error ??
               videoResult.code,
 
-        content:
-          videoResult.content ??
+content:
+  [
+    videoResult.content ?? "",
+    ...(videoEvidence
+      ? [
           "",
+          "Video Evidence Sampling",
+          `处理代码：${videoEvidence.code}`,
+          `采样：${videoEvidence.successfulSampleCount}/${videoEvidence.sampleCount}`,
+          `采样字节：${videoEvidence.totalBytesRead}`,
+          `采样时间点：${
+            videoEvidence.timeline?.sampleTimesSeconds
+              ?.map((value) => `${value.toFixed(3)}s`)
+              .join(", ") ?? "未提供"
+          }`,
+          `Byte Range 验证：${
+            videoEvidence.evidence.byteRangesVerified
+              ? "成功"
+              : "未完成"
+          }`,
+          `Temporal Sampling：${
+            videoEvidence.evidence.temporalSamplingPlanned
+              ? "已建立"
+              : "未建立"
+          }`,
+          `Visual Frames Decoded：${
+            videoEvidence.evidence.visualFramesDecoded
+              ? "true"
+              : "false"
+          }`,
+          `Audio Decoded：${
+            videoEvidence.evidence.audioDecoded
+              ? "true"
+              : "false"
+          }`,
+          `Semantic Understanding Ready：${
+            videoEvidence.evidence.semanticUnderstandingReady
+              ? "true"
+              : "false"
+          }`,
+        ]
+      : []),
+  ].join("\n"),
 
         actionHandled:
           false,
