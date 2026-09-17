@@ -333,12 +333,12 @@ function buildMediaSummary(
       "",
       "实际媒体能力：",
       `媒体访问：${
-        media.reachable
+        media.success
           ? "成功"
           : "失败"
       }`,
       `HTTP：${
-        media.httpStatus ??
+        media.statusCode ??
         "unknown"
       }`,
       `Content-Type：${
@@ -357,21 +357,21 @@ function buildMediaSummary(
             `媒体大小：${media.contentLength} bytes`,
           ]
         : []),
-      ...(media.metadata?.container
+      ...(media.container
         ? [
-            `容器：${media.metadata.container}`,
+            `容器：${media.container}`,
           ]
         : []),
-      ...(media.metadata?.majorBrand
+      ...(media.majorBrand
         ? [
-            `Major Brand：${media.metadata.majorBrand}`,
+            `Major Brand：${media.majorBrand}`,
           ]
         : []),
-      ...(media.metadata?.hasMoov !==
+      ...(media.moovFound !==
       undefined
         ? [
             `MP4 moov：${
-              media.metadata.hasMoov
+              media.moovFound
                 ? "已发现"
                 : "未在探测区间发现"
             }`,
@@ -387,12 +387,12 @@ function buildMediaSummary(
       "",
       "実メディア能力：",
       `メディアアクセス：${
-        media.reachable
+        media.success
           ? "成功"
           : "失敗"
       }`,
       `HTTP：${
-        media.httpStatus ??
+        media.statusCode ??
         "unknown"
       }`,
       `Content-Type：${
@@ -411,14 +411,24 @@ function buildMediaSummary(
             `メディアサイズ：${media.contentLength} bytes`,
           ]
         : []),
-      ...(media.metadata?.container
+      ...(media.container
         ? [
-            `コンテナ：${media.metadata.container}`,
+            `コンテナ：${media.container}`,
           ]
         : []),
-      ...(media.metadata?.majorBrand
+      ...(media.majorBrand
         ? [
-            `Major Brand：${media.metadata.majorBrand}`,
+            `Major Brand：${media.majorBrand}`,
+          ]
+        : []),
+      ...(media.moovFound !==
+      undefined
+        ? [
+            `MP4 moov：${
+              media.moovFound
+                ? "検出"
+                : "プローブ範囲では未検出"
+            }`,
           ]
         : []),
     ];
@@ -428,12 +438,12 @@ function buildMediaSummary(
     "",
     "Actual media capability:",
     `Media access: ${
-      media.reachable
+      media.success
         ? "success"
         : "failed"
     }`,
     `HTTP: ${
-      media.httpStatus ??
+      media.statusCode ??
       "unknown"
     }`,
     `Content-Type: ${
@@ -452,21 +462,21 @@ function buildMediaSummary(
           `Media size: ${media.contentLength} bytes`,
         ]
       : []),
-    ...(media.metadata?.container
+    ...(media.container
       ? [
-          `Container: ${media.metadata.container}`,
+          `Container: ${media.container}`,
         ]
       : []),
-    ...(media.metadata?.majorBrand
+    ...(media.majorBrand
       ? [
-          `Major brand: ${media.metadata.majorBrand}`,
+          `Major brand: ${media.majorBrand}`,
         ]
       : []),
-    ...(media.metadata?.hasMoov !==
+    ...(media.moovFound !==
     undefined
       ? [
           `MP4 moov: ${
-            media.metadata.hasMoov
+            media.moovFound
               ? "detected"
               : "not detected in probe range"
           }`,
