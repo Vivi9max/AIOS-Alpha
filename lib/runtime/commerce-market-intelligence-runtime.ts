@@ -205,31 +205,83 @@ function evidenceFromWeb(
     }));
 }
 
+/**
+ * Extract a price value from natural Chinese/e-commerce text.
+ *
+ * Important:
+ * - Requires an actual numeric value.
+ * - Does not treat the word "价格" alone as evidence.
+ * - Supports common Chinese/e-commerce price formats.
+ */
+function extractPriceValues(
+  text: string,
+): string[] {
+  const source =
+    clean(text);
+
+  if (!source) {
+    return [];
+  }
+
+  const patterns = [
+    /(?:售价|价格|报价|到手价|券后价|活动价|零售价|批发价|采购价|参考价|起售价|约)\s*[:：]?\s*(?:¥|￥|人民币|RMB|CNY)?\s*(\d+(?:\.\d+)?)\s*(?:元|块)?/giu,
+
+    /(?:¥|￥|RMB|CNY)\s*(\d+(?:\.\d+)?)\s*(?:元|块)?/giu,
+
+    /(\d+(?:\.\d+)?)\s*(?:元|块)\b/giu,
+
+    /(?:¥|￥)\s*(\d+(?:\.\d+)?)\s*(?:-|~|至)\s*(?:¥|￥)?\s*(\d+(?:\.\d+)?)/giu,
+
+    /(\d+(?:\.\d+)?)\s*(?:-|~|至)\s*(\d+(?:\.\d+)?)\s*元/giu,
+  ];
+
+  const matches: string[] = [];
+
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const value =
+        clean(match[0]);
+
+      if (value) {
+        matches.push(value);
+      }
+    }
+  }
+
+  return uniqueStrings(
+    matches,
+    MAX_SIGNALS,
+  );
+}
+
+/**
+ * Extract price evidence while retaining its source.
+ *
+ * A price signal is accepted only when an actual numeric
+ * price can be found in title/snippets.
+ */
 function extractPriceSignals(
   results: CommerceMarketEvidence[],
 ): string[] {
   const output: string[] = [];
 
-  const pricePattern =
-    /(?:¥|￥|人民币|元|RMB|CNY|\$|USD)\s?\d+(?:\.\d+)?(?:\s?(?:-|~|至)\s?(?:¥|￥|人民币|元|RMB|CNY|\$|USD)?\s?\d+(?:\.\d+)?)?/giu;
-
   for (const item of results) {
-    const source = [
-      item.title,
-      ...item.snippets,
-    ].join(" ");
+    const source =
+      [
+        item.title,
+        ...item.snippets,
+      ].join(" ");
 
-    const matches =
-      source.match(
-        pricePattern,
-      ) ?? [];
+    const values =
+      extractPriceValues(
+        source,
+      );
 
-    output.push(
-      ...matches.map(
-        (value) =>
-          `${value} · ${item.hostname}`,
-      ),
-    );
+    for (const value of values) {
+      output.push(
+        `${value} · ${item.hostname}`,
+      );
+    }
   }
 
   return uniqueStrings(
@@ -349,7 +401,7 @@ function buildQueries(
       `${base} 中国电商 市场 竞品 销量 需求 趋势 查询`,
 
     price:
-      `${base} 中国市场 售价 当前价格 价格区间 查询`,
+      `${base} 中国电商 售价 价格 价格区间 报价 到手价 零售价 元 人民币 ¥ 查询`,
 
     supply1688:
       `${base} 1688 供应商 批发 采购价格 一件代发 货源 查询`,
@@ -632,13 +684,8 @@ export async function executeCommerceMarketIntelligence(
       );
 
     /*
-     * IMPORTANT:
-     *
-     * Only evidence whose hostname is actually
-     * 1688.com is classified as 1688 supply evidence.
-     *
-     * We never relabel generic search results as
-     * 1688 supplier evidence.
+     * Only actual 1688 hosts are allowed to become
+     * 1688 supply evidence.
      */
     const evidence1688 =
       allSupplyEvidence.filter(
@@ -653,7 +700,8 @@ export async function executeCommerceMarketIntelligence(
         .map(
           (item) => ({
             ...item,
-            kind: "1688" as const,
+            kind:
+              "1688" as const,
           }),
         )
         .slice(
@@ -661,6 +709,13 @@ export async function executeCommerceMarketIntelligence(
           MAX_EVIDENCE,
         );
 
+    /*
+     * Price evidence is extracted independently
+     * from the dedicated price retrieval result.
+     *
+     * This prevents market or supplier evidence
+     * from accidentally becoming market-price evidence.
+     */
     const priceSignals =
       extractPriceSignals(
         priceEvidence,
@@ -828,14 +883,11 @@ export async function executeCommerceMarketIntelligence(
       );
 
     /*
-     * Overall verified requires:
+     * Overall verification intentionally requires:
      *
-     * 1. external market verification
+     * 1. verified external market evidence
      * 2. actual 1688 evidence
-     * 3. price evidence
-     *
-     * This prevents a generic web result from
-     * becoming a false "supplier verified" claim.
+     * 3. actual numeric price evidence
      */
     const overallVerified =
       marketVerified &&
@@ -950,12 +1002,11 @@ export async function executeCommerceMarketIntelligence(
         queries.supply1688,
       ],
       [
-        "外部市场检索执行失败。",
-        "供应链证据未确认。",
-        "价格证据未确认。",
+        "市场、价格或供应链外部情报检索发生运行时错误。",
       ],
       [
-        "检查 Brave Search API 配置后重试。",
+        "检查 Web Intelligence / Brave Search Runtime。",
+        "重新执行 C145.2 Regression。",
       ],
       message,
     );
