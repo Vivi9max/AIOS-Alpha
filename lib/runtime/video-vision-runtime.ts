@@ -11,9 +11,7 @@ export interface VideoVisionRuntimeResult {
 
   code: string;
 
-  provider:
-    | "openai"
-    | "none";
+  provider: "openai";
 
   model?: string;
 
