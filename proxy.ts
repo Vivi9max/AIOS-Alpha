@@ -23,6 +23,8 @@ const PUBLIC_PATHS = [
   "/api/founder/commerce/unit-economics",
   "/founder/commerce-test",
   "/api/founder/commerce/test",
+  "/founder/commerce-reality",
+  "/api/founder/commerce/reality",
 ];
 function isPublicPath(
   pathname: string,
