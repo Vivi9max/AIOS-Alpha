@@ -75,6 +75,7 @@ export interface CommerceMarketIntelligence {
       retrievalMode?: string;
       error?: string;
     };
+
     price: {
       success: boolean;
       query: string;
@@ -84,6 +85,7 @@ export interface CommerceMarketIntelligence {
       retrievalMode?: string;
       error?: string;
     };
+
     supply1688: {
       success: boolean;
       query: string;
@@ -102,9 +104,13 @@ const MAX_EVIDENCE = 12;
 const MAX_SIGNALS = 12;
 const MAX_UNKNOWN = 20;
 
-function clean(value: unknown): string {
+function clean(
+  value: unknown,
+): string {
   return typeof value === "string"
-    ? value.replace(/\s+/g, " ").trim()
+    ? value
+        .replace(/\s+/g, " ")
+        .trim()
     : "";
 }
 
@@ -121,7 +127,9 @@ function uniqueStrings(
   ).slice(0, max);
 }
 
-function clampScore(value: number): number {
+function clampScore(
+  value: number,
+): number {
   return Math.max(
     0,
     Math.min(
@@ -131,13 +139,20 @@ function clampScore(value: number): number {
   );
 }
 
+function normalizeHost(
+  hostname: string,
+): string {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
+}
+
 function is1688Host(
   hostname: string,
 ): boolean {
   const host =
-    hostname
-      .toLowerCase()
-      .replace(/^www\./, "");
+    normalizeHost(hostname);
 
   return (
     host === "1688.com" ||
@@ -161,23 +176,31 @@ function evidenceFromWeb(
         item.snippets
           .slice(0, 2)
           .join(" "),
+
       sourceUrl:
         item.url,
+
       title:
         item.title,
+
       hostname:
         item.hostname,
+
       snippets:
         item.snippets.slice(0, 4),
+
       credibilityTier:
         item.credibilityTier,
+
       verificationScore:
         item.verificationScore,
+
       confidence:
         clampScore(
           item.verificationScore ??
             item.confidence * 100,
         ) / 100,
+
       kind,
     }));
 }
@@ -191,11 +214,10 @@ function extractPriceSignals(
     /(?:¥|￥|人民币|元|RMB|CNY|\$|USD)\s?\d+(?:\.\d+)?(?:\s?(?:-|~|至)\s?(?:¥|￥|人民币|元|RMB|CNY|\$|USD)?\s?\d+(?:\.\d+)?)?/giu;
 
   for (const item of results) {
-    const source =
-      [
-        item.title,
-        ...item.snippets,
-      ].join(" ");
+    const source = [
+      item.title,
+      ...item.snippets,
+    ].join(" ");
 
     const matches =
       source.match(
@@ -223,11 +245,10 @@ function extractSignals(
   const output: string[] = [];
 
   for (const item of results) {
-    const source =
-      [
-        item.title,
-        ...item.snippets,
-      ].join(" ");
+    const source = [
+      item.title,
+      ...item.snippets,
+    ].join(" ");
 
     const lower =
       source.toLowerCase();
@@ -257,14 +278,38 @@ function retrievalSummary(
   result: WebIntelligenceResult,
 ) {
   return {
-    success: result.success,
-    query: result.query,
-    sourceCount: result.sourceCount,
-    sourceHosts: result.sourceHosts,
-    verified: result.verified,
+    success:
+      result.success,
+
+    query:
+      result.query,
+
+    sourceCount:
+      result.sourceCount,
+
+    sourceHosts:
+      result.sourceHosts,
+
+    verified:
+      result.verified,
+
     retrievalMode:
       result.retrievalMode,
-    error: result.error,
+
+    error:
+      result.error,
+  };
+}
+
+function emptyRetrieval(
+  query = "",
+) {
+  return {
+    success: false,
+    query,
+    sourceCount: 0,
+    sourceHosts: [],
+    verified: false,
   };
 }
 
@@ -276,14 +321,19 @@ function buildQueries(
   supply1688: string;
 } {
   const name =
-    commerce.product.name ||
-    "未知商品";
+    clean(
+      commerce.product.name,
+    );
 
   const category =
-    commerce.product.category;
+    clean(
+      commerce.product.category,
+    );
 
   const type =
-    commerce.product.type;
+    clean(
+      commerce.product.type,
+    );
 
   const base =
     [
@@ -297,19 +347,26 @@ function buildQueries(
   return {
     market:
       `${base} 中国电商 市场 竞品 销量 需求 趋势 查询`,
+
     price:
       `${base} 中国市场 售价 当前价格 价格区间 查询`,
+
     supply1688:
-      `${base} 1688 供应商 批发 采购价格 一件代发 货源 市场价格 查询`,
+      `${base} 1688 供应商 批发 采购价格 一件代发 货源 查询`,
   };
 }
 
 function buildUnknowns(
-  market: CommerceMarketEvidence[],
-  supply: CommerceMarketEvidence[],
-  prices: string[],
-  competitors: string[],
-  suppliers: string[],
+  market:
+    CommerceMarketEvidence[],
+  supply:
+    CommerceMarketEvidence[],
+  prices:
+    string[],
+  competitors:
+    string[],
+  suppliers:
+    string[],
 ): string[] {
   const unknowns: string[] = [];
 
@@ -321,7 +378,7 @@ function buildUnknowns(
 
   if (supply.length === 0) {
     unknowns.push(
-      "未获得可用的供应链证据。",
+      "未获得经过识别的 1688 供应链证据。",
     );
   }
 
@@ -333,13 +390,13 @@ function buildUnknowns(
 
   if (competitors.length === 0) {
     unknowns.push(
-      "当前外部证据未确认明确竞品信息。",
+      "当前外部证据未确认明确竞品信号。",
     );
   }
 
   if (suppliers.length === 0) {
     unknowns.push(
-      "当前外部证据未确认明确供应商信息。",
+      "当前外部证据未确认明确供应商信号。",
     );
   }
 
@@ -355,167 +412,174 @@ function buildUnknowns(
   );
 }
 
+function buildNextActions(
+  supplyEvidence:
+    CommerceMarketEvidence[],
+  priceSignals:
+    string[],
+): string[] {
+  const actions: string[] = [];
+
+  if (
+    supplyEvidence.length > 0
+  ) {
+    actions.push(
+      "人工打开 1688 供应商页面核验起批量、采购价、库存、发货条件。",
+    );
+  } else {
+    actions.push(
+      "进一步缩小商品关键词后重新进行 1688 供应链检索。",
+    );
+  }
+
+  if (
+    priceSignals.length > 0
+  ) {
+    actions.push(
+      "人工核验市场售价是否对应相同规格、材质和配置。",
+    );
+  } else {
+    actions.push(
+      "补充明确规格后重新获取市场价格证据。",
+    );
+  }
+
+  actions.push(
+    "记录主要竞品售价、卖点、内容形式和评论反馈。",
+    "建立采购成本、平台费用、物流和实际成交价后再计算利润。",
+  );
+
+  return uniqueStrings(
+    actions,
+    MAX_UNKNOWN,
+  );
+}
+
+function createFailureResult(
+  code: string,
+  productName: string,
+  category: string,
+  type: string,
+  queries: string[],
+  unknowns: string[],
+  nextActions: string[],
+  error?: string,
+): CommerceMarketIntelligence {
+  return {
+    success: false,
+
+    code,
+
+    product: {
+      name:
+        productName,
+
+      category:
+        category,
+
+      type:
+        type,
+
+      searchQueries:
+        queries,
+    },
+
+    marketEvidence: [],
+    supplyEvidence: [],
+
+    priceSignals: [],
+    competitorSignals: [],
+    supplierSignals: [],
+
+    verification: {
+      marketVerified: false,
+      supplyVerified: false,
+      priceEvidenceFound: false,
+      competitorEvidenceFound: false,
+      supplierEvidenceFound: false,
+      independentMarketSources: 0,
+      independentSupplySources: 0,
+      overallVerified: false,
+      score: 0,
+    },
+
+    confidence: {
+      market: 0,
+      supply: 0,
+      price: 0,
+      competition: 0,
+    },
+
+    unknowns,
+
+    nextActions,
+
+    retrieval: {
+      market:
+        emptyRetrieval(),
+
+      price:
+        emptyRetrieval(),
+
+      supply1688:
+        emptyRetrieval(),
+    },
+
+    error,
+  };
+}
+
 export async function executeCommerceMarketIntelligence(
   commerce: CommerceProductIntelligence,
 ): Promise<CommerceMarketIntelligence> {
   const productName =
-    clean(commerce.product.name);
+    clean(
+      commerce.product.name,
+    );
 
   const category =
-    clean(commerce.product.category);
+    clean(
+      commerce.product.category,
+    );
 
   const type =
-    clean(commerce.product.type);
+    clean(
+      commerce.product.type,
+    );
 
   if (!commerce.success) {
-    return {
-      success: false,
-      code:
-        "C145_2_COMMERCE_PRODUCT_INPUT_FAILED",
-
-      product: {
-        name: productName,
-        category,
-        type,
-        searchQueries: [],
-      },
-
-      marketEvidence: [],
-      supplyEvidence: [],
-      priceSignals: [],
-      competitorSignals: [],
-      supplierSignals: [],
-
-      verification: {
-        marketVerified: false,
-        supplyVerified: false,
-        priceEvidenceFound: false,
-        competitorEvidenceFound: false,
-        supplierEvidenceFound: false,
-        independentMarketSources: 0,
-        independentSupplySources: 0,
-        overallVerified: false,
-        score: 0,
-      },
-
-      confidence: {
-        market: 0,
-        supply: 0,
-        price: 0,
-        competition: 0,
-      },
-
-      unknowns: [
+    return createFailureResult(
+      "C145_2_COMMERCE_PRODUCT_INPUT_FAILED",
+      productName,
+      category,
+      type,
+      [],
+      [
         "C145.1 商品情报没有成功返回。",
       ],
-
-      nextActions: [
+      [
         "先完成 C145.1 Commerce Product Intelligence。",
       ],
-
-      retrieval: {
-        market: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        price: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        supply1688: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-      },
-
-      error:
-        "Commerce Product Intelligence input is not successful.",
-    };
+      "Commerce Product Intelligence input is not successful.",
+    );
   }
 
   if (!productName) {
-    return {
-      success: false,
-      code:
-        "C145_2_COMMERCE_PRODUCT_NAME_UNKNOWN",
-
-      product: {
-        name: "",
-        category,
-        type,
-        searchQueries: [],
-      },
-
-      marketEvidence: [],
-      supplyEvidence: [],
-      priceSignals: [],
-      competitorSignals: [],
-      supplierSignals: [],
-
-      verification: {
-        marketVerified: false,
-        supplyVerified: false,
-        priceEvidenceFound: false,
-        competitorEvidenceFound: false,
-        supplierEvidenceFound: false,
-        independentMarketSources: 0,
-        independentSupplySources: 0,
-        overallVerified: false,
-        score: 0,
-      },
-
-      confidence: {
-        market: 0,
-        supply: 0,
-        price: 0,
-        competition: 0,
-      },
-
-      unknowns: [
+    return createFailureResult(
+      "C145_2_COMMERCE_PRODUCT_NAME_UNKNOWN",
+      productName,
+      category,
+      type,
+      [],
+      [
         "C145.1 没有确认具体商品名称。",
         "无法可靠构造商品专项市场与供应链查询。",
       ],
-
-      nextActions: [
+      [
         "补充商品名称或重新执行 Video Vision。",
       ],
-
-      retrieval: {
-        market: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        price: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        supply1688: {
-          success: false,
-          query: "",
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-      },
-
-      error:
-        "A confirmed product name is required.",
-    };
+      "A confirmed product name is required.",
+    );
   }
 
   const queries =
@@ -528,17 +592,20 @@ export async function executeCommerceMarketIntelligence(
       marketResult,
       priceResult,
       supplyResult,
-    ] = await Promise.all([
-      retrieveWebEvidence(
-        queries.market,
-      ),
-      retrieveWebEvidence(
-        queries.price,
-      ),
-      retrieveWebEvidence(
-        queries.supply1688,
-      ),
-    ]);
+    ] =
+      await Promise.all([
+        retrieveWebEvidence(
+          queries.market,
+        ),
+
+        retrieveWebEvidence(
+          queries.price,
+        ),
+
+        retrieveWebEvidence(
+          queries.supply1688,
+        ),
+      ]);
 
     const marketEvidence =
       evidenceFromWeb(
@@ -564,7 +631,16 @@ export async function executeCommerceMarketIntelligence(
         "supply",
       );
 
-    const 1688Evidence =
+    /*
+     * IMPORTANT:
+     *
+     * Only evidence whose hostname is actually
+     * 1688.com is classified as 1688 supply evidence.
+     *
+     * We never relabel generic search results as
+     * 1688 supplier evidence.
+     */
+    const evidence1688 =
       allSupplyEvidence.filter(
         (item) =>
           is1688Host(
@@ -573,14 +649,17 @@ export async function executeCommerceMarketIntelligence(
       );
 
     const supplyEvidence =
-      (
-        1688Evidence.length > 0
-          ? 1688Evidence
-          : allSupplyEvidence
-      ).slice(
-        0,
-        MAX_EVIDENCE,
-      );
+      evidence1688
+        .map(
+          (item) => ({
+            ...item,
+            kind: "1688" as const,
+          }),
+        )
+        .slice(
+          0,
+          MAX_EVIDENCE,
+        );
 
     const priceSignals =
       extractPriceSignals(
@@ -625,39 +704,36 @@ export async function executeCommerceMarketIntelligence(
 
     const marketHosts =
       new Set(
-        marketEvidence
-          .map(
-            (item) =>
-              item.hostname
-                .toLowerCase()
-                .replace(
-                  /^www\./,
-                  "",
-                ),
-          ),
+        marketEvidence.map(
+          (item) =>
+            normalizeHost(
+              item.hostname,
+            ),
+        ),
       );
 
     const supplyHosts =
       new Set(
-        supplyEvidence
-          .map(
-            (item) =>
-              item.hostname
-                .toLowerCase()
-                .replace(
-                  /^www\./,
-                  "",
-                ),
-          ),
+        supplyEvidence.map(
+          (item) =>
+            normalizeHost(
+              item.hostname,
+            ),
+        ),
       );
 
     const marketVerified =
-      marketResult.success &&
-      marketResult.verified;
+      Boolean(
+        marketResult.success &&
+        marketResult.verified,
+      );
 
     const supplyVerified =
-      supplyResult.success &&
-      supplyResult.verified;
+      Boolean(
+        supplyResult.success &&
+        supplyResult.verified &&
+        supplyEvidence.length > 0,
+      );
 
     const priceEvidenceFound =
       priceSignals.length > 0;
@@ -671,7 +747,7 @@ export async function executeCommerceMarketIntelligence(
     const marketScore =
       clampScore(
         (
-          marketResult.verified
+          marketVerified
             ? 45
             : 20
         ) +
@@ -689,12 +765,14 @@ export async function executeCommerceMarketIntelligence(
     const supplyScore =
       clampScore(
         (
-          supplyResult.verified
-            ? 45
-            : 20
+          supplyVerified
+            ? 50
+            : supplyEvidence.length > 0
+              ? 25
+              : 0
         ) +
           Math.min(
-            35,
+            30,
             supplyHosts.size * 10,
           ) +
           (
@@ -743,13 +821,22 @@ export async function executeCommerceMarketIntelligence(
         supplierSignals,
       );
 
-    const nextActions = [
-      "人工打开供应商页面核验起批量、采购价、库存和发货条件。",
-      "人工核验市场售价是否对应同规格商品。",
-      "对主要竞品进一步记录售价、卖点、内容形式和评论反馈。",
-      "建立采购成本、平台费用、物流与实际成交价后再计算利润。",
-    ];
+    const nextActions =
+      buildNextActions(
+        supplyEvidence,
+        priceSignals,
+      );
 
+    /*
+     * Overall verified requires:
+     *
+     * 1. external market verification
+     * 2. actual 1688 evidence
+     * 3. price evidence
+     *
+     * This prevents a generic web result from
+     * becoming a false "supplier verified" claim.
+     */
     const overallVerified =
       marketVerified &&
       supplyVerified &&
@@ -757,13 +844,20 @@ export async function executeCommerceMarketIntelligence(
 
     return {
       success: true,
+
       code:
         "C145_2_COMMERCE_MARKET_SUPPLY_INTELLIGENCE_PASS",
 
       product: {
-        name: productName,
-        category,
-        type,
+        name:
+          productName,
+
+        category:
+          category,
+
+        type:
+          type,
+
         searchQueries: [
           queries.market,
           queries.price,
@@ -772,23 +866,34 @@ export async function executeCommerceMarketIntelligence(
       },
 
       marketEvidence,
+
       supplyEvidence,
 
       priceSignals,
+
       competitorSignals,
+
       supplierSignals,
 
       verification: {
         marketVerified,
+
         supplyVerified,
+
         priceEvidenceFound,
+
         competitorEvidenceFound,
+
         supplierEvidenceFound,
+
         independentMarketSources:
           marketHosts.size,
+
         independentSupplySources:
           supplyHosts.size,
+
         overallVerified,
+
         score:
           overallScore,
       },
@@ -796,10 +901,13 @@ export async function executeCommerceMarketIntelligence(
       confidence: {
         market:
           marketScore,
+
         supply:
           supplyScore,
+
         price:
           priceScore,
+
         competition:
           competitionScore,
       },
@@ -813,10 +921,12 @@ export async function executeCommerceMarketIntelligence(
           retrievalSummary(
             marketResult,
           ),
+
         price:
           retrievalSummary(
             priceResult,
           ),
+
         supply1688:
           retrievalSummary(
             supplyResult,
@@ -829,80 +939,25 @@ export async function executeCommerceMarketIntelligence(
         ? error.message
         : "Commerce market intelligence failed.";
 
-    return {
-      success: false,
-      code:
-        "C145_2_COMMERCE_MARKET_SUPPLY_INTELLIGENCE_ERROR",
-
-      product: {
-        name: productName,
-        category,
-        type,
-        searchQueries: [
-          queries.market,
-          queries.price,
-          queries.supply1688,
-        ],
-      },
-
-      marketEvidence: [],
-      supplyEvidence: [],
-      priceSignals: [],
-      competitorSignals: [],
-      supplierSignals: [],
-
-      verification: {
-        marketVerified: false,
-        supplyVerified: false,
-        priceEvidenceFound: false,
-        competitorEvidenceFound: false,
-        supplierEvidenceFound: false,
-        independentMarketSources: 0,
-        independentSupplySources: 0,
-        overallVerified: false,
-        score: 0,
-      },
-
-      confidence: {
-        market: 0,
-        supply: 0,
-        price: 0,
-        competition: 0,
-      },
-
-      unknowns: [
-        "外部市场/供应链检索执行失败。",
+    return createFailureResult(
+      "C145_2_COMMERCE_MARKET_SUPPLY_INTELLIGENCE_ERROR",
+      productName,
+      category,
+      type,
+      [
+        queries.market,
+        queries.price,
+        queries.supply1688,
       ],
-
-      nextActions: [
+      [
+        "外部市场检索执行失败。",
+        "供应链证据未确认。",
+        "价格证据未确认。",
+      ],
+      [
         "检查 Brave Search API 配置后重试。",
       ],
-
-      retrieval: {
-        market: {
-          success: false,
-          query: queries.market,
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        price: {
-          success: false,
-          query: queries.price,
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-        supply1688: {
-          success: false,
-          query: queries.supply1688,
-          sourceCount: 0,
-          sourceHosts: [],
-          verified: false,
-        },
-      },
-
-      error: message,
-    };
+      message,
+    );
   }
 }
