@@ -45,9 +45,16 @@ import {
   executeRuntimeVideoRequest,
 } from "./video-runtime";
 
+import {
+  executeRuntimeVideoEvidence,
+  type VideoEvidenceRuntimeResult,
+} from "./video-evidence-runtime";
+
 export interface RuntimeRequest {
   prompt: string;
+
   locale?: Locale;
+
   webContext?: WebIntelligenceResult;
 }
 
@@ -130,6 +137,29 @@ export interface RuntimeResponse {
     bytesRead: number;
   };
 
+  videoEvidence?: {
+    success: boolean;
+    code: string;
+
+    sampleCount: number;
+
+    successfulSampleCount: number;
+
+    totalBytesRead: number;
+
+    sampleTimesSeconds: number[];
+
+    byteRangesVerified: boolean;
+
+    temporalSamplingPlanned: boolean;
+
+    visualFramesDecoded: boolean;
+
+    audioDecoded: boolean;
+
+    semanticUnderstandingReady: boolean;
+  };
+
   timestamp: number;
 
   latencyMs: number;
@@ -156,6 +186,27 @@ function createPromptPreview(
     .slice(0, 160);
 }
 
+function buildVideoEvidenceTraceDetail(
+  evidence:
+    | VideoEvidenceRuntimeResult
+    | undefined,
+): string {
+  if (!evidence) {
+    return "Video evidence sampling was not executed.";
+  }
+
+  return [
+    "video.evidence",
+    `status=${evidence.code}`,
+    `samples=${evidence.successfulSampleCount}/${evidence.sampleCount}`,
+    `bytes=${evidence.totalBytesRead}`,
+    `byteRangesVerified=${evidence.evidence.byteRangesVerified}`,
+    `visualFramesDecoded=${evidence.evidence.visualFramesDecoded}`,
+    `audioDecoded=${evidence.evidence.audioDecoded}`,
+    `semanticUnderstandingReady=${evidence.evidence.semanticUnderstandingReady}`,
+  ].join(" | ");
+}
+
 export async function executeRuntime(
   request: RuntimeRequest,
 ): Promise<RuntimeResponse> {
@@ -176,7 +227,8 @@ export async function executeRuntime(
       Date.now();
 
     const latencyMs =
-      timestamp - startedAt;
+      timestamp -
+      startedAt;
 
     const emptyMessage =
       locale === "ja"
@@ -212,19 +264,31 @@ export async function executeRuntime(
 
     return {
       success: false,
+
       provider: "mock",
+
       requestedProvider: "mock",
+
       fallbackUsed: false,
+
       error: emptyMessage,
+
       content: emptyMessage,
+
       actionHandled: false,
+
       runtime:
         APP_CONFIG.runtimeId,
+
       runtimeVersion:
         APP_CONFIG.version,
+
       requestId,
+
       timestamp,
+
       latencyMs,
+
       locale,
     };
   }
@@ -247,78 +311,138 @@ export async function executeRuntime(
       const timestamp =
         Date.now();
 
-      const latencyMs =
-        timestamp -
-        startedAt;
-
       const provider =
         getActiveProvider();
+
+      let videoEvidence:
+        | VideoEvidenceRuntimeResult
+        | undefined;
+
+      if (
+        videoResult.success &&
+        videoResult.selectedUrl &&
+        videoResult.processing
+      ) {
+        videoEvidence =
+          await executeRuntimeVideoEvidence(
+            videoResult.selectedUrl,
+
+            videoResult.mediaType ??
+              "unknown",
+
+            {
+              durationSeconds:
+                videoResult.processing
+                  .durationSeconds,
+
+              contentLength:
+                videoResult.media
+                  ?.contentLength,
+            },
+          );
+      }
+
+      const latencyMs =
+        Date.now() -
+        startedAt;
 
       const capabilityTrace:
         CapabilityTrace[] = [
           {
             capability:
               plan.capabilities[0],
+
             status:
-              videoResult.success
+              videoResult.success &&
+              (
+                !videoEvidence ||
+                videoEvidence.success
+              )
                 ? "completed"
                 : "failed",
+
             durationMs:
               latencyMs,
+
             detail:
               [
                 "video.resolve",
                 videoResult.success
-                  ? "Video page resolved, Primary media selected, actual media read, and video processing attempted."
+                  ? "Video page resolved, Primary media selected, actual media read, and video processing completed."
                   : videoResult.error ??
                     videoResult.code,
-              ].join(" | "),
+
+                buildVideoEvidenceTraceDetail(
+                  videoEvidence,
+                ),
+              ].join(
+                " | ",
+              ),
           },
         ];
 
       updateProviderRuntimeStatus({
         provider,
+
         requestedProvider:
           provider,
+
         fallbackUsed: false,
+
         success:
           videoResult.success,
+
         error:
           videoResult.success
             ? undefined
             : videoResult.error ??
               videoResult.code,
+
         latencyMs,
+
         lastRequestAt:
           timestamp,
       });
 
       saveRuntimeTrace({
         requestId,
+
         planId:
           plan.id,
+
         promptPreview:
           createPromptPreview(
             prompt,
           ),
+
         goal:
           plan.goal,
+
         intent:
           plan.intent,
+
         planType:
           plan.type,
+
         provider,
+
         success:
           videoResult.success,
+
         fallbackUsed: false,
+
         latencyMs,
+
         capabilityTrace,
+
         error:
           videoResult.success
             ? undefined
             : videoResult.error ??
               videoResult.code,
+
         startedAt,
+
         completedAt:
           timestamp,
       });
@@ -376,12 +500,20 @@ export async function executeRuntime(
 
         steps: [
           ...plan.steps,
+
           "解析视频网页",
+
           "提取视频候选",
+
           "选择 Primary 视频",
+
           "实际媒体读取",
+
           "媒体 Metadata 处理",
+
           "Video Track 处理",
+
+          "Video Evidence Sampling",
         ],
 
         capabilityTrace,
@@ -471,6 +603,53 @@ export async function executeRuntime(
               }
             : undefined,
 
+        videoEvidence:
+          videoEvidence
+            ? {
+                success:
+                  videoEvidence.success,
+
+                code:
+                  videoEvidence.code,
+
+                sampleCount:
+                  videoEvidence.sampleCount,
+
+                successfulSampleCount:
+                  videoEvidence
+                    .successfulSampleCount,
+
+                totalBytesRead:
+                  videoEvidence
+                    .totalBytesRead,
+
+                sampleTimesSeconds:
+                  videoEvidence.timeline
+                    ?.sampleTimesSeconds ??
+                  [],
+
+                byteRangesVerified:
+                  videoEvidence.evidence
+                    .byteRangesVerified,
+
+                temporalSamplingPlanned:
+                  videoEvidence.evidence
+                    .temporalSamplingPlanned,
+
+                visualFramesDecoded:
+                  videoEvidence.evidence
+                    .visualFramesDecoded,
+
+                audioDecoded:
+                  videoEvidence.evidence
+                    .audioDecoded,
+
+                semanticUnderstandingReady:
+                  videoEvidence.evidence
+                    .semanticUnderstandingReady,
+              }
+            : undefined,
+
         timestamp,
 
         latencyMs,
@@ -490,7 +669,8 @@ export async function executeRuntime(
       Date.now();
 
     const latencyMs =
-      timestamp - startedAt;
+      timestamp -
+      startedAt;
 
     const requestedProvider =
       result.requestedProvider ??
@@ -507,41 +687,60 @@ export async function executeRuntime(
     updateProviderRuntimeStatus({
       provider:
         result.provider,
+
       requestedProvider,
+
       fallbackUsed,
+
       success:
         result.success,
+
       error:
         result.error,
+
       latencyMs,
+
       lastRequestAt:
         timestamp,
     });
 
     saveRuntimeTrace({
       requestId,
+
       planId:
         result.planId,
+
       promptPreview:
         createPromptPreview(
           prompt,
         ),
+
       goal:
         result.goal,
+
       intent:
         result.intent,
+
       planType:
         result.planType,
+
       provider:
         result.provider,
+
       success:
         result.success,
+
       fallbackUsed,
+
       latencyMs,
+
       capabilityTrace,
+
       error:
         result.error,
+
       startedAt,
+
       completedAt:
         timestamp,
     });
@@ -635,94 +834,142 @@ export async function executeRuntime(
 
     updateProviderRuntimeStatus({
       provider: "mock",
+
       requestedProvider:
         "deepseek",
+
       fallbackUsed: false,
+
       success: false,
-      error: errorMessage,
+
+      error:
+        errorMessage,
+
       latencyMs,
+
       lastRequestAt:
         timestamp,
     });
 
     saveRuntimeTrace({
       requestId,
+
       planId:
         plan.id,
+
       promptPreview:
         createPromptPreview(
           prompt,
         ),
+
       goal:
         plan.goal,
+
       intent:
         plan.intent,
+
       planType:
         plan.type,
+
       provider: "mock",
+
       success: false,
+
       fallbackUsed: false,
+
       latencyMs,
+
       capabilityTrace: [],
-      error: errorMessage,
+
+      error:
+        errorMessage,
+
       startedAt,
+
       completedAt:
         timestamp,
     });
 
     return {
       success: false,
+
       provider: "mock",
+
       requestedProvider:
         "deepseek",
+
       fallbackUsed: false,
+
       error:
         errorMessage,
+
       content:
         unavailableMessage,
-      actionHandled: false,
+
+      actionHandled:
+        false,
+
       runtime:
         APP_CONFIG.runtimeId,
+
       runtimeVersion:
         APP_CONFIG.version,
+
       requestId,
+
       planId:
         plan.id,
+
       planType:
         plan.type,
+
       goal:
         plan.goal,
+
       intent:
         plan.intent,
+
       confidence:
         plan.confidence,
+
       capabilities:
         plan.capabilities,
+
       steps:
         plan.steps,
+
       capabilityTrace: [],
+
       webIntelligence:
         request.webContext
           ? {
               required: true,
+
               success:
                 request.webContext
                   .success,
+
               verified:
                 request.webContext
                   .verified,
+
               sourceCount:
                 request.webContext
                   .sourceCount,
+
               sourceHosts:
                 request.webContext
                   .sourceHosts,
             }
           : undefined,
+
       liveDecision:
         undefined,
+
       timestamp,
+
       latencyMs,
+
       locale,
     };
   }
