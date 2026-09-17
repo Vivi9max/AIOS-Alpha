@@ -16,6 +16,11 @@ import {
   type CommerceMarketIntelligence,
 } from "./commerce-market-intelligence-runtime";
 
+import {
+  executeCommerceDecision,
+  type CommerceDecisionResult,
+} from "./commerce-decision-runtime";
+
 export interface VideoVisionRuntimeResult {
   success: boolean;
 
@@ -37,13 +42,14 @@ export interface VideoVisionRuntimeResult {
 
   commerceMarketIntelligence?: CommerceMarketIntelligence;
 
+  commerceDecision?: CommerceDecisionResult;
+
   error?: string;
 }
 
 function appendCommerceProductIntelligence(
   visionContent: string,
-  commerce:
-    CommerceProductIntelligence,
+  commerce: CommerceProductIntelligence,
 ): string {
   if (
     commerce.code ===
@@ -69,44 +75,35 @@ function appendCommerceProductIntelligence(
       "",
       "视觉商业信号",
       `外观：${
-        commerce.visualSignals.appearance.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.appearance.join("；") ||
+        "未确认"
       }`,
       `包装：${
-        commerce.visualSignals.packaging.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.packaging.join("；") ||
+        "未确认"
       }`,
       `展示方式：${
-        commerce.visualSignals.demonstration.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.demonstration.join("；") ||
+        "未确认"
       }`,
       `人物动作：${
-        commerce.visualSignals.peopleActions.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.peopleActions.join("；") ||
+        "未确认"
       }`,
       `字幕/文字：${
-        commerce.visualSignals.textOverlays.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.textOverlays.join("；") ||
+        "未确认"
       }`,
       `价格信号：${
-        commerce.visualSignals.priceSignals.join(
-          "；",
-        ) || "未确认"
+        commerce.visualSignals.priceSignals.join("；") ||
+        "未确认"
       }`,
       "",
       "卖点",
       commerce.sellingPoints.length > 0
         ? commerce.sellingPoints
             .map(
-              (
-                item,
-                index,
-              ) =>
+              (item, index) =>
                 `${index + 1}. ${item}`,
             )
             .join("\n")
@@ -149,10 +146,7 @@ function appendCommerceProductIntelligence(
         "未知项",
         commerce.unknowns
           .map(
-            (
-              item,
-              index,
-            ) =>
+            (item, index) =>
               `${index + 1}. ${item}`,
           )
           .join("\n"),
@@ -167,10 +161,7 @@ function appendCommerceProductIntelligence(
         "下一步",
         commerce.nextActions
           .map(
-            (
-              item,
-              index,
-            ) =>
+            (item, index) =>
               `${index + 1}. ${item}`,
           )
           .join("\n"),
@@ -198,8 +189,7 @@ function appendCommerceProductIntelligence(
 
 function appendCommerceMarketIntelligence(
   content: string,
-  market:
-    CommerceMarketIntelligence,
+  market: CommerceMarketIntelligence,
 ): string {
   const lines: string[] = [
     content,
@@ -244,10 +234,7 @@ function appendCommerceMarketIntelligence(
     market.priceSignals.length > 0
       ? market.priceSignals
           .map(
-            (
-              item,
-              index,
-            ) =>
+            (item, index) =>
               `${index + 1}. ${item}`,
           )
           .join("\n")
@@ -257,10 +244,7 @@ function appendCommerceMarketIntelligence(
     market.competitorSignals.length > 0
       ? market.competitorSignals
           .map(
-            (
-              item,
-              index,
-            ) =>
+            (item, index) =>
               `${index + 1}. ${item}`,
           )
           .join("\n")
@@ -270,10 +254,7 @@ function appendCommerceMarketIntelligence(
     market.supplierSignals.length > 0
       ? market.supplierSignals
           .map(
-            (
-              item,
-              index,
-            ) =>
+            (item, index) =>
               `${index + 1}. ${item}`,
           )
           .join("\n")
@@ -317,10 +298,7 @@ function appendCommerceMarketIntelligence(
       "未知项",
       market.unknowns
         .map(
-          (
-            item,
-            index,
-          ) =>
+          (item, index) =>
             `${index + 1}. ${item}`,
         )
         .join("\n"),
@@ -335,10 +313,7 @@ function appendCommerceMarketIntelligence(
       "下一步",
       market.nextActions
         .map(
-          (
-            item,
-            index,
-          ) =>
+          (item, index) =>
             `${index + 1}. ${item}`,
         )
         .join("\n"),
@@ -356,10 +331,147 @@ function appendCommerceMarketIntelligence(
   return lines.join("\n");
 }
 
+function appendCommerceDecision(
+  content: string,
+  decision: CommerceDecisionResult,
+): string {
+  const lines: string[] = [
+    content,
+    "",
+    "Commerce Decision Engine",
+    `处理代码：${decision.code}`,
+  ];
+
+  if (!decision.success) {
+    lines.push(
+      "",
+      `决策引擎执行失败：${
+        decision.error ??
+        "未返回可用结果。"
+      }`,
+    );
+
+    return lines.join("\n");
+  }
+
+  const priorityText =
+    decision.decision.testPriority ===
+    "high"
+      ? "HIGH"
+      : decision.decision.testPriority ===
+          "medium"
+        ? "MEDIUM"
+        : decision.decision.testPriority ===
+            "low"
+          ? "LOW"
+          : "UNKNOWN";
+
+  lines.push(
+    "",
+    "测试优先级",
+    `${priorityText}`,
+    `Decision Score：${decision.decision.score}/100`,
+    "",
+    "决策依据",
+    decision.decision.rationale
+      .map(
+        (item, index) =>
+          `${index + 1}. ${item}`,
+      )
+      .join("\n"),
+    "",
+    "价格分析",
+    `市场价格信号：${decision.priceAnalysis.marketPriceCount}`,
+    `供应链价格信号：${decision.priceAnalysis.supplyPriceCount}`,
+    `价格空间信号：${decision.priceAnalysis.priceSpreadSignal}`,
+    "Profitability Verified：false",
+    "",
+    "竞争分析",
+    `竞品信号：${decision.competitionAnalysis.signalCount}`,
+    `竞争程度：${decision.competitionAnalysis.level}`,
+    "",
+    "供应链分析",
+    `供应证据：${decision.supplyAnalysis.evidenceCount}`,
+    `供应商信号：${decision.supplyAnalysis.supplierSignalCount}`,
+    `供应验证：${
+      decision.supplyAnalysis.verified
+        ? "成功"
+        : "有限"
+    }`,
+    "",
+    "内容分析",
+    `卖点数量：${decision.contentAnalysis.sellingPointCount}`,
+    `展示方式数量：${decision.contentAnalysis.demonstrationCount}`,
+    `商业信号：${decision.contentAnalysis.commercialSignalScore}/100`,
+    "",
+    "验证",
+    `市场：${
+      decision.verification.marketVerified
+        ? "成功"
+        : "有限"
+    }`,
+    `供应链：${
+      decision.verification.supplyVerified
+        ? "成功"
+        : "有限"
+    }`,
+    `价格：${
+      decision.verification.priceEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `竞品：${
+      decision.verification.competitorEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `供应商：${
+      decision.verification.supplierEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `Overall Verified：${
+      decision.verification.overallVerified
+        ? "true"
+        : "false"
+    }`,
+  );
+
+  if (
+    decision.unknowns.length > 0
+  ) {
+    lines.push(
+      "",
+      "未知项",
+      decision.unknowns
+        .map(
+          (item, index) =>
+            `${index + 1}. ${item}`,
+        )
+        .join("\n"),
+    );
+  }
+
+  lines.push(
+    "",
+    "建议下一步",
+    decision.nextActions
+      .map(
+        (item, index) =>
+          `${index + 1}. ${item}`,
+      )
+      .join("\n"),
+    "",
+    "C145.3 边界：",
+    ...decision.boundaries,
+  );
+
+  return lines.join("\n");
+}
+
 export async function executeRuntimeVideoVision(
   userPrompt: string,
-  visualEvidence:
-    VideoVisualEvidenceResult,
+  visualEvidence: VideoVisualEvidenceResult,
 ): Promise<VideoVisionRuntimeResult> {
   const vision =
     await executeVideoVisionGateway(
@@ -392,14 +504,10 @@ export async function executeRuntimeVideoVision(
     | CommerceMarketIntelligence
     | undefined;
 
-  /*
-   * C145.2
-   *
-   * Only enter Market & Supply Intelligence
-   * after C145.1 has confirmed a product name.
-   *
-   * No product name = no speculative search.
-   */
+  let decision:
+    | CommerceDecisionResult
+    | undefined;
+
   if (
     commerce.success &&
     commerce.product.name
@@ -414,6 +522,25 @@ export async function executeRuntimeVideoVision(
         content,
         market,
       );
+
+    /*
+     * C145.3
+     *
+     * Only execute the Decision Engine
+     * after C145.1 and C145.2 have produced
+     * structured inputs.
+     */
+    decision =
+      executeCommerceDecision(
+        commerce,
+        market,
+      );
+
+    content =
+      appendCommerceDecision(
+        content,
+        decision,
+      );
   }
 
   return {
@@ -426,5 +553,8 @@ export async function executeRuntimeVideoVision(
 
     commerceMarketIntelligence:
       market,
+
+    commerceDecision:
+      decision,
   };
 }
