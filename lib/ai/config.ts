@@ -1,5 +1,14 @@
 import type { AIProvider } from "./types";
 
+const openAIKey =
+  process.env.OPENAI_API_KEY ?? "";
+
+const deepSeekKey =
+  process.env.DEEPSEEK_API_KEY ?? "";
+
+const qwenKey =
+  process.env.QWEN_API_KEY ?? "";
+
 export const AI_CONFIG = {
   defaultProvider:
     "deepseek" as AIProvider,
@@ -13,38 +22,46 @@ export const AI_CONFIG = {
     },
 
     qwen: {
-      enabled: false,
-      model: "qwen-plus",
+      enabled:
+        Boolean(qwenKey),
+
+      model:
+        "qwen-plus",
+
       apiKey:
-        process.env.QWEN_API_KEY ??
-        "",
+        qwenKey,
+
       baseURL:
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     },
 
     deepseek: {
       enabled:
-        Boolean(
-          process.env
-            .DEEPSEEK_API_KEY
-        ),
-      model: "deepseek-chat",
+        Boolean(deepSeekKey),
+
+      model:
+        "deepseek-chat",
+
       apiKey:
-        process.env
-          .DEEPSEEK_API_KEY ??
-        "",
+        deepSeekKey,
+
       baseURL:
         "https://api.deepseek.com/v1",
     },
 
     openai: {
-      enabled: false,
-      model: "gpt-4.1",
+      enabled:
+        Boolean(openAIKey),
+
+      model:
+        process.env.AIOS_VISION_MODEL ??
+        "gpt-5.6-luna",
+
       apiKey:
-        process.env
-          .OPENAI_API_KEY ??
-        "",
+        openAIKey,
+
       baseURL:
+        process.env.OPENAI_BASE_URL ??
         "https://api.openai.com/v1",
     },
 
