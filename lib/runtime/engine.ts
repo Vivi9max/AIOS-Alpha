@@ -60,6 +60,11 @@ import {
   type VideoVisualEvidenceResult,
 } from "./video-visual-evidence-runtime";
 
+import {
+  executeRuntimeVideoVision,
+  type VideoVisionRuntimeResult,
+} from "./video-vision-runtime";
+
 export interface RuntimeRequest {
   prompt: string;
   locale?: Locale;
@@ -185,6 +190,17 @@ export interface RuntimeResponse {
     semanticUnderstandingReady: boolean;
   };
 
+  videoVision?: {
+    success: boolean;
+    code: string;
+    provider: "openai";
+    model?: string;
+    frameCount: number;
+    analyzedFrameCount: number;
+    semanticUnderstandingReady: boolean;
+    content?: string;
+  };
+
   timestamp: number;
 
   latencyMs: number;
@@ -276,6 +292,25 @@ function buildVideoVisualEvidenceTraceDetail(
   ].join(" | ");
 }
 
+function buildVideoVisionTraceDetail(
+  vision:
+    | VideoVisionRuntimeResult
+    | undefined,
+): string {
+  if (!vision) {
+    return "Video Vision Model analysis was not executed.";
+  }
+
+  return [
+    "video.vision",
+    `status=${vision.code}`,
+    `provider=${vision.provider}`,
+    `model=${vision.model ?? "unknown"}`,
+    `frames=${vision.analyzedFrameCount}/${vision.frameCount}`,
+    `semanticUnderstandingReady=${vision.semanticUnderstandingReady}`,
+  ].join(" | ");
+}
+
 export async function executeRuntime(
   request: RuntimeRequest,
 ): Promise<RuntimeResponse> {
@@ -313,7 +348,8 @@ export async function executeRuntime(
       success: false,
       error: emptyMessage,
       latencyMs,
-      lastRequestAt: timestamp,
+      lastRequestAt:
+        timestamp,
     });
 
     saveRuntimeTrace({
@@ -326,7 +362,8 @@ export async function executeRuntime(
       capabilityTrace: [],
       error: emptyMessage,
       startedAt,
-      completedAt: timestamp,
+      completedAt:
+        timestamp,
     });
 
     return {
@@ -337,8 +374,10 @@ export async function executeRuntime(
       error: emptyMessage,
       content: emptyMessage,
       actionHandled: false,
-      runtime: APP_CONFIG.runtimeId,
-      runtimeVersion: APP_CONFIG.version,
+      runtime:
+        APP_CONFIG.runtimeId,
+      runtimeVersion:
+        APP_CONFIG.version,
       requestId,
       timestamp,
       latencyMs,
@@ -370,6 +409,10 @@ export async function executeRuntime(
 
       let videoVisualEvidence:
         | VideoVisualEvidenceResult
+        | undefined;
+
+      let videoVision:
+        | VideoVisionRuntimeResult
         | undefined;
 
       if (
@@ -411,16 +454,6 @@ export async function executeRuntime(
           );
       }
 
-      /*
-       * C144.8:
-       *
-       * Convert decoded video frames into a bounded
-       * visual evidence package.
-       *
-       * The Base64 image payload remains request-local
-       * and is intentionally NOT exposed through
-       * RuntimeResponse.
-       */
       if (
         videoFrames?.success &&
         videoFrames.frames.length > 0
@@ -428,6 +461,28 @@ export async function executeRuntime(
         videoVisualEvidence =
           buildVideoVisualEvidence(
             videoFrames.frames,
+          );
+      }
+
+      /*
+       * C144.9
+       *
+       * Send the bounded request-local visual
+       * evidence package to the configured Vision
+       * model.
+       *
+       * Raw Base64 frames are intentionally never
+       * exposed through RuntimeResponse.
+       */
+      if (
+        videoVisualEvidence?.success &&
+        videoVisualEvidence.evidence
+          .visionReady
+      ) {
+        videoVision =
+          await executeRuntimeVideoVision(
+            prompt,
+            videoVisualEvidence,
           );
       }
 
@@ -448,6 +503,19 @@ export async function executeRuntime(
         !videoVisualEvidence ||
         videoVisualEvidence.success;
 
+      /*
+       * Missing Vision API configuration does not
+       * invalidate the lower-level video runtime.
+       *
+       * Once the Vision API is configured, a Vision
+       * request failure is surfaced as a real failure.
+       */
+      const visionPipelineSuccess =
+        !videoVision ||
+        videoVision.success ||
+        videoVision.code ===
+          "C144_9_VIDEO_VISION_API_KEY_MISSING";
+
       const runtimeSuccess =
         videoResult.success &&
         (
@@ -455,7 +523,8 @@ export async function executeRuntime(
           videoEvidence.success
         ) &&
         framePipelineSuccess &&
-        visualPipelineSuccess;
+        visualPipelineSuccess &&
+        visionPipelineSuccess;
 
       const capabilityTrace:
         CapabilityTrace[] = [
@@ -491,6 +560,10 @@ export async function executeRuntime(
                 buildVideoVisualEvidenceTraceDetail(
                   videoVisualEvidence,
                 ),
+
+                buildVideoVisionTraceDetail(
+                  videoVision,
+                ),
               ].join(" | "),
           },
         ];
@@ -509,7 +582,8 @@ export async function executeRuntime(
         error:
           runtimeSuccess
             ? undefined
-            : videoResult.error ??
+            : videoVision?.error ??
+              videoResult.error ??
               videoResult.code,
 
         latencyMs,
@@ -550,7 +624,8 @@ export async function executeRuntime(
         error:
           runtimeSuccess
             ? undefined
-            : videoResult.error ??
+            : videoVision?.error ??
+              videoResult.error ??
               videoResult.code,
 
         startedAt,
@@ -695,6 +770,42 @@ export async function executeRuntime(
         );
       }
 
+      if (videoVision) {
+        contentParts.push(
+          "",
+          "Video Vision Understanding",
+          `处理代码：${videoVision.code}`,
+          `Provider：${videoVision.provider}`,
+          `Model：${
+            videoVision.model ??
+            "未配置"
+          }`,
+          `Frames Analyzed：${videoVision.analyzedFrameCount}/${videoVision.frameCount}`,
+          `Semantic Understanding Ready：${
+            videoVision.semanticUnderstandingReady
+              ? "true"
+              : "false"
+          }`,
+        );
+
+        if (
+          videoVision.content
+        ) {
+          contentParts.push(
+            "",
+            videoVision.content,
+          );
+        }
+
+        if (
+          videoVision.error
+        ) {
+          contentParts.push(
+            `Vision Error：${videoVision.error}`,
+          );
+        }
+      }
+
       return {
         success:
           runtimeSuccess,
@@ -709,7 +820,8 @@ export async function executeRuntime(
         error:
           runtimeSuccess
             ? undefined
-            : videoResult.error ??
+            : videoVision?.error ??
+              videoResult.error ??
               videoResult.code,
 
         content:
@@ -754,6 +866,8 @@ export async function executeRuntime(
           "Video Evidence Sampling",
           "Video Frame Extraction",
           "Video Visual Evidence Packaging",
+          "Video Vision Model Analysis",
+          "Video Semantic Understanding",
         ],
 
         capabilityTrace,
@@ -965,6 +1079,37 @@ export async function executeRuntime(
                 semanticUnderstandingReady:
                   videoVisualEvidence.evidence
                     .semanticUnderstandingReady,
+              }
+            : undefined,
+
+        videoVision:
+          videoVision
+            ? {
+                success:
+                  videoVision.success,
+
+                code:
+                  videoVision.code,
+
+                provider:
+                  videoVision.provider,
+
+                model:
+                  videoVision.model,
+
+                frameCount:
+                  videoVision.frameCount,
+
+                analyzedFrameCount:
+                  videoVision
+                    .analyzedFrameCount,
+
+                semanticUnderstandingReady:
+                  videoVision
+                    .semanticUnderstandingReady,
+
+                content:
+                  videoVision.content,
               }
             : undefined,
 
