@@ -1,4 +1,5 @@
 import {
+  NextRequest,
   NextResponse,
 } from "next/server";
 import {
@@ -16,7 +17,7 @@ const TEST_PRODUCT = {
   type: "便携风扇",
 };
 export async function GET(
-  request: Request,
+  request: NextRequest,
 ) {
   const startedAt = Date.now();
   if (!isFounderRequest(request)) {
