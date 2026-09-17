@@ -1,6 +1,4 @@
-import {
-  createHash,
-} from "node:crypto";
+import { createHash } from "node:crypto";
 
 export interface VideoVisualFrameInput {
   index: number;
@@ -14,25 +12,40 @@ export interface VideoVisualFrameInput {
   imageBase64?: string;
 }
 
+export interface VideoVisualEvidenceFrame {
+  index: number;
+  timestampSeconds: number;
+  ratio: number;
+  mimeType: string;
+  bytesRead: number;
+  width?: number;
+  height?: number;
+  checksum?: string;
+  imageDataAvailable: boolean;
+}
+
 export interface VideoVisualEvidenceResult {
   success: boolean;
   code: string;
 
   frameCount: number;
   usableFrameCount: number;
-
   totalImageBytes: number;
 
-  frames: Array<{
+  frames: VideoVisualEvidenceFrame[];
+
+  /**
+   * Internal visual-model inputs.
+   *
+   * These remain in the current request lifecycle.
+   * They must not be persisted into normal AIOS Memory.
+   */
+  visionInputs: Array<{
     index: number;
     timestampSeconds: number;
     ratio: number;
     mimeType: string;
-    bytesRead: number;
-    width?: number;
-    height?: number;
-    checksum?: string;
-    imageDataAvailable: boolean;
+    imageBase64: string;
   }>;
 
   evidence: {
@@ -82,8 +95,7 @@ function isValidBase64(
   }
 
   if (
-    value.length % 4 !==
-    0
+    value.length % 4 !== 0
   ) {
     return false;
   }
@@ -93,18 +105,40 @@ function isValidBase64(
   );
 }
 
+function getDecodedByteLength(
+  normalizedBase64: string,
+): number {
+  try {
+    return Buffer.from(
+      normalizedBase64,
+      "base64",
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function buildVideoVisualEvidence(
   frames: VideoVisualFrameInput[],
 ): VideoVisualEvidenceResult {
   const boundedFrames =
-    frames.slice(
-      0,
-      MAX_FRAMES,
-    );
+    frames
+      .filter(
+        (frame) =>
+          Number.isInteger(
+            frame.index,
+          ) &&
+          Number.isFinite(
+            frame.timestampSeconds,
+          ),
+      )
+      .slice(
+        0,
+        MAX_FRAMES,
+      );
 
   if (
-    boundedFrames.length ===
-    0
+    boundedFrames.length === 0
   ) {
     return {
       success: false,
@@ -114,6 +148,7 @@ export function buildVideoVisualEvidence(
       usableFrameCount: 0,
       totalImageBytes: 0,
       frames: [],
+      visionInputs: [],
       evidence: {
         imagesAvailable: false,
         checksumsAvailable: false,
@@ -129,6 +164,10 @@ export function buildVideoVisualEvidence(
 
   let totalImageBytes = 0;
 
+  const visionInputs:
+    VideoVisualEvidenceResult["visionInputs"] =
+    [];
+
   const evidenceFrames =
     boundedFrames.map(
       (frame) => {
@@ -137,31 +176,31 @@ export function buildVideoVisualEvidence(
 
         let imageBytes = 0;
 
+        let normalizedBase64 =
+          "";
+
         if (
           frame.imageBase64
         ) {
-          const normalized =
+          normalizedBase64 =
             normalizeBase64(
               frame.imageBase64,
             );
 
           if (
             isValidBase64(
-              normalized,
+              normalizedBase64,
             )
           ) {
-            const decoded =
-              Buffer.from(
-                normalized,
-                "base64",
+            imageBytes =
+              getDecodedByteLength(
+                normalizedBase64,
               );
 
-            imageBytes =
-              decoded.length;
-
             if (
+              imageBytes > 0 &&
               imageBytes <=
-              MAX_FRAME_IMAGE_BYTES
+                MAX_FRAME_IMAGE_BYTES
             ) {
               imageDataAvailable =
                 true;
@@ -172,32 +211,42 @@ export function buildVideoVisualEvidence(
         totalImageBytes +=
           imageBytes;
 
+        if (
+          imageDataAvailable
+        ) {
+          visionInputs.push({
+            index:
+              frame.index,
+            timestampSeconds:
+              frame.timestampSeconds,
+            ratio:
+              frame.ratio,
+            mimeType:
+              frame.mimeType ??
+              "image/jpeg",
+            imageBase64:
+              normalizedBase64,
+          });
+        }
+
         return {
           index:
             frame.index,
-
           timestampSeconds:
             frame.timestampSeconds,
-
           ratio:
             frame.ratio,
-
           mimeType:
             frame.mimeType ??
             "image/jpeg",
-
           bytesRead:
             frame.bytesRead,
-
           width:
             frame.width,
-
           height:
             frame.height,
-
           checksum:
             frame.checksum,
-
           imageDataAvailable,
         };
       },
@@ -215,19 +264,15 @@ export function buildVideoVisualEvidence(
         boundedFrames.length,
       usableFrameCount: 0,
       totalImageBytes,
-      frames:
-        evidenceFrames,
+      frames: evidenceFrames,
+      visionInputs: [],
       evidence: {
         imagesAvailable: false,
-        checksumsAvailable:
-          false,
-        dimensionsAvailable:
-          false,
-        timelineAvailable:
-          false,
+        checksumsAvailable: false,
+        dimensionsAvailable: false,
+        timelineAvailable: false,
         visionReady: false,
-        semanticUnderstandingReady:
-          false,
+        semanticUnderstandingReady: false,
       },
       error:
         `Visual evidence exceeds ${MAX_TOTAL_IMAGE_BYTES} byte limit.`,
@@ -268,45 +313,50 @@ export function buildVideoVisualEvidence(
         ),
     );
 
+  if (
+    !imagesAvailable
+  ) {
+    return {
+      success: false,
+      code:
+        "C144_8_VIDEO_VISUAL_EVIDENCE_PARTIAL",
+      frameCount:
+        boundedFrames.length,
+      usableFrameCount,
+      totalImageBytes,
+      frames: evidenceFrames,
+      visionInputs,
+      evidence: {
+        imagesAvailable: false,
+        checksumsAvailable,
+        dimensionsAvailable,
+        timelineAvailable,
+        visionReady: false,
+        semanticUnderstandingReady: false,
+      },
+      error:
+        "No usable extracted frame images are available.",
+    };
+  }
+
   return {
-    success:
-      imagesAvailable,
-
+    success: true,
     code:
-      imagesAvailable
-        ? "C144_8_VIDEO_VISUAL_EVIDENCE_PASS"
-        : "C144_8_VIDEO_VISUAL_EVIDENCE_PARTIAL",
-
+      "C144_8_VIDEO_VISUAL_EVIDENCE_PASS",
     frameCount:
       boundedFrames.length,
-
     usableFrameCount,
-
     totalImageBytes,
-
-    frames:
-      evidenceFrames,
-
+    frames: evidenceFrames,
+    visionInputs,
     evidence: {
-      imagesAvailable,
-
+      imagesAvailable: true,
       checksumsAvailable,
-
       dimensionsAvailable,
-
       timelineAvailable,
-
-      visionReady:
-        imagesAvailable,
-
-      semanticUnderstandingReady:
-        false,
+      visionReady: true,
+      semanticUnderstandingReady: false,
     },
-
-    error:
-      imagesAvailable
-        ? undefined
-        : "No usable extracted frame images are available.",
   };
 }
 
