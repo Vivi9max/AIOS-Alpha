@@ -313,8 +313,7 @@ export async function executeRuntime(
       success: false,
       error: emptyMessage,
       latencyMs,
-      lastRequestAt:
-        timestamp,
+      lastRequestAt: timestamp,
     });
 
     saveRuntimeTrace({
@@ -327,8 +326,7 @@ export async function executeRuntime(
       capabilityTrace: [],
       error: emptyMessage,
       startedAt,
-      completedAt:
-        timestamp,
+      completedAt: timestamp,
     });
 
     return {
@@ -339,10 +337,8 @@ export async function executeRuntime(
       error: emptyMessage,
       content: emptyMessage,
       actionHandled: false,
-      runtime:
-        APP_CONFIG.runtimeId,
-      runtimeVersion:
-        APP_CONFIG.version,
+      runtime: APP_CONFIG.runtimeId,
+      runtimeVersion: APP_CONFIG.version,
       requestId,
       timestamp,
       latencyMs,
@@ -351,9 +347,7 @@ export async function executeRuntime(
   }
 
   const plan =
-    buildRuntimePlan(
-      prompt,
-    );
+    buildRuntimePlan(prompt);
 
   try {
     const videoResult =
@@ -362,9 +356,7 @@ export async function executeRuntime(
         locale,
       );
 
-    if (
-      videoResult.detected
-    ) {
+    if (videoResult.detected) {
       const provider =
         getActiveProvider();
 
@@ -422,11 +414,12 @@ export async function executeRuntime(
       /*
        * C144.8:
        *
-       * Consume decoded frame images while they are still
-       * available in the current request lifecycle.
+       * Convert decoded video frames into a bounded
+       * visual evidence package.
        *
-       * The actual Base64 image payload is intentionally
-       * NOT copied into RuntimeResponse.
+       * The Base64 image payload remains request-local
+       * and is intentionally NOT exposed through
+       * RuntimeResponse.
        */
       if (
         videoFrames?.success &&
@@ -498,9 +491,7 @@ export async function executeRuntime(
                 buildVideoVisualEvidenceTraceDetail(
                   videoVisualEvidence,
                 ),
-              ].join(
-                " | ",
-              ),
+              ].join(" | "),
           },
         ];
 
@@ -534,9 +525,7 @@ export async function executeRuntime(
           plan.id,
 
         promptPreview:
-          createPromptPreview(
-            prompt,
-          ),
+          createPromptPreview(prompt),
 
         goal:
           plan.goal,
@@ -570,15 +559,13 @@ export async function executeRuntime(
           timestamp,
       });
 
-      const contentParts: string[] =
-        [
+      const contentParts:
+        string[] = [
           videoResult.content ??
             "",
-        ];
+      ];
 
-      if (
-        videoEvidence
-      ) {
+      if (videoEvidence) {
         contentParts.push(
           "",
           "Video Evidence Sampling",
@@ -624,13 +611,11 @@ export async function executeRuntime(
               .semanticUnderstandingReady
               ? "true"
               : "false"
-          }",
+          }`,
         );
       }
 
-      if (
-        videoFrames
-      ) {
+      if (videoFrames) {
         contentParts.push(
           "",
           "Video Frame Extraction",
@@ -660,13 +645,11 @@ export async function executeRuntime(
               .semanticUnderstandingReady
               ? "true"
               : "false"
-          }",
+          }`,
         );
       }
 
-      if (
-        videoVisualEvidence
-      ) {
+      if (videoVisualEvidence) {
         contentParts.push(
           "",
           "Video Visual Evidence",
@@ -721,8 +704,7 @@ export async function executeRuntime(
         requestedProvider:
           provider,
 
-        fallbackUsed:
-          false,
+        fallbackUsed: false,
 
         error:
           runtimeSuccess
@@ -731,12 +713,9 @@ export async function executeRuntime(
               videoResult.code,
 
         content:
-          contentParts.join(
-            "\n",
-          ),
+          contentParts.join("\n"),
 
-        actionHandled:
-          false,
+        actionHandled: false,
 
         runtime:
           APP_CONFIG.runtimeId,
@@ -778,12 +757,6 @@ export async function executeRuntime(
         ],
 
         capabilityTrace,
-
-        webIntelligence:
-          undefined,
-
-        liveDecision:
-          undefined,
 
         videoResolution: {
           detected:
@@ -1032,41 +1005,58 @@ export async function executeRuntime(
     updateProviderRuntimeStatus({
       provider:
         result.provider,
+
       requestedProvider,
+
       fallbackUsed,
+
       success:
         result.success,
+
       error:
         result.error,
+
       latencyMs,
+
       lastRequestAt:
         timestamp,
     });
 
     saveRuntimeTrace({
       requestId,
+
       planId:
         result.planId,
+
       promptPreview:
-        createPromptPreview(
-          prompt,
-        ),
+        createPromptPreview(prompt),
+
       goal:
         result.goal,
+
       intent:
         result.intent,
+
       planType:
         result.planType,
+
       provider:
         result.provider,
+
       success:
         result.success,
+
       fallbackUsed,
+
       latencyMs,
+
       capabilityTrace,
+
       error:
         result.error,
+
       startedAt,
+
       completedAt:
         timestamp,
     });
@@ -1175,9 +1165,7 @@ export async function executeRuntime(
         plan.id,
 
       promptPreview:
-        createPromptPreview(
-          prompt,
-        ),
+        createPromptPreview(prompt),
 
       goal:
         plan.goal,
@@ -1228,8 +1216,7 @@ export async function executeRuntime(
       content:
         localizedError,
 
-      actionHandled:
-        false,
+      actionHandled: false,
 
       runtime:
         APP_CONFIG.runtimeId,
