@@ -24,6 +24,9 @@ const PUBLIC_PATHS = [
   // C145.4 Founder Commerce Candidate Pool Regression.
   "/founder/commerce-candidate-pool-regression",
   "/api/founder/commerce/candidate-pool-regression",
+  // C145.5 Founder Supplier Verification & Unit Economics.
+  "/founder/commerce-unit-economics",
+  "/api/founder/commerce/unit-economics",
 ];
 function isPublicPath(
   pathname: string,
