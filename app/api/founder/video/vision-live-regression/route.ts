@@ -604,10 +604,12 @@ export async function GET(
 sampleTimesSeconds:
   evidence.timeline?.sampleTimesSeconds ??
   [],
-          byteRangesVerified:
-            evidence.byteRangesVerified,
-          temporalSamplingPlanned:
-            evidence.temporalSamplingPlanned,
+
+byteRangesVerified:
+  evidence.evidence.byteRangesVerified,
+
+temporalSamplingPlanned:
+  evidence.evidence.temporalSamplingPlanned,
         },
 
         frames: {
