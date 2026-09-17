@@ -10,10 +10,12 @@ import {
 } from "./video-vision-config";
 
 const MAX_VISION_FRAMES = 5;
+
 const MAX_PROMPT_LENGTH = 4_000;
 
 export interface VideoVisionGatewayResult {
   success: boolean;
+
   code: string;
 
   provider: VideoVisionProvider;
@@ -63,8 +65,11 @@ function buildVisionPrompt(
     "Analyze the supplied video frames as a temporal sequence.",
 
     "Only use the frames actually supplied.",
+
     "Do not claim access to unseen frames.",
+
     "Do not infer audio or speech.",
+
     "Clearly distinguish direct visual evidence from inference.",
 
     "",
@@ -74,10 +79,15 @@ function buildVisionPrompt(
     "",
 
     "1. 视频整体内容",
+
     "2. 关键画面",
+
     "3. 时间顺序变化",
+
     "4. 可确认的视觉事实",
+
     "5. 推断内容",
+
     "6. 置信度",
 
     "",
@@ -116,15 +126,23 @@ async function executeOpenAIVision(
   if (!config.apiKeyConfigured) {
     return {
       success: false,
+
       code:
         "C144_9_VIDEO_VISION_API_KEY_MISSING",
+
       provider: "openai",
-      model: config.model,
+
+      model:
+        config.model,
+
       frameCount:
         visualEvidence.frameCount,
+
       analyzedFrameCount: 0,
+
       semanticUnderstandingReady:
         false,
+
       error:
         "OPENAI_API_KEY is not configured.",
     };
@@ -134,6 +152,7 @@ async function executeOpenAIVision(
     new OpenAI({
       apiKey:
         process.env.OPENAI_API_KEY,
+
       ...(config.baseURL
         ? {
             baseURL:
@@ -144,7 +163,9 @@ async function executeOpenAIVision(
 
   const content = [
     {
-      type: "input_text" as const,
+      type:
+        "input_text" as const,
+
       text:
         buildVisionPrompt(
           userPrompt,
@@ -154,7 +175,8 @@ async function executeOpenAIVision(
 
     ...visionInputs.map(
       (frame) => ({
-        type: "input_image" as const,
+        type:
+          "input_image" as const,
 
         image_url:
           buildDataUrl(
@@ -176,7 +198,8 @@ async function executeOpenAIVision(
 
         input: [
           {
-            role: "user",
+            role:
+              "user",
 
             content,
           },
@@ -185,21 +208,31 @@ async function executeOpenAIVision(
 
     const output =
       response.output_text
-        ?.trim() ?? "";
+        ?.trim() ??
+      "";
 
     if (!output) {
       return {
         success: false,
+
         code:
           "C144_9_VIDEO_VISION_EMPTY",
-        provider: "openai",
-        model: config.model,
+
+        provider:
+          "openai",
+
+        model:
+          config.model,
+
         frameCount:
           visualEvidence.frameCount,
+
         analyzedFrameCount:
           visionInputs.length,
+
         semanticUnderstandingReady:
           false,
+
         error:
           "Vision model returned no textual analysis.",
       };
@@ -207,31 +240,50 @@ async function executeOpenAIVision(
 
     return {
       success: true,
+
       code:
         "C144_9_VIDEO_VISION_PASS",
-      provider: "openai",
-      model: config.model,
+
+      provider:
+        "openai",
+
+      model:
+        config.model,
+
       frameCount:
         visualEvidence.frameCount,
+
       analyzedFrameCount:
         visionInputs.length,
+
       semanticUnderstandingReady:
         true,
-      content: output,
+
+      content:
+        output,
     };
   } catch (error) {
     return {
       success: false,
+
       code:
         "C144_9_VIDEO_VISION_ERROR",
-      provider: "openai",
-      model: config.model,
+
+      provider:
+        "openai",
+
+      model:
+        config.model,
+
       frameCount:
         visualEvidence.frameCount,
+
       analyzedFrameCount:
         visionInputs.length,
+
       semanticUnderstandingReady:
         false,
+
       error:
         error instanceof Error
           ? error.message
@@ -258,39 +310,31 @@ export async function executeVideoVisionGateway(
   ) {
     return {
       success: false,
+
       code:
         "C144_9_VIDEO_VISION_INPUT_NOT_READY",
-      provider: config.provider,
-      model: config.model,
+
+      provider:
+        "openai",
+
+      model:
+        config.model,
+
       frameCount:
         visualEvidence.frameCount,
+
       analyzedFrameCount: 0,
+
       semanticUnderstandingReady:
         false,
+
       error:
         "Video visual evidence is not ready for Vision analysis.",
     };
   }
 
-  if (config.provider === "openai") {
-    return executeOpenAIVision(
-      userPrompt,
-      visualEvidence,
-    );
-  }
-
-  return {
-    success: false,
-    code:
-      "C144_9_VIDEO_VISION_PROVIDER_UNAVAILABLE",
-    provider: "none",
-    model: config.model,
-    frameCount:
-      visualEvidence.frameCount,
-    analyzedFrameCount: 0,
-    semanticUnderstandingReady:
-      false,
-    error:
-      "No supported Vision provider is configured.",
-  };
+  return executeOpenAIVision(
+    userPrompt,
+    visualEvidence,
+  );
 }
