@@ -601,8 +601,9 @@ export async function GET(
             evidence.successfulSampleCount,
           totalBytesRead:
             evidence.totalBytesRead,
-          sampleTimesSeconds:
-            evidence.sampleTimesSeconds,
+sampleTimesSeconds:
+  evidence.timeline?.sampleTimesSeconds ??
+  [],
           byteRangesVerified:
             evidence.byteRangesVerified,
           temporalSamplingPlanned:
