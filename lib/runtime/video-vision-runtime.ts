@@ -11,6 +11,11 @@ import {
   type CommerceProductIntelligence,
 } from "./commerce-product-intelligence-runtime";
 
+import {
+  executeCommerceMarketIntelligence,
+  type CommerceMarketIntelligence,
+} from "./commerce-market-intelligence-runtime";
+
 export interface VideoVisionRuntimeResult {
   success: boolean;
 
@@ -30,10 +35,12 @@ export interface VideoVisionRuntimeResult {
 
   commerceProductIntelligence?: CommerceProductIntelligence;
 
+  commerceMarketIntelligence?: CommerceMarketIntelligence;
+
   error?: string;
 }
 
-function appendCommerceIntelligence(
+function appendCommerceProductIntelligence(
   visionContent: string,
   commerce:
     CommerceProductIntelligence,
@@ -52,9 +59,7 @@ function appendCommerceIntelligence(
     `处理代码：${commerce.code}`,
   ];
 
-  if (
-    commerce.success
-  ) {
+  if (commerce.success) {
     lines.push(
       "",
       "商品",
@@ -191,9 +196,170 @@ function appendCommerceIntelligence(
   return lines.join("\n");
 }
 
+function appendCommerceMarketIntelligence(
+  content: string,
+  market:
+    CommerceMarketIntelligence,
+): string {
+  const lines: string[] = [
+    content,
+    "",
+    "Commerce Market & Supply Intelligence",
+    `处理代码：${market.code}`,
+  ];
+
+  if (!market.success) {
+    lines.push(
+      "",
+      `市场情报执行失败：${
+        market.error ??
+        "未返回可用结果。"
+      }`,
+    );
+
+    return lines.join("\n");
+  }
+
+  lines.push(
+    "",
+    "市场证据",
+    `来源数量：${market.marketEvidence.length}`,
+    `独立来源：${market.verification.independentMarketSources}`,
+    `市场验证：${
+      market.verification.marketVerified
+        ? "成功"
+        : "有限"
+    }`,
+    "",
+    "供应链证据",
+    `来源数量：${market.supplyEvidence.length}`,
+    `独立来源：${market.verification.independentSupplySources}`,
+    `供应链验证：${
+      market.verification.supplyVerified
+        ? "成功"
+        : "有限"
+    }`,
+    "",
+    "价格信号",
+    market.priceSignals.length > 0
+      ? market.priceSignals
+          .map(
+            (
+              item,
+              index,
+            ) =>
+              `${index + 1}. ${item}`,
+          )
+          .join("\n")
+      : "未确认可靠价格信号。",
+    "",
+    "竞品信号",
+    market.competitorSignals.length > 0
+      ? market.competitorSignals
+          .map(
+            (
+              item,
+              index,
+            ) =>
+              `${index + 1}. ${item}`,
+          )
+          .join("\n")
+      : "未确认明确竞品信号。",
+    "",
+    "供应商信号",
+    market.supplierSignals.length > 0
+      ? market.supplierSignals
+          .map(
+            (
+              item,
+              index,
+            ) =>
+              `${index + 1}. ${item}`,
+          )
+          .join("\n")
+      : "未确认明确供应商信号。",
+    "",
+    "验证",
+    `价格证据：${
+      market.verification.priceEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `竞品证据：${
+      market.verification.competitorEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `供应商证据：${
+      market.verification.supplierEvidenceFound
+        ? "存在"
+        : "不存在"
+    }`,
+    `综合验证：${
+      market.verification.overallVerified
+        ? "成功"
+        : "有限"
+    }`,
+    `综合评分：${market.verification.score}/100`,
+    "",
+    "置信度",
+    `市场：${market.confidence.market}/100`,
+    `供应链：${market.confidence.supply}/100`,
+    `价格：${market.confidence.price}/100`,
+    `竞争：${market.confidence.competition}/100`,
+  );
+
+  if (
+    market.unknowns.length > 0
+  ) {
+    lines.push(
+      "",
+      "未知项",
+      market.unknowns
+        .map(
+          (
+            item,
+            index,
+          ) =>
+            `${index + 1}. ${item}`,
+        )
+        .join("\n"),
+    );
+  }
+
+  if (
+    market.nextActions.length > 0
+  ) {
+    lines.push(
+      "",
+      "下一步",
+      market.nextActions
+        .map(
+          (
+            item,
+            index,
+          ) =>
+            `${index + 1}. ${item}`,
+        )
+        .join("\n"),
+    );
+  }
+
+  lines.push(
+    "",
+    "C145.2 边界：",
+    "以上市场、价格、竞品和供应链信息仅来自当前外部检索证据。",
+    "未经过人工打开商品页面核验的采购价格，不视为最终采购成本。",
+    "当前阶段不把搜索结果直接转换成利润承诺。",
+  );
+
+  return lines.join("\n");
+}
+
 export async function executeRuntimeVideoVision(
   userPrompt: string,
-  visualEvidence: VideoVisualEvidenceResult,
+  visualEvidence:
+    VideoVisualEvidenceResult,
 ): Promise<VideoVisionRuntimeResult> {
   const vision =
     await executeVideoVisionGateway(
@@ -209,24 +375,6 @@ export async function executeRuntimeVideoVision(
     return vision;
   }
 
-  /*
-   * C145.1
-   *
-   * Vision has now produced semantic understanding.
-   * The next Runtime layer converts that verified
-   * visual understanding into structured commerce
-   * intelligence when the request is commerce-related.
-   *
-   * This layer deliberately does NOT perform:
-   * - 1688 supplier discovery
-   * - live market pricing
-   * - sales-volume claims
-   * - competition ranking
-   * - profitability claims
-   *
-   * Those require independent external evidence and
-   * belong to C145.2+.
-   */
   const commerce =
     await executeCommerceProductIntelligence(
       userPrompt,
@@ -234,16 +382,49 @@ export async function executeRuntimeVideoVision(
       vision.model,
     );
 
+  let content =
+    appendCommerceProductIntelligence(
+      vision.content,
+      commerce,
+    );
+
+  let market:
+    | CommerceMarketIntelligence
+    | undefined;
+
+  /*
+   * C145.2
+   *
+   * Only enter Market & Supply Intelligence
+   * after C145.1 has confirmed a product name.
+   *
+   * No product name = no speculative search.
+   */
+  if (
+    commerce.success &&
+    commerce.product.name
+  ) {
+    market =
+      await executeCommerceMarketIntelligence(
+        commerce,
+      );
+
+    content =
+      appendCommerceMarketIntelligence(
+        content,
+        market,
+      );
+  }
+
   return {
     ...vision,
 
-    content:
-      appendCommerceIntelligence(
-        vision.content,
-        commerce,
-      ),
+    content,
 
     commerceProductIntelligence:
       commerce,
+
+    commerceMarketIntelligence:
+      market,
   };
 }
