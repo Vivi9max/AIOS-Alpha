@@ -27,11 +27,17 @@ const PUBLIC_PATHS = [
    *
    * This route must reach its own handler so it
    * can authenticate with FOUNDER_ACCESS_KEY.
-   *
-   * It does NOT grant ordinary users access because
-   * authentication is enforced inside the route.
    */
   "/api/founder/web-intelligence/verify",
+
+  /*
+   * C145.2 Founder Commerce Regression.
+   *
+   * These routes perform their own Founder authentication.
+   * They must not be intercepted by the Alpha access redirect.
+   */
+  "/founder/commerce-market-regression",
+  "/api/founder/commerce/market-regression",
 ];
 
 function isPublicPath(
