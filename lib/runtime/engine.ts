@@ -50,6 +50,11 @@ import {
   type VideoEvidenceRuntimeResult,
 } from "./video-evidence-runtime";
 
+import {
+  executeRuntimeVideoFrames,
+  type VideoFrameRuntimeResult,
+} from "./video-frame-runtime";
+
 export interface RuntimeRequest {
   prompt: string;
 
@@ -160,6 +165,25 @@ export interface RuntimeResponse {
     semanticUnderstandingReady: boolean;
   };
 
+  videoFrames?: {
+    success: boolean;
+    code: string;
+
+    frameCount: number;
+
+    successfulFrameCount: number;
+
+    totalBytesRead: number;
+
+    framesDecoded: boolean;
+
+    imagesExtracted: boolean;
+
+    dimensionsDetected: boolean;
+
+    semanticUnderstandingReady: boolean;
+  };
+
   timestamp: number;
 
   latencyMs: number;
@@ -204,6 +228,27 @@ function buildVideoEvidenceTraceDetail(
     `visualFramesDecoded=${evidence.evidence.visualFramesDecoded}`,
     `audioDecoded=${evidence.evidence.audioDecoded}`,
     `semanticUnderstandingReady=${evidence.evidence.semanticUnderstandingReady}`,
+  ].join(" | ");
+}
+
+function buildVideoFrameTraceDetail(
+  frames:
+    | VideoFrameRuntimeResult
+    | undefined,
+): string {
+  if (!frames) {
+    return "Video frame extraction was not executed.";
+  }
+
+  return [
+    "video.frames",
+    `status=${frames.code}`,
+    `frames=${frames.successfulFrameCount}/${frames.frameCount}`,
+    `bytes=${frames.totalBytesRead}`,
+    `framesDecoded=${frames.visualEvidence.framesDecoded}`,
+    `imagesExtracted=${frames.visualEvidence.imagesExtracted}`,
+    `dimensionsDetected=${frames.visualEvidence.dimensionsDetected}`,
+    `semanticUnderstandingReady=${frames.visualEvidence.semanticUnderstandingReady}`,
   ].join(" | ");
 }
 
@@ -308,14 +353,15 @@ export async function executeRuntime(
     if (
       videoResult.detected
     ) {
-      const timestamp =
-        Date.now();
-
       const provider =
         getActiveProvider();
 
       let videoEvidence:
         | VideoEvidenceRuntimeResult
+        | undefined;
+
+      let videoFrames:
+        | VideoFrameRuntimeResult
         | undefined;
 
       if (
@@ -342,8 +388,31 @@ export async function executeRuntime(
           );
       }
 
+      if (
+        videoEvidence?.success &&
+        videoResult.selectedUrl &&
+        videoResult.processing
+      ) {
+        videoFrames =
+          await executeRuntimeVideoFrames(
+            videoResult.selectedUrl,
+
+            videoResult.mediaType ??
+              "unknown",
+
+            {
+              durationSeconds:
+                videoResult.processing
+                  .durationSeconds,
+            },
+          );
+      }
+
+      const timestamp =
+        Date.now();
+
       const latencyMs =
-        Date.now() -
+        timestamp -
         startedAt;
 
       const capabilityTrace:
@@ -357,6 +426,10 @@ export async function executeRuntime(
               (
                 !videoEvidence ||
                 videoEvidence.success
+              ) &&
+              (
+                !videoFrames ||
+                videoFrames.success
               )
                 ? "completed"
                 : "failed",
@@ -367,6 +440,7 @@ export async function executeRuntime(
             detail:
               [
                 "video.resolve",
+
                 videoResult.success
                   ? "Video page resolved, Primary media selected, actual media read, and video processing completed."
                   : videoResult.error ??
@@ -375,11 +449,28 @@ export async function executeRuntime(
                 buildVideoEvidenceTraceDetail(
                   videoEvidence,
                 ),
+
+                buildVideoFrameTraceDetail(
+                  videoFrames,
+                ),
               ].join(
                 " | ",
               ),
           },
         ];
+
+      const runtimeSuccess =
+        videoResult.success &&
+        (
+          !videoEvidence ||
+          videoEvidence.success
+        ) &&
+        (
+          !videoFrames ||
+          videoFrames.success ||
+          videoFrames.code ===
+            "C144_7_VIDEO_FRAME_DECODER_UNAVAILABLE"
+        );
 
       updateProviderRuntimeStatus({
         provider,
@@ -390,10 +481,10 @@ export async function executeRuntime(
         fallbackUsed: false,
 
         success:
-          videoResult.success,
+          runtimeSuccess,
 
         error:
-          videoResult.success
+          runtimeSuccess
             ? undefined
             : videoResult.error ??
               videoResult.code,
@@ -427,7 +518,7 @@ export async function executeRuntime(
         provider,
 
         success:
-          videoResult.success,
+          runtimeSuccess,
 
         fallbackUsed: false,
 
@@ -436,7 +527,7 @@ export async function executeRuntime(
         capabilityTrace,
 
         error:
-          videoResult.success
+          runtimeSuccess
             ? undefined
             : videoResult.error ??
               videoResult.code,
@@ -449,7 +540,7 @@ export async function executeRuntime(
 
       return {
         success:
-          videoResult.success,
+          runtimeSuccess,
 
         provider,
 
@@ -460,54 +551,100 @@ export async function executeRuntime(
           false,
 
         error:
-          videoResult.success
+          runtimeSuccess
             ? undefined
             : videoResult.error ??
               videoResult.code,
 
-content:
-  [
-    videoResult.content ?? "",
-    ...(videoEvidence
-      ? [
-          "",
-          "Video Evidence Sampling",
-          `处理代码：${videoEvidence.code}`,
-          `采样：${videoEvidence.successfulSampleCount}/${videoEvidence.sampleCount}`,
-          `采样字节：${videoEvidence.totalBytesRead}`,
-          `采样时间点：${
-            videoEvidence.timeline?.sampleTimesSeconds
-              ?.map((value) => `${value.toFixed(3)}s`)
-              .join(", ") ?? "未提供"
-          }`,
-          `Byte Range 验证：${
-            videoEvidence.evidence.byteRangesVerified
-              ? "成功"
-              : "未完成"
-          }`,
-          `Temporal Sampling：${
-            videoEvidence.evidence.temporalSamplingPlanned
-              ? "已建立"
-              : "未建立"
-          }`,
-          `Visual Frames Decoded：${
-            videoEvidence.evidence.visualFramesDecoded
-              ? "true"
-              : "false"
-          }`,
-          `Audio Decoded：${
-            videoEvidence.evidence.audioDecoded
-              ? "true"
-              : "false"
-          }`,
-          `Semantic Understanding Ready：${
-            videoEvidence.evidence.semanticUnderstandingReady
-              ? "true"
-              : "false"
-          }`,
-        ]
-      : []),
-  ].join("\n"),
+        content:
+          [
+            videoResult.content ??
+              "",
+
+            ...(videoEvidence
+              ? [
+                  "",
+                  "Video Evidence Sampling",
+                  `处理代码：${videoEvidence.code}`,
+                  `采样：${videoEvidence.successfulSampleCount}/${videoEvidence.sampleCount}`,
+                  `采样字节：${videoEvidence.totalBytesRead}`,
+                  `采样时间点：${
+                    videoEvidence.timeline
+                      ?.sampleTimesSeconds
+                      ?.map(
+                        (value) =>
+                          `${value.toFixed(3)}s`,
+                      )
+                      .join(", ") ??
+                    "未提供"
+                  }`,
+                  `Byte Range 验证：${
+                    videoEvidence.evidence
+                      .byteRangesVerified
+                      ? "成功"
+                      : "未完成"
+                  }`,
+                  `Temporal Sampling：${
+                    videoEvidence.evidence
+                      .temporalSamplingPlanned
+                      ? "已建立"
+                      : "未建立"
+                  }`,
+                  `Visual Frames Decoded：${
+                    videoEvidence.evidence
+                      .visualFramesDecoded
+                      ? "true"
+                      : "false"
+                  }`,
+                  `Audio Decoded：${
+                    videoEvidence.evidence
+                      .audioDecoded
+                      ? "true"
+                      : "false"
+                  }`,
+                  `Semantic Understanding Ready：${
+                    videoEvidence.evidence
+                      .semanticUnderstandingReady
+                      ? "true"
+                      : "false"
+                  }`,
+                ]
+              : []),
+
+            ...(videoFrames
+              ? [
+                  "",
+                  "Video Frame Extraction",
+                  `处理代码：${videoFrames.code}`,
+                  `Frame：${videoFrames.successfulFrameCount}/${videoFrames.frameCount}`,
+                  `帧读取字节：${videoFrames.totalBytesRead}`,
+                  `Frames Decoded：${
+                    videoFrames.visualEvidence
+                      .framesDecoded
+                      ? "true"
+                      : "false"
+                  }`,
+                  `Images Extracted：${
+                    videoFrames.visualEvidence
+                      .imagesExtracted
+                      ? "true"
+                      : "false"
+                  }`,
+                  `Dimensions Detected：${
+                    videoFrames.visualEvidence
+                      .dimensionsDetected
+                      ? "true"
+                      : "false"
+                  }`,
+                  `Semantic Understanding Ready：${
+                    videoFrames.visualEvidence
+                      .semanticUnderstandingReady
+                      ? "true"
+                      : "false"
+                  }`,
+                ]
+              : []),
+          ].join("\n"),
 
         actionHandled:
           false,
@@ -554,6 +691,8 @@ content:
           "Video Track 处理",
 
           "Video Evidence Sampling",
+
+          "Video Frame Extraction",
         ],
 
         capabilityTrace,
@@ -686,6 +825,44 @@ content:
 
                 semanticUnderstandingReady:
                   videoEvidence.evidence
+                    .semanticUnderstandingReady,
+              }
+            : undefined,
+
+        videoFrames:
+          videoFrames
+            ? {
+                success:
+                  videoFrames.success,
+
+                code:
+                  videoFrames.code,
+
+                frameCount:
+                  videoFrames.frameCount,
+
+                successfulFrameCount:
+                  videoFrames
+                    .successfulFrameCount,
+
+                totalBytesRead:
+                  videoFrames
+                    .totalBytesRead,
+
+                framesDecoded:
+                  videoFrames.visualEvidence
+                    .framesDecoded,
+
+                imagesExtracted:
+                  videoFrames.visualEvidence
+                    .imagesExtracted,
+
+                dimensionsDetected:
+                  videoFrames.visualEvidence
+                    .dimensionsDetected,
+
+                semanticUnderstandingReady:
+                  videoFrames.visualEvidence
                     .semanticUnderstandingReady,
               }
             : undefined,
@@ -856,34 +1033,25 @@ content:
       timestamp -
       startedAt;
 
-    const errorMessage =
+    const message =
       error instanceof Error
         ? error.message
-        : locale === "ja"
-          ? "AIOS Runtime で不明なエラーが発生しました。"
-          : locale === "zh-CN"
-            ? "AIOS Runtime 未知错误"
-            : "Unknown AIOS Runtime error.";
+        : String(error);
 
-    const unavailableMessage =
-      locale === "ja"
-        ? "AIOS Runtime は一時的に利用できません。"
-        : locale === "zh-CN"
-          ? "AIOS Runtime 暂时不可用。"
-          : "AIOS Runtime is temporarily unavailable.";
+    const provider =
+      getActiveProvider();
 
     updateProviderRuntimeStatus({
-      provider: "mock",
+      provider,
 
       requestedProvider:
-        "deepseek",
+        provider,
 
       fallbackUsed: false,
 
       success: false,
 
-      error:
-        errorMessage,
+      error: message,
 
       latencyMs,
 
@@ -911,7 +1079,7 @@ content:
       planType:
         plan.type,
 
-      provider: "mock",
+      provider,
 
       success: false,
 
@@ -921,8 +1089,7 @@ content:
 
       capabilityTrace: [],
 
-      error:
-        errorMessage,
+      error: message,
 
       startedAt,
 
@@ -930,21 +1097,27 @@ content:
         timestamp,
     });
 
+    const localizedError =
+      locale === "ja"
+        ? `ランタイム実行に失敗しました：${message}`
+        : locale === "zh-CN"
+          ? `运行时执行失败：${message}`
+          : `Runtime execution failed: ${message}`;
+
     return {
       success: false,
 
-      provider: "mock",
+      provider,
 
       requestedProvider:
-        "deepseek",
+        provider,
 
       fallbackUsed: false,
 
-      error:
-        errorMessage,
+      error: message,
 
       content:
-        unavailableMessage,
+        localizedError,
 
       actionHandled:
         false,
@@ -979,32 +1152,6 @@ content:
         plan.steps,
 
       capabilityTrace: [],
-
-      webIntelligence:
-        request.webContext
-          ? {
-              required: true,
-
-              success:
-                request.webContext
-                  .success,
-
-              verified:
-                request.webContext
-                  .verified,
-
-              sourceCount:
-                request.webContext
-                  .sourceCount,
-
-              sourceHosts:
-                request.webContext
-                  .sourceHosts,
-            }
-          : undefined,
-
-      liveDecision:
-        undefined,
 
       timestamp,
 
