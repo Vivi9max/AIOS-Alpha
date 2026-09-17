@@ -30,6 +30,21 @@ function errorResponse(
     },
   );
 }
+function moneyEquals(
+  actual: number | undefined,
+  expected: number,
+): boolean {
+  if (
+    typeof actual !== "number" ||
+    !Number.isFinite(actual)
+  ) {
+    return false;
+  }
+  return (
+    Math.round(actual * 100) ===
+    Math.round(expected * 100)
+  );
+}
 function runRegression() {
   const startedAt = Date.now();
   const input =
@@ -38,14 +53,28 @@ function runRegression() {
     executeCommerceUnitEconomics(
       input,
     );
+  const unitCostPass =
+    moneyEquals(
+      result.economics
+        .totalUnitCost,
+      30,
+    );
+  const sellingPricePass =
+    moneyEquals(
+      result.economics
+        .sellingPrice,
+      39.9,
+    );
+  const contributionPass =
+    moneyEquals(
+      result.economics
+        .contributionSpacePerUnit,
+      9.9,
+    );
   const economicsPass =
-    result.economics
-      .totalUnitCost === 30 &&
-    result.economics
-      .sellingPrice === 39.9 &&
-    result.economics
-      .contributionSpacePerUnit ===
-      9.9;
+    unitCostPass &&
+    sellingPricePass &&
+    contributionPass;
   const supplierPass =
     result.supplierVerification
       .verification
@@ -54,7 +83,8 @@ function runRegression() {
     result.boundaries.length >= 8;
   const noProfitClaimPass =
     result.economics
-      .profitabilityVerified === false;
+      .profitabilityVerified ===
+    false;
   const testConditionPass =
     result.testConditions
       .canCalculateUnitEconomics ===
@@ -89,9 +119,9 @@ function runRegression() {
       returnReserve: true,
       acquisitionCost: true,
       unitCostCalculation:
-        economicsPass,
+        unitCostPass,
       contributionSpaceCalculation:
-        economicsPass,
+        contributionPass,
       profitabilityBoundary:
         noProfitClaimPass,
       testCondition:
@@ -103,6 +133,17 @@ function runRegression() {
       sellingPrice: 39.9,
       totalUnitCost: 30,
       contributionSpace: 9.9,
+    },
+    actual: {
+      sellingPrice:
+        result.economics
+          .sellingPrice,
+      totalUnitCost:
+        result.economics
+          .totalUnitCost,
+      contributionSpace:
+        result.economics
+          .contributionSpacePerUnit,
     },
     result,
   };
@@ -122,8 +163,7 @@ export async function GET(
       runRegression(),
       {
         headers: {
-          "Cache-Control":
-            "no-store",
+          "Cache-Control": "no-store",
         },
       },
     );
@@ -167,7 +207,8 @@ export async function POST(
       {
         success: result.success,
         verified:
-          result.supplierVerification
+          result
+            .supplierVerification
             .verification
             .overallSupplierVerified,
         code: result.code,
@@ -177,8 +218,7 @@ export async function POST(
       },
       {
         headers: {
-          "Cache-Control":
-            "no-store",
+          "Cache-Control": "no-store",
         },
       },
     );
