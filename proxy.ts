@@ -12,21 +12,17 @@ const PUBLIC_PATHS = [
   "/api/alpha/status",
   "/api/alpha/invite",
   "/api/health",
-  // Vercel Cron / Evolution Runtime
   "/api/evolution/heartbeat",
-  // C143.8 Web Intelligence autonomous health
   "/api/health/web-intelligence",
-  // Founder-only Web Intelligence verification.
   "/api/founder/web-intelligence/verify",
-  // C145.2 Founder Commerce Regression.
   "/founder/commerce-market-regression",
   "/api/founder/commerce/market-regression",
-  // C145.4 Founder Commerce Candidate Pool Regression.
   "/founder/commerce-candidate-pool-regression",
   "/api/founder/commerce/candidate-pool-regression",
-  // C145.5 Founder Supplier Verification & Unit Economics.
   "/founder/commerce-unit-economics",
   "/api/founder/commerce/unit-economics",
+  "/founder/commerce-test",
+  "/api/founder/commerce/test",
 ];
 function isPublicPath(
   pathname: string,
@@ -90,8 +86,7 @@ export function proxy(
           "Alpha access required.",
         error:
           "Unauthorized alpha access.",
-        redirect:
-          "/alpha",
+        redirect: "/alpha",
         timestamp:
           Date.now(),
       },
