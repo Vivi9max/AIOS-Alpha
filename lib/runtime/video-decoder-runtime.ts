@@ -47,6 +47,7 @@ function runVersion(
 
       if (timer) {
         clearTimeout(timer);
+        timer = undefined;
       }
 
       resolve(value);
@@ -64,6 +65,17 @@ function runVersion(
           ],
         },
       );
+
+      if (!child.stdout || !child.stderr) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // Ignore cleanup errors.
+        }
+
+        finish(undefined);
+        return;
+      }
 
       child.stdout.on(
         "data",
