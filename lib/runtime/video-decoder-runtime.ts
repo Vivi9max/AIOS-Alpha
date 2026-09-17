@@ -28,6 +28,14 @@ function runVersion(
     let settled = false;
     let output = "";
 
+    let child:
+      | ReturnType<typeof spawn>
+      | undefined;
+
+    let timer:
+      | ReturnType<typeof setTimeout>
+      | undefined;
+
     const finish = (
       value: string | undefined,
     ) => {
@@ -36,23 +44,13 @@ function runVersion(
       }
 
       settled = true;
-      clearTimeout(timer);
-      resolve(value);
-    };
 
-    const timer = setTimeout(() => {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        // Ignore cleanup errors.
+      if (timer) {
+        clearTimeout(timer);
       }
 
-      finish(undefined);
-    }, 10_000);
-
-    let child:
-      | ReturnType<typeof spawn>
-      | undefined;
+      resolve(value);
+    };
 
     try {
       child = spawn(
@@ -101,6 +99,18 @@ function runVersion(
           );
         },
       );
+
+      timer = setTimeout(() => {
+        try {
+          if (child) {
+            child.kill("SIGKILL");
+          }
+        } catch {
+          // Ignore cleanup errors.
+        }
+
+        finish(undefined);
+      }, 10_000);
     } catch {
       finish(undefined);
     }
