@@ -643,6 +643,9 @@ async function executeMediaRequest(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      runtimeRelease:
+        APP_CONFIG.release,
     };
   }
 
@@ -794,6 +797,9 @@ async function executeMediaRequest(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      runtimeRelease:
+        APP_CONFIG.release,
     };
   }
 
@@ -829,6 +835,9 @@ async function executeMediaRequest(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      runtimeRelease:
+        APP_CONFIG.release,
     };
   }
 
@@ -1014,6 +1023,9 @@ export async function GET(
         headers: {
           "Cache-Control":
             "no-store",
+
+          "Content-Type":
+            "application/json; charset=utf-8",
         },
       },
     );
@@ -1062,6 +1074,14 @@ export async function POST(
           },
           {
             status: 415,
+
+            headers: {
+              "Cache-Control":
+                "no-store",
+
+              "Content-Type":
+                "application/json; charset=utf-8",
+            },
           },
         );
 
@@ -1141,6 +1161,9 @@ export async function POST(
           headers: {
             "Cache-Control":
               "no-store",
+
+            "Content-Type":
+              "application/json; charset=utf-8",
           },
         },
       );
@@ -1199,6 +1222,9 @@ export async function POST(
           headers: {
             "Cache-Control":
               "no-store",
+
+            "Content-Type":
+              "application/json; charset=utf-8",
           },
         },
       );
