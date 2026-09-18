@@ -61,8 +61,10 @@ function runtimeIdentity() {
   return {
     runtime:
       APP_CONFIG.runtimeId,
+
     runtimeVersion:
       APP_CONFIG.version,
+
     release:
       APP_CONFIG.release,
   };
@@ -163,24 +165,6 @@ export async function GET(
   }
 
   try {
-    /*
-     * C144.9.3
-     *
-     * Deterministic full-chain regression:
-     *
-     * Founder Auth
-     * → Resolver
-     * → Primary
-     * → Decoder
-     * → Media
-     * → Processing
-     * → Evidence Sampling
-     * → Frame Extraction
-     * → Visual Evidence
-     * → Vision Model
-     * → Semantic Understanding
-     */
-
     const resolver =
       await resolveVideoFromPage(
         sourceUrl,
@@ -233,6 +217,8 @@ export async function GET(
             framesDecoded:
               false,
             imagesExtracted:
+              false,
+            dimensionsDetected:
               false,
             visualEvidenceSuccess:
               false,
@@ -295,6 +281,8 @@ export async function GET(
             framesDecoded:
               false,
             imagesExtracted:
+              false,
+            dimensionsDetected:
               false,
             visualEvidenceSuccess:
               false,
@@ -370,6 +358,8 @@ export async function GET(
               false,
             imagesExtracted:
               false,
+            dimensionsDetected:
+              false,
             visualEvidenceSuccess:
               false,
             visionReady:
@@ -394,6 +384,7 @@ export async function GET(
         {
           durationSeconds:
             processing.durationSeconds,
+
           contentLength:
             media.contentLength,
         },
@@ -442,6 +433,8 @@ export async function GET(
               false,
             imagesExtracted:
               false,
+            dimensionsDetected:
+              false,
             visualEvidenceSuccess:
               false,
             visionReady:
@@ -466,6 +459,7 @@ export async function GET(
         {
           durationSeconds:
             processing.durationSeconds,
+
           decoderPath:
             decoder.decoder.path,
         },
@@ -692,22 +686,31 @@ export async function GET(
         media: {
           success:
             media.success,
+
           code:
             media.code,
+
           statusCode:
             media.statusCode,
+
           contentType:
             media.contentType,
+
           contentLength:
             media.contentLength,
+
           bytesRead:
             media.bytesRead,
+
           rangeSupported:
             media.rangeSupported,
+
           container:
             media.container,
+
           majorBrand:
             media.majorBrand,
+
           moovFound:
             media.moovFound,
         },
@@ -715,22 +718,31 @@ export async function GET(
         processing: {
           success:
             processing.success,
+
           code:
             processing.code,
+
           durationSeconds:
             processing.durationSeconds,
+
           width:
             processing.width,
+
           height:
             processing.height,
+
           frameRate:
             processing.frameRate,
+
           videoCodec:
             processing.videoCodec,
+
           audioCodec:
             processing.audioCodec,
+
           videoTrackCount:
             processing.videoTrackCount,
+
           audioTrackCount:
             processing.audioTrackCount,
         },
@@ -738,21 +750,28 @@ export async function GET(
         evidence: {
           success:
             evidence.success,
+
           code:
             evidence.code,
+
           sampleCount:
             evidence.sampleCount,
+
           successfulSampleCount:
             evidence.successfulSampleCount,
+
           totalBytesRead:
             evidence.totalBytesRead,
+
           sampleTimesSeconds:
             evidence.timeline
               ?.sampleTimesSeconds ??
             [],
+
           byteRangesVerified:
             evidence.evidence
               .byteRangesVerified,
+
           temporalSamplingPlanned:
             evidence.evidence
               .temporalSamplingPlanned,
@@ -761,47 +780,64 @@ export async function GET(
         frames: {
           success:
             frames.success,
+
           code:
             frames.code,
+
           frameCount:
             frames.frameCount,
+
           successfulFrameCount:
             frames.successfulFrameCount,
+
           totalBytesRead:
             frames.totalBytesRead,
+
           framesDecoded,
+
           imagesExtracted,
+
           dimensionsDetected,
         },
 
         visualEvidence: {
           success:
             visualEvidence.success,
+
           code:
             visualEvidence.code,
+
           frameCount:
             visualEvidence.frameCount,
+
           usableFrameCount:
             visualEvidence
               .usableFrameCount,
+
           totalImageBytes:
             visualEvidence
               .totalImageBytes,
+
           imagesAvailable:
             visualEvidence.evidence
               .imagesAvailable,
+
           checksumsAvailable:
             visualEvidence.evidence
               .checksumsAvailable,
+
           dimensionsAvailable:
             visualEvidence.evidence
               .dimensionsAvailable,
+
           timelineAvailable:
             visualEvidence.evidence
               .timelineAvailable,
+
           visionReady:
             visualEvidence.evidence
               .visionReady,
+
           semanticUnderstandingReady:
             visualEvidence.evidence
               .semanticUnderstandingReady,
@@ -810,20 +846,28 @@ export async function GET(
         vision: {
           success:
             vision.success,
+
           code:
             vision.code,
+
           provider:
             vision.provider,
+
           model:
             vision.model,
+
           frameCount:
             vision.frameCount,
+
           analyzedFrameCount:
             vision.analyzedFrameCount,
+
           semanticUnderstandingReady:
             vision.semanticUnderstandingReady,
+
           content:
             vision.content,
+
           error:
             vision.error,
         },
@@ -893,17 +937,23 @@ export async function GET(
     return json(
       {
         success: false,
+
         verified: false,
+
         code:
           "C144_9_VIDEO_VISION_RUNTIME_ERROR",
+
         message:
           error instanceof Error
             ? error.message
             : "Video Vision regression failed.",
+
         latencyMs:
           Date.now() -
           startedAt,
+
         sourceUrl,
+
         checks: {
           auth: true,
           resolverSuccess: false,
