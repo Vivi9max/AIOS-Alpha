@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 import {
   isFounderRequest,
-} from "@/lib/auth/founder";
+} from "@/lib/founder/auth";
 
 import {
   APP_CONFIG,
@@ -38,12 +38,15 @@ function json(
   return Response.json(
     {
       ...body,
+
       ...runtimeIdentity(),
+
       timestamp:
         Date.now(),
     },
     {
       status,
+
       headers: {
         "Cache-Control":
           "no-store",
@@ -59,8 +62,11 @@ function check(
 ) {
   return {
     name,
+
     expected,
+
     actual,
+
     pass:
       actual === expected,
   };
@@ -69,7 +75,11 @@ function check(
 export async function GET(
   request: NextRequest,
 ) {
-  if (!isFounderRequest(request)) {
+  if (
+    !isFounderRequest(
+      request,
+    )
+  ) {
     return json(
       {
         success:
@@ -84,6 +94,7 @@ export async function GET(
         code:
           "FOUNDER_AUTH_REQUIRED",
       },
+
       401,
     );
   }
@@ -147,7 +158,8 @@ export async function GET(
     );
 
   const verified =
-    failedChecks.length === 0;
+    failedChecks.length ===
+    0;
 
   return json(
     {
@@ -209,6 +221,7 @@ export async function GET(
 
       failedChecks,
     },
+
     verified
       ? 200
       : 500,
