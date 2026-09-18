@@ -7,6 +7,10 @@ import {
 } from "@/lib/founder/auth";
 
 import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
+import {
   executeCommerceMarketIntelligence,
 } from "@/lib/runtime/commerce-market-intelligence-runtime";
 
@@ -82,6 +86,38 @@ const TEST_PRODUCT: CommerceProductIntelligence = {
   },
 };
 
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+  };
+}
+
+function response(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return Response.json(
+    {
+      ...body,
+      ...runtimeIdentity(),
+    },
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
+    },
+  );
+}
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -89,9 +125,11 @@ export async function GET(
     Date.now();
 
   if (
-    !isFounderRequest(request)
+    !isFounderRequest(
+      request,
+    )
   ) {
-    return Response.json(
+    return response(
       {
         success: false,
         verified: false,
@@ -100,13 +138,7 @@ export async function GET(
         message:
           "Founder access required.",
       },
-      {
-        status: 401,
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
+      401,
     );
   }
 
@@ -176,20 +208,18 @@ export async function GET(
         checks,
       ).every(Boolean);
 
-    return Response.json(
+    return response(
       {
-        success: finalPass,
-        verified: finalPass,
+        success:
+          finalPass,
 
-        code: finalPass
-          ? "C145_2_COMMERCE_MARKET_SUPPLY_REGRESSION_PASS"
-          : "C145_2_COMMERCE_MARKET_SUPPLY_REGRESSION_FAILED",
+        verified:
+          finalPass,
 
-        runtime:
-          "aios-alpha",
-
-        runtimeVersion:
-          "0.5",
+        code:
+          finalPass
+            ? "C145_2_COMMERCE_MARKET_SUPPLY_REGRESSION_PASS"
+            : "C145_2_COMMERCE_MARKET_SUPPLY_REGRESSION_FAILED",
 
         latencyMs:
           Date.now() -
@@ -202,40 +232,30 @@ export async function GET(
 
         checks,
       },
-      {
-        status:
-          finalPass
-            ? 200
-            : 500,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
+      finalPass
+        ? 200
+        : 500,
     );
   } catch (error) {
-    return Response.json(
+    return response(
       {
         success: false,
+
         verified: false,
+
         code:
           "C145_2_COMMERCE_MARKET_SUPPLY_REGRESSION_ERROR",
+
         error:
           error instanceof Error
             ? error.message
             : "Regression execution failed.",
+
         latencyMs:
           Date.now() -
           startedAt,
       },
-      {
-        status: 500,
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
+      500,
     );
   }
 }
