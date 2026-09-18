@@ -8,6 +8,10 @@ import {
   createCommercialObjective,
 } from "@/lib/commercial/operating-layer";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -23,10 +27,16 @@ export async function GET() {
       {
         success: true,
         ...overview,
+
         runtime:
-          "aios-alpha",
+          APP_CONFIG.runtimeId,
+
         runtimeVersion:
-          "0.5",
+          APP_CONFIG.version,
+
+        release:
+          APP_CONFIG.release,
+
         timestamp:
           Date.now(),
       },
@@ -44,10 +54,21 @@ export async function GET() {
         success: false,
         code:
           "COMMERCIAL_OVERVIEW_FAILED",
+
         error:
           error instanceof Error
             ? error.message
             : "Failed to load commercial overview.",
+
+        runtime:
+          APP_CONFIG.runtimeId,
+
+        runtimeVersion:
+          APP_CONFIG.version,
+
+        release:
+          APP_CONFIG.release,
+
         timestamp:
           Date.now(),
       },
@@ -70,56 +91,61 @@ export async function POST(
       await request.json();
 
     const objective =
-      await createCommercialObjective(
-        {
-          title:
-            body?.title,
+      await createCommercialObjective({
+        title:
+          body?.title,
 
-          description:
-            body?.description,
+        description:
+          body?.description,
 
-          status:
-            body?.status ??
-            "active",
+        status:
+          body?.status ??
+          "active",
 
-          stage:
-            body?.stage ??
-            "validation",
+        stage:
+          body?.stage ??
+          "validation",
 
-          currency:
-            body?.currency ??
-            "USD",
+        currency:
+          body?.currency ??
+          "USD",
 
-          revenueTarget:
-            body?.revenueTarget,
+        revenueTarget:
+          body?.revenueTarget,
 
-          costTarget:
-            body?.costTarget,
+        costTarget:
+          body?.costTarget,
 
-          customerTarget:
-            body?.customerTarget,
+        customerTarget:
+          body?.customerTarget,
 
-          outcomeId:
-            body?.outcomeId ??
-            null,
+        outcomeId:
+          body?.outcomeId ??
+          null,
 
-          taskId:
-            body?.taskId ??
-            null,
+        taskId:
+          body?.taskId ??
+          null,
 
-          successCriteria:
-            body?.successCriteria,
-        },
-      );
+        successCriteria:
+          body?.successCriteria,
+      });
 
     return NextResponse.json(
       {
         success: true,
+
         objective,
+
         runtime:
-          "aios-alpha",
+          APP_CONFIG.runtimeId,
+
         runtimeVersion:
-          "0.5",
+          APP_CONFIG.version,
+
+        release:
+          APP_CONFIG.release,
+
         timestamp:
           Date.now(),
       },
@@ -145,10 +171,22 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
+
         code: duplicate
           ? "DUPLICATE_COMMERCIAL_OBJECTIVE"
           : "COMMERCIAL_OBJECTIVE_CREATE_FAILED",
+
         error: message,
+
+        runtime:
+          APP_CONFIG.runtimeId,
+
+        runtimeVersion:
+          APP_CONFIG.version,
+
+        release:
+          APP_CONFIG.release,
+
         timestamp:
           Date.now(),
       },
@@ -157,6 +195,7 @@ export async function POST(
           duplicate
             ? 409
             : 400,
+
         headers: {
           "Cache-Control":
             "no-store",
