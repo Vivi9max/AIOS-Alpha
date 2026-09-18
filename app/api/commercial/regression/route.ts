@@ -28,14 +28,23 @@ import {
   listPersistentTasks,
 } from "@/lib/task/server-store";
 
-const RUNTIME =
-  "aios-alpha";
-
-const RUNTIME_VERSION =
-  "0.5";
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
 
 const REGRESSION_CODE =
   "C143_16_COMMERCIAL_CLOSED_LOOP_REGRESSION_PASS";
+
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+    runtimeVersion:
+      APP_CONFIG.version,
+    release:
+      APP_CONFIG.release,
+  };
+}
 
 function response(
   body: Record<string, unknown>,
@@ -46,9 +55,7 @@ function response(
     NextResponse.json(
       {
         ...body,
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+        ...runtimeIdentity(),
         timestamp:
           Date.now(),
       },
