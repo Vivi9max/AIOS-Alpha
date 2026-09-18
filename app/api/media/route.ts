@@ -33,6 +33,13 @@ import {
   generateOpenAIMedia,
 } from "@/lib/runtime/media/openai";
 
+import {
+  MEDIA_ASPECT_RATIO_OPTIONS,
+  MEDIA_DURATION_OPTIONS,
+  MEDIA_LANGUAGE_OPTIONS,
+  normalizeMediaOptions,
+} from "@/lib/runtime/media/options";
+
 import type {
   MediaAsset,
   MediaCapabilityContext,
@@ -51,26 +58,47 @@ type MediaOperation =
 
 interface MediaRequestBody {
   operation?: unknown;
+
   prompt?: unknown;
+
   title?: unknown;
+
   description?: unknown;
+
   language?: unknown;
+
   aspectRatio?: unknown;
+
   targetPlatform?: unknown;
+
   durationSeconds?: unknown;
+
   sceneCount?: unknown;
+
   style?: unknown;
+
   width?: unknown;
+
   height?: unknown;
+
   frameRate?: unknown;
+
   outputFormat?: unknown;
+
   quality?: unknown;
+
   includeSubtitles?: unknown;
+
   musicPrompt?: unknown;
+
   musicProvider?: unknown;
+
   musicModel?: unknown;
+
   musicVolume?: unknown;
+
   voiceVolume?: unknown;
+
   assets?: unknown;
 }
 
@@ -83,11 +111,15 @@ function applyIdentityCookie(
     userId,
     {
       httpOnly: true,
+
       sameSite: "lax",
+
       secure:
         process.env.NODE_ENV ===
         "production",
+
       path: "/",
+
       maxAge:
         60 * 60 * 24 * 365,
     },
@@ -141,7 +173,7 @@ function asBoolean(
 
 function resolveOperation(
   value: unknown,
-) {
+): MediaOperation {
   if (
     value === "generate" ||
     value === "render"
@@ -149,7 +181,7 @@ function resolveOperation(
     return value;
   }
 
-  return "plan" as const;
+  return "plan";
 }
 
 function normalizeAssets(
@@ -219,6 +251,9 @@ function normalizeAssets(
 
 function buildCompositionOptions(
   body: MediaRequestBody,
+  mediaOptions: ReturnType<
+    typeof normalizeMediaOptions
+  >,
 ): VideoCompositionOptions {
   return {
     title:
@@ -232,19 +267,15 @@ function buildCompositionOptions(
       ),
 
     width:
-      asPositiveNumber(
-        body.width,
-      ),
+      mediaOptions.width,
 
     height:
-      asPositiveNumber(
-        body.height,
-      ),
+      mediaOptions.height,
 
     frameRate:
       asPositiveNumber(
         body.frameRate,
-      ),
+      ) || 30,
 
     outputFormat:
       body.outputFormat ===
@@ -262,9 +293,7 @@ function buildCompositionOptions(
           : "standard",
 
     language:
-      asString(
-        body.language,
-      ),
+      mediaOptions.language,
 
     includeSubtitles:
       asBoolean(
@@ -272,10 +301,8 @@ function buildCompositionOptions(
       ),
 
     /*
-     * C146.9:
-     * Music generation is intentionally
-     * disabled until a real music provider
-     * is connected.
+     * Music remains disabled until
+     * a real music provider is connected.
      */
     musicPrompt:
       undefined,
@@ -301,6 +328,9 @@ function buildCompositionOptions(
 function buildStoryboardOptions(
   body: MediaRequestBody,
   assets: MediaAsset[],
+  mediaOptions: ReturnType<
+    typeof normalizeMediaOptions
+  >,
 ) {
   return {
     title:
@@ -314,27 +344,24 @@ function buildStoryboardOptions(
       ),
 
     language:
-      asString(
-        body.language,
-      ) ||
-      "zh-CN",
+      mediaOptions.language,
 
     aspectRatio:
-      asString(
-        body.aspectRatio,
-      ) ||
-      "9:16",
+      mediaOptions.aspectRatio,
 
     targetPlatform:
       asString(
         body.targetPlatform,
       ) ||
-      "short-video",
+      (
+        mediaOptions.orientation ===
+        "landscape"
+          ? "video"
+          : "short-video"
+      ),
 
     durationSeconds:
-      asPositiveNumber(
-        body.durationSeconds,
-      ),
+      mediaOptions.durationSeconds,
 
     sceneCount:
       asPositiveNumber(
@@ -404,8 +431,10 @@ async function executeMediaRequest(
   if (!prompt) {
     return {
       success: false,
+
       code:
         "MEDIA_PROMPT_REQUIRED",
+
       content:
         locale === "zh-CN"
           ? "请输入视频需求。"
@@ -425,12 +454,32 @@ async function executeMediaRequest(
       body.assets,
     );
 
+  /*
+   * C146.10:
+   *
+   * Normalize all user-selectable
+   * media options before they enter
+   * storyboard/composition/generation.
+   */
+  const mediaOptions =
+    normalizeMediaOptions({
+      language:
+        body.language,
+
+      aspectRatio:
+        body.aspectRatio,
+
+      durationSeconds:
+        body.durationSeconds,
+    });
+
   const storyboardResult =
     generateStoryboard(
       prompt,
       buildStoryboardOptions(
         body,
         assets,
+        mediaOptions,
       ),
     );
 
@@ -440,10 +489,13 @@ async function executeMediaRequest(
   ) {
     return {
       success: false,
+
       code:
         storyboardResult.code,
+
       error:
         storyboardResult.error,
+
       content:
         storyboardResult.error ||
         "Storyboard generation failed.",
@@ -463,6 +515,7 @@ async function executeMediaRequest(
   const compositionOptions =
     buildCompositionOptions(
       body,
+      mediaOptions,
     );
 
   const initialProject =
@@ -507,12 +560,14 @@ async function executeMediaRequest(
       success: true,
 
       code:
-        "C146_9_MEDIA_PLAN_READY",
+        "C146_10_MEDIA_PLAN_READY",
 
       content:
         "AIOS Media Runtime prepared the video generation plan.",
 
       operation,
+
+      mediaOptions,
 
       storyboard,
 
@@ -527,44 +582,26 @@ async function executeMediaRequest(
 
       runtimeVersion:
         APP_CONFIG.version,
+
+      runtimeRelease:
+        APP_CONFIG.release,
     };
   }
 
-  /*
-   * C146.9:
-   *
-   * Real OpenAI generation.
-   *
-   * Image:
-   * OpenAI → PNG
-   *
-   * Voice:
-   * OpenAI TTS → MP3
-   *
-   * Scene video:
-   * PNG → FFmpeg MP4
-   */
   const generation =
     await generateOpenAIMedia(
       storyboard,
       {
         width:
-          asPositiveNumber(
-            body.width,
-          ) ||
-          1080,
+          mediaOptions.width,
 
         height:
-          asPositiveNumber(
-            body.height,
-          ) ||
-          1920,
+          mediaOptions.height,
 
         frameRate:
           asPositiveNumber(
             body.frameRate,
-          ) ||
-          30,
+          ) || 30,
 
         imageQuality:
           "auto",
@@ -589,6 +626,8 @@ async function executeMediaRequest(
 
       operation,
 
+      mediaOptions,
+
       storyboard,
 
       generation,
@@ -607,10 +646,6 @@ async function executeMediaRequest(
     };
   }
 
-  /*
-   * Replace the provider-neutral pending
-   * assets with the actual generated assets.
-   */
   const generatedVideos =
     generation.videoAssets;
 
@@ -626,14 +661,18 @@ async function executeMediaRequest(
 
       visualTracks:
         finalPlan.timeline.visualTracks.map(
-          (track) => {
+          (
+            track,
+          ) => {
             const sceneId =
               track.metadata
                 ?.sceneId;
 
             const generated =
               generatedVideos.find(
-                (asset) =>
+                (
+                  asset,
+                ) =>
                   asset.metadata
                     ?.sceneId ===
                   sceneId,
@@ -664,14 +703,18 @@ async function executeMediaRequest(
 
       voiceTracks:
         finalPlan.timeline.voiceTracks.map(
-          (track) => {
+          (
+            track,
+          ) => {
             const sceneId =
               track.asset.metadata
                 ?.sceneId;
 
             const generated =
               generatedVoices.find(
-                (asset) =>
+                (
+                  asset,
+                ) =>
                   asset.metadata
                     ?.sceneId ===
                   sceneId,
@@ -690,11 +733,6 @@ async function executeMediaRequest(
           },
         ),
 
-      /*
-       * No real music provider is connected
-       * in C146.9, therefore remove the
-       * provider-neutral music placeholder.
-       */
       musicTracks: [],
     };
 
@@ -707,7 +745,9 @@ async function executeMediaRequest(
       storyboard.scenes.length &&
     generatedVoices.length ===
       storyboard.scenes.filter(
-        (scene) =>
+        (
+          scene,
+        ) =>
           Boolean(
             scene.narration,
           ),
@@ -726,8 +766,8 @@ async function executeMediaRequest(
       code:
         finalPlan.status ===
         "ready_for_render"
-          ? "C146_9_REAL_MEDIA_GENERATION_READY"
-          : "C146_9_REAL_MEDIA_GENERATION_PARTIAL",
+          ? "C146_10_REAL_MEDIA_GENERATION_READY"
+          : "C146_10_REAL_MEDIA_GENERATION_PARTIAL",
 
       content:
         finalPlan.status ===
@@ -736,6 +776,8 @@ async function executeMediaRequest(
           : "AIOS generated media assets, but some assets are still incomplete.",
 
       operation,
+
+      mediaOptions,
 
       storyboard,
 
@@ -763,12 +805,14 @@ async function executeMediaRequest(
       success: false,
 
       code:
-        "C146_9_RENDER_BLOCKED_INCOMPLETE_GENERATION",
+        "C146_10_RENDER_BLOCKED_INCOMPLETE_GENERATION",
 
       content:
         "AIOS did not render the video because the generated media assets are incomplete.",
 
       operation,
+
+      mediaOptions,
 
       storyboard,
 
@@ -788,9 +832,6 @@ async function executeMediaRequest(
     };
   }
 
-  /*
-   * Final C146.7 FFmpeg composition.
-   */
   const render =
     await renderMedia(
       finalPlan.render.request,
@@ -822,6 +863,8 @@ async function executeMediaRequest(
 
     operation,
 
+    mediaOptions,
+
     storyboard,
 
     generation,
@@ -843,6 +886,9 @@ async function executeMediaRequest(
 
     runtimeVersion:
       APP_CONFIG.version,
+
+    runtimeRelease:
+      APP_CONFIG.release,
   };
 }
 
@@ -903,13 +949,49 @@ export async function GET(
             false,
         },
 
+        options: {
+          languages:
+            MEDIA_LANGUAGE_OPTIONS,
+
+          durations:
+            MEDIA_DURATION_OPTIONS,
+
+          aspectRatios:
+            MEDIA_ASPECT_RATIO_OPTIONS,
+
+          defaults: {
+            language:
+              "zh-CN",
+
+            durationSeconds:
+              30,
+
+            aspectRatio:
+              "9:16",
+
+            width:
+              1080,
+
+            height:
+              1920,
+          },
+        },
+
         pipeline: [
           "prompt",
+
+          "normalized-options",
+
           "storyboard",
+
           "openai-image",
+
           "openai-tts",
+
           "ffmpeg-scene-video",
+
           "timeline",
+
           "ffmpeg-final-render",
         ],
 
@@ -1023,7 +1105,8 @@ export async function POST(
           identityMode:
             "anonymous-alpha",
 
-          dataIsolated: true,
+          dataIsolated:
+            true,
 
           locale,
 
