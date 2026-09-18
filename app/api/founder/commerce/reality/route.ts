@@ -2,15 +2,22 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
+
 import {
   createC145_7RegressionFixture,
   executeCommerceRealityLoop,
   type CommerceBaselineInput,
   type CommerceRealityInput,
 } from "@/lib/runtime/commerce-reality-runtime";
+
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 function errorResponse(
   code: string,
   error: string,
@@ -22,6 +29,10 @@ function errorResponse(
       verified: false,
       code,
       error,
+      runtime:
+        APP_CONFIG.runtimeId,
+      runtimeVersion:
+        APP_CONFIG.version,
     },
     {
       status,
@@ -32,6 +43,7 @@ function errorResponse(
     },
   );
 }
+
 function moneyEquals(
   actual: number | undefined,
   expected: number,
@@ -43,45 +55,54 @@ function moneyEquals(
   ) {
     return false;
   }
+
   return (
     Math.round(actual * 100) ===
     Math.round(expected * 100)
   );
 }
+
 function runRegression() {
   const startedAt =
     Date.now();
+
   const fixture =
     createC145_7RegressionFixture();
+
   const result =
     executeCommerceRealityLoop(
       fixture.baseline,
       fixture.actual,
     );
+
   const actualContributionPass =
     moneyEquals(
       result.actual
         .actualContribution,
       31.8,
     );
+
   const actualUnitCostPass =
     moneyEquals(
       result.actual
         .actualUnitCost,
       24,
     );
+
   const deltaContributionPass =
     moneyEquals(
       result.delta
         .contributionSpaceDelta,
       6,
     );
+
   const deltaUnitCostPass =
     moneyEquals(
       result.delta
         .unitCostDelta,
       -6,
     );
+
   const realDataPass =
     result.realityLoop
       .realOrderDataAvailable &&
@@ -89,12 +110,14 @@ function runRegression() {
       .realRevenueDataAvailable &&
     result.realityLoop
       .realCostDataAvailable;
+
   const boundaryPass =
     result.realityLoop
       .profitabilityVerified ===
       false &&
     result.boundaries.length >=
       8;
+
   const evidencePass =
     result.evidence.baseline ===
       "baseline" &&
@@ -102,6 +125,7 @@ function runRegression() {
       "real_data" &&
     result.evidence.delta ===
       "delta";
+
   const finalPass =
     result.success &&
     actualContributionPass &&
@@ -111,79 +135,114 @@ function runRegression() {
     realDataPass &&
     boundaryPass &&
     evidencePass;
+
   return {
-    success: finalPass,
-    verified: finalPass,
-    code: finalPass
-      ? "C145_7_COMMERCE_REALITY_REGRESSION_PASS"
-      : "C145_7_COMMERCE_REALITY_REGRESSION_FAILED",
+    success:
+      finalPass,
+
+    verified:
+      finalPass,
+
+    code:
+      finalPass
+        ? "C145_7_COMMERCE_REALITY_REGRESSION_PASS"
+        : "C145_7_COMMERCE_REALITY_REGRESSION_FAILED",
+
     runtime:
-      "aios-alpha",
+      APP_CONFIG.runtimeId,
+
     runtimeVersion:
-      "0.5",
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+
     latencyMs:
       Date.now() -
       startedAt,
+
     testMode:
       "deterministic-reality-delta-fixture",
+
     pipeline: {
       founderAuth: true,
+
       baseline:
         result.evidence
           .baseline ===
         "baseline",
+
       realOrderData:
         result.realityLoop
           .realOrderDataAvailable,
+
       realRevenueData:
         result.realityLoop
           .realRevenueDataAvailable,
+
       realCostData:
         result.realityLoop
           .realCostDataAvailable,
+
       actualUnitEconomics:
         result.realityLoop
           .actualUnitEconomicsAvailable,
+
       actualUnitCost:
         actualUnitCostPass,
+
       actualContribution:
         actualContributionPass,
+
       deltaUnitCost:
         deltaUnitCostPass,
+
       deltaContribution:
         deltaContributionPass,
+
       evidenceBinding:
         evidencePass,
+
       profitabilityBoundary:
         boundaryPass,
     },
+
     expected: {
       actualUnitCost:
         24,
+
       actualContribution:
         31.8,
+
       contributionDelta:
         6,
+
       unitCostDelta:
         -6,
     },
+
     actual: {
       actualUnitCost:
         result.actual
           .actualUnitCost,
+
       actualContribution:
         result.actual
           .actualContribution,
+
       contributionDelta:
         result.delta
           .contributionSpaceDelta,
+
       unitCostDelta:
         result.delta
           .unitCostDelta,
     },
+
     result,
   };
 }
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -198,6 +257,7 @@ export async function GET(
       401,
     );
   }
+
   try {
     return NextResponse.json(
       runRegression(),
@@ -218,6 +278,7 @@ export async function GET(
     );
   }
 }
+
 export async function POST(
   request: NextRequest,
 ) {
@@ -232,12 +293,17 @@ export async function POST(
       401,
     );
   }
+
   try {
     const body =
       (await request.json()) as {
-        baseline?: CommerceBaselineInput;
-        actual?: CommerceRealityInput;
+        baseline?:
+          CommerceBaselineInput;
+
+        actual?:
+          CommerceRealityInput;
       };
+
     if (
       !body ||
       typeof body !==
@@ -248,6 +314,7 @@ export async function POST(
         "JSON object input is required.",
       );
     }
+
     if (
       !body.baseline ||
       typeof body.baseline !==
@@ -258,6 +325,7 @@ export async function POST(
         "Baseline input is required.",
       );
     }
+
     if (
       !body.actual ||
       typeof body.actual !==
@@ -268,23 +336,33 @@ export async function POST(
         "Actual commerce data is required.",
       );
     }
+
     const result =
       executeCommerceRealityLoop(
         body.baseline,
         body.actual,
       );
+
     return NextResponse.json(
       {
         success:
           result.success,
+
         verified:
           result.success,
+
         code:
           result.code,
+
         runtime:
-          "aios-alpha",
+          APP_CONFIG.runtimeId,
+
         runtimeVersion:
-          "0.5",
+          APP_CONFIG.version,
+
+        release:
+          APP_CONFIG.release,
+
         result,
       },
       {
