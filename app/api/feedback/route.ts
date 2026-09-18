@@ -19,6 +19,10 @@ import {
   type FeedbackCategory,
 } from "@/lib/feedback/store";
 
+import {
+  APP_VERSION,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -115,6 +119,9 @@ export async function GET(
         isolated:
           true,
 
+        runtimeVersion:
+          APP_VERSION,
+
         timestamp:
           Date.now(),
       },
@@ -161,6 +168,9 @@ export async function POST(
 
             content:
               "请选择反馈类型。",
+
+            runtimeVersion:
+              APP_VERSION,
           },
           {
             status:
@@ -203,19 +213,16 @@ export async function POST(
                 : "workspace",
 
             runtimeVersion:
-              typeof body.runtimeVersion ===
-              "string"
-                ? body.runtimeVersion
-                : "0.4",
+              APP_VERSION,
           })
       );
 
     await appendFounderFeedback(
-  record,
-  identity.userId
-);
-    
-      const response =
+      record,
+      identity.userId
+    );
+
+    const response =
       NextResponse.json(
         {
           success:
@@ -232,6 +239,9 @@ export async function POST(
 
           isolated:
             true,
+
+          runtimeVersion:
+            APP_VERSION,
 
           timestamp:
             Date.now(),
@@ -273,6 +283,9 @@ export async function POST(
 
           error:
             errorMessage,
+
+          runtimeVersion:
+            APP_VERSION,
 
           timestamp:
             Date.now(),
