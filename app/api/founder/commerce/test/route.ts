@@ -2,9 +2,11 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
+
 import {
   createC145_6RegressionFixture,
   executeCommerceTestPlan,
@@ -12,6 +14,22 @@ import {
   type CommerceTestPlanInput,
   type CommerceActualTestInput,
 } from "@/lib/runtime/commerce-test-runtime";
+
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+    runtimeVersion:
+      APP_CONFIG.version,
+    release:
+      APP_CONFIG.release,
+  };
+}
+
 function errorResponse(
   code: string,
   error: string,
@@ -23,6 +41,9 @@ function errorResponse(
       verified: false,
       code,
       error,
+      ...runtimeIdentity(),
+      timestamp:
+        Date.now(),
     },
     {
       status,
@@ -33,28 +54,35 @@ function errorResponse(
     },
   );
 }
+
 function runRegression() {
   const startedAt =
     Date.now();
+
   const fixture =
     createC145_6RegressionFixture();
+
   const plan =
     executeCommerceTestPlan(
       fixture.plan,
     );
+
   const actual =
     recordCommerceActualTest(
       fixture.plan,
       fixture.actual,
     );
+
   const planPass =
     plan.success &&
     plan.code ===
       "C145_6_COMMERCE_TEST_PLAN_READY";
+
   const actualPass =
     actual.success &&
     actual.code ===
       "C145_6_COMMERCE_ACTUAL_TEST_RECORDED";
+
   const realityLoopPass =
     actual.realityLoop
       .realOrderDataAvailable ===
@@ -62,58 +90,71 @@ function runRegression() {
     actual.realityLoop
       .actualUnitEconomicsAvailable ===
       true;
+
   const boundaryPass =
     actual.realityLoop
       .profitabilityVerified ===
       false &&
     actual.boundaries.length >=
       7;
+
   const contributionPass =
     actual.actualResults
       ?.actualContribution ===
     31.8;
+
   const finalPass =
     planPass &&
     actualPass &&
     realityLoopPass &&
     boundaryPass &&
     contributionPass;
+
   return {
     success: finalPass,
     verified: finalPass,
     code: finalPass
       ? "C145_6_COMMERCE_TEST_REGRESSION_PASS"
       : "C145_6_COMMERCE_TEST_REGRESSION_FAILED",
-    runtime:
-      "aios-alpha",
-    runtimeVersion:
-      "0.5",
+
+    ...runtimeIdentity(),
+
     latencyMs:
       Date.now() -
       startedAt,
+
     testMode:
       "deterministic-commerce-test-fixture",
+
     pipeline: {
       founderAuth: true,
+
       testPlan:
         planPass,
+
       testQuantity:
         plan.testPlan
           .recommendedTestQuantity ===
         5,
+
       testBudget:
         plan.testPlan
           .testBudget ===
         600,
+
       actualOrderData:
         realityLoopPass,
+
       actualUnitEconomics:
         actual.realityLoop
           .actualUnitEconomicsAvailable,
+
       actualContribution:
         contributionPass,
+
       profitabilityBoundary:
         boundaryPass,
+
       noAutomaticOrder:
         actual.boundaries.some(
           (item) =>
@@ -121,6 +162,7 @@ function runRegression() {
               "不自动下单",
             ),
         ),
+
       noAutomaticPayment:
         actual.boundaries.some(
           (item) =>
@@ -129,22 +171,38 @@ function runRegression() {
             ),
         ),
     },
+
     expected: {
       recommendedTestQuantity:
         5,
+
       maximumInitialTestQuantity:
         20,
+
       testBudget:
         600,
-      actualOrders: 2,
-      actualRevenue: 79.8,
-      actualTotalCost: 48,
-      actualContribution: 31.8,
+
+      actualOrders:
+        2,
+
+      actualRevenue:
+        79.8,
+
+      actualTotalCost:
+        48,
+
+      actualContribution:
+        31.8,
     },
+
     plan,
     actual,
+
+    timestamp:
+      Date.now(),
   };
 }
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -159,6 +217,7 @@ export async function GET(
       401,
     );
   }
+
   try {
     return NextResponse.json(
       runRegression(),
@@ -179,6 +238,7 @@ export async function GET(
     );
   }
 }
+
 export async function POST(
   request: NextRequest,
 ) {
@@ -193,12 +253,14 @@ export async function POST(
       401,
     );
   }
+
   try {
     const body =
       (await request.json()) as {
         plan?: CommerceTestPlanInput;
         actual?: CommerceActualTestInput;
       };
+
     if (
       !body ||
       typeof body !==
@@ -209,6 +271,7 @@ export async function POST(
         "JSON object input is required.",
       );
     }
+
     if (
       !body.plan ||
       typeof body.plan !==
@@ -219,6 +282,7 @@ export async function POST(
         "Test plan input is required.",
       );
     }
+
     if (
       body.actual &&
       typeof body.actual ===
@@ -229,19 +293,24 @@ export async function POST(
           body.plan,
           body.actual,
         );
+
       return NextResponse.json(
         {
           success:
             result.success,
+
           verified:
             result.success,
+
           code:
             result.code,
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
+
+          ...runtimeIdentity(),
+
           result,
+
+          timestamp:
+            Date.now(),
         },
         {
           headers: {
@@ -251,23 +320,29 @@ export async function POST(
         },
       );
     }
+
     const result =
       executeCommerceTestPlan(
         body.plan,
       );
+
     return NextResponse.json(
       {
         success:
           result.success,
+
         verified:
           result.success,
+
         code:
           result.code,
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
+
+        ...runtimeIdentity(),
+
         result,
+
+        timestamp:
+          Date.now(),
       },
       {
         headers: {
