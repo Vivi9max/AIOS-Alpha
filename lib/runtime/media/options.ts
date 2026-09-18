@@ -19,33 +19,24 @@ export type MediaDuration =
 
 export interface MediaVideoPreset {
   id: string;
-
   durationSeconds: MediaDuration;
-
   durationLabel: string;
-
   language: MediaLanguage;
-
   languageLabel: string;
-
   aspectRatio: MediaAspectRatio;
-
   aspectRatioLabel: string;
-
   orientation:
     | "portrait"
     | "landscape"
     | "square";
-
   width: number;
-
   height: number;
 }
 
 export const MEDIA_LANGUAGE_OPTIONS = [
   {
     value: "zh-CN",
-    label: "中文",
+    label: "\u4e2d\u6587",
   },
   {
     value: "en-US",
@@ -53,68 +44,68 @@ export const MEDIA_LANGUAGE_OPTIONS = [
   },
   {
     value: "ja-JP",
-    label: "日本語",
+    label: "\u65e5\u672c\u8a9e",
   },
 ] as const;
 
 export const MEDIA_DURATION_OPTIONS = [
   {
     value: 30,
-    label: "30秒",
+    label: "30\u79d2",
   },
   {
     value: 60,
-    label: "1分钟",
+    label: "1\u5206\u949f",
   },
   {
     value: 90,
-    label: "1分30秒",
+    label: "1\u5206\u002030\u79d2",
   },
   {
     value: 120,
-    label: "2分钟",
+    label: "2\u5206\u949f",
   },
 ] as const;
 
 export const MEDIA_ASPECT_RATIO_OPTIONS = [
   {
     value: "9:16",
-    label: "9:16 竖屏",
+    label: "9:16 \u7ad6\u5c4f",
     orientation: "portrait",
     width: 1080,
     height: 1920,
   },
   {
     value: "16:9",
-    label: "16:9 横屏",
+    label: "16:9 \u6a2a\u5c4f",
     orientation: "landscape",
     width: 1920,
     height: 1080,
   },
   {
     value: "1:1",
-    label: "1:1 方形",
+    label: "1:1 \u65b9\u5f62",
     orientation: "square",
     width: 1080,
     height: 1080,
   },
   {
     value: "4:5",
-    label: "4:5 社交媒体",
+    label: "4:5 \u793e\u4ea4\u5a92\u4f53",
     orientation: "portrait",
     width: 1080,
     height: 1350,
   },
   {
     value: "4:3",
-    label: "4:3 标准",
+    label: "4:3 \u6807\u51c6",
     orientation: "landscape",
     width: 1440,
     height: 1080,
   },
   {
     value: "3:2",
-    label: "3:2 标准",
+    label: "3:2 \u6807\u51c6",
     orientation: "landscape",
     width: 1440,
     height: 960,
@@ -150,21 +141,15 @@ function normalizeDuration(
       ? value
       : Number(value);
 
-  if (
-    numeric === 60
-  ) {
+  if (numeric === 60) {
     return 60;
   }
 
-  if (
-    numeric === 90
-  ) {
+  if (numeric === 90) {
     return 90;
   }
 
-  if (
-    numeric === 120
-  ) {
+  if (numeric === 120) {
     return 120;
   }
 
@@ -256,22 +241,19 @@ export function normalizeMediaOptions(
   const ratioOption =
     MEDIA_ASPECT_RATIO_OPTIONS.find(
       (item) =>
-        item.value ===
-        aspectRatio,
+        item.value === aspectRatio,
     );
 
   const languageOption =
     MEDIA_LANGUAGE_OPTIONS.find(
       (item) =>
-        item.value ===
-        language,
+        item.value === language,
     );
 
   const durationOption =
     MEDIA_DURATION_OPTIONS.find(
       (item) =>
-        item.value ===
-        durationSeconds,
+        item.value === durationSeconds,
     );
 
   return {
@@ -295,7 +277,7 @@ export function normalizeMediaOptions(
 
     durationLabel:
       durationOption?.label ||
-      `${durationSeconds}秒`,
+      `${durationSeconds}\u79d2`,
 
     width:
       dimensions.width,
@@ -350,8 +332,10 @@ export function createMediaPreset(
   };
 }
 
-export function listMediaPresets(): MediaVideoPreset[] {
-  const presets: MediaVideoPreset[] = [];
+export function listMediaPresets():
+  MediaVideoPreset[] {
+  const presets:
+    MediaVideoPreset[] = [];
 
   for (
     const language
