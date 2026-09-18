@@ -18,6 +18,10 @@ import {
   getWorkspaceId,
 } from "@/lib/server-storage";
 
+import {
+  AIOS_IDENTITY,
+} from "@/lib/runtime/version";
+
 export const dynamic =
   "force-dynamic";
 
@@ -25,76 +29,51 @@ export const runtime =
   "nodejs";
 
 function createJsonResponse(
-  body:
-    Record<
-      string,
-      unknown
-    >,
-
-  status =
-    200
+  body: Record<string, unknown>,
+  status = 200,
 ): NextResponse {
   return NextResponse.json(
     body,
     {
       status,
-
       headers: {
         "Cache-Control":
           "no-store",
-
         "Content-Type":
           "application/json; charset=utf-8",
       },
-    }
+    },
   );
 }
 
 export async function GET(
-  request:
-    NextRequest
+  request: NextRequest,
 ) {
-  if (
-    !isFounderConfigured()
-  ) {
+  if (!isFounderConfigured()) {
     return createJsonResponse(
       {
-        success:
-          false,
-
-        configured:
-          false,
-
+        success: false,
+        configured: false,
         error:
           "Founder access is not configured.",
-
         content:
-          "请先在 Vercel 环境变量中设置 FOUNDER_ACCESS_KEY。",
+          "Founder access is not configured.",
       },
-      503
+      503,
     );
   }
 
-  if (
-    !isFounderRequest(
-      request
-    )
-  ) {
+  if (!isFounderRequest(request)) {
     return createJsonResponse(
       {
-        success:
-          false,
-
-        configured:
-          true,
-
+        success: false,
+        configured: true,
         error:
           "Founder authorization failed.",
-
         content:
-          "创始人访问密钥不正确。",
+          "Founder authorization failed.",
       },
-      401
+      401,
     );
   }
 
@@ -102,11 +81,10 @@ export async function GET(
     const [
       feedback,
       storageHealth,
-    ] =
-      await Promise.all([
-        listFounderFeedback(),
-        getStorageHealth(),
-      ]);
+    ] = await Promise.all([
+      listFounderFeedback(),
+      getStorageHealth(),
+    ]);
 
     const totalFeedback =
       feedback.length;
@@ -115,19 +93,19 @@ export async function GET(
       feedback.filter(
         (item) =>
           item.category ===
-          "bug"
+          "bug",
       ).length;
 
     const positiveCount =
       feedback.filter(
         (item) =>
-          item.rating >= 4
+          item.rating >= 4,
       ).length;
 
     const criticalCount =
       feedback.filter(
         (item) =>
-          item.rating <= 2
+          item.rating <= 2,
       ).length;
 
     const averageRating =
@@ -137,14 +115,14 @@ export async function GET(
               feedback.reduce(
                 (
                   total,
-                  item
+                  item,
                 ) =>
                   total +
                   item.rating,
-                0
+                0,
               ) /
               totalFeedback
-            ).toFixed(1)
+            ).toFixed(1),
           )
         : 0;
 
@@ -152,97 +130,87 @@ export async function GET(
       new Set(
         feedback.map(
           (item) =>
-            item.userId
-        )
+            item.userId,
+        ),
       ).size;
 
-    return createJsonResponse(
-      {
-        success:
-          true,
+    return createJsonResponse({
+      success: true,
 
-        founder:
-          true,
+      founder: true,
 
-        version:
+      runtime:
+        AIOS_IDENTITY,
+
+      version:
+        AIOS_IDENTITY.version,
+
+      release:
+        AIOS_IDENTITY.release,
+
+      environment:
+        process.env.VERCEL_ENV ??
+        process.env.NODE_ENV ??
+        "development",
+
+      deployment: {
+        commit:
           process.env
-            .NEXT_PUBLIC_APP_VERSION ??
-          "0.4",
+            .VERCEL_GIT_COMMIT_SHA
+            ?.slice(0, 7) ??
+          "local",
 
-        environment:
+        branch:
           process.env
-            .VERCEL_ENV ??
+            .VERCEL_GIT_COMMIT_REF ??
+          "local",
+
+        url:
           process.env
-            .NODE_ENV ??
-          "development",
+            .VERCEL_PROJECT_PRODUCTION_URL ??
+          process.env.VERCEL_URL ??
+          "localhost",
+      },
 
-        deployment: {
-          commit:
-            process.env
-              .VERCEL_GIT_COMMIT_SHA
-              ?.slice(
-                0,
-                7
-              ) ??
-            "local",
+      storage: {
+        mode:
+          getStorageMode(),
 
-          branch:
-            process.env
-              .VERCEL_GIT_COMMIT_REF ??
-            "local",
+        workspaceId:
+          getWorkspaceId(),
 
-          url:
-            process.env
-              .VERCEL_PROJECT_PRODUCTION_URL ??
-            process.env
-              .VERCEL_URL ??
-            "localhost",
-        },
+        health:
+          storageHealth,
+      },
 
-        storage: {
-          mode:
-            getStorageMode(),
+      feedback: {
+        total:
+          totalFeedback,
 
-          workspaceId:
-            getWorkspaceId(),
+        bugs:
+          bugCount,
 
-          health:
-            storageHealth,
-        },
+        positive:
+          positiveCount,
 
-        feedback: {
-          total:
-            totalFeedback,
+        critical:
+          criticalCount,
 
-          bugs:
-            bugCount,
+        averageRating,
 
-          positive:
-            positiveCount,
+        uniqueUsers,
 
-          critical:
-            criticalCount,
+        latest:
+          feedback.slice(0, 20),
+      },
 
-          averageRating,
-
-          uniqueUsers,
-
-          latest:
-            feedback.slice(
-              0,
-              20
-            ),
-        },
-
-        timestamp:
-          Date.now(),
-      }
-    );
+      timestamp:
+        Date.now(),
+    });
   } catch (error) {
     return createJsonResponse(
       {
-        success:
-          false,
+        success: false,
 
         error:
           error instanceof Error
@@ -252,7 +220,7 @@ export async function GET(
         timestamp:
           Date.now(),
       },
-      500
+      500,
     );
   }
 }
