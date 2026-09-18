@@ -39,6 +39,10 @@ import {
   executeRuntimeVideoVision,
 } from "@/lib/runtime/video-vision-runtime";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const runtime = "nodejs";
 
 export const dynamic =
@@ -53,12 +57,28 @@ const PASS_CODE =
 const FAIL_CODE =
   "C144_9_VIDEO_VISION_REGRESSION_FAILED";
 
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+    runtimeVersion:
+      APP_CONFIG.version,
+    release:
+      APP_CONFIG.release,
+  };
+}
+
 function json(
   body: Record<string, unknown>,
   status = 200,
 ) {
   return NextResponse.json(
-    body,
+    {
+      ...body,
+      ...runtimeIdentity(),
+      timestamp:
+        Date.now(),
+    },
     {
       status,
       headers: {
@@ -106,12 +126,6 @@ export async function GET(
           "FOUNDER_AUTH_REQUIRED",
         message:
           "Founder authentication is required.",
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
-        timestamp:
-          Date.now(),
         latencyMs:
           Date.now() -
           startedAt,
@@ -140,12 +154,6 @@ export async function GET(
           "INVALID_SOURCE_URL",
         message:
           "A valid HTTP(S) source page URL is required.",
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
-        timestamp:
-          Date.now(),
         latencyMs:
           Date.now() -
           startedAt,
@@ -198,12 +206,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video resolver did not return a usable primary video.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -263,12 +265,6 @@ export async function GET(
             "C144_9_VIDEO_DECODER_UNAVAILABLE",
           message:
             "No usable FFmpeg decoder is available in the deployed runtime.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -341,12 +337,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video media access or processing failed.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -419,12 +409,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video evidence sampling failed.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -516,12 +500,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video frame extraction failed.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -588,12 +566,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video visual evidence is not ready for Vision analysis.",
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
-          timestamp:
-            Date.now(),
           latencyMs:
             Date.now() -
             startedAt,
@@ -697,15 +669,6 @@ export async function GET(
           finalRegressionPass
             ? "Video Vision Model integration regression passed."
             : "Video Vision Model integration regression failed.",
-
-        runtime:
-          "aios-alpha",
-
-        runtimeVersion:
-          "0.5",
-
-        timestamp:
-          Date.now(),
 
         latencyMs:
           Date.now() -
@@ -937,12 +900,6 @@ export async function GET(
           error instanceof Error
             ? error.message
             : "Video Vision regression failed.",
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
-        timestamp:
-          Date.now(),
         latencyMs:
           Date.now() -
           startedAt,
