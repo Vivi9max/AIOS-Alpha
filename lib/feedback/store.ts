@@ -6,6 +6,10 @@ import {
   createUserStorageKey,
 } from "@/lib/storage/data-scope";
 
+import {
+  APP_VERSION,
+} from "@/lib/config/app";
+
 export type FeedbackCategory =
   | "great"
   | "good"
@@ -279,7 +283,7 @@ export async function createFeedback(
         .slice(
           0,
           20
-        ) || "0.4",
+        ) || APP_VERSION,
 
     createdAt:
       Date.now(),
