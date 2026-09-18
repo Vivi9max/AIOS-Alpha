@@ -6,88 +6,112 @@ interface AnswerRendererProps {
   content: string;
 }
 
+type TableBlock = {
+  type: "table";
+  headers: string[];
+  rows: string[][];
+};
+
 type Block =
-  | { type: "heading"; text: string }
+  | { type: "heading"; level: number; text: string }
   | { type: "paragraph"; text: string }
   | { type: "bullet"; text: string }
-  | { type: "number"; text: string }
-  | { type: "divider" };
+  | { type: "number"; number: string; text: string }
+  | { type: "divider" }
+  | TableBlock;
 
 function cleanInline(value: string): string {
-  let result = value.trim();
+  return value
+    .trim()
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .trim();
+}
 
-  result = result.replace(/\*\*/g, "");
-  result = result.replace(/__/g, "");
-  result = result.replace(/`/g, "");
-
-  return result.trim();
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cleanInline(cell))
+    .filter((cell) => cell.length > 0);
 }
 
 function isTableSeparator(line: string): boolean {
-  const normalized = line
-    .replace(/\s/g, "")
-    .replace(/\|/g, "");
+  const cells = splitTableRow(line);
 
-  return normalized.length > 0 && /^[-:]+$/u.test(normalized);
-}
-
-function isTableLine(line: string): boolean {
   return (
-    line.includes("|") &&
-    line.split("|").filter(Boolean).length >= 2
+    cells.length >= 2 &&
+    cells.every((cell) =>
+      /^:?-{3,}:?$/u.test(cell.replace(/\s/g, "")),
+    )
   );
 }
 
-function normalizeContent(content: string): string {
+function isPossibleTableRow(line: string): boolean {
+  return (
+    line.includes("|") &&
+    splitTableRow(line).length >= 2
+  );
+}
+
+function parseTable(
+  lines: string[],
+  start: number,
+): {
+  block: TableBlock;
+  nextIndex: number;
+} | null {
+  if (
+    start + 1 >= lines.length ||
+    !isPossibleTableRow(lines[start]) ||
+    !isTableSeparator(lines[start + 1])
+  ) {
+    return null;
+  }
+
+  const headers = splitTableRow(lines[start]);
+  const rows: string[][] = [];
+
+  let index = start + 2;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+
+    if (!line || !isPossibleTableRow(line)) {
+      break;
+    }
+
+    const row = splitTableRow(line);
+
+    if (row.length > 0) {
+      rows.push(row);
+    }
+
+    index += 1;
+  }
+
+  return {
+    block: {
+      type: "table",
+      headers,
+      rows,
+    },
+    nextIndex: index,
+  };
+}
+
+function parseBlocks(content: string): Block[] {
   const lines = content
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n");
 
-  const output: string[] = [];
-  let tableMode = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (isTableSeparator(line)) {
-      tableMode = true;
-      continue;
-    }
-
-    if (isTableLine(line)) {
-      const cells = line
-        .split("|")
-        .map((item) => cleanInline(item))
-        .filter(Boolean);
-
-      if (cells.length > 0) {
-        output.push(
-          cells.map((cell) => `• ${cell}`).join("\n"),
-        );
-      }
-
-      tableMode = true;
-      continue;
-    }
-
-    if (tableMode && !line) {
-      tableMode = false;
-    }
-
-    output.push(rawLine);
-  }
-
-  return output.join("\n");
-}
-
-function parseBlocks(content: string): Block[] {
-  const lines = normalizeContent(content).split("\n");
   const blocks: Block[] = [];
-
   let paragraph: string[] = [];
 
-  function flushParagraph() {
+  const flushParagraph = () => {
     const text = paragraph
       .join(" ")
       .replace(/\s+/g, " ")
@@ -101,64 +125,92 @@ function parseBlocks(content: string): Block[] {
     }
 
     paragraph = [];
-  }
+  };
 
-  for (const rawLine of lines) {
+  let index = 0;
+
+  while (index < lines.length) {
+    const rawLine = lines[index];
     const line = rawLine.trim();
 
     if (!line) {
       flushParagraph();
+      index += 1;
       continue;
     }
 
-    if (/^#{1,3}\s+/u.test(line)) {
+    const table = parseTable(lines, index);
+
+    if (table) {
+      flushParagraph();
+      blocks.push(table.block);
+      index = table.nextIndex;
+      continue;
+    }
+
+    const headingMatch = line.match(
+      /^(#{1,4})\s+(.+)$/u,
+    );
+
+    if (headingMatch) {
       flushParagraph();
 
       blocks.push({
         type: "heading",
-        text: cleanInline(
-          line.replace(/^#{1,3}\s+/u, ""),
-        ),
+        level: headingMatch[1].length,
+        text: cleanInline(headingMatch[2]),
       });
 
+      index += 1;
       continue;
     }
 
-    if (/^[-*•]\s+/u.test(line)) {
-      flushParagraph();
+    const numberMatch = line.match(
+      /^(\d+)[.)]\s+(.+)$/u,
+    );
 
-      blocks.push({
-        type: "bullet",
-        text: cleanInline(
-          line.replace(/^[-*•]\s+/u, ""),
-        ),
-      });
-
-      continue;
-    }
-
-    if (/^\d+[.)]\s+/u.test(line)) {
+    if (numberMatch) {
       flushParagraph();
 
       blocks.push({
         type: "number",
-        text: cleanInline(line),
+        number: numberMatch[1],
+        text: cleanInline(numberMatch[2]),
       });
 
+      index += 1;
       continue;
     }
 
-    if (/^---+$/u.test(line)) {
+    const bulletMatch = line.match(
+      /^[-*•]\s+(.+)$/u,
+    );
+
+    if (bulletMatch) {
+      flushParagraph();
+
+      blocks.push({
+        type: "bullet",
+        text: cleanInline(bulletMatch[1]),
+      });
+
+      index += 1;
+      continue;
+    }
+
+    if (/^---+$/.test(line)) {
       flushParagraph();
 
       blocks.push({
         type: "divider",
       });
 
+      index += 1;
       continue;
     }
 
     paragraph.push(line);
+    index += 1;
   }
 
   flushParagraph();
@@ -206,6 +258,8 @@ function renderInline(text: string): ReactNode {
             borderRadius: 5,
             background: "#f1f5f9",
             fontSize: "0.92em",
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, monospace",
           }}
         >
           {part.slice(1, -1)}
@@ -217,37 +271,27 @@ function renderInline(text: string): ReactNode {
   });
 }
 
-function headingTone(text: string): {
-  background: string;
-  border: string;
-} {
-  const value = text.toLowerCase();
-
-  if (
-    value.includes("结论") ||
-    value.includes("conclusion") ||
-    value.includes("結論")
-  ) {
+function headingStyle(level: number) {
+  if (level === 1) {
     return {
-      background: "#f8fafc",
-      border: "#cbd5e1",
+      fontSize: 18,
+      fontWeight: 850,
+      marginTop: 8,
     };
   }
 
-  if (
-    value.includes("可信度") ||
-    value.includes("confidence") ||
-    value.includes("信頼度")
-  ) {
+  if (level === 2) {
     return {
-      background: "#f8fafc",
-      border: "#cbd5e1",
+      fontSize: 16,
+      fontWeight: 800,
+      marginTop: 7,
     };
   }
 
   return {
-    background: "#ffffff",
-    border: "#e5e7eb",
+    fontSize: 14,
+    fontWeight: 800,
+    marginTop: 5,
   };
 }
 
@@ -265,7 +309,7 @@ export default function AnswerRenderer({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 11,
         width: "100%",
       }}
     >
@@ -277,31 +321,122 @@ export default function AnswerRenderer({
               style={{
                 height: 1,
                 background: "#e5e7eb",
-                margin: "4px 0",
+                margin: "5px 0",
               }}
             />
           );
         }
 
         if (block.type === "heading") {
-          const tone = headingTone(block.text);
+          const style = headingStyle(block.level);
 
           return (
             <div
               key={index}
               style={{
-                marginTop: index === 0 ? 0 : 8,
-                padding: "9px 11px",
-                borderLeft: "3px solid #111827",
-                border: `1px solid ${tone.border}`,
-                borderRadius: 9,
-                background: tone.background,
-                fontSize: 13,
-                fontWeight: 800,
-                letterSpacing: "-0.01em",
+                ...style,
+                lineHeight: 1.35,
+                paddingBottom: 2,
+                borderBottom:
+                  block.level <= 2
+                    ? "1px solid #e5e7eb"
+                    : "none",
               }}
             >
               {renderInline(block.text)}
+            </div>
+          );
+        }
+
+        if (block.type === "table") {
+          return (
+            <div
+              key={index}
+              style={{
+                width: "100%",
+                overflowX: "auto",
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius: 10,
+                background: "#ffffff",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: 520,
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                <thead>
+                  <tr>
+                    {block.headers.map(
+                      (header, cellIndex) => (
+                        <th
+                          key={cellIndex}
+                          style={{
+                            padding:
+                              "9px 10px",
+                            textAlign: "left",
+                            fontWeight: 800,
+                            color:
+                              "#334155",
+                            background:
+                              "#f8fafc",
+                            borderBottom:
+                              "1px solid #e2e8f0",
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {renderInline(header)}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {block.rows.map(
+                    (row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {block.headers.map(
+                          (_, cellIndex) => (
+                            <td
+                              key={
+                                cellIndex
+                              }
+                              style={{
+                                padding:
+                                  "9px 10px",
+                                verticalAlign:
+                                  "top",
+                                borderBottom:
+                                  rowIndex ===
+                                  block.rows
+                                    .length -
+                                    1
+                                    ? "none"
+                                    : "1px solid #f1f5f9",
+                                color:
+                                  "#475569",
+                              }}
+                            >
+                              {renderInline(
+                                row[
+                                  cellIndex
+                                ] ?? "",
+                              )}
+                            </td>
+                          ),
+                        )}
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
             </div>
           );
         }
@@ -314,9 +449,9 @@ export default function AnswerRenderer({
                 display: "flex",
                 alignItems: "flex-start",
                 gap: 9,
-                padding: "3px 2px",
+                padding: "2px 0",
                 fontSize: 14,
-                lineHeight: 1.65,
+                lineHeight: 1.68,
               }}
             >
               <span
@@ -339,18 +474,6 @@ export default function AnswerRenderer({
         }
 
         if (block.type === "number") {
-          const match = block.text.match(
-            /^(\d+)[.)]\s+/u,
-          );
-
-          const number = match?.[1] ?? "";
-
-          const text = match
-            ? block.text
-                .slice(match[0].length)
-                .trim()
-            : block.text;
-
           return (
             <div
               key={index}
@@ -358,32 +481,33 @@ export default function AnswerRenderer({
                 display: "flex",
                 alignItems: "flex-start",
                 gap: 9,
-                padding: "3px 2px",
+                padding: "2px 0",
                 fontSize: 14,
-                lineHeight: 1.65,
+                lineHeight: 1.68,
               }}
             >
               <span
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 23,
+                  height: 23,
                   flexShrink: 0,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: "50%",
-                  background: "#f1f5f9",
-                  border: "1px solid #cbd5e1",
+                  background: "#f8fafc",
+                  border:
+                    "1px solid #cbd5e1",
                   color: "#334155",
                   fontSize: 11,
                   fontWeight: 800,
                 }}
               >
-                {number}
+                {block.number}
               </span>
 
               <span>
-                {renderInline(text)}
+                {renderInline(block.text)}
               </span>
             </div>
           );
@@ -395,9 +519,10 @@ export default function AnswerRenderer({
             style={{
               margin: 0,
               fontSize: 14,
-              lineHeight: 1.7,
+              lineHeight: 1.72,
               whiteSpace: "pre-wrap",
               overflowWrap: "anywhere",
+              color: "#1e293b",
             }}
           >
             {renderInline(block.text)}
