@@ -7,11 +7,40 @@ import {
   ensureCommercialOperatingLoop,
 } from "@/lib/commercial/operating-loop";
 
-const RUNTIME =
-  "aios-alpha";
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
 
-const RUNTIME_VERSION =
-  "0.5";
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+  };
+}
+
+function response(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(
+    {
+      ...body,
+      ...runtimeIdentity(),
+    },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
 
 export async function POST(
   request: NextRequest,
@@ -32,18 +61,13 @@ export async function POST(
         : "";
 
     if (!objectiveId) {
-      return NextResponse.json(
+      return response(
         {
           success: false,
           error:
             "COMMERCIAL_OBJECTIVE_ID_REQUIRED",
-          runtime: RUNTIME,
-          runtimeVersion:
-            RUNTIME_VERSION,
         },
-        {
-          status: 400,
-        },
+        400,
       );
     }
 
@@ -52,21 +76,20 @@ export async function POST(
         objectiveId,
       );
 
-    return NextResponse.json(
+    return response(
       {
         success: true,
+
         code:
           "C143_11_COMMERCIAL_OPERATING_LOOP_READY",
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+
         latencyMs:
           Date.now() - startedAt,
-        loop: result,
+
+        loop:
+          result,
       },
-      {
-        status: 200,
-      },
+      200,
     );
   } catch (error) {
     const message =
@@ -80,21 +103,20 @@ export async function POST(
         ? 404
         : 500;
 
-    return NextResponse.json(
+    return response(
       {
         success: false,
+
         code:
           "C143_11_COMMERCIAL_OPERATING_LOOP_FAILED",
-        error: message,
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+
+        error:
+          message,
+
         latencyMs:
           Date.now() - startedAt,
       },
-      {
-        status,
-      },
+      status,
     );
   }
 }
