@@ -1,5 +1,3 @@
-// app/api/media/route.ts
-
 import {
   NextRequest,
   NextResponse,
@@ -31,6 +29,10 @@ import {
   renderMedia,
 } from "@/lib/runtime/media/render";
 
+import {
+  generateOpenAIMedia,
+} from "@/lib/runtime/media/openai";
+
 import type {
   MediaAsset,
   MediaCapabilityContext,
@@ -44,51 +46,31 @@ export const runtime =
 
 type MediaOperation =
   | "plan"
+  | "generate"
   | "render";
 
 interface MediaRequestBody {
   operation?: unknown;
-
   prompt?: unknown;
-
   title?: unknown;
-
   description?: unknown;
-
   language?: unknown;
-
   aspectRatio?: unknown;
-
   targetPlatform?: unknown;
-
   durationSeconds?: unknown;
-
   sceneCount?: unknown;
-
   style?: unknown;
-
   width?: unknown;
-
   height?: unknown;
-
   frameRate?: unknown;
-
   outputFormat?: unknown;
-
   quality?: unknown;
-
   includeSubtitles?: unknown;
-
   musicPrompt?: unknown;
-
   musicProvider?: unknown;
-
   musicModel?: unknown;
-
   musicVolume?: unknown;
-
   voiceVolume?: unknown;
-
   assets?: unknown;
 }
 
@@ -101,15 +83,11 @@ function applyIdentityCookie(
     userId,
     {
       httpOnly: true,
-
       sameSite: "lax",
-
       secure:
         process.env.NODE_ENV ===
         "production",
-
       path: "/",
-
       maxAge:
         60 * 60 * 24 * 365,
     },
@@ -142,7 +120,7 @@ function asPositiveNumber(
 ): number | undefined {
   if (
     typeof value !==
-    "number" ||
+      "number" ||
     !Number.isFinite(value) ||
     value <= 0
   ) {
@@ -155,23 +133,23 @@ function asPositiveNumber(
 function asBoolean(
   value: unknown,
 ): boolean | undefined {
-  if (
-    typeof value !==
+  return typeof value ===
     "boolean"
-  ) {
-    return undefined;
-  }
-
-  return value;
+    ? value
+    : undefined;
 }
 
 function resolveOperation(
   value: unknown,
-): MediaOperation {
-  return value ===
-    "render"
-    ? "render"
-    : "plan";
+) {
+  if (
+    value === "generate" ||
+    value === "render"
+  ) {
+    return value;
+  }
+
+  return "plan" as const;
 }
 
 function normalizeAssets(
@@ -209,9 +187,7 @@ function normalizeAssets(
             typeof source.id ===
             "string"
               ? source.id
-              : `media-asset-${Date.now()}-${Math.random()
-                  .toString(36)
-                  .slice(2, 8)}`,
+              : `media-asset-${Date.now()}`,
 
           type:
             source.type ||
@@ -295,20 +271,20 @@ function buildCompositionOptions(
         body.includeSubtitles,
       ),
 
+    /*
+     * C146.9:
+     * Music generation is intentionally
+     * disabled until a real music provider
+     * is connected.
+     */
     musicPrompt:
-      asString(
-        body.musicPrompt,
-      ),
+      undefined,
 
     musicProvider:
-      asString(
-        body.musicProvider,
-      ),
+      undefined,
 
     musicModel:
-      asString(
-        body.musicModel,
-      ),
+      undefined,
 
     musicVolume:
       asPositiveNumber(
@@ -377,7 +353,7 @@ function buildStoryboardOptions(
 
 function buildContext(
   userId: string,
-  locale: string | undefined,
+  locale: string,
   assets: MediaAsset[],
 ): MediaCapabilityContext {
   const now =
@@ -394,9 +370,7 @@ function buildContext(
     projectId:
       `media-project-${now}`,
 
-    locale:
-      locale ||
-      "en",
+    locale,
 
     inputAssets:
       assets,
@@ -417,63 +391,6 @@ function buildContext(
   };
 }
 
-function localizedMessage(
-  locale: string | undefined,
-  key:
-    | "prompt"
-    | "invalid"
-    | "renderNotReady",
-): string {
-  if (
-    locale ===
-    "zh-CN"
-  ) {
-    if (key === "prompt") {
-      return "请输入视频需求。";
-    }
-
-    if (
-      key ===
-      "renderNotReady"
-    ) {
-      return "当前素材尚未全部就绪，AIOS 已停止实际渲染，避免生成虚假的成片结果。";
-    }
-
-    return "AIOS Media Runtime 请求无效。";
-  }
-
-  if (
-    locale ===
-    "ja"
-  ) {
-    if (key === "prompt") {
-      return "動画の要件を入力してください。";
-    }
-
-    if (
-      key ===
-      "renderNotReady"
-    ) {
-      return "素材がすべて準備できていないため、AIOSは実際のレンダリングを停止しました。";
-    }
-
-    return "AIOS Media Runtime のリクエストが無効です。";
-  }
-
-  if (key === "prompt") {
-    return "Please provide a video request.";
-  }
-
-  if (
-    key ===
-    "renderNotReady"
-  ) {
-    return "Media assets are not fully ready. AIOS stopped rendering instead of claiming a completed video.";
-  }
-
-  return "Invalid AIOS Media Runtime request.";
-}
-
 async function executeMediaRequest(
   body: MediaRequestBody,
   userId: string,
@@ -487,15 +404,14 @@ async function executeMediaRequest(
   if (!prompt) {
     return {
       success: false,
-
       code:
         "MEDIA_PROMPT_REQUIRED",
-
       content:
-        localizedMessage(
-          locale,
-          "prompt",
-        ),
+        locale === "zh-CN"
+          ? "请输入视频需求。"
+          : locale === "ja"
+            ? "動画の要件を入力してください。"
+            : "Please provide a video request.",
     };
   }
 
@@ -509,49 +425,13 @@ async function executeMediaRequest(
       body.assets,
     );
 
-  const storyboardOptions =
-    buildStoryboardOptions(
-      body,
-      assets,
-    );
-
-  const compositionOptions =
-    buildCompositionOptions(
-      body,
-    );
-
-  const context =
-    buildContext(
-      userId,
-      locale,
-      assets,
-    );
-
-  /*
-   * C146.8
-   *
-   * Runtime pipeline:
-   *
-   * Prompt
-   *   ↓
-   * Storyboard
-   *   ↓
-   * One-Click Composition
-   *   ↓
-   * Asset Readiness Gate
-   *   ↓
-   * FFmpeg Render
-   *
-   * The Runtime never reports generated
-   * assets unless a concrete provider or
-   * uploaded asset actually exists.
-   */
-
   const storyboardResult =
     generateStoryboard(
       prompt,
-      storyboardOptions,
-      context,
+      buildStoryboardOptions(
+        body,
+        assets,
+      ),
     );
 
   if (
@@ -560,182 +440,367 @@ async function executeMediaRequest(
   ) {
     return {
       success: false,
-
       code:
         storyboardResult.code,
-
       error:
         storyboardResult.error,
-
       content:
         storyboardResult.error ||
         "Storyboard generation failed.",
-
-      runtime:
-        APP_CONFIG.runtimeId,
-
-      runtimeVersion:
-        APP_CONFIG.version,
     };
   }
 
-  const projectResult =
+  const storyboard =
+    storyboardResult.storyboard;
+
+  const context =
+    buildContext(
+      userId,
+      locale,
+      assets,
+    );
+
+  const compositionOptions =
+    buildCompositionOptions(
+      body,
+    );
+
+  const initialProject =
     createOneClickVideoProject(
-      storyboardResult.storyboard,
+      storyboard,
       compositionOptions,
-      {
-        ...context,
-
-        projectId:
-          context.projectId,
-
-        inputAssets:
-          assets,
-      },
+      context,
     );
 
   if (
-    !projectResult.success
+    !initialProject.success
   ) {
     return {
       success: false,
 
       code:
-        projectResult.code,
+        initialProject.code,
 
       content:
-        localizedMessage(
-          locale,
-          "invalid",
-        ),
+        "AIOS Media composition failed.",
 
       errors:
-        projectResult.errors,
+        initialProject.errors,
 
       warnings:
-        projectResult.warnings,
+        initialProject.warnings,
 
-      storyboard:
-        storyboardResult.storyboard,
+      storyboard,
 
       project:
-        projectResult.project,
+        initialProject.project,
 
       plan:
-        projectResult.plan,
-
-      runtime:
-        APP_CONFIG.runtimeId,
-
-      runtimeVersion:
-        APP_CONFIG.version,
+        initialProject.plan,
     };
   }
 
   if (
-    operation ===
-    "plan"
+    operation === "plan"
   ) {
     return {
       success: true,
 
       code:
-        projectResult.code,
+        "C146_9_MEDIA_PLAN_READY",
 
       content:
-        projectResult.plan.status ===
-        "ready_for_render"
-          ? "AIOS Media Runtime prepared the video pipeline and the supplied assets are ready for rendering."
-          : "AIOS Media Runtime prepared the complete video pipeline. Concrete media assets are still required before final rendering.",
+        "AIOS Media Runtime prepared the video generation plan.",
 
       operation,
 
-      storyboard:
-        storyboardResult.storyboard,
+      storyboard,
 
       project:
-        projectResult.project,
+        initialProject.project,
 
       plan:
-        projectResult.plan,
-
-      errors:
-        projectResult.errors,
-
-      warnings:
-        projectResult.warnings,
+        initialProject.plan,
 
       runtime:
         APP_CONFIG.runtimeId,
 
-      runtimeStage:
-        APP_CONFIG.stage,
+      runtimeVersion:
+        APP_CONFIG.version,
+    };
+  }
+
+  /*
+   * C146.9:
+   *
+   * Real OpenAI generation.
+   *
+   * Image:
+   * OpenAI → PNG
+   *
+   * Voice:
+   * OpenAI TTS → MP3
+   *
+   * Scene video:
+   * PNG → FFmpeg MP4
+   */
+  const generation =
+    await generateOpenAIMedia(
+      storyboard,
+      {
+        width:
+          asPositiveNumber(
+            body.width,
+          ) ||
+          1080,
+
+        height:
+          asPositiveNumber(
+            body.height,
+          ) ||
+          1920,
+
+        frameRate:
+          asPositiveNumber(
+            body.frameRate,
+          ) ||
+          30,
+
+        imageQuality:
+          "auto",
+      },
+      context,
+    );
+
+  if (
+    !generation.success
+  ) {
+    return {
+      success: false,
+
+      code:
+        generation.code,
+
+      content:
+        generation.errors.join(
+          "\n",
+        ) ||
+        "OpenAI media generation failed.",
+
+      operation,
+
+      storyboard,
+
+      generation,
+
+      project:
+        initialProject.project,
+
+      plan:
+        initialProject.plan,
+
+      runtime:
+        APP_CONFIG.runtimeId,
 
       runtimeVersion:
         APP_CONFIG.version,
+    };
+  }
 
-      runtimeRelease:
-        APP_CONFIG.release,
+  /*
+   * Replace the provider-neutral pending
+   * assets with the actual generated assets.
+   */
+  const generatedVideos =
+    generation.videoAssets;
+
+  const generatedVoices =
+    generation.voiceAssets;
+
+  const finalPlan =
+    initialProject.plan;
+
+  finalPlan.timeline =
+    {
+      ...finalPlan.timeline,
+
+      visualTracks:
+        finalPlan.timeline.visualTracks.map(
+          (track) => {
+            const sceneId =
+              track.metadata
+                ?.sceneId;
+
+            const generated =
+              generatedVideos.find(
+                (asset) =>
+                  asset.metadata
+                    ?.sceneId ===
+                  sceneId,
+              );
+
+            if (!generated) {
+              return track;
+            }
+
+            return {
+              ...track,
+
+              asset:
+                generated,
+
+              metadata: {
+                ...track.metadata,
+
+                pending:
+                  false,
+
+                provider:
+                  "openai+ffmpeg",
+              },
+            };
+          },
+        ),
+
+      voiceTracks:
+        finalPlan.timeline.voiceTracks.map(
+          (track) => {
+            const sceneId =
+              track.asset.metadata
+                ?.sceneId;
+
+            const generated =
+              generatedVoices.find(
+                (asset) =>
+                  asset.metadata
+                    ?.sceneId ===
+                  sceneId,
+              );
+
+            if (!generated) {
+              return track;
+            }
+
+            return {
+              ...track,
+
+              asset:
+                generated,
+            };
+          },
+        ),
+
+      /*
+       * No real music provider is connected
+       * in C146.9, therefore remove the
+       * provider-neutral music placeholder.
+       */
+      musicTracks: [],
+    };
+
+  finalPlan.assets = [
+    ...generation.assets,
+  ];
+
+  finalPlan.status =
+    generatedVideos.length ===
+      storyboard.scenes.length &&
+    generatedVoices.length ===
+      storyboard.scenes.filter(
+        (scene) =>
+          Boolean(
+            scene.narration,
+          ),
+      ).length
+      ? "ready_for_render"
+      : "ready_for_generation";
+
+  if (
+    operation === "generate"
+  ) {
+    return {
+      success:
+        finalPlan.status ===
+        "ready_for_render",
+
+      code:
+        finalPlan.status ===
+        "ready_for_render"
+          ? "C146_9_REAL_MEDIA_GENERATION_READY"
+          : "C146_9_REAL_MEDIA_GENERATION_PARTIAL",
+
+      content:
+        finalPlan.status ===
+        "ready_for_render"
+          ? "AIOS generated the real scene videos and narration. The project is ready for final FFmpeg composition."
+          : "AIOS generated media assets, but some assets are still incomplete.",
+
+      operation,
+
+      storyboard,
+
+      generation,
+
+      project:
+        initialProject.project,
+
+      plan:
+        finalPlan,
+
+      runtime:
+        APP_CONFIG.runtimeId,
+
+      runtimeVersion:
+        APP_CONFIG.version,
     };
   }
 
   if (
-    projectResult.plan.status !==
+    finalPlan.status !==
     "ready_for_render"
   ) {
     return {
       success: false,
 
       code:
-        "C146_8_RENDER_BLOCKED_ASSETS_NOT_READY",
+        "C146_9_RENDER_BLOCKED_INCOMPLETE_GENERATION",
 
       content:
-        localizedMessage(
-          locale,
-          "renderNotReady",
-        ),
+        "AIOS did not render the video because the generated media assets are incomplete.",
 
       operation,
 
-      storyboard:
-        storyboardResult.storyboard,
+      storyboard,
+
+      generation,
 
       project:
-        projectResult.project,
+        initialProject.project,
 
       plan:
-        projectResult.plan,
-
-      errors:
-        projectResult.errors,
-
-      warnings:
-        projectResult.warnings,
+        finalPlan,
 
       runtime:
         APP_CONFIG.runtimeId,
 
-      runtimeStage:
-        APP_CONFIG.stage,
-
       runtimeVersion:
         APP_CONFIG.version,
-
-      runtimeRelease:
-        APP_CONFIG.release,
     };
   }
 
-  const renderResult =
+  /*
+   * Final C146.7 FFmpeg composition.
+   */
+  const render =
     await renderMedia(
-      projectResult.plan.render.request,
+      finalPlan.render.request,
       {
         outputDirectory:
           process.env.AIOS_MEDIA_OUTPUT_DIR ||
           undefined,
 
         outputFileName:
-          `${projectResult.plan.projectId}.${projectResult.plan.render.outputFormat}`,
+          `${finalPlan.projectId}.mp4`,
 
         overwrite:
           true,
@@ -744,57 +809,40 @@ async function executeMediaRequest(
 
   return {
     success:
-      renderResult.success,
+      render.success,
 
     code:
-      renderResult.result.code,
+      render.result.code,
 
     content:
-      renderResult.success
-        ? "AIOS Media Runtime completed the server-side media render."
-        : renderResult.result.error ||
-          "AIOS Media Runtime render failed.",
+      render.success
+        ? "AIOS generated and rendered the video successfully."
+        : render.result.error ||
+          "AIOS video rendering failed.",
 
     operation,
 
-    storyboard:
-      storyboardResult.storyboard,
+    storyboard,
+
+    generation,
 
     project:
-      projectResult.project,
+      initialProject.project,
 
     plan:
-      projectResult.plan,
+      finalPlan,
 
     render:
-      renderResult.result,
+      render.result,
 
     outputPath:
-      renderResult.outputPath,
-
-    command:
-      renderResult.command,
-
-    warnings:
-      [
-        ...projectResult.warnings,
-
-        ...(renderResult.command
-          ?.warnings ||
-          []),
-      ],
+      render.outputPath,
 
     runtime:
       APP_CONFIG.runtimeId,
 
-    runtimeStage:
-      APP_CONFIG.stage,
-
     runtimeVersion:
       APP_CONFIG.version,
-
-    runtimeRelease:
-      APP_CONFIG.release,
   };
 }
 
@@ -830,46 +878,46 @@ export async function GET(
           APP_CONFIG.release,
 
         capabilities: {
-          storyboard:
-            true,
+          storyboard: true,
 
-          composition:
-            true,
+          openaiImage:
+            Boolean(
+              process.env.OPENAI_API_KEY,
+            ),
 
-          render:
-            true,
+          openaiVoice:
+            Boolean(
+              process.env.OPENAI_API_KEY,
+            ),
 
-          ffmpeg:
-            true,
+          sceneVideo:
+            Boolean(
+              process.env.OPENAI_API_KEY,
+            ),
 
-          remoteMediaGeneration:
+          ffmpeg: true,
+
+          oneClickVideo: true,
+
+          directProviderVideo:
             false,
-
-          oneClickVideo:
-            true,
         },
 
         pipeline: [
           "prompt",
           "storyboard",
-          "media-assets",
-          "composition",
-          "asset-readiness-gate",
-          "ffmpeg-render",
-          "export",
-        ],
-
-        notes: [
-          "Remote AI media providers are not falsely reported as configured.",
-          "Final rendering requires concrete ready media assets.",
+          "openai-image",
+          "openai-tts",
+          "ffmpeg-scene-video",
+          "timeline",
+          "ffmpeg-final-render",
         ],
 
         identity: {
           userId:
             identity.userId,
 
-          isolated:
-            true,
+          isolated: true,
 
           mode:
             "anonymous-alpha",
@@ -905,18 +953,11 @@ export async function POST(
       request,
     );
 
-  const locale =
-    request.headers.get(
-      "x-aios-locale",
-    ) ||
-    "en";
-
   try {
     const contentType =
       request.headers.get(
         "content-type",
-      ) ||
-      "";
+      ) || "";
 
     if (
       !contentType.includes(
@@ -936,9 +977,6 @@ export async function POST(
 
             userId:
               identity.userId,
-
-            timestamp:
-              Date.now(),
           },
           {
             status: 415,
@@ -955,6 +993,14 @@ export async function POST(
       (await request.json()) as
         MediaRequestBody;
 
+    const locale =
+      asString(
+        request.headers.get(
+          "x-aios-locale",
+        ),
+      ) ||
+      "en";
+
     const result =
       await runWithUserContext(
         identity.userId,
@@ -965,17 +1011,6 @@ export async function POST(
             locale,
           ),
       );
-
-    const status =
-      result.success
-        ? 200
-        : result.code ===
-            "MEDIA_PROMPT_REQUIRED"
-          ? 400
-          : result.code ===
-              "C146_8_RENDER_BLOCKED_ASSETS_NOT_READY"
-            ? 409
-            : 500;
 
     const response =
       NextResponse.json(
@@ -988,8 +1023,7 @@ export async function POST(
           identityMode:
             "anonymous-alpha",
 
-          dataIsolated:
-            true,
+          dataIsolated: true,
 
           locale,
 
@@ -1013,7 +1047,13 @@ export async function POST(
             Date.now(),
         },
         {
-          status,
+          status:
+            result.success
+              ? 200
+              : result.code ===
+                  "MEDIA_PROMPT_REQUIRED"
+                ? 400
+                : 500,
 
           headers: {
             "Cache-Control":
@@ -1062,8 +1102,6 @@ export async function POST(
 
           userId:
             identity.userId,
-
-          locale,
 
           latencyMs:
             Date.now() -
