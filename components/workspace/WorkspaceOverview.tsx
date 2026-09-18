@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+
 import {
   useEffect,
   useMemo,
   useState,
 } from "react";
 
-import { useLanguage } from "@/components/i18n/LanguageProvider";
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
 
 import {
   MODULE_ICONS,
@@ -16,6 +19,10 @@ import {
 import {
   openFeedbackPanel,
 } from "@/lib/ui/feedback-events";
+
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
 
 interface DashboardStatus {
   success?: boolean;
@@ -62,7 +69,10 @@ interface QuickAction {
   description: string;
 }
 
-type WorkspaceLocale = "en" | "zh-CN" | "ja";
+type WorkspaceLocale =
+  | "en"
+  | "zh-CN"
+  | "ja";
 
 interface WorkspaceCopy {
   todayStatus: string;
@@ -75,17 +85,30 @@ interface WorkspaceCopy {
   userFeedback: string;
   feedbackAction: string;
 
-  completed: (count: number) => string;
-  profile: (completed: number) => string;
+  completed: (
+    count: number,
+  ) => string;
+
+  profile: (
+    completed: number,
+  ) => string;
 
   runtimeOnline: string;
   runtimeOffline: string;
 
-  suggestionActiveTasks: (count: number) => string;
+  suggestionActiveTasks: (
+    count: number,
+  ) => string;
+
   suggestionNoTasks: string;
+
   suggestionMemory: string;
+
   suggestionProfile: string;
-  suggestionFeedback: (count: number) => string;
+
+  suggestionFeedback: (
+    count: number,
+  ) => string;
 
   workspaceLabel: string;
 }
@@ -95,27 +118,49 @@ const WORKSPACE_COPY: Record<
   WorkspaceCopy
 > = {
   en: {
-    todayStatus: "Today's status",
-    syncing: "Syncing…",
-    synced: "Data synchronized",
+    todayStatus:
+      "Today's status",
+
+    syncing:
+      "Syncing…",
+
+    synced:
+      "Data synchronized",
+
     partialStatusError:
       "Some status information is temporarily unavailable.",
 
-    todoTasks: "Pending tasks",
-    longTermMemory: "Long-term memory",
-    userFeedback: "User feedback",
-    feedbackAction: "Submit or view feedback",
+    todoTasks:
+      "Pending tasks",
 
-    completed: (count) =>
+    longTermMemory:
+      "Long-term memory",
+
+    userFeedback:
+      "User feedback",
+
+    feedbackAction:
+      "Submit or view feedback",
+
+    completed: (
+      count,
+    ) =>
       `${count} completed`,
 
-    profile: (completed) =>
+    profile: (
+      completed,
+    ) =>
       `Profile ${completed}/5`,
 
-    runtimeOnline: "Online",
-    runtimeOffline: "Offline",
+    runtimeOnline:
+      "Online",
 
-    suggestionActiveTasks: (count) =>
+    runtimeOffline:
+      "Offline",
+
+    suggestionActiveTasks: (
+      count,
+    ) =>
       `You have ${count} pending tasks. Consider starting with the most important one.`,
 
     suggestionNoTasks:
@@ -127,34 +172,59 @@ const WORKSPACE_COPY: Record<
     suggestionProfile:
       "Your profile is not fully configured. Adding more information helps AIOS provide more accurate recommendations.",
 
-    suggestionFeedback: (count) =>
+    suggestionFeedback: (
+      count,
+    ) =>
       `You have submitted ${count} feedback item${count === 1 ? "" : "s"}. Thank you for helping improve AIOS Alpha.`,
 
-    workspaceLabel: "AIOS WORKSPACE",
+    workspaceLabel:
+      "AIOS WORKSPACE",
   },
 
   "zh-CN": {
-    todayStatus: "今日状态",
-    syncing: "正在同步…",
-    synced: "数据已同步",
+    todayStatus:
+      "今日状态",
+
+    syncing:
+      "正在同步…",
+
+    synced:
+      "数据已同步",
+
     partialStatusError:
       "部分状态暂时无法读取。",
 
-    todoTasks: "待办任务",
-    longTermMemory: "长期记忆",
-    userFeedback: "用户反馈",
-    feedbackAction: "提交或查看反馈",
+    todoTasks:
+      "待办任务",
 
-    completed: (count) =>
+    longTermMemory:
+      "长期记忆",
+
+    userFeedback:
+      "用户反馈",
+
+    feedbackAction:
+      "提交或查看反馈",
+
+    completed: (
+      count,
+    ) =>
       `已完成 ${count}`,
 
-    profile: (completed) =>
+    profile: (
+      completed,
+    ) =>
       `资料 ${completed}/5`,
 
-    runtimeOnline: "在线",
-    runtimeOffline: "离线",
+    runtimeOnline:
+      "在线",
 
-    suggestionActiveTasks: (count) =>
+    runtimeOffline:
+      "离线",
+
+    suggestionActiveTasks: (
+      count,
+    ) =>
       `你有 ${count} 个待完成任务，建议先选择其中最重要的一项。`,
 
     suggestionNoTasks:
@@ -166,34 +236,59 @@ const WORKSPACE_COPY: Record<
     suggestionProfile:
       "个人资料尚未完善，补充资料可以让 AIOS 给出更准确的建议。",
 
-    suggestionFeedback: (count) =>
+    suggestionFeedback: (
+      count,
+    ) =>
       `你已经提交 ${count} 条反馈，感谢帮助改进 AIOS Alpha。`,
 
-    workspaceLabel: "AIOS 工作区",
+    workspaceLabel:
+      "AIOS 工作区",
   },
 
   ja: {
-    todayStatus: "今日の状態",
-    syncing: "同期中…",
-    synced: "データを同期しました",
+    todayStatus:
+      "今日の状態",
+
+    syncing:
+      "同期中…",
+
+    synced:
+      "データを同期しました",
+
     partialStatusError:
       "一部のステータス情報を一時的に取得できません。",
 
-    todoTasks: "保留中のタスク",
-    longTermMemory: "長期メモリ",
-    userFeedback: "ユーザーフィードバック",
-    feedbackAction: "フィードバックを送信または確認",
+    todoTasks:
+      "保留中のタスク",
 
-    completed: (count) =>
+    longTermMemory:
+      "長期メモリ",
+
+    userFeedback:
+      "ユーザーフィードバック",
+
+    feedbackAction:
+      "フィードバックを送信または確認",
+
+    completed: (
+      count,
+    ) =>
       `${count} 件完了`,
 
-    profile: (completed) =>
+    profile: (
+      completed,
+    ) =>
       `プロフィール ${completed}/5`,
 
-    runtimeOnline: "オンライン",
-    runtimeOffline: "オフライン",
+    runtimeOnline:
+      "オンライン",
 
-    suggestionActiveTasks: (count) =>
+    runtimeOffline:
+      "オフライン",
+
+    suggestionActiveTasks: (
+      count,
+    ) =>
       `${count} 件の未完了タスクがあります。まず最も重要なタスクから始めることをおすすめします。`,
 
     suggestionNoTasks:
@@ -205,111 +300,173 @@ const WORKSPACE_COPY: Record<
     suggestionProfile:
       "プロフィールがまだ十分に設定されていません。情報を追加すると、AIOS がより正確な提案を行えます。",
 
-    suggestionFeedback: (count) =>
+    suggestionFeedback: (
+      count,
+    ) =>
       `${count} 件のフィードバックを送信しました。AIOS Alpha の改善にご協力いただきありがとうございます。`,
 
-    workspaceLabel: "AIOS ワークスペース",
+    workspaceLabel:
+      "AIOS ワークスペース",
   },
 };
 
 const emptyStatus: DashboardStatus = {
   runtime: {
-    status: "offline",
-    version: "0.4",
+    status:
+      "offline",
+
+    version:
+      APP_CONFIG.version,
   },
 
   provider: {
-    active: "unknown",
-    latencyMs: null,
+    active:
+      "unknown",
+
+    latencyMs:
+      null,
   },
 
   storage: {
-    healthy: false,
-    persistent: false,
+    healthy:
+      false,
+
+    persistent:
+      false,
   },
 
   memory: {
-    count: 0,
+    count:
+      0,
   },
 
   profile: {
-    completedFields: 0,
-    totalFields: 5,
+    completedFields:
+      0,
+
+    totalFields:
+      5,
   },
 
   tasks: {
-    count: 0,
-    active: 0,
-    completed: 0,
+    count:
+      0,
+
+    active:
+      0,
+
+    completed:
+      0,
   },
 
   feedback: {
-    count: 0,
+    count:
+      0,
   },
 };
 
 function safeNumber(
   value: unknown,
 ): number {
-  return typeof value === "number"
+  return typeof value ===
+    "number"
     ? value
     : 0;
 }
 
 export default function WorkspaceOverview() {
-  const { locale, t } = useLanguage();
+  const {
+    locale,
+    t,
+  } =
+    useLanguage();
 
-  const currentLocale: WorkspaceLocale =
-    locale === "zh-CN" || locale === "ja"
+  const currentLocale:
+    WorkspaceLocale =
+    locale ===
+      "zh-CN" ||
+    locale ===
+      "ja"
       ? locale
       : "en";
 
   const copy =
-    WORKSPACE_COPY[currentLocale];
+    WORKSPACE_COPY[
+      currentLocale
+    ];
 
-  const quickActions: QuickAction[] = [
+  const quickActions:
+    QuickAction[] = [
     {
-      href: "/tasks",
-      icon: "＋",
-      title: t(
-        "workspace.action.newTask",
-      ),
-      description: t(
-        "workspace.action.newTaskDescription",
-      ),
+      href:
+        "/tasks",
+
+      icon:
+        "＋",
+
+      title:
+        t(
+          "workspace.action.newTask",
+        ),
+
+      description:
+        t(
+          "workspace.action.newTaskDescription",
+        ),
     },
 
     {
-      href: "/memory",
-      icon: MODULE_ICONS.memory,
-      title: t(
-        "workspace.action.memory",
-      ),
-      description: t(
-        "workspace.action.memoryDescription",
-      ),
+      href:
+        "/memory",
+
+      icon:
+        MODULE_ICONS.memory,
+
+      title:
+        t(
+          "workspace.action.memory",
+        ),
+
+      description:
+        t(
+          "workspace.action.memoryDescription",
+        ),
     },
 
     {
-      href: "/projects",
-      icon: "📁",
-      title: t(
-        "workspace.action.projects",
-      ),
-      description: t(
-        "workspace.action.projectsDescription",
-      ),
+      href:
+        "/projects",
+
+      icon:
+        "📁",
+
+      title:
+        t(
+          "workspace.action.projects",
+        ),
+
+      description:
+        t(
+          "workspace.action.projectsDescription",
+        ),
     },
 
     {
-      href: "#aios-chat",
-      icon: "✨",
-      title: t(
-        "workspace.action.ask",
-      ),
-      description: t(
-        "workspace.action.askDescription",
-      ),
+      href:
+        "#aios-chat",
+
+      icon:
+        "✨",
+
+      title:
+        t(
+          "workspace.action.ask",
+        ),
+
+      description:
+        t(
+          "workspace.action.askDescription",
+        ),
     },
   ];
 
@@ -333,86 +490,115 @@ export default function WorkspaceOverview() {
   ] =
     useState("");
 
-  useEffect(() => {
-    let active = true;
+  useEffect(
+    () => {
+      let active =
+        true;
 
-    async function loadStatus() {
-      try {
-        const response =
-          await fetch(
-            "/api/dashboard/status",
-            {
-              cache: "no-store",
-              credentials: "same-origin",
-            },
-          );
+      async function loadStatus() {
+        try {
+          const response =
+            await fetch(
+              "/api/dashboard/status",
+              {
+                cache:
+                  "no-store",
 
-        const data =
-          (await response.json()) as DashboardStatus;
+                credentials:
+                  "same-origin",
+              },
+            );
 
-        if (
-          !response.ok ||
-          !data.success
-        ) {
-          throw new Error(
-            "Workspace status unavailable.",
-          );
-        }
+          const data =
+            (await response.json()) as DashboardStatus;
 
-        if (active) {
-          setStatus(data);
-          setError("");
-        }
-      } catch {
-        if (active) {
-          setStatus(emptyStatus);
+          if (
+            !response.ok ||
+            !data.success
+          ) {
+            throw new Error(
+              "Workspace status unavailable.",
+            );
+          }
 
-          setError(
-            copy.partialStatusError,
-          );
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
+          if (
+            active
+          ) {
+            setStatus(
+              data,
+            );
+
+            setError(
+              "",
+            );
+          }
+        } catch {
+          if (
+            active
+          ) {
+            setStatus(
+              emptyStatus,
+            );
+
+            setError(
+              copy.partialStatusError,
+            );
+          }
+        } finally {
+          if (
+            active
+          ) {
+            setLoading(
+              false,
+            );
+          }
         }
       }
-    }
 
-    loadStatus();
+      loadStatus();
 
-    const interval =
-      window.setInterval(
-        loadStatus,
-        30000,
-      );
+      const interval =
+        window.setInterval(
+          loadStatus,
+          30000,
+        );
 
-    return () => {
-      active = false;
+      return () => {
+        active =
+          false;
 
-      window.clearInterval(
-        interval,
-      );
-    };
-  }, [copy.partialStatusError]);
+        window.clearInterval(
+          interval,
+        );
+      };
+    },
+    [
+      copy.partialStatusError,
+    ],
+  );
 
   const activeTasks =
     safeNumber(
-      status.tasks?.active,
+      status.tasks
+        ?.active,
     );
 
   const completedTasks =
     safeNumber(
-      status.tasks?.completed,
+      status.tasks
+        ?.completed,
     );
 
   const memoryCount =
     safeNumber(
-      status.memory?.count,
+      status.memory
+        ?.count,
     );
 
   const feedbackCount =
     safeNumber(
-      status.feedback?.count,
+      status.feedback
+        ?.count,
     );
 
   const profileCompleted =
@@ -424,9 +610,14 @@ export default function WorkspaceOverview() {
   const suggestions =
     useMemo(
       () => {
-        const items: string[] = [];
+        const items:
+          string[] =
+          [];
 
-        if (activeTasks > 0) {
+        if (
+          activeTasks >
+          0
+        ) {
           items.push(
             copy.suggestionActiveTasks(
               activeTasks,
@@ -438,19 +629,28 @@ export default function WorkspaceOverview() {
           );
         }
 
-        if (memoryCount < 3) {
+        if (
+          memoryCount <
+          3
+        ) {
           items.push(
             copy.suggestionMemory,
           );
         }
 
-        if (profileCompleted < 3) {
+        if (
+          profileCompleted <
+          3
+        ) {
           items.push(
             copy.suggestionProfile,
           );
         }
 
-        if (feedbackCount > 0) {
+        if (
+          feedbackCount >
+          0
+        ) {
           items.push(
             copy.suggestionFeedback(
               feedbackCount,
@@ -458,7 +658,10 @@ export default function WorkspaceOverview() {
           );
         }
 
-        return items.slice(0, 3);
+        return items.slice(
+          0,
+          3,
+        );
       },
       [
         activeTasks,
@@ -471,35 +674,41 @@ export default function WorkspaceOverview() {
 
   const stats = [
     {
-      label: copy.todoTasks,
+      label:
+        copy.todoTasks,
 
-      value: activeTasks,
+      value:
+        activeTasks,
 
       detail:
         copy.completed(
           completedTasks,
         ),
 
-      href: "/tasks",
+      href:
+        "/tasks",
 
       action:
         "link" as const,
 
-      icon: "✓",
+      icon:
+        "✓",
     },
 
     {
       label:
         copy.longTermMemory,
 
-      value: memoryCount,
+      value:
+        memoryCount,
 
       detail:
         copy.profile(
           profileCompleted,
         ),
 
-      href: "/memory",
+      href:
+        "/memory",
 
       action:
         "link" as const,
@@ -518,83 +727,117 @@ export default function WorkspaceOverview() {
       detail:
         copy.feedbackAction,
 
-      href: "",
+      href:
+        "",
 
       action:
         "feedback" as const,
 
-      icon: "💬",
+      icon:
+        "💬",
     },
 
     {
-      label: "Runtime",
+      label:
+        "Runtime",
 
       value:
         status.runtime
-          ?.status === "online"
+          ?.status ===
+        "online"
           ? copy.runtimeOnline
           : copy.runtimeOffline,
 
       detail:
         status.provider
-          ?.active ?? "unknown",
+          ?.active ??
+        "unknown",
 
-      href: "/dashboard",
+      href:
+        "/dashboard",
 
       action:
         "link" as const,
 
-      icon: "⚡",
+      icon:
+        "⚡",
     },
   ];
 
   return (
     <section
       style={{
-        display: "grid",
-        gap: 18,
+        display:
+          "grid",
+
+        gap:
+          18,
       }}
     >
       <div
         style={{
-          padding: "22px 20px",
-          borderRadius: 20,
+          padding:
+            "22px 20px",
+
+          borderRadius:
+            20,
+
           background:
             "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-          color: "#ffffff",
+
+          color:
+            "#ffffff",
+
           boxShadow:
             "0 18px 44px rgba(15, 23, 42, 0.18)",
         }}
       >
         <div
           style={{
-            display: "flex",
+            display:
+              "flex",
+
             alignItems:
               "flex-start",
+
             justifyContent:
               "space-between",
-            gap: 18,
+
+            gap:
+              18,
           }}
         >
           <div>
             <div
               style={{
-                color: "#93c5fd",
-                fontSize: 12,
-                fontWeight: 800,
+                color:
+                  "#93c5fd",
+
+                fontSize:
+                  12,
+
+                fontWeight:
+                  800,
+
                 letterSpacing:
                   "0.08em",
               }}
             >
-              {copy.workspaceLabel}
+              {
+                copy.workspaceLabel
+              }
             </div>
 
             <h1
               style={{
                 margin:
                   "9px 0 0",
-                fontSize: 27,
-                lineHeight: 1.2,
+
+                fontSize:
+                  27,
+
+                lineHeight:
+                  1.2,
               }}
             >
               {t(
@@ -606,9 +849,15 @@ export default function WorkspaceOverview() {
               style={{
                 margin:
                   "10px 0 0",
-                color: "#cbd5e1",
-                fontSize: 14,
-                lineHeight: 1.65,
+
+                color:
+                  "#cbd5e1",
+
+                fontSize:
+                  14,
+
+                lineHeight:
+                  1.65,
               }}
             >
               {t(
@@ -619,16 +868,32 @@ export default function WorkspaceOverview() {
 
           <div
             style={{
-              flexShrink: 0,
-              width: 50,
-              height: 50,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 16,
+              flexShrink:
+                0,
+
+              width:
+                50,
+
+              height:
+                50,
+
+              display:
+                "flex",
+
+              alignItems:
+                "center",
+
+              justifyContent:
+                "center",
+
+              borderRadius:
+                16,
+
               background:
                 "rgba(255,255,255,0.1)",
-              fontSize: 26,
+
+              fontSize:
+                26,
             }}
           >
             ✨
@@ -639,18 +904,29 @@ export default function WorkspaceOverview() {
       <section>
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
             justifyContent:
               "space-between",
-            marginBottom: 10,
+
+            marginBottom:
+              10,
           }}
         >
           <h2
             style={{
-              margin: 0,
-              color: "#0f172a",
-              fontSize: 17,
+              margin:
+                0,
+
+              color:
+                "#0f172a",
+
+              fontSize:
+                17,
             }}
           >
             {t(
@@ -660,8 +936,11 @@ export default function WorkspaceOverview() {
 
           <span
             style={{
-              color: "#64748b",
-              fontSize: 12,
+              color:
+                "#64748b",
+
+              fontSize:
+                12,
             }}
           >
             {t(
@@ -672,70 +951,126 @@ export default function WorkspaceOverview() {
 
         <div
           style={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns:
               "repeat(2, minmax(0, 1fr))",
-            gap: 10,
+
+            gap:
+              10,
           }}
         >
           {quickActions.map(
-            (action) => (
+            (
+              action,
+            ) => (
               <Link
-                key={action.href}
-                href={action.href}
+                key={
+                  action.href
+                }
+                href={
+                  action.href
+                }
                 style={{
-                  minWidth: 0,
-                  padding: 14,
+                  minWidth:
+                    0,
+
+                  padding:
+                    14,
+
                   border:
                     "1px solid #e2e8f0",
-                  borderRadius: 16,
-                  background: "#ffffff",
-                  color: "#0f172a",
+
+                  borderRadius:
+                    16,
+
+                  background:
+                    "#ffffff",
+
+                  color:
+                    "#0f172a",
+
                   textDecoration:
                     "none",
+
                   boxShadow:
                     "0 8px 22px rgba(15, 23, 42, 0.05)",
                 }}
               >
                 <div
                   style={{
-                    width: 36,
-                    height: 36,
-                    display: "flex",
+                    width:
+                      36,
+
+                    height:
+                      36,
+
+                    display:
+                      "flex",
+
                     alignItems:
                       "center",
+
                     justifyContent:
                       "center",
-                    borderRadius: 11,
+
+                    borderRadius:
+                      11,
+
                     background:
                       "#eff6ff",
-                    color: "#1d4ed8",
-                    fontSize: 18,
-                    fontWeight: 800,
+
+                    color:
+                      "#1d4ed8",
+
+                    fontSize:
+                      18,
+
+                    fontWeight:
+                      800,
                   }}
                 >
-                  {action.icon}
+                  {
+                    action.icon
+                  }
                 </div>
 
                 <div
                   style={{
-                    marginTop: 10,
-                    fontSize: 14,
-                    fontWeight: 800,
+                    marginTop:
+                      10,
+
+                    fontSize:
+                      14,
+
+                    fontWeight:
+                      800,
                   }}
                 >
-                  {action.title}
+                  {
+                    action.title
+                  }
                 </div>
 
                 <div
                   style={{
-                    marginTop: 4,
-                    color: "#64748b",
-                    fontSize: 11,
-                    lineHeight: 1.45,
+                    marginTop:
+                      4,
+
+                    color:
+                      "#64748b",
+
+                    fontSize:
+                      11,
+
+                    lineHeight:
+                      1.45,
                   }}
                 >
-                  {action.description}
+                  {
+                    action.description
+                  }
                 </div>
               </Link>
             ),
@@ -746,135 +1081,192 @@ export default function WorkspaceOverview() {
       <section>
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
             justifyContent:
               "space-between",
-            marginBottom: 10,
+
+            marginBottom:
+              10,
           }}
         >
           <h2
             style={{
-              margin: 0,
-              color: "#0f172a",
-              fontSize: 17,
+              margin:
+                0,
+
+              color:
+                "#0f172a",
+
+              fontSize:
+                17,
             }}
           >
-            {copy.todayStatus}
+            {
+              copy.todayStatus
+            }
           </h2>
 
           <span
             style={{
-              color: error
-                ? "#b45309"
-                : "#16a34a",
-              fontSize: 12,
-              fontWeight: 700,
+              color:
+                error
+                  ? "#b45309"
+                  : "#16a34a",
+
+              fontSize:
+                12,
+
+              fontWeight:
+                700,
             }}
           >
             {loading
               ? copy.syncing
-              : error || copy.synced}
+              : error ||
+                copy.synced}
           </span>
         </div>
 
         <div
           style={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns:
               "repeat(2, minmax(0, 1fr))",
-            gap: 10,
+
+            gap:
+              10,
           }}
         >
           {stats.map(
-            (item) => {
-              const content = (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems:
-                        "center",
-                      justifyContent:
-                        "space-between",
-                      gap: 10,
-                    }}
-                  >
-                    <span
+            (
+              item,
+            ) => {
+              const content =
+                (
+                  <>
+                    <div
                       style={{
-                        color:
-                          "#64748b",
-                        fontSize: 12,
+                        display:
+                          "flex",
+
+                        alignItems:
+                          "center",
+
+                        justifyContent:
+                          "space-between",
+
+                        gap:
+                          10,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color:
+                            "#64748b",
+
+                          fontSize:
+                            12,
+
+                          fontWeight:
+                            700,
+                        }}
+                      >
+                        {
+                          item.label
+                        }
+                      </span>
+
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          fontSize:
+                            18,
+                        }}
+                      >
+                        {
+                          item.icon
+                        }
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          8,
+
+                        fontSize:
+                          24,
+
                         fontWeight:
-                          700,
+                          900,
                       }}
                     >
-                      {item.label}
-                    </span>
+                      {
+                        item.value
+                      }
+                    </div>
 
-                    <span
-                      aria-hidden="true"
+                    <div
                       style={{
-                        fontSize: 18,
+                        marginTop:
+                          3,
+
+                        color:
+                          "#94a3b8",
+
+                        fontSize:
+                          11,
                       }}
                     >
-                      {item.icon}
-                    </span>
-                  </div>
+                      {
+                        item.detail
+                      }
+                    </div>
+                  </>
+                );
 
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 24,
-                      fontWeight: 900,
-                    }}
-                  >
-                    {item.value}
-                  </div>
+              const cardStyle =
+                {
+                  minWidth:
+                    0,
 
-                  <div
-                    style={{
-                      marginTop: 3,
-                      color:
-                        "#94a3b8",
-                      fontSize: 11,
-                    }}
-                  >
-                    {item.detail}
-                  </div>
-                </>
-              );
+                  padding:
+                    14,
 
-              const cardStyle = {
-                minWidth: 0,
+                  boxSizing:
+                    "border-box" as const,
 
-                padding: 14,
+                  border:
+                    "1px solid #e2e8f0",
 
-                boxSizing:
-                  "border-box" as const,
+                  borderRadius:
+                    16,
 
-                border:
-                  "1px solid #e2e8f0",
+                  background:
+                    "#ffffff",
 
-                borderRadius: 16,
+                  color:
+                    "#0f172a",
 
-                background:
-                  "#ffffff",
+                  textAlign:
+                    "left" as const,
 
-                color:
-                  "#0f172a",
+                  textDecoration:
+                    "none",
 
-                textAlign:
-                  "left" as const,
+                  font:
+                    "inherit",
 
-                textDecoration:
-                  "none",
-
-                font: "inherit",
-
-                cursor:
-                  "pointer",
-              };
+                  cursor:
+                    "pointer",
+                };
 
               if (
                 item.action ===
@@ -902,7 +1294,9 @@ export default function WorkspaceOverview() {
                       cardStyle
                     }
                   >
-                    {content}
+                    {
+                      content
+                    }
                   </button>
                 );
               }
@@ -915,12 +1309,16 @@ export default function WorkspaceOverview() {
                   href={
                     item.href
                   }
-                  prefetch={false}
+                  prefetch={
+                    false
+                  }
                   style={
                     cardStyle
                   }
                 >
-                  {content}
+                  {
+                    content
+                  }
                 </Link>
               );
             },
@@ -930,32 +1328,51 @@ export default function WorkspaceOverview() {
 
       <section
         style={{
-          padding: 18,
+          padding:
+            18,
+
           border:
             "1px solid #bfdbfe",
-          borderRadius: 18,
+
+          borderRadius:
+            18,
+
           background:
             "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
         }}
       >
         <div
           style={{
-            display: "flex",
+            display:
+              "flex",
+
             alignItems:
               "center",
-            gap: 9,
+
+            gap:
+              9,
           }}
         >
           <span
             style={{
-              width: 34,
-              height: 34,
-              display: "flex",
+              width:
+                34,
+
+              height:
+                34,
+
+              display:
+                "flex",
+
               alignItems:
                 "center",
+
               justifyContent:
                 "center",
-              borderRadius: 11,
+
+              borderRadius:
+                11,
+
               background:
                 "#dbeafe",
             }}
@@ -965,12 +1382,18 @@ export default function WorkspaceOverview() {
 
           <h2
             style={{
-              margin: 0,
-              color: "#0f172a",
-              fontSize: 17,
+              margin:
+                0,
+
+              color:
+                "#0f172a",
+
+              fontSize:
+                17,
             }}
           >
-            {currentLocale === "ja"
+            {currentLocale ===
+            "ja"
               ? "AIOS の提案"
               : currentLocale ===
                 "zh-CN"
@@ -981,9 +1404,14 @@ export default function WorkspaceOverview() {
 
         <div
           style={{
-            display: "grid",
-            gap: 9,
-            marginTop: 14,
+            display:
+              "grid",
+
+            gap:
+              9,
+
+            marginTop:
+              14,
           }}
         >
           {suggestions.map(
@@ -996,48 +1424,79 @@ export default function WorkspaceOverview() {
                   `${index}-${suggestion}`
                 }
                 style={{
-                  display: "flex",
+                  display:
+                    "flex",
+
                   alignItems:
                     "flex-start",
-                  gap: 10,
+
+                  gap:
+                    10,
+
                   padding:
                     "11px 12px",
-                  borderRadius: 13,
+
+                  borderRadius:
+                    13,
+
                   background:
                     "rgba(255,255,255,0.78)",
+
                   color:
                     "#334155",
-                  fontSize: 13,
-                  lineHeight: 1.55,
+
+                  fontSize:
+                    13,
+
+                  lineHeight:
+                    1.55,
                 }}
               >
                 <span
                   style={{
-                    flexShrink: 0,
-                    width: 22,
-                    height: 22,
+                    flexShrink:
+                      0,
+
+                    width:
+                      22,
+
+                    height:
+                      22,
+
                     display:
                       "flex",
+
                     alignItems:
                       "center",
+
                     justifyContent:
                       "center",
+
                     borderRadius:
                       "50%",
+
                     background:
                       "#2563eb",
+
                     color:
                       "#ffffff",
-                    fontSize: 11,
+
+                    fontSize:
+                      11,
+
                     fontWeight:
                       800,
                   }}
                 >
-                  {index + 1}
+                  {
+                    index + 1
+                  }
                 </span>
 
                 <span>
-                  {suggestion}
+                  {
+                    suggestion
+                  }
                 </span>
               </div>
             ),
