@@ -11,6 +11,10 @@ import {
   getVideoVisionStatus,
 } from "@/lib/runtime/video-vision-status-runtime";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const runtime = "nodejs";
 
 export const dynamic =
@@ -40,10 +44,10 @@ export async function GET(
           "Founder authentication is required.",
 
         runtime:
-          "aios-alpha",
+          APP_CONFIG.runtimeId,
 
         runtimeVersion:
-          "0.5",
+          APP_CONFIG.version,
 
         timestamp:
           Date.now(),
@@ -78,10 +82,10 @@ export async function GET(
         status.code,
 
       runtime:
-        "aios-alpha",
+        APP_CONFIG.runtimeId,
 
       runtimeVersion:
-        "0.5",
+        APP_CONFIG.version,
 
       timestamp:
         Date.now(),
