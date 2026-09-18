@@ -11,6 +11,10 @@ import {
   saveWebIntelligenceHealth,
 } from "@/lib/web-intelligence/health";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -22,6 +26,19 @@ export const maxDuration =
 
 const HEALTH_PROMPT =
   "What is the latest major news about OpenAI today? Verify the current information using reliable external web sources.";
+
+function runtimeMeta() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+  };
+}
 
 function isAuthorized(
   request: NextRequest,
@@ -50,14 +67,10 @@ function isAuthorized(
       "x-vercel-cron",
     );
 
-  if (
+  return (
     vercelCron === "1" &&
     process.env.VERCEL === "1"
-  ) {
-    return true;
-  }
-
-  return false;
+  );
 }
 
 async function persistHealth(
@@ -94,14 +107,21 @@ export async function GET(
   const startedAt =
     Date.now();
 
-  if (!isAuthorized(request)) {
+  if (
+    !isAuthorized(request)
+  ) {
     return NextResponse.json(
       {
         success: false,
+
         code:
           "WEB_INTELLIGENCE_HEALTH_UNAUTHORIZED",
+
         error:
           "Unauthorized.",
+
+        ...runtimeMeta(),
+
         timestamp:
           startedAt,
       },
@@ -133,21 +153,31 @@ export async function GET(
       independentHosts >= 2;
 
     const latencyMs =
-      Date.now() - startedAt;
+      Date.now() -
+      startedAt;
 
     const healthState = {
-      success: passed,
+      success:
+        passed,
+
       verified:
         evidence.verified,
+
       sourceCount:
         evidence.sourceCount,
+
       independentHosts,
+
       provider:
         evidence.provider,
+
       latencyMs,
-      code: passed
-        ? "C143_9_WEB_INTELLIGENCE_HEALTH_PASS"
-        : "C143_9_WEB_INTELLIGENCE_HEALTH_FAILED",
+
+      code:
+        passed
+          ? "C143_9_WEB_INTELLIGENCE_HEALTH_PASS"
+          : "C143_9_WEB_INTELLIGENCE_HEALTH_FAILED",
+
       timestamp:
         Date.now(),
     };
@@ -158,41 +188,40 @@ export async function GET(
       );
 
     if (!passed) {
-      console.error(
-        "[WEB_INTELLIGENCE_HEALTH_FAILED]",
-        {
-          ...healthState,
-          persisted,
-          error:
-            evidence.error,
-        },
-      );
-
       return NextResponse.json(
         {
           success: false,
+
           verified:
             evidence.verified,
+
           code:
             "C143_9_WEB_INTELLIGENCE_HEALTH_FAILED",
+
           stage:
             "web-intelligence",
+
           provider:
             evidence.provider,
+
           sourceCount:
             evidence.sourceCount,
+
           sourceHosts:
             evidence.sourceHosts,
+
           independentHosts,
+
           persisted,
+
           error:
             evidence.error ??
             "Web Intelligence health verification failed.",
+
           latencyMs,
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
+
+          ...runtimeMeta(),
+
           timestamp:
             Date.now(),
         },
@@ -211,25 +240,33 @@ export async function GET(
         {
           success: false,
           verified: true,
+
           code:
             "C143_9_WEB_INTELLIGENCE_HEALTH_PERSIST_FAILED",
+
           stage:
             "web-intelligence",
+
           provider:
             evidence.provider,
+
           sourceCount:
             evidence.sourceCount,
+
           sourceHosts:
             evidence.sourceHosts,
+
           independentHosts,
+
           persisted: false,
+
           error:
             "Web Intelligence passed, but the health state could not be persisted.",
+
           latencyMs,
-          runtime:
-            "aios-alpha",
-          runtimeVersion:
-            "0.5",
+
+          ...runtimeMeta(),
+
           timestamp:
             Date.now(),
         },
@@ -243,35 +280,34 @@ export async function GET(
       );
     }
 
-    console.info(
-      "[WEB_INTELLIGENCE_HEALTH_PASS]",
-      {
-        ...healthState,
-        persisted,
-      },
-    );
-
     return NextResponse.json(
       {
         success: true,
         verified: true,
+
         code:
           "C143_9_WEB_INTELLIGENCE_HEALTH_PASS",
+
         stage:
           "web-intelligence",
+
         provider:
           evidence.provider,
+
         sourceCount:
           evidence.sourceCount,
+
         sourceHosts:
           evidence.sourceHosts,
+
         independentHosts,
+
         persisted: true,
+
         latencyMs,
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
+
+        ...runtimeMeta(),
+
         timestamp:
           Date.now(),
       },
@@ -290,7 +326,8 @@ export async function GET(
         : "Web Intelligence health check failed.";
 
     const latencyMs =
-      Date.now() - startedAt;
+      Date.now() -
+      startedAt;
 
     const healthState = {
       success: false,
@@ -299,8 +336,10 @@ export async function GET(
       independentHosts: 0,
       provider: "brave",
       latencyMs,
+
       code:
         "C143_9_WEB_INTELLIGENCE_HEALTH_ERROR",
+
       timestamp:
         Date.now(),
     };
@@ -310,32 +349,25 @@ export async function GET(
         healthState,
       );
 
-    console.error(
-      "[WEB_INTELLIGENCE_HEALTH_ERROR]",
-      {
-        error: message,
-        persisted,
-        latencyMs,
-        timestamp:
-          Date.now(),
-      },
-    );
-
     return NextResponse.json(
       {
         success: false,
         verified: false,
+
         code:
           "C143_9_WEB_INTELLIGENCE_HEALTH_ERROR",
+
         stage:
           "web-intelligence",
+
         persisted,
+
         error: message,
+
         latencyMs,
-        runtime:
-          "aios-alpha",
-        runtimeVersion:
-          "0.5",
+
+        ...runtimeMeta(),
+
         timestamp:
           Date.now(),
       },
