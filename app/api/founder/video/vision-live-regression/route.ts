@@ -39,6 +39,10 @@ import {
   executeRuntimeVideoVision,
 } from "@/lib/runtime/video-vision-runtime";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const runtime = "nodejs";
 
 export const dynamic = "force-dynamic";
@@ -52,12 +56,28 @@ const PASS_CODE =
 const FAIL_CODE =
   "C144_9_6_VIDEO_VISION_LIVE_FAILED";
 
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+  };
+}
+
 function json(
   body: Record<string, unknown>,
   status = 200,
 ) {
   return NextResponse.json(
-    body,
+    {
+      ...body,
+      ...runtimeIdentity(),
+    },
     {
       status,
       headers: {
@@ -116,8 +136,6 @@ export async function GET(
         code: "FOUNDER_AUTH_REQUIRED",
         message:
           "Founder authentication is required.",
-        runtime: "aios-alpha",
-        runtimeVersion: "0.5",
         timestamp: Date.now(),
         latencyMs:
           Date.now() - startedAt,
@@ -139,8 +157,6 @@ export async function GET(
         code: "INVALID_SOURCE_URL",
         message:
           "A valid HTTP(S) source page URL is required.",
-        runtime: "aios-alpha",
-        runtimeVersion: "0.5",
         timestamp: Date.now(),
         latencyMs:
           Date.now() - startedAt,
@@ -201,8 +217,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video resolver did not return a usable primary video.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -233,8 +247,6 @@ export async function GET(
             "C144_9_6_VIDEO_DECODER_UNAVAILABLE",
           message:
             "No usable FFmpeg decoder is available.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -279,8 +291,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Actual media access or processing failed.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -305,6 +315,7 @@ export async function GET(
         {
           durationSeconds:
             processing.durationSeconds,
+
           contentLength:
             media.contentLength,
         },
@@ -321,8 +332,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video evidence sampling failed.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -348,6 +357,7 @@ export async function GET(
         {
           durationSeconds:
             processing.durationSeconds,
+
           decoderPath:
             decoder.decoder.path,
         },
@@ -380,8 +390,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Video frame extraction failed.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -424,8 +432,6 @@ export async function GET(
           code: FAIL_CODE,
           message:
             "Visual evidence is not ready for Vision analysis.",
-          runtime: "aios-alpha",
-          runtimeVersion: "0.5",
           timestamp: Date.now(),
           latencyMs:
             Date.now() - startedAt,
@@ -496,19 +502,22 @@ export async function GET(
       {
         success:
           finalRegressionPass,
+
         verified:
           finalRegressionPass,
+
         code:
           finalRegressionPass
             ? PASS_CODE
             : FAIL_CODE,
+
         message:
           finalRegressionPass
             ? "C144.9.6 live Vision regression passed."
             : "C144.9.6 live Vision regression failed.",
-        runtime: "aios-alpha",
-        runtimeVersion: "0.5",
+
         timestamp: Date.now(),
+
         latencyMs:
           Date.now() - startedAt,
 
@@ -525,8 +534,10 @@ export async function GET(
         resolver: {
           success:
             resolver.success,
+
           primaryFound:
             Boolean(selectedUrl),
+
           candidateCount:
             resolver.candidates.length,
         },
@@ -534,12 +545,16 @@ export async function GET(
         decoder: {
           available:
             decoder.available,
+
           name:
             decoder.decoder?.name,
+
           version:
             decoder.decoder?.version,
+
           source:
             decoder.decoder?.source,
+
           path:
             decoder.decoder?.path,
         },
@@ -547,22 +562,31 @@ export async function GET(
         media: {
           success:
             media.success,
+
           code:
             media.code,
+
           statusCode:
             media.statusCode,
+
           contentType:
             media.contentType,
+
           contentLength:
             media.contentLength,
+
           bytesRead:
             media.bytesRead,
+
           rangeSupported:
             media.rangeSupported,
+
           container:
             media.container,
+
           majorBrand:
             media.majorBrand,
+
           moovFound:
             media.moovFound,
         },
@@ -570,22 +594,31 @@ export async function GET(
         processing: {
           success:
             processing.success,
+
           code:
             processing.code,
+
           durationSeconds:
             processing.durationSeconds,
+
           width:
             processing.width,
+
           height:
             processing.height,
+
           frameRate:
             processing.frameRate,
+
           videoCodec:
             processing.videoCodec,
+
           audioCodec:
             processing.audioCodec,
+
           videoTrackCount:
             processing.videoTrackCount,
+
           audioTrackCount:
             processing.audioTrackCount,
         },
@@ -593,57 +626,83 @@ export async function GET(
         evidence: {
           success:
             evidence.success,
+
           code:
             evidence.code,
+
           sampleCount:
             evidence.sampleCount,
+
           successfulSampleCount:
             evidence.successfulSampleCount,
+
           totalBytesRead:
             evidence.totalBytesRead,
-sampleTimesSeconds:
-  evidence.timeline?.sampleTimesSeconds ??
-  [],
 
-byteRangesVerified:
-  evidence.evidence.byteRangesVerified,
+          sampleTimesSeconds:
+            evidence.timeline
+              ?.sampleTimesSeconds ?? [],
 
-temporalSamplingPlanned:
-  evidence.evidence.temporalSamplingPlanned,
+          byteRangesVerified:
+            evidence.evidence
+              .byteRangesVerified,
+
+          temporalSamplingPlanned:
+            evidence.evidence
+              .temporalSamplingPlanned,
         },
 
         frames: {
           success:
             frames.success,
+
           code:
             frames.code,
+
           frameCount:
             frames.frameCount,
+
           successfulFrameCount:
             frames.successfulFrameCount,
+
           totalBytesRead:
             frames.totalBytesRead,
+
           framesDecoded:
-            frames.visualEvidence.framesDecoded,
+            frames.visualEvidence
+              .framesDecoded,
+
           imagesExtracted:
-            frames.visualEvidence.imagesExtracted,
+            frames.visualEvidence
+              .imagesExtracted,
+
           dimensionsDetected:
-            frames.visualEvidence.dimensionsDetected,
+            frames.visualEvidence
+              .dimensionsDetected,
         },
 
         visualEvidence: {
           success:
             visualEvidence.success,
+
           code:
             visualEvidence.code,
+
           frameCount:
             visualEvidence.frameCount,
+
           usableFrameCount:
-            visualEvidence.usableFrameCount,
+            visualEvidence
+              .usableFrameCount,
+
           totalImageBytes:
-            visualEvidence.totalImageBytes,
+            visualEvidence
+              .totalImageBytes,
+
           visionReady:
-            visualEvidence.evidence.visionReady,
+            visualEvidence.evidence
+              .visionReady,
+
           semanticUnderstandingReady:
             visualEvidence.evidence
               .semanticUnderstandingReady,
@@ -652,20 +711,28 @@ temporalSamplingPlanned:
         vision: {
           success:
             vision.success,
+
           code:
             vision.code,
+
           provider:
             vision.provider,
+
           model:
             vision.model,
+
           frameCount:
             vision.frameCount,
+
           analyzedFrameCount:
             vision.analyzedFrameCount,
+
           semanticUnderstandingReady:
             vision.semanticUnderstandingReady,
+
           content:
             vision.content,
+
           error:
             vision.error,
         },
@@ -677,19 +744,26 @@ temporalSamplingPlanned:
     return json(
       {
         success: false,
+
         verified: false,
-        code: FAIL_CODE,
+
+        code:
+          FAIL_CODE,
+
         message:
           "C144.9.6 live Vision regression threw an unexpected runtime error.",
-        runtime: "aios-alpha",
-        runtimeVersion: "0.5",
-        timestamp: Date.now(),
+
+        timestamp:
+          Date.now(),
+
         latencyMs:
           Date.now() - startedAt,
+
         error:
           error instanceof Error
             ? error.message
             : String(error),
+
         checks,
       },
       500,
