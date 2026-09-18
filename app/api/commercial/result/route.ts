@@ -7,11 +7,40 @@ import {
   recordCommercialResult,
 } from "@/lib/commercial/result-loop";
 
-const RUNTIME =
-  "aios-alpha";
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
 
-const RUNTIME_VERSION =
-  "0.5";
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
+  };
+}
+
+function response(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(
+    {
+      ...body,
+      ...runtimeIdentity(),
+    },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
 
 export async function POST(
   request: NextRequest,
@@ -49,52 +78,38 @@ export async function POST(
       body.verified === true;
 
     if (!objectiveId) {
-      return NextResponse.json(
+      return response(
         {
           success: false,
           code:
             "COMMERCIAL_OBJECTIVE_ID_REQUIRED",
-          runtime: RUNTIME,
-          runtimeVersion:
-            RUNTIME_VERSION,
         },
-        {
-          status: 400,
-        },
+        400,
       );
     }
 
     if (!taskId) {
-      return NextResponse.json(
+      return response(
         {
           success: false,
           code:
             "COMMERCIAL_TASK_ID_REQUIRED",
-          runtime: RUNTIME,
-          runtimeVersion:
-            RUNTIME_VERSION,
         },
-        {
-          status: 400,
-        },
+        400,
       );
     }
 
     if (!verified) {
-      return NextResponse.json(
+      return response(
         {
           success: false,
           code:
             "COMMERCIAL_RESULT_NOT_VERIFIED",
+
           error:
             "Commercial actuals require an explicitly verified result.",
-          runtime: RUNTIME,
-          runtimeVersion:
-            RUNTIME_VERSION,
         },
-        {
-          status: 422,
-        },
+        422,
       );
     }
 
@@ -135,22 +150,20 @@ export async function POST(
             : undefined,
       });
 
-    return NextResponse.json(
+    return response(
       {
         success: true,
+
         code:
           "C143_12_COMMERCIAL_RESULT_RECORDED",
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+
         latencyMs:
           Date.now() -
           startedAt,
+
         result,
       },
-      {
-        status: 200,
-      },
+      200,
     );
   } catch (error) {
     const message =
@@ -182,22 +195,21 @@ export async function POST(
           ? 409
           : 500;
 
-    return NextResponse.json(
+    return response(
       {
         success: false,
+
         code:
           "C143_12_COMMERCIAL_RESULT_FAILED",
-        error: message,
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+
+        error:
+          message,
+
         latencyMs:
           Date.now() -
           startedAt,
       },
-      {
-        status,
-      },
+      status,
     );
   }
 }
