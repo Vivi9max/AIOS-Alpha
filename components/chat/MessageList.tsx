@@ -5,6 +5,10 @@ import {
   useState,
 } from "react";
 
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
 import MessageBubble from "./MessageBubble";
 
 export interface ChatMessage {
@@ -16,8 +20,7 @@ export interface ChatMessage {
 }
 
 interface Props {
-  messages:
-    ChatMessage[];
+  messages: ChatMessage[];
 
   onMessageDeleted?: (
     id: number,
@@ -35,17 +38,59 @@ interface DeletedMemoryRecord {
   timestamp: number;
 }
 
+interface MessageCopy {
+  delete: string;
+  deleting: string;
+  deleted: string;
+  undo: string;
+  restoring: string;
+}
+
+const copy: Record<
+  "en" | "zh-CN" | "ja",
+  MessageCopy
+> = {
+  en: {
+    delete: "Delete",
+    deleting: "Deleting…",
+    deleted: "Message deleted.",
+    undo: "Undo",
+    restoring: "Restoring…",
+  },
+
+  "zh-CN": {
+    delete: "删除",
+    deleting: "删除中…",
+    deleted: "消息已删除。",
+    undo: "撤销",
+    restoring: "恢复中…",
+  },
+
+  ja: {
+    delete: "削除",
+    deleting: "削除中…",
+    deleted: "メッセージを削除しました。",
+    undo: "元に戻す",
+    restoring: "復元中…",
+  },
+};
+
 export default function MessageList({
   messages,
   onMessageDeleted,
   onConversationChanged,
 }: Props) {
+  const {
+    locale,
+  } = useLanguage();
+
+  const text =
+    copy[locale];
+
   const [
     deletedIds,
     setDeletedIds,
-  ] = useState<
-    Set<number>
-  >(
+  ] = useState<Set<number>>(
     () => new Set(),
   );
 
@@ -53,16 +98,16 @@ export default function MessageList({
     undoRecord,
     setUndoRecord,
   ] =
-    useState<
-      DeletedMemoryRecord | null
-    >(null);
+    useState<DeletedMemoryRecord | null>(
+      null,
+    );
 
   const [
     actionLoading,
     setActionLoading,
-  ] = useState<
-    number | null
-  >(null);
+  ] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     setDeletedIds(
@@ -89,9 +134,7 @@ export default function MessageList({
         current.forEach(
           (id) => {
             if (
-              visibleIds.has(
-                id,
-              )
+              visibleIds.has(id)
             ) {
               next.add(id);
             }
@@ -133,17 +176,10 @@ export default function MessageList({
         Date.now(),
     };
 
-    /*
-     * Optimistic UI:
-     * remove the message before the
-     * network request completes.
-     */
     setDeletedIds(
       (current) => {
         const next =
-          new Set(
-            current,
-          );
+          new Set(current);
 
         next.add(id);
 
@@ -205,16 +241,10 @@ export default function MessageList({
         error,
       );
 
-      /*
-       * Roll back the optimistic
-       * deletion if persistence fails.
-       */
       setDeletedIds(
         (current) => {
           const next =
-            new Set(
-              current,
-            );
+            new Set(current);
 
           next.delete(id);
 
@@ -243,15 +273,10 @@ export default function MessageList({
     const record =
       undoRecord;
 
-    /*
-     * Optimistic restore.
-     */
     setDeletedIds(
       (current) => {
         const next =
-          new Set(
-            current,
-          );
+          new Set(current);
 
         next.delete(
           record.id,
@@ -314,9 +339,7 @@ export default function MessageList({
       setDeletedIds(
         (current) => {
           const next =
-            new Set(
-              current,
-            );
+            new Set(current);
 
           next.add(
             record.id,
@@ -404,7 +427,9 @@ export default function MessageList({
                     actionLoading !==
                     null
                   }
-                  aria-label="Delete message"
+                  aria-label={
+                    text.delete
+                  }
                   style={{
                     border:
                       "1px solid #e5e7eb",
@@ -432,8 +457,8 @@ export default function MessageList({
                 >
                   {actionLoading ===
                   message.id
-                    ? "Deleting..."
-                    : "Delete"}
+                    ? text.deleting
+                    : text.delete}
                 </button>
               </div>
             )}
@@ -478,7 +503,7 @@ export default function MessageList({
                 11,
             }}
           >
-            Message deleted.
+            {text.deleted}
           </span>
 
           <button
@@ -510,8 +535,8 @@ export default function MessageList({
           >
             {actionLoading ===
             undoRecord.id
-              ? "Restoring..."
-              : "Undo"}
+              ? text.restoring
+              : text.undo}
           </button>
         </div>
       )}
