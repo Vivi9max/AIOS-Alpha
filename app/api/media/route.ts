@@ -34,6 +34,14 @@ import {
 } from "@/lib/runtime/media/openai";
 
 import {
+  createOpenAIVideoJob,
+  retrieveOpenAIVideoJob,
+  downloadOpenAIVideo,
+  type OpenAIVideoModel,
+  type OpenAIVideoSeconds,
+} from "@/lib/runtime/media/openai-video";
+
+import {
   MEDIA_ASPECT_RATIO_OPTIONS,
   MEDIA_DURATION_OPTIONS,
   MEDIA_LANGUAGE_OPTIONS,
@@ -51,10 +59,15 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
+export const maxDuration =
+  300;
+
 type MediaOperation =
   | "plan"
   | "generate"
-  | "render";
+  | "render"
+  | "video-create"
+  | "video-status";
 
 interface MediaRequestBody {
   operation?: unknown;
@@ -100,6 +113,30 @@ interface MediaRequestBody {
   voiceVolume?: unknown;
 
   assets?: unknown;
+
+  videoId?: unknown;
+
+  videoModel?: unknown;
+
+  videoSeconds?: unknown;
+}
+
+function jsonResponse(
+  body: unknown,
+  status = 200,
+): NextResponse {
+  return NextResponse.json(
+    body,
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+        "Content-Type":
+          "application/json; charset=utf-8",
+      },
+    },
+  );
 }
 
 function applyIdentityCookie(
@@ -111,15 +148,11 @@ function applyIdentityCookie(
     userId,
     {
       httpOnly: true,
-
       sameSite: "lax",
-
       secure:
         process.env.NODE_ENV ===
         "production",
-
       path: "/",
-
       maxAge:
         60 * 60 * 24 * 365,
     },
@@ -143,8 +176,10 @@ function asString(
       .replace(/\s+/g, " ")
       .trim();
 
-  return normalized ||
-    undefined;
+  return (
+    normalized ||
+    undefined
+  );
 }
 
 function asPositiveNumber(
@@ -176,7 +211,9 @@ function resolveOperation(
 ): MediaOperation {
   if (
     value === "generate" ||
-    value === "render"
+    value === "render" ||
+    value === "video-create" ||
+    value === "video-status"
   ) {
     return value;
   }
@@ -300,10 +337,6 @@ function buildCompositionOptions(
         body.includeSubtitles,
       ),
 
-    /*
-     * Music remains disabled until
-     * a real music provider is connected.
-     */
     musicPrompt:
       undefined,
 
@@ -418,6 +451,214 @@ function buildContext(
   };
 }
 
+function resolveSoraModel(
+  value: unknown,
+): OpenAIVideoModel {
+  return value ===
+    "sora-2-pro"
+    ? "sora-2-pro"
+    : "sora-2";
+}
+
+function resolveSoraSeconds(
+  value: unknown,
+): OpenAIVideoSeconds {
+  if (
+    value === "4" ||
+    value === 4
+  ) {
+    return "4";
+  }
+
+  if (
+    value === "8" ||
+    value === 8
+  ) {
+    return "8";
+  }
+
+  return "12";
+}
+
+async function executeDirectVideoCreate(
+  body: MediaRequestBody,
+  locale: string,
+) {
+  const prompt =
+    asString(
+      body.prompt,
+    );
+
+  if (!prompt) {
+    return {
+      success: false,
+      code:
+        "MEDIA_PROMPT_REQUIRED",
+      content:
+        locale === "zh-CN"
+          ? "请输入视频需求。"
+          : locale === "ja"
+            ? "動画の要件を入力してください。"
+            : "Please provide a video request.",
+    };
+  }
+
+  const mediaOptions =
+    normalizeMediaOptions({
+      language:
+        body.language,
+
+      aspectRatio:
+        body.aspectRatio,
+
+      durationSeconds:
+        body.durationSeconds,
+    });
+
+  const requestedLongDuration =
+    mediaOptions.durationSeconds;
+
+  /*
+   * Sora Create Video currently supports
+   * 4 / 8 / 12 second clips.
+   *
+   * AIOS therefore uses 12 seconds for
+   * the direct provider path.
+   *
+   * 30 / 60 / 90 / 120 seconds remain
+   * the responsibility of the AIOS
+   * long-form composition pipeline.
+   */
+  const seconds =
+    resolveSoraSeconds(
+      body.videoSeconds,
+    );
+
+  const job =
+    await createOpenAIVideoJob({
+      prompt,
+
+      model:
+        resolveSoraModel(
+          body.videoModel,
+        ),
+
+      seconds,
+
+      aspectRatio:
+        mediaOptions.aspectRatio,
+    });
+
+  return {
+    success: true,
+
+    code:
+      "C146_11_SORA_TTV_JOB_CREATED",
+
+    content:
+      "AIOS created a real OpenAI text-to-video generation job.",
+
+    provider:
+      "openai",
+
+    providerModel:
+      job.model,
+
+    providerJobId:
+      job.id,
+
+    providerStatus:
+      job.status,
+
+    providerProgress:
+      job.progress,
+
+    providerSeconds:
+      job.seconds,
+
+    requestedDurationSeconds:
+      requestedLongDuration,
+
+    directProviderDurationSupported:
+      seconds,
+
+    mediaOptions,
+
+    job,
+  };
+}
+
+async function executeDirectVideoStatus(
+  body: MediaRequestBody,
+) {
+  const videoId =
+    asString(
+      body.videoId,
+    );
+
+  if (!videoId) {
+    return {
+      success: false,
+      code:
+        "MEDIA_VIDEO_ID_REQUIRED",
+      content:
+        "Video ID is required.",
+    };
+  }
+
+  const job =
+    await retrieveOpenAIVideoJob(
+      videoId,
+    );
+
+  return {
+    success:
+      job.status !==
+      "failed",
+
+    code:
+      job.status ===
+        "completed"
+        ? "C146_11_SORA_TTV_COMPLETED"
+        : job.status ===
+            "failed"
+          ? "C146_11_SORA_TTV_FAILED"
+          : "C146_11_SORA_TTV_IN_PROGRESS",
+
+    content:
+      job.status ===
+        "completed"
+        ? "OpenAI text-to-video generation completed."
+        : job.status ===
+            "failed"
+          ? job.error?.message ||
+            "OpenAI text-to-video generation failed."
+          : "OpenAI text-to-video generation is still in progress.",
+
+    provider:
+      "openai",
+
+    providerJobId:
+      job.id,
+
+    providerStatus:
+      job.status,
+
+    providerProgress:
+      job.progress,
+
+    job,
+
+    contentUrl:
+      job.status ===
+      "completed"
+        ? `/api/media?videoId=${encodeURIComponent(
+            job.id,
+          )}&content=1`
+        : undefined,
+  };
+}
+
 async function executeMediaRequest(
   body: MediaRequestBody,
   userId: string,
@@ -449,18 +690,30 @@ async function executeMediaRequest(
       body.operation,
     );
 
+  if (
+    operation ===
+    "video-create"
+  ) {
+    return executeDirectVideoCreate(
+      body,
+      locale,
+    );
+  }
+
+  if (
+    operation ===
+    "video-status"
+  ) {
+    return executeDirectVideoStatus(
+      body,
+    );
+  }
+
   const assets =
     normalizeAssets(
       body.assets,
     );
 
-  /*
-   * C146.10:
-   *
-   * Normalize all user-selectable
-   * media options before they enter
-   * storyboard/composition/generation.
-   */
   const mediaOptions =
     normalizeMediaOptions({
       language:
@@ -554,13 +807,14 @@ async function executeMediaRequest(
   }
 
   if (
-    operation === "plan"
+    operation ===
+    "plan"
   ) {
     return {
       success: true,
 
       code:
-        "C146_10_MEDIA_PLAN_READY",
+        "C146_11_MEDIA_PLAN_READY",
 
       content:
         "AIOS Media Runtime prepared the video generation plan.",
@@ -759,7 +1013,8 @@ async function executeMediaRequest(
       : "ready_for_generation";
 
   if (
-    operation === "generate"
+    operation ===
+    "generate"
   ) {
     return {
       success:
@@ -769,8 +1024,8 @@ async function executeMediaRequest(
       code:
         finalPlan.status ===
         "ready_for_render"
-          ? "C146_10_REAL_MEDIA_GENERATION_READY"
-          : "C146_10_REAL_MEDIA_GENERATION_PARTIAL",
+          ? "C146_11_REAL_MEDIA_GENERATION_READY"
+          : "C146_11_REAL_MEDIA_GENERATION_PARTIAL",
 
       content:
         finalPlan.status ===
@@ -811,7 +1066,7 @@ async function executeMediaRequest(
       success: false,
 
       code:
-        "C146_10_RENDER_BLOCKED_INCOMPLETE_GENERATION",
+        "C146_11_RENDER_BLOCKED_INCOMPLETE_GENERATION",
 
       content:
         "AIOS did not render the video because the generated media assets are incomplete.",
@@ -909,8 +1164,155 @@ export async function GET(
       request,
     );
 
+  const videoId =
+    request.nextUrl.searchParams.get(
+      "videoId",
+    );
+
+  const content =
+    request.nextUrl.searchParams.get(
+      "content",
+    );
+
+  if (
+    videoId &&
+    content === "1"
+  ) {
+    try {
+      const mediaResponse =
+        await downloadOpenAIVideo(
+          videoId,
+        );
+
+      const body =
+        await mediaResponse.arrayBuffer();
+
+      return new NextResponse(
+        body,
+        {
+          status:
+            mediaResponse.status ||
+            200,
+
+          headers: {
+            "Cache-Control":
+              "private, max-age=300",
+
+            "Content-Type":
+              mediaResponse.headers.get(
+                "content-type",
+              ) ||
+              "video/mp4",
+
+            "Content-Disposition":
+              `inline; filename="aios-${videoId}.mp4"`,
+          },
+        },
+      );
+    } catch (error) {
+      return jsonResponse(
+        {
+          success: false,
+
+          code:
+            "MEDIA_VIDEO_CONTENT_FAILED",
+
+          content:
+            error instanceof Error
+              ? error.message
+              : "Unable to download generated video.",
+
+          userId:
+            identity.userId,
+        },
+        500,
+      );
+    }
+  }
+
+  if (videoId) {
+    try {
+      const job =
+        await retrieveOpenAIVideoJob(
+          videoId,
+        );
+
+      return applyIdentityCookie(
+        jsonResponse(
+          {
+            success:
+              job.status !==
+              "failed",
+
+            code:
+              job.status ===
+                "completed"
+                ? "C146_11_SORA_TTV_COMPLETED"
+                : job.status ===
+                    "failed"
+                  ? "C146_11_SORA_TTV_FAILED"
+                  : "C146_11_SORA_TTV_IN_PROGRESS",
+
+            provider:
+              "openai",
+
+            providerJobId:
+              job.id,
+
+            providerStatus:
+              job.status,
+
+            providerProgress:
+              job.progress,
+
+            job,
+
+            contentUrl:
+              job.status ===
+              "completed"
+                ? `/api/media?videoId=${encodeURIComponent(
+                    job.id,
+                  )}&content=1`
+                : undefined,
+
+            identity: {
+              userId:
+                identity.userId,
+
+              isolated:
+                true,
+            },
+          },
+          200,
+        ),
+        identity.userId,
+      );
+    } catch (error) {
+      return applyIdentityCookie(
+        jsonResponse(
+          {
+            success: false,
+
+            code:
+              "MEDIA_VIDEO_STATUS_FAILED",
+
+            content:
+              error instanceof Error
+                ? error.message
+                : "Unable to retrieve video status.",
+
+            userId:
+              identity.userId,
+          },
+          500,
+        ),
+        identity.userId,
+      );
+    }
+  }
+
   const response =
-    NextResponse.json(
+    jsonResponse(
       {
         success: true,
 
@@ -955,7 +1357,37 @@ export async function GET(
           oneClickVideo: true,
 
           directProviderVideo:
-            false,
+            Boolean(
+              process.env.OPENAI_API_KEY,
+            ),
+
+          directProvider:
+            "openai-sora",
+        },
+
+        directVideo: {
+          provider:
+            "openai",
+
+          models: [
+            "sora-2",
+            "sora-2-pro",
+          ],
+
+          createSeconds: [
+            4,
+            8,
+            12,
+          ],
+
+          async:
+            true,
+
+          statusPolling:
+            true,
+
+          download:
+            true,
         },
 
         options: {
@@ -1004,6 +1436,18 @@ export async function GET(
           "ffmpeg-final-render",
         ],
 
+        directProviderPipeline: [
+          "chat-prompt",
+
+          "openai-sora-create",
+
+          "async-video-job",
+
+          "status-polling",
+
+          "video-content-proxy",
+        ],
+
         identity: {
           userId:
             identity.userId,
@@ -1017,17 +1461,7 @@ export async function GET(
         timestamp:
           Date.now(),
       },
-      {
-        status: 200,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
-
-          "Content-Type":
-            "application/json; charset=utf-8",
-        },
-      },
+      200,
     );
 
   return applyIdentityCookie(
@@ -1058,8 +1492,8 @@ export async function POST(
         "application/json",
       )
     ) {
-      const response =
-        NextResponse.json(
+      return applyIdentityCookie(
+        jsonResponse(
           {
             success: false,
 
@@ -1072,21 +1506,8 @@ export async function POST(
             userId:
               identity.userId,
           },
-          {
-            status: 415,
-
-            headers: {
-              "Cache-Control":
-                "no-store",
-
-              "Content-Type":
-                "application/json; charset=utf-8",
-            },
-          },
-        );
-
-      return applyIdentityCookie(
-        response,
+          415,
+        ),
         identity.userId,
       );
     }
@@ -1114,8 +1535,8 @@ export async function POST(
           ),
       );
 
-    const response =
-      NextResponse.json(
+    return applyIdentityCookie(
+      jsonResponse(
         {
           ...result,
 
@@ -1149,27 +1570,15 @@ export async function POST(
           timestamp:
             Date.now(),
         },
-        {
-          status:
-            result.success
-              ? 200
-              : result.code ===
-                  "MEDIA_PROMPT_REQUIRED"
-                ? 400
-                : 500,
-
-          headers: {
-            "Cache-Control":
-              "no-store",
-
-            "Content-Type":
-              "application/json; charset=utf-8",
-          },
-        },
-      );
-
-    return applyIdentityCookie(
-      response,
+        result.success
+          ? 200
+          : result.code ===
+              "MEDIA_PROMPT_REQUIRED" ||
+            result.code ===
+              "MEDIA_VIDEO_ID_REQUIRED"
+            ? 400
+            : 500,
+      ),
       identity.userId,
     );
   } catch (error) {
@@ -1183,8 +1592,8 @@ export async function POST(
       error,
     );
 
-    const response =
-      NextResponse.json(
+    return applyIdentityCookie(
+      jsonResponse(
         {
           success: false,
 
@@ -1216,21 +1625,8 @@ export async function POST(
           timestamp:
             Date.now(),
         },
-        {
-          status: 500,
-
-          headers: {
-            "Cache-Control":
-              "no-store",
-
-            "Content-Type":
-              "application/json; charset=utf-8",
-          },
-        },
-      );
-
-    return applyIdentityCookie(
-      response,
+        500,
+      ),
       identity.userId,
     );
   }
