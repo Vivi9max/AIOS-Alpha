@@ -28,10 +28,15 @@ function errorResponse(
       verified: false,
       code,
       error,
+
       runtime:
         APP_CONFIG.runtimeId,
+
       runtimeVersion:
         APP_CONFIG.version,
+
+      release:
+        APP_CONFIG.release,
     },
     {
       status,
@@ -48,8 +53,7 @@ function moneyEquals(
   expected: number,
 ): boolean {
   if (
-    typeof actual !==
-      "number" ||
+    typeof actual !== "number" ||
     !Number.isFinite(actual)
   ) {
     return false;
@@ -161,10 +165,15 @@ function runRegression() {
         supplierPass,
 
       purchaseCost: true,
+
       shippingCost: true,
+
       platformCost: true,
+
       logisticsCost: true,
+
       returnReserve: true,
+
       acquisitionCost: true,
 
       unitCostCalculation:
@@ -240,9 +249,11 @@ export async function GET(
   } catch (error) {
     return errorResponse(
       "C145_5_REGRESSION_ERROR",
+
       error instanceof Error
         ? error.message
         : "Unknown regression error.",
+
       500,
     );
   }
@@ -269,8 +280,7 @@ export async function POST(
 
     if (
       !body ||
-      typeof body !==
-        "object"
+      typeof body !== "object"
     ) {
       return errorResponse(
         "C145_5_INVALID_INPUT",
@@ -318,9 +328,11 @@ export async function POST(
   } catch (error) {
     return errorResponse(
       "C145_5_INPUT_PROCESSING_ERROR",
+
       error instanceof Error
         ? error.message
         : "Unable to process supplier verification input.",
+
       500,
     );
   }
