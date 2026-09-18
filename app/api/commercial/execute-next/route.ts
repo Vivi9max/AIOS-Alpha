@@ -36,11 +36,20 @@ import type {
   Task,
 } from "@/lib/task/types";
 
-const RUNTIME =
-  "aios-alpha";
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
 
-const RUNTIME_VERSION =
-  "0.5";
+function runtimeIdentity() {
+  return {
+    runtime:
+      APP_CONFIG.runtimeId,
+    runtimeVersion:
+      APP_CONFIG.version,
+    release:
+      APP_CONFIG.release,
+  };
+}
 
 function response(
   body: Record<string, unknown>,
@@ -51,9 +60,7 @@ function response(
     NextResponse.json(
       {
         ...body,
-        runtime: RUNTIME,
-        runtimeVersion:
-          RUNTIME_VERSION,
+        ...runtimeIdentity(),
         timestamp:
           Date.now(),
       },
