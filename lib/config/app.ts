@@ -6,6 +6,12 @@ const APP_RELEASE_VALUE =
   process.env.NEXT_PUBLIC_APP_RELEASE?.trim() ||
   "C145.8";
 
+const APP_FULL_TITLE_VALUE =
+  `AIOS Alpha v${APP_VERSION_VALUE}`;
+
+const APP_BADGE_VALUE =
+  `ALPHA v${APP_VERSION_VALUE}`;
+
 export const APP_CONFIG = {
   name: "AIOS",
 
@@ -27,7 +33,10 @@ export const APP_CONFIG = {
     "DeepSeek",
 
   fullTitle:
-    `AIOS Alpha v${APP_VERSION_VALUE}`,
+    APP_FULL_TITLE_VALUE,
+
+  badge:
+    APP_BADGE_VALUE,
 } as const;
 
 export const APP_NAME =
@@ -52,7 +61,7 @@ export const APP_FULL_TITLE =
   APP_CONFIG.fullTitle;
 
 export const APP_BADGE =
-  `${APP_CONFIG.stage.toUpperCase()} v${APP_CONFIG.version}`;
+  APP_CONFIG.badge;
 
 export const APP_CONFIG_FULL_TITLE =
   APP_CONFIG.fullTitle;
