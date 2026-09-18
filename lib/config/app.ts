@@ -3,22 +3,22 @@ export const APP_CONFIG = {
 
   stage: "Alpha",
 
-  version: "0.5",
+  version:
+    process.env.NEXT_PUBLIC_APP_VERSION?.trim() ||
+    "0.5.1",
+
+  release:
+    process.env.NEXT_PUBLIC_APP_RELEASE?.trim() ||
+    "C145.8",
 
   codename:
-    "Runtime & Multilingual Stabilization",
+    "Runtime, Commerce & Multilingual Stabilization",
 
   runtimeId:
     "aios-alpha",
 
   defaultProvider:
     "DeepSeek",
-
-  fullTitle:
-    "AIOS Alpha v0.5",
-
-  badge:
-    "ALPHA v0.5",
 } as const;
 
 export const APP_NAME =
@@ -30,6 +30,9 @@ export const APP_STAGE =
 export const APP_VERSION =
   APP_CONFIG.version;
 
+export const APP_RELEASE =
+  APP_CONFIG.release;
+
 export const APP_VERSION_LABEL =
   `${APP_CONFIG.stage} v${APP_CONFIG.version}`;
 
@@ -37,7 +40,7 @@ export const APP_TITLE =
   `${APP_CONFIG.name} ${APP_CONFIG.stage}`;
 
 export const APP_FULL_TITLE =
-  APP_CONFIG.fullTitle;
+  `${APP_CONFIG.name} ${APP_CONFIG.stage} v${APP_CONFIG.version}`;
 
 export const APP_BADGE =
-  APP_CONFIG.badge;
+  `${APP_CONFIG.stage.toUpperCase()} v${APP_CONFIG.version}`;
