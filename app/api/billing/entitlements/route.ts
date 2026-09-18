@@ -13,6 +13,10 @@ import {
   getUsageSnapshot,
 } from "@/lib/billing/usage";
 
+import {
+  APP_CONFIG,
+} from "@/lib/config/app";
+
 export const dynamic =
   "force-dynamic";
 
@@ -148,11 +152,19 @@ export async function GET(
 
     product: {
       name:
-        "AIOS Alpha",
+        APP_CONFIG.name,
+
       stage:
-        "Alpha",
+        APP_CONFIG.stage,
+
       version:
-        "0.4",
+        APP_CONFIG.version,
+
+      release:
+        APP_CONFIG.release,
+
+      runtime:
+        APP_CONFIG.runtimeId,
     },
 
     plan: {
@@ -256,11 +268,15 @@ export async function POST(
       {
         success:
           false,
+
         apiVersion:
           API_VERSION,
+
         requestId,
+
         error:
           "Capability is required.",
+
         code:
           "CAPABILITY_REQUIRED",
       },
@@ -292,11 +308,15 @@ export async function POST(
       {
         success:
           false,
+
         apiVersion:
           API_VERSION,
+
         requestId,
+
         error:
           "Unknown AIOS capability.",
+
         code:
           "UNKNOWN_CAPABILITY",
       },
@@ -334,6 +354,15 @@ export async function POST(
       allowed
         ? "allowed"
         : "capability_not_in_plan",
+
+    runtime:
+      APP_CONFIG.runtimeId,
+
+    runtimeVersion:
+      APP_CONFIG.version,
+
+    release:
+      APP_CONFIG.release,
 
     timestamp:
       Date.now(),
