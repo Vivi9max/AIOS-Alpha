@@ -706,7 +706,7 @@ async function executeComposerFallback(
 
     code:
       result.success
-        ? "C146_16_COMPOSER_FALLBACK_RENDERED"
+        ? "C146_18_COMPOSER_FALLBACK_RENDERED"
         : result.code,
 
     content:
@@ -1596,6 +1596,18 @@ async function executeComposerPipeline(
 
     render:
       render.result,
+
+    generationRouter: {
+      active: true,
+
+      provider: "aios-composer",
+
+      model: "aios-composer",
+
+      routeSource: "media-generation-router",
+
+      automaticFallback: true,
+    },
 
     outputPath:
       render.outputPath,
