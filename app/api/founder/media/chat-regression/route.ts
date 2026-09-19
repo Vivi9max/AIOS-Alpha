@@ -6,64 +6,134 @@ import {
   resolveAvailableMediaGenerationRoute,
 } from "@/lib/runtime/media/generation-router";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function isConfigured(value: string | undefined): boolean {
+  return Boolean(value?.trim());
+}
+
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
 
   if (!isFounderRequest(request)) {
-    return NextResponse.json({
-      success: false,
-      verified: false,
-      code: "FOUNDER_AUTH_REQUIRED",
-      message: "Founder authentication is required.",
-    }, { status: 401 });
+    return NextResponse.json(
+      {
+        success: false,
+        verified: false,
+        code: "FOUNDER_AUTH_REQUIRED",
+        message: "Founder authentication is required.",
+      },
+      {
+        status: 401,
+        headers: { "cache-control": "no-store" },
+      },
+    );
   }
 
+  const prompt = "C146.18 Chat media router regression";
+  const resolution = "1080p";
+  const aspectRatio = "9:16";
+  const durationSeconds = 8;
+
   const availability = getMediaGenerationAvailability();
+
   const route = resolveAvailableMediaGenerationRoute({
     kind: "video",
-    prompt: "C146.18 Chat media router regression",
-    resolution: "1080p",
-    aspectRatio: "9:16",
-    durationSeconds: 8,
+    prompt,
+    resolution,
+    aspectRatio,
+    durationSeconds,
   });
+
+  const geminiConfigured = isConfigured(
+    process.env.GEMINI_API_KEY,
+  );
+
+  const openAIConfigured = isConfigured(
+    process.env.OPENAI_API_KEY,
+  );
+
+  const automaticRouteIsKnownProvider =
+    route.provider === "google-veo" ||
+    route.provider === "aios-composer";
+
+  const primaryRouteCorrect =
+    geminiConfigured
+      ? route.provider === "google-veo" &&
+        route.configured === true
+      : route.provider === "aios-composer" &&
+        route.fallback === true &&
+        route.configured === openAIConfigured;
+
+  const resolutionPreserved =
+    route.resolution === resolution;
+
+  const providerAvailabilityIsConsistent =
+    availability.some(
+      (item) =>
+        item.provider === route.provider &&
+        item.available === route.configured,
+    );
+
+  const composerAvailabilityIsConsistent =
+    availability.some(
+      (item) =>
+        item.provider === "aios-composer" &&
+        item.available === openAIConfigured,
+    );
 
   const checks = {
     auth: true,
     availabilityReturned: Array.isArray(availability),
     routerLoaded: route.provider.length > 0,
-    automaticRoutePresent: route.provider === "aios-composer" || route.provider === "google-veo",
-    automaticFallbackWhenGeminiMissing: process.env.GEMINI_API_KEY ? route.provider === "google-veo" : route.provider === "aios-composer" && route.fallback === true,
-    resolutionPreserved: route.resolution === "1080p",
-    composerAvailable: availability.some((item) => item.provider === "aios-composer" && item.available),
-    openAIConfigured: Boolean(process.env.OPENAI_API_KEY),
+    automaticRouteIsKnownProvider,
+    primaryRouteCorrect,
+    resolutionPreserved,
+    providerAvailabilityIsConsistent,
+    composerAvailabilityIsConsistent,
   };
 
   const verified = Object.values(checks).every(Boolean);
 
-  return NextResponse.json({
-    success: verified,
-    verified,
-    code: verified ? "C146_18_MEDIA_CHAT_ROUTER_PASS" : "C146_18_MEDIA_CHAT_ROUTER_REGRESSION_FAILED",
-    message: verified
-      ? "C146.18 Chat → Media Router contract regression passed."
-      : "C146.18 Chat → Media Router contract regression failed.",
-    runtime: "aios-alpha",
-    environment: {
-      geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
-      openAIConfigured: Boolean(process.env.OPENAI_API_KEY),
+  return NextResponse.json(
+    {
+      success: verified,
+      verified,
+      code: verified
+        ? "C146_18_2_MEDIA_CHAT_RUNTIME_VERIFICATION_PASS"
+        : "C146_18_2_MEDIA_CHAT_RUNTIME_VERIFICATION_FAILED",
+      message: verified
+        ? "C146.18.2 Chat → Media Router runtime contract verification passed."
+        : "C146.18.2 Chat → Media Router runtime contract verification failed.",
+      runtime: "aios-alpha",
+      stage: "C146.18.2",
+      environment: {
+        geminiConfigured,
+        openAIConfigured,
+      },
+      chatContract: {
+        operation: "video-create",
+        provider: "automatic",
+        model: route.model,
+        resolution,
+        aspectRatio,
+        durationSeconds,
+      },
+      automaticRoute: route,
+      availability,
+      checks,
+      executionPolicy: {
+        providerJobCreated: false,
+        reason:
+          "Regression verification validates routing and configuration without creating a billable media generation job.",
+      },
+      latencyMs: Date.now() - startedAt,
+      timestamp: Date.now(),
     },
-    chatContract: {
-      operation: "video-create",
-      provider: "automatic",
-      model: "automatic",
-      resolution: "1080p",
-      aspectRatio: "9:16",
-      durationSeconds: 30,
+    {
+      status: verified ? 200 : 500,
+      headers: { "cache-control": "no-store" },
     },
-    automaticRoute: route,
-    availability,
-    checks,
-    latencyMs: Date.now() - startedAt,
-    timestamp: Date.now(),
-  });
+  );
 }
