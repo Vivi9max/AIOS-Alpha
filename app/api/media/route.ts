@@ -38,11 +38,11 @@ import {
   downloadGoogleVideo,
   isGoogleVideoConfigured,
   type GoogleVideoModel,
-  type GoogleVideoResolution,
 } from "@/lib/runtime/media/google-video";
 
 import {
   createMediaGenerationJob,
+  getMediaGenerationJob,
   resolveMediaGenerationRoute,
   getMediaGenerationRoutes,
 } from "@/lib/runtime/media/generation-router";
@@ -136,6 +136,10 @@ interface MediaRequestBody {
   videoResolution?: unknown;
 
   resolution?: unknown;
+
+  provider?: unknown;
+
+  model?: unknown;
 }
 
 function jsonResponse(
@@ -643,50 +647,10 @@ function buildContext(
   };
 }
 
-function resolveGoogleVideoModel(
+function resolveMediaRouterModel(
   value: unknown,
-): GoogleVideoModel {
-  if (
-    value ===
-    "veo-3.1-fast-generate-preview"
-  ) {
-    return value;
-  }
-
-  if (
-    value ===
-    "veo-3.1-lite-generate-preview"
-  ) {
-    return value;
-  }
-
-  return (
-    process.env.GOOGLE_VIDEO_MODEL ===
-      "veo-3.1-fast-generate-preview" ||
-    process.env.GOOGLE_VIDEO_MODEL ===
-      "veo-3.1-lite-generate-preview"
-      ? process.env
-          .GOOGLE_VIDEO_MODEL
-      : "veo-3.1-generate-preview"
-  ) as GoogleVideoModel;
-}
-
-function resolveGoogleResolution(
-  value: unknown,
-): GoogleVideoResolution {
-  if (
-    value === "4k"
-  ) {
-    return "4k";
-  }
-
-  if (
-    value === "1080p"
-  ) {
-    return "1080p";
-  }
-
-  return "720p";
+): string | undefined {
+  return asString(value);
 }
 
 async function executeDirectVideoCreate(
@@ -714,7 +678,61 @@ async function executeDirectVideoCreate(
     };
   }
 
+  const mediaOptions =
+    normalizeMediaOptions({
+      language:
+        body.language,
+
+      aspectRatio:
+        body.aspectRatio,
+
+      durationSeconds:
+        body.durationSeconds,
+    });
+
+  const requestedResolution =
+    asString(
+      body.videoResolution ||
+        body.resolution,
+    ) || "720p";
+
+  const requestedProvider =
+    asString(
+      body.videoProvider ||
+        body.provider,
+    );
+
+  const requestedModel =
+    resolveMediaRouterModel(
+      body.videoModel ||
+        body.model,
+    );
+
+  const route =
+    resolveMediaGenerationRoute({
+      kind: "video",
+
+      prompt,
+
+      provider:
+        requestedProvider,
+
+      model:
+        requestedModel,
+
+      resolution:
+        requestedResolution,
+
+      aspectRatio:
+        mediaOptions.aspectRatio,
+
+      durationSeconds:
+        8,
+    });
+
   if (
+    route.provider ===
+    "google-veo" &&
     !isGoogleVideoConfigured()
   ) {
     return {
@@ -729,108 +747,108 @@ async function executeDirectVideoCreate(
           : locale === "ja"
             ? "GEMINI_API_KEY が設定されていません。"
             : "GEMINI_API_KEY is not configured.",
+
+      route,
     };
   }
 
-  const mediaOptions =
-    normalizeMediaOptions({
-      language:
-        body.language,
+  const generation =
+    await createMediaGenerationJob({
+      kind: "video",
 
-      aspectRatio:
-        body.aspectRatio,
-
-      durationSeconds:
-        body.durationSeconds,
-    });
-
-  const model =
-    resolveGoogleVideoModel(
-      body.videoModel,
-    );
-
-  const resolution =
-    resolveGoogleResolution(
-      body.videoResolution ||
-        body.resolution,
-    );
-
-  if (
-    resolution === "4k" &&
-    model ===
-      "veo-3.1-lite-generate-preview"
-  ) {
-    return {
-      success: false,
-
-      code:
-        "VEO_4K_NOT_SUPPORTED_BY_MODEL",
-
-      content:
-        locale === "zh-CN"
-          ? "当前 Veo Lite 模型不支持 4K，请选择 Veo 3.1 或 Veo 3.1 Fast。"
-          : locale === "ja"
-            ? "現在の Veo Lite モデルは 4K に対応していません。Veo 3.1 または Veo 3.1 Fast を選択してください。"
-            : "The current Veo Lite model does not support 4K. Choose Veo 3.1 or Veo 3.1 Fast.",
-    };
-  }
-
-  const job =
-    await createGoogleVideoJob({
       prompt,
 
-      model,
+      provider:
+        requestedProvider,
+
+      model:
+        requestedModel,
+
+      resolution:
+        requestedResolution,
 
       aspectRatio:
         mediaOptions.aspectRatio,
-
-      resolution,
 
       durationSeconds:
         8,
     });
 
+  if (
+    !generation.success
+  ) {
+    return {
+      success: false,
+
+      code:
+        generation.code,
+
+      content:
+        generation.error ||
+        "Media generation failed.",
+
+      route:
+        generation.route,
+
+      provider:
+        generation.route.provider,
+
+      providerModel:
+        generation.route.model,
+
+      error:
+        generation.error,
+    };
+  }
+
+  const job =
+    generation.job;
+
   return {
     success: true,
 
     code:
-      "C146_12_VEO_TTV_JOB_CREATED",
+      "C146_13_MEDIA_ROUTER_JOB_CREATED",
 
     content:
-      "AIOS created a real Google Veo text-to-video generation job.",
+      "AIOS Media Generation Router created a real asynchronous media generation job.",
 
     provider:
-      "google",
+      generation.route.provider,
 
     providerName:
-      "Google Veo",
+      generation.route.provider ===
+      "google-veo"
+        ? "Google Veo"
+        : generation.route.provider,
 
     providerModel:
-      job.model,
+      generation.route.model,
 
     providerJobId:
-      job.operationName,
+      generation.providerJobId,
 
     providerStatus:
-      job.status,
+      generation.providerStatus,
 
     providerProgress:
-      job.progress,
+      generation.providerProgress,
 
-    providerSeconds:
-      8,
+    resolution:
+      generation.route.resolution,
+
+    mediaOptions,
+
+    route:
+      generation.route,
+
+    job,
 
     requestedDurationSeconds:
       mediaOptions.durationSeconds,
 
     directProviderDurationSupported:
       8,
-
-    resolution,
-
-    mediaOptions,
-
-    job,
   };
 }
 
@@ -854,57 +872,92 @@ async function executeDirectVideoStatus(
     };
   }
 
-  const job =
-    await retrieveGoogleVideoJob(
+  const generation =
+    await getMediaGenerationJob(
       videoId,
     );
 
+  if (
+    !generation.success &&
+    !generation.job
+  ) {
+    return {
+      success: false,
+
+      code:
+        generation.code,
+
+      content:
+        generation.error ||
+        "Unable to retrieve media generation status.",
+
+      route:
+        generation.route,
+
+      provider:
+        generation.route.provider,
+
+      providerJobId:
+        generation.providerJobId,
+
+      providerStatus:
+        generation.providerStatus,
+
+      providerProgress:
+        generation.providerProgress,
+    };
+  }
+
+  const job =
+    generation.job;
+
   return {
     success:
-      job.status !==
-      "failed",
+      generation.success,
 
     code:
-      job.status ===
-        "completed"
-        ? "C146_12_VEO_TTV_COMPLETED"
-        : job.status ===
-            "failed"
-          ? "C146_12_VEO_TTV_FAILED"
-          : "C146_12_VEO_TTV_IN_PROGRESS",
+      generation.code,
 
     content:
-      job.status ===
+      generation.error ||
+      (
+        generation.providerStatus ===
         "completed"
-        ? "Google Veo video generation completed."
-        : job.status ===
-            "failed"
-          ? job.error?.message ||
-            "Google Veo video generation failed."
-          : "Google Veo video generation is still in progress.",
+          ? "Google Veo video generation completed."
+          : generation.providerStatus ===
+              "failed"
+            ? "Google Veo video generation failed."
+            : "Google Veo video generation is still in progress."
+      ),
 
     provider:
-      "google",
+      generation.route.provider,
 
     providerName:
-      "Google Veo",
+      generation.route.provider ===
+      "google-veo"
+        ? "Google Veo"
+        : generation.route.provider,
 
     providerJobId:
-      job.operationName,
+      generation.providerJobId,
 
     providerStatus:
-      job.status,
+      generation.providerStatus,
 
     providerProgress:
-      job.progress,
+      generation.providerProgress,
+
+    route:
+      generation.route,
 
     job,
 
     contentUrl:
-      job.status ===
+      generation.providerStatus ===
       "completed"
         ? `/api/media?videoId=${encodeURIComponent(
-            job.operationName,
+            videoId,
           )}&content=1&provider=google`
         : undefined,
   };
@@ -915,27 +968,6 @@ async function executeMediaRequest(
   userId: string,
   locale: string,
 ) {
-  const prompt =
-    asString(
-      body.prompt,
-    );
-
-  if (!prompt) {
-    return {
-      success: false,
-
-      code:
-        "MEDIA_PROMPT_REQUIRED",
-
-      content:
-        locale === "zh-CN"
-          ? "请输入视频需求。"
-          : locale === "ja"
-            ? "動画の要件を入力してください。"
-            : "Please provide a video request.",
-    };
-  }
-
   const operation =
     resolveOperation(
       body.operation,
@@ -958,6 +990,27 @@ async function executeMediaRequest(
     return executeDirectVideoStatus(
       body,
     );
+  }
+
+  const prompt =
+    asString(
+      body.prompt,
+    );
+
+  if (!prompt) {
+    return {
+      success: false,
+
+      code:
+        "MEDIA_PROMPT_REQUIRED",
+
+      content:
+        locale === "zh-CN"
+          ? "请输入视频需求。"
+          : locale === "ja"
+            ? "動画の要件を入力してください。"
+            : "Please provide a video request.",
+    };
   }
 
   const assets =
@@ -1067,11 +1120,14 @@ async function executeMediaRequest(
           body.videoResolution,
       );
 
+    const routerRoutes =
+      getMediaGenerationRoutes();
+
     return {
       success: true,
 
       code:
-        "C146_12_MEDIA_PLAN_READY",
+        "C146_13_MEDIA_PLAN_READY",
 
       content:
         "AIOS Media Runtime prepared the video generation plan.",
@@ -1090,6 +1146,14 @@ async function executeMediaRequest(
           height:
             compositionOptions.height,
         },
+
+      generationRouter: {
+        active:
+          true,
+
+        routes:
+          routerRoutes,
+      },
 
       storyboard,
 
@@ -1555,8 +1619,8 @@ export async function GET(
       if (
         provider === "google"
       ) {
-        const job =
-          await retrieveGoogleVideoJob(
+        const generation =
+          await getMediaGenerationJob(
             videoId,
           );
 
@@ -1564,50 +1628,52 @@ export async function GET(
           jsonResponse(
             {
               success:
-                job.status !==
-                "failed",
+                generation.success,
 
               code:
-                job.status ===
-                  "completed"
-                  ? "C146_12_VEO_TTV_COMPLETED"
-                  : job.status ===
-                      "failed"
-                    ? "C146_12_VEO_TTV_FAILED"
-                    : "C146_12_VEO_TTV_IN_PROGRESS",
+                generation.code,
 
               content:
-                job.status ===
+                generation.error ||
+                (
+                  generation.providerStatus ===
                   "completed"
-                  ? "Google Veo video generation completed."
-                  : job.status ===
-                      "failed"
-                    ? job.error?.message ||
-                      "Google Veo video generation failed."
-                    : "Google Veo video generation is still in progress.",
+                    ? "Google Veo video generation completed."
+                    : generation.providerStatus ===
+                        "failed"
+                      ? "Google Veo video generation failed."
+                      : "Google Veo video generation is still in progress."
+                ),
 
               provider:
-                "google",
+                generation.route.provider,
 
               providerName:
-                "Google Veo",
+                generation.route.provider ===
+                "google-veo"
+                  ? "Google Veo"
+                  : generation.route.provider,
 
               providerJobId:
-                job.operationName,
+                generation.providerJobId,
 
               providerStatus:
-                job.status,
+                generation.providerStatus,
 
               providerProgress:
-                job.progress,
+                generation.providerProgress,
 
-              job,
+              route:
+                generation.route,
+
+              job:
+                generation.job,
 
               contentUrl:
-                job.status ===
+                generation.providerStatus ===
                 "completed"
                   ? `/api/media?videoId=${encodeURIComponent(
-                      job.operationName,
+                      videoId,
                     )}&content=1&provider=google`
                   : undefined,
 
@@ -1619,7 +1685,9 @@ export async function GET(
                   true,
               },
             },
-            200,
+            generation.success
+              ? 200
+              : 500,
           ),
           identity.userId,
         );
@@ -1669,6 +1737,9 @@ export async function GET(
 
   const googleConfigured =
     isGoogleVideoConfigured();
+
+  const generationRoutes =
+    getMediaGenerationRoutes();
 
   const response =
     jsonResponse(
@@ -1723,6 +1794,20 @@ export async function GET(
 
           directProvider:
             "google-veo",
+
+          generationRouter:
+            true,
+        },
+
+        generationRouter: {
+          enabled:
+            true,
+
+          defaultVideoProvider:
+            "google-veo",
+
+          routes:
+            generationRoutes,
         },
 
         directVideo: {
@@ -1860,10 +1945,17 @@ export async function GET(
 
         directProviderPipeline: [
           "chat-prompt",
+          "media-generation-router",
           "google-veo-create",
           "async-video-operation",
           "status-polling",
           "video-content-proxy",
+        ],
+
+        supportedRoutes: [
+          "google-veo",
+          "aios-composer",
+          "openai",
         ],
 
         identity: {
@@ -1954,6 +2046,26 @@ export async function POST(
           ),
       );
 
+    const clientErrorCodes =
+      new Set([
+        "MEDIA_PROMPT_REQUIRED",
+        "MEDIA_VIDEO_ID_REQUIRED",
+        "GEMINI_API_KEY_MISSING",
+        "VEO_4K_NOT_SUPPORTED_BY_MODEL",
+        "MEDIA_RESOLUTION_INVALID",
+        "MEDIA_PROVIDER_NOT_CONFIGURED",
+        "MEDIA_PROVIDER_ROUTE_NOT_ASYNC",
+      ]);
+
+    const status =
+      result.success
+        ? 200
+        : clientErrorCodes.has(
+            result.code,
+          )
+          ? 400
+          : 500;
+
     return applyIdentityCookie(
       jsonResponse(
         {
@@ -1989,18 +2101,7 @@ export async function POST(
           timestamp:
             Date.now(),
         },
-        result.success
-          ? 200
-          : result.code ===
-              "MEDIA_PROMPT_REQUIRED" ||
-            result.code ===
-              "MEDIA_VIDEO_ID_REQUIRED" ||
-            result.code ===
-              "GEMINI_API_KEY_MISSING" ||
-            result.code ===
-              "VEO_4K_NOT_SUPPORTED_BY_MODEL"
-            ? 400
-            : 500,
+        status,
       ),
       identity.userId,
     );
