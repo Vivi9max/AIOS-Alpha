@@ -49,35 +49,49 @@ interface Props {
 
 const LANGUAGE_OPTIONS = [
   {
-    value: "zh-CN" as const,
-    label: "\u4e2d\u6587",
+    value:
+      "zh-CN" as const,
+    label:
+      "\u4e2d\u6587",
   },
   {
-    value: "en-US" as const,
-    label: "English",
+    value:
+      "en-US" as const,
+    label:
+      "English",
   },
   {
-    value: "ja-JP" as const,
-    label: "\u65e5\u672c\u8a9e",
+    value:
+      "ja-JP" as const,
+    label:
+      "\u65e5\u672c\u8a9e",
   },
 ];
 
 const DURATION_OPTIONS = [
   {
-    value: 30 as const,
-    label: "30\u79d2",
+    value:
+      30 as const,
+    label:
+      "30\u79d2",
   },
   {
-    value: 60 as const,
-    label: "1\u5206\u949f",
+    value:
+      60 as const,
+    label:
+      "1\u5206\u949f",
   },
   {
-    value: 90 as const,
-    label: "1\u5206 30\u79d2",
+    value:
+      90 as const,
+    label:
+      "1\u5206 30\u79d2",
   },
   {
-    value: 120 as const,
-    label: "2\u5206\u949f",
+    value:
+      120 as const,
+    label:
+      "2\u5206\u949f",
   },
 ];
 
@@ -272,6 +286,16 @@ export default function ChatInput({
       )}px`;
   }, [value]);
 
+  useEffect(() => {
+    setMediaLanguage(
+      locale === "ja"
+        ? "ja-JP"
+        : locale === "en"
+          ? "en-US"
+          : "zh-CN",
+    );
+  }, [locale]);
+
   function resetTextareaHeight() {
     const textarea =
       textareaRef.current;
@@ -305,7 +329,7 @@ export default function ChatInput({
     );
   }
 
-  async function pollVeoVideo(
+  async function pollMediaVideo(
     videoId: string,
   ) {
     const maxAttempts =
@@ -314,7 +338,7 @@ export default function ChatInput({
     for (
       let attempt = 0;
       attempt <
-      maxAttempts;
+        maxAttempts;
       attempt += 1
     ) {
       const response =
@@ -323,7 +347,8 @@ export default function ChatInput({
             videoId,
           )}&provider=google`,
           {
-            method: "GET",
+            method:
+              "GET",
 
             credentials:
               "same-origin",
@@ -342,14 +367,15 @@ export default function ChatInput({
       ) {
         throw new Error(
           data.content ||
+            data.error ||
             "Unable to retrieve video status.",
         );
       }
 
       const progress =
         Number(
-          data.providerProgress ||
-            data.job?.progress ||
+          data.providerProgress ??
+            data.job?.progress ??
             0,
         );
 
@@ -390,7 +416,8 @@ export default function ChatInput({
       ) {
         throw new Error(
           data.content ||
-            data.job?.error?.message ||
+            data.job?.error
+              ?.message ||
             "Veo video generation failed.",
         );
       }
@@ -435,7 +462,8 @@ export default function ChatInput({
         await fetch(
           "/api/media",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -464,13 +492,13 @@ export default function ChatInput({
                 aspectRatio:
                   mediaAspectRatio,
 
-                videoProvider:
-                  "google",
+                provider:
+                  "google-veo",
 
-                videoModel:
+                model:
                   "veo-3.1-generate-preview",
 
-                videoResolution:
+                resolution:
                   mediaResolution,
               }),
           },
@@ -498,7 +526,7 @@ export default function ChatInput({
         "string"
       ) {
         throw new Error(
-          "Veo did not return a video operation ID.",
+          "Media Generation Router did not return a provider operation ID.",
         );
       }
 
@@ -511,7 +539,7 @@ export default function ChatInput({
         ),
       );
 
-      await pollVeoVideo(
+      await pollMediaVideo(
         videoId,
       );
 
@@ -559,7 +587,8 @@ export default function ChatInput({
         await fetch(
           "/api/media",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -591,6 +620,9 @@ export default function ChatInput({
                 resolution:
                   mediaResolution,
 
+                provider:
+                  "aios-composer",
+
                 includeSubtitles:
                   true,
               }),
@@ -619,20 +651,6 @@ export default function ChatInput({
           `AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\uff08${mediaResolution.toUpperCase()}\uff09\u3002`,
         ),
       );
-
-      if (
-        typeof data.outputPath ===
-        "string"
-      ) {
-        setMediaStatus(
-          localized(
-            locale,
-            `AIOS 成片完成（${mediaResolution.toUpperCase()}）。`,
-            `AIOS video composition completed (${mediaResolution.toUpperCase()}).`,
-            `AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\uff08${mediaResolution.toUpperCase()}\uff09\u3002`,
-          ),
-        );
-      }
 
       setValue("");
 
@@ -683,15 +701,19 @@ export default function ChatInput({
       {mediaMode && (
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
+            display:
+              "flex",
+            flexWrap:
+              "wrap",
             gap: 8,
-            marginBottom: 8,
+            marginBottom:
+              8,
             padding:
               "9px 10px",
             border:
               "1px solid #e5e7eb",
-            borderRadius: 12,
+            borderRadius:
+              12,
             background:
               "#f8fafc",
           }}
@@ -722,16 +744,20 @@ export default function ChatInput({
             }
             aria-label="Video engine"
             style={{
-              height: 34,
+              height:
+                34,
               border:
                 "1px solid #d1d5db",
-              borderRadius: 8,
+              borderRadius:
+                8,
               padding:
                 "0 8px",
               background:
                 "#ffffff",
-              fontSize: 12,
-              fontWeight: 600,
+              fontSize:
+                12,
+              fontWeight:
+                600,
             }}
           >
             <option value="composer">
@@ -766,15 +792,18 @@ export default function ChatInput({
             }
             aria-label="Video language"
             style={{
-              height: 34,
+              height:
+                34,
               border:
                 "1px solid #d1d5db",
-              borderRadius: 8,
+              borderRadius:
+                8,
               padding:
                 "0 8px",
               background:
                 "#ffffff",
-              fontSize: 12,
+              fontSize:
+                12,
             }}
           >
             {LANGUAGE_OPTIONS.map(
@@ -817,15 +846,18 @@ export default function ChatInput({
             }
             aria-label="Video duration"
             style={{
-              height: 34,
+              height:
+                34,
               border:
                 "1px solid #d1d5db",
-              borderRadius: 8,
+              borderRadius:
+                8,
               padding:
                 "0 8px",
               background:
                 "#ffffff",
-              fontSize: 12,
+              fontSize:
+                12,
             }}
           >
             {DURATION_OPTIONS.map(
@@ -866,15 +898,18 @@ export default function ChatInput({
             }
             aria-label="Video aspect ratio"
             style={{
-              height: 34,
+              height:
+                34,
               border:
                 "1px solid #d1d5db",
-              borderRadius: 8,
+              borderRadius:
+                8,
               padding:
                 "0 8px",
               background:
                 "#ffffff",
-              fontSize: 12,
+              fontSize:
+                12,
             }}
           >
             {ASPECT_OPTIONS.map(
@@ -909,16 +944,20 @@ export default function ChatInput({
             }
             aria-label="Video resolution"
             style={{
-              height: 34,
+              height:
+                34,
               border:
                 "1px solid #d1d5db",
-              borderRadius: 8,
+              borderRadius:
+                8,
               padding:
                 "0 8px",
               background:
                 "#ffffff",
-              fontSize: 12,
-              fontWeight: 600,
+              fontSize:
+                12,
+              fontWeight:
+                600,
             }}
           >
             {RESOLUTION_OPTIONS.map(
@@ -933,7 +972,9 @@ export default function ChatInput({
                     item.value
                   }
                 >
-                  {item.label}
+                  {
+                    item.label
+                  }
                 </option>
               ),
             )}
@@ -946,16 +987,20 @@ export default function ChatInput({
           "veo" && (
           <div
             style={{
-              marginBottom: 8,
+              marginBottom:
+                8,
               padding:
                 "7px 10px",
-              borderRadius: 9,
+              borderRadius:
+                9,
               background:
                 "#f8fafc",
               color:
                 "#64748b",
-              fontSize: 11,
-              lineHeight: 1.45,
+              fontSize:
+                11,
+              lineHeight:
+                1.45,
             }}
           >
             {localized(
@@ -970,16 +1015,20 @@ export default function ChatInput({
       {mediaStatus && (
         <div
           style={{
-            marginBottom: 8,
+            marginBottom:
+              8,
             padding:
               "8px 10px",
-            borderRadius: 9,
+            borderRadius:
+              9,
             background:
               "#f8fafc",
             color:
               "#475569",
-            fontSize: 12,
-            lineHeight: 1.45,
+            fontSize:
+              12,
+            lineHeight:
+              1.45,
             wordBreak:
               "break-word",
           }}
@@ -991,9 +1040,12 @@ export default function ChatInput({
       {mediaVideoUrl && (
         <div
           style={{
-            marginBottom: 8,
-            borderRadius: 12,
-            overflow: "hidden",
+            marginBottom:
+              8,
+            borderRadius:
+              12,
+            overflow:
+              "hidden",
             background:
               "#000000",
           }}
@@ -1030,7 +1082,8 @@ export default function ChatInput({
                 "8px 10px 10px",
               color:
                 "#ffffff",
-              fontSize: 12,
+              fontSize:
+                12,
               textDecoration:
                 "none",
             }}
@@ -1047,11 +1100,13 @@ export default function ChatInput({
 
       <div
         style={{
-          display: "flex",
+          display:
+            "flex",
           alignItems:
             "flex-end",
           gap: 8,
-          width: "100%",
+          width:
+            "100%",
         }}
       >
         <button
@@ -1079,14 +1134,18 @@ export default function ChatInput({
           aria-label="Video mode"
           title="One-click video"
           style={{
-            width: 44,
-            height: 48,
-            flexShrink: 0,
+            width:
+              44,
+            height:
+              48,
+            flexShrink:
+              0,
             border:
               mediaMode
                 ? "1px solid #111827"
                 : "1px solid #d1d5db",
-            borderRadius: 14,
+            borderRadius:
+              14,
             background:
               mediaMode
                 ? "#111827"
@@ -1095,7 +1154,8 @@ export default function ChatInput({
               mediaMode
                 ? "#ffffff"
                 : "#475569",
-            fontSize: 18,
+            fontSize:
+              18,
             cursor:
               loading ||
               mediaLoading
@@ -1111,7 +1171,9 @@ export default function ChatInput({
             textareaRef
           }
           rows={1}
-          value={value}
+          value={
+            value
+          }
           disabled={
             loading ||
             mediaLoading
@@ -1168,17 +1230,22 @@ export default function ChatInput({
             }
           }}
           style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 48,
-            maxHeight: 150,
+            flex:
+              1,
+            minWidth:
+              0,
+            minHeight:
+              48,
+            maxHeight:
+              150,
             boxSizing:
               "border-box",
             padding:
               "13px 15px",
             border:
               "1px solid #d1d5db",
-            borderRadius: 14,
+            borderRadius:
+              14,
             background:
               loading ||
               mediaLoading
@@ -1186,10 +1253,14 @@ export default function ChatInput({
                 : "#ffffff",
             color:
               "#111827",
-            fontSize: 16,
-            lineHeight: 1.45,
-            resize: "none",
-            outline: "none",
+            fontSize:
+              16,
+            lineHeight:
+              1.45,
+            resize:
+              "none",
+            outline:
+              "none",
             overflowY:
               "auto",
             WebkitAppearance:
@@ -1222,25 +1293,34 @@ export default function ChatInput({
               : copy.send
           }
           style={{
-            width: 48,
-            height: 48,
-            flexShrink: 0,
-            display: "flex",
+            width:
+              48,
+            height:
+              48,
+            flexShrink:
+              0,
+            display:
+              "flex",
             alignItems:
               "center",
             justifyContent:
               "center",
-            padding: 0,
-            border: 0,
-            borderRadius: 14,
+            padding:
+              0,
+            border:
+              0,
+            borderRadius:
+              14,
             background:
               disabled
                 ? "#d1d5db"
                 : "#111827",
             color:
               "#ffffff",
-            fontSize: 19,
-            fontWeight: 800,
+            fontSize:
+              19,
+            fontWeight:
+              800,
             cursor:
               disabled
                 ? "not-allowed"
