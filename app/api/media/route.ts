@@ -37,13 +37,13 @@ import {
   retrieveGoogleVideoJob,
   downloadGoogleVideo,
   isGoogleVideoConfigured,
-  type GoogleVideoModel,
 } from "@/lib/runtime/media/google-video";
 
 import {
   createMediaGenerationJob,
   getMediaGenerationJob,
   resolveMediaGenerationRoute,
+  resolveAvailableMediaGenerationRoute,
   getMediaGenerationRoutes,
 } from "@/lib/runtime/media/generation-router";
 
@@ -653,8 +653,72 @@ function resolveMediaRouterModel(
   return asString(value);
 }
 
+/**
+ * C146.16
+ *
+ * Execute AIOS Composer as a REAL fallback provider.
+ *
+ * Important:
+ * - Automatic routing may fall back to Composer.
+ * - Explicit Google requests remain Google-only.
+ * - Composer execution reuses the existing AIOS
+ *   storyboard -> media generation -> FFmpeg pipeline.
+ */
+async function executeComposerFallback(
+  body: MediaRequestBody,
+  userId: string,
+  locale: string,
+  route: ReturnType<
+    typeof resolveAvailableMediaGenerationRoute
+  >,
+) {
+  const result =
+    await executeMediaRequest(
+      {
+        ...body,
+
+        operation:
+          "render",
+      },
+      userId,
+      locale,
+    );
+
+  return {
+    ...result,
+
+    provider:
+      "aios-composer",
+
+    providerName:
+      "AIOS Composer",
+
+    providerModel:
+      "aios-composer",
+
+    fallback:
+      true,
+
+    fallbackFrom:
+      "google-veo",
+
+    route,
+
+    code:
+      result.success
+        ? "C146_16_COMPOSER_FALLBACK_RENDERED"
+        : result.code,
+
+    content:
+      result.success
+        ? "Google Veo was unavailable, so AIOS automatically executed the existing AIOS Composer pipeline."
+        : result.content,
+  };
+}
+
 async function executeDirectVideoCreate(
   body: MediaRequestBody,
+  userId: string,
   locale: string,
 ) {
   const prompt =
@@ -708,8 +772,22 @@ async function executeDirectVideoCreate(
         body.model,
     );
 
+  /*
+   * Critical C146.16 change:
+   *
+   * Automatic routing uses
+   * resolveAvailableMediaGenerationRoute().
+   *
+   * Therefore:
+   *
+   * GEMINI configured
+   *   -> Google Veo
+   *
+   * GEMINI missing
+   *   -> AIOS Composer
+   */
   const route =
-    resolveMediaGenerationRoute({
+    resolveAvailableMediaGenerationRoute({
       kind: "video",
 
       prompt,
@@ -730,9 +808,52 @@ async function executeDirectVideoCreate(
         8,
     });
 
+  /*
+   * If Composer was selected automatically
+   * or explicitly, execute the real Composer
+   * pipeline instead of returning
+   * MEDIA_PROVIDER_ROUTE_NOT_ASYNC.
+   */
   if (
     route.provider ===
-    "google-veo" &&
+    "aios-composer"
+  ) {
+    if (!route.configured) {
+      return {
+        success: false,
+
+        code:
+          "MEDIA_PROVIDER_NOT_CONFIGURED",
+
+        content:
+          locale === "zh-CN"
+            ? "AIOS Composer 当前没有可用的 OpenAI 媒体服务配置。"
+            : locale === "ja"
+              ? "AIOS Composer に利用可能な OpenAI メディア設定がありません。"
+              : "AIOS Composer does not have a configured OpenAI media provider.",
+
+        provider:
+          route.provider,
+
+        route,
+      };
+    }
+
+    return executeComposerFallback(
+      body,
+      userId,
+      locale,
+      route,
+    );
+  }
+
+  /*
+   * Explicit Google route:
+   * never silently fallback.
+   */
+  if (
+    route.provider ===
+      "google-veo" &&
     !isGoogleVideoConfigured()
   ) {
     return {
@@ -743,12 +864,18 @@ async function executeDirectVideoCreate(
 
       content:
         locale === "zh-CN"
-          ? "尚未配置 GEMINI_API_KEY。"
+          ? "已明确指定 Google Veo，但尚未配置 GEMINI_API_KEY。"
           : locale === "ja"
-            ? "GEMINI_API_KEY が設定されていません。"
-            : "GEMINI_API_KEY is not configured.",
+            ? "Google Veo が明示的に指定されていますが、GEMINI_API_KEY が設定されていません。"
+            : "Google Veo was explicitly requested, but GEMINI_API_KEY is not configured.",
+
+      provider:
+        route.provider,
 
       route,
+
+      fallback:
+        false,
     };
   }
 
@@ -798,6 +925,9 @@ async function executeDirectVideoCreate(
 
       error:
         generation.error,
+
+      fallback:
+        false,
     };
   }
 
@@ -808,19 +938,16 @@ async function executeDirectVideoCreate(
     success: true,
 
     code:
-      "C146_13_MEDIA_ROUTER_JOB_CREATED",
+      "C146_16_MEDIA_ROUTER_JOB_CREATED",
 
     content:
-      "AIOS Media Generation Router created a real asynchronous media generation job.",
+      "AIOS Media Generation Router created a real asynchronous Google Veo video generation job.",
 
     provider:
       generation.route.provider,
 
     providerName:
-      generation.route.provider ===
-      "google-veo"
-        ? "Google Veo"
-        : generation.route.provider,
+      "Google Veo",
 
     providerModel:
       generation.route.model,
@@ -841,6 +968,9 @@ async function executeDirectVideoCreate(
 
     route:
       generation.route,
+
+    fallback:
+      false,
 
     job,
 
@@ -908,9 +1038,6 @@ async function executeDirectVideoStatus(
     };
   }
 
-  const job =
-    generation.job;
-
   return {
     success:
       generation.success,
@@ -951,7 +1078,8 @@ async function executeDirectVideoStatus(
     route:
       generation.route,
 
-    job,
+    job:
+      generation.job,
 
     contentUrl:
       generation.providerStatus ===
@@ -979,6 +1107,7 @@ async function executeMediaRequest(
   ) {
     return executeDirectVideoCreate(
       body,
+      userId,
       locale,
     );
   }
@@ -1120,14 +1249,11 @@ async function executeMediaRequest(
           body.videoResolution,
       );
 
-    const routerRoutes =
-      getMediaGenerationRoutes();
-
     return {
       success: true,
 
       code:
-        "C146_13_MEDIA_PLAN_READY",
+        "C146_16_MEDIA_PLAN_READY",
 
       content:
         "AIOS Media Runtime prepared the video generation plan.",
@@ -1138,21 +1264,19 @@ async function executeMediaRequest(
 
       resolution,
 
-      resolutionDimensions:
-        {
-          width:
-            compositionOptions.width,
+      resolutionDimensions: {
+        width:
+          compositionOptions.width,
 
-          height:
-            compositionOptions.height,
-        },
+        height:
+          compositionOptions.height,
+      },
 
       generationRouter: {
-        active:
-          true,
+        active: true,
 
         routes:
-          routerRoutes,
+          getMediaGenerationRoutes(),
       },
 
       storyboard,
@@ -1244,86 +1368,85 @@ async function executeMediaRequest(
   const finalPlan =
     initialProject.plan;
 
-  finalPlan.timeline =
-    {
-      ...finalPlan.timeline,
+  finalPlan.timeline = {
+    ...finalPlan.timeline,
 
-      visualTracks:
-        finalPlan.timeline.visualTracks.map(
-          (
-            track,
-          ) => {
-            const sceneId =
-              track.metadata
-                ?.sceneId;
+    visualTracks:
+      finalPlan.timeline.visualTracks.map(
+        (
+          track,
+        ) => {
+          const sceneId =
+            track.metadata
+              ?.sceneId;
 
-            const generated =
-              generatedVideos.find(
-                (
-                  asset,
-                ) =>
-                  asset.metadata
-                    ?.sceneId ===
-                  sceneId,
-              );
+          const generated =
+            generatedVideos.find(
+              (
+                asset,
+              ) =>
+                asset.metadata
+                  ?.sceneId ===
+                sceneId,
+            );
 
-            if (!generated) {
-              return track;
-            }
+          if (!generated) {
+            return track;
+          }
 
-            return {
-              ...track,
+          return {
+            ...track,
 
-              asset:
-                generated,
+            asset:
+              generated,
 
-              metadata: {
-                ...track.metadata,
+            metadata: {
+              ...track.metadata,
 
-                pending:
-                  false,
+              pending:
+                false,
 
-                provider:
-                  "openai+ffmpeg",
-              },
-            };
-          },
-        ),
+              provider:
+                "openai+ffmpeg",
+            },
+          };
+        },
+      ),
 
-      voiceTracks:
-        finalPlan.timeline.voiceTracks.map(
-          (
-            track,
-          ) => {
-            const sceneId =
-              track.asset.metadata
-                ?.sceneId;
+    voiceTracks:
+      finalPlan.timeline.voiceTracks.map(
+        (
+          track,
+        ) => {
+          const sceneId =
+            track.asset.metadata
+              ?.sceneId;
 
-            const generated =
-              generatedVoices.find(
-                (
-                  asset,
-                ) =>
-                  asset.metadata
-                    ?.sceneId ===
-                  sceneId,
-              );
+          const generated =
+            generatedVoices.find(
+              (
+                asset,
+              ) =>
+                asset.metadata
+                  ?.sceneId ===
+                sceneId,
+            );
 
-            if (!generated) {
-              return track;
-            }
+          if (!generated) {
+            return track;
+          }
 
-            return {
-              ...track,
+          return {
+            ...track,
 
-              asset:
-                generated,
-            };
-          },
-        ),
+            asset:
+              generated,
+          };
+        },
+      ),
 
-      musicTracks: [],
-    };
+    musicTracks: [],
+  };
 
   finalPlan.assets = [
     ...generation.assets,
@@ -1356,8 +1479,8 @@ async function executeMediaRequest(
       code:
         finalPlan.status ===
         "ready_for_render"
-          ? "C146_12_REAL_MEDIA_GENERATION_READY"
-          : "C146_12_REAL_MEDIA_GENERATION_PARTIAL",
+          ? "C146_16_REAL_MEDIA_GENERATION_READY"
+          : "C146_16_REAL_MEDIA_GENERATION_PARTIAL",
 
       content:
         finalPlan.status ===
@@ -1398,7 +1521,7 @@ async function executeMediaRequest(
       success: false,
 
       code:
-        "C146_12_RENDER_BLOCKED_INCOMPLETE_GENERATION",
+        "C146_16_RENDER_BLOCKED_INCOMPLETE_GENERATION",
 
       content:
         "AIOS did not render the video because the generated media assets are incomplete.",
@@ -1797,6 +1920,9 @@ export async function GET(
 
           generationRouter:
             true,
+
+          automaticFallback:
+            true,
         },
 
         generationRouter: {
@@ -1805,6 +1931,9 @@ export async function GET(
 
           defaultVideoProvider:
             "google-veo",
+
+          automaticFallbackProvider:
+            "aios-composer",
 
           routes:
             generationRoutes,
@@ -1950,6 +2079,17 @@ export async function GET(
           "async-video-operation",
           "status-polling",
           "video-content-proxy",
+        ],
+
+        fallbackPipeline: [
+          "chat-prompt",
+          "media-generation-router",
+          "google-veo-unavailable",
+          "aios-composer-fallback",
+          "storyboard",
+          "openai-media",
+          "timeline",
+          "ffmpeg-final-render",
         ],
 
         supportedRoutes: [
