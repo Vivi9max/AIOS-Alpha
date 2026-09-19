@@ -33,9 +33,14 @@ type MediaDuration =
   | 90
   | 120;
 
+type MediaResolution =
+  | "720p"
+  | "1080p"
+  | "4k";
+
 type MediaEngine =
   | "composer"
-  | "sora";
+  | "veo";
 
 interface Props {
   loading: boolean;
@@ -76,6 +81,27 @@ const DURATION_OPTIONS = [
   },
 ];
 
+const RESOLUTION_OPTIONS = [
+  {
+    value:
+      "720p" as const,
+    label:
+      "720p",
+  },
+  {
+    value:
+      "1080p" as const,
+    label:
+      "1080p",
+  },
+  {
+    value:
+      "4k" as const,
+    label:
+      "4K",
+  },
+];
+
 const ASPECT_OPTIONS = [
   "9:16",
   "16:9",
@@ -91,11 +117,15 @@ function localized(
   en: string,
   ja: string,
 ) {
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     return ja;
   }
 
-  if (locale === "en") {
+  if (
+    locale === "en"
+  ) {
     return en;
   }
 
@@ -162,6 +192,14 @@ export default function ChatInput({
   ] =
     useState<MediaAspectRatio>(
       "9:16",
+    );
+
+  const [
+    mediaResolution,
+    setMediaResolution,
+  ] =
+    useState<MediaResolution>(
+      "1080p",
     );
 
   const [
@@ -267,11 +305,11 @@ export default function ChatInput({
     );
   }
 
-  async function pollSoraVideo(
+  async function pollVeoVideo(
     videoId: string,
   ) {
     const maxAttempts =
-      150;
+      120;
 
     for (
       let attempt = 0;
@@ -283,12 +321,15 @@ export default function ChatInput({
         await fetch(
           `/api/media?videoId=${encodeURIComponent(
             videoId,
-          )}`,
+          )}&provider=google`,
           {
             method: "GET",
+
             credentials:
               "same-origin",
-            cache: "no-store",
+
+            cache:
+              "no-store",
           },
         );
 
@@ -315,9 +356,9 @@ export default function ChatInput({
       setMediaStatus(
         localized(
           locale,
-          `AI 视频生成中… ${progress}%`,
-          `AI video generating… ${progress}%`,
-          `AI\u52d5\u753b\u751f\u6210\u4e2d\u2026 ${progress}%`,
+          `Veo 视频生成中… ${progress}%`,
+          `Veo video generating… ${progress}%`,
+          `Veo\u52d5\u753b\u751f\u6210\u4e2d\u2026 ${progress}%`,
         ),
       );
 
@@ -334,9 +375,9 @@ export default function ChatInput({
         setMediaStatus(
           localized(
             locale,
-            "Sora 视频生成完成。",
-            "Sora video generation completed.",
-            "Sora\u52d5\u753b\u751f\u6210\u5b8c\u4e86\u3002",
+            "Veo 视频生成完成。",
+            "Veo video generation completed.",
+            "Veo\u52d5\u753b\u751f\u6210\u5b8c\u4e86\u3002",
           ),
         );
 
@@ -350,7 +391,7 @@ export default function ChatInput({
         throw new Error(
           data.content ||
             data.job?.error?.message ||
-            "Sora video generation failed.",
+            "Veo video generation failed.",
         );
       }
 
@@ -358,7 +399,7 @@ export default function ChatInput({
         (resolve) =>
           window.setTimeout(
             resolve,
-            3000,
+            5000,
           ),
       );
     }
@@ -373,7 +414,7 @@ export default function ChatInput({
     );
   }
 
-  async function generateSoraVideo() {
+  async function generateVeoVideo() {
     const prompt =
       value.trim();
 
@@ -423,11 +464,14 @@ export default function ChatInput({
                 aspectRatio:
                   mediaAspectRatio,
 
-                videoModel:
-                  "sora-2",
+                videoProvider:
+                  "google",
 
-                videoSeconds:
-                  "12",
+                videoModel:
+                  "veo-3.1-generate-preview",
+
+                videoResolution:
+                  mediaResolution,
               }),
           },
         );
@@ -442,7 +486,7 @@ export default function ChatInput({
         throw new Error(
           data.content ||
             data.error ||
-            "Sora video generation failed.",
+            "Veo video generation failed.",
         );
       }
 
@@ -454,20 +498,20 @@ export default function ChatInput({
         "string"
       ) {
         throw new Error(
-          "Sora did not return a video job ID.",
+          "Veo did not return a video operation ID.",
         );
       }
 
       setMediaStatus(
         localized(
           locale,
-          "已提交真实 Text-to-Video 任务，正在生成…",
-          "Real Text-to-Video job submitted. Generating…",
-          "\u5b9f\u969b\u306eText-to-Video\u30bf\u30b9\u30af\u3092\u9001\u4fe1\u3057\u307e\u3057\u305f\u3002\u751f\u6210\u4e2d\u2026",
+          "已提交真实 Veo Text-to-Video 任务，正在生成…",
+          "Real Veo Text-to-Video job submitted. Generating…",
+          "\u5b9f\u969b\u306eVeo Text-to-Video\u30bf\u30b9\u30af\u3092\u9001\u4fe1\u3057\u307e\u3057\u305f\u3002\u751f\u6210\u4e2d\u2026",
         ),
       );
 
-      await pollSoraVideo(
+      await pollVeoVideo(
         videoId,
       );
 
@@ -544,6 +588,9 @@ export default function ChatInput({
                 aspectRatio:
                   mediaAspectRatio,
 
+                resolution:
+                  mediaResolution,
+
                 includeSubtitles:
                   true,
               }),
@@ -567,9 +614,9 @@ export default function ChatInput({
       setMediaStatus(
         localized(
           locale,
-          "AIOS 成片完成。",
-          "AIOS video composition completed.",
-          "AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002",
+          `AIOS 成片完成（${mediaResolution.toUpperCase()}）。`,
+          `AIOS video composition completed (${mediaResolution.toUpperCase()}).`,
+          `AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\uff08${mediaResolution.toUpperCase()}\uff09\u3002`,
         ),
       );
 
@@ -580,9 +627,9 @@ export default function ChatInput({
         setMediaStatus(
           localized(
             locale,
-            "AIOS 成片完成。",
-            "AIOS video composition completed.",
-            "AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002",
+            `AIOS 成片完成（${mediaResolution.toUpperCase()}）。`,
+            `AIOS video composition completed (${mediaResolution.toUpperCase()}).`,
+            `AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\uff08${mediaResolution.toUpperCase()}\uff09\u3002`,
           ),
         );
       }
@@ -613,9 +660,9 @@ export default function ChatInput({
   function generateVideo() {
     if (
       mediaEngine ===
-      "sora"
+      "veo"
     ) {
-      void generateSoraVideo();
+      void generateVeoVideo();
       return;
     }
 
@@ -696,8 +743,8 @@ export default function ChatInput({
               )}
             </option>
 
-            <option value="sora">
-              Sora TTV
+            <option value="veo">
+              Veo TTV
             </option>
           </select>
 
@@ -843,12 +890,60 @@ export default function ChatInput({
               ),
             )}
           </select>
+
+          <select
+            value={
+              mediaResolution
+            }
+            onChange={(
+              event,
+            ) =>
+              setMediaResolution(
+                event.target
+                  .value as MediaResolution,
+              )
+            }
+            disabled={
+              loading ||
+              mediaLoading
+            }
+            aria-label="Video resolution"
+            style={{
+              height: 34,
+              border:
+                "1px solid #d1d5db",
+              borderRadius: 8,
+              padding:
+                "0 8px",
+              background:
+                "#ffffff",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {RESOLUTION_OPTIONS.map(
+              (
+                item,
+              ) => (
+                <option
+                  key={
+                    item.value
+                  }
+                  value={
+                    item.value
+                  }
+                >
+                  {item.label}
+                </option>
+              ),
+            )}
+          </select>
         </div>
       )}
 
       {mediaMode &&
         mediaEngine ===
-          "sora" && (
+          "veo" && (
           <div
             style={{
               marginBottom: 8,
@@ -865,9 +960,9 @@ export default function ChatInput({
           >
             {localized(
               locale,
-              "Sora 当前直接生成单段 12 秒 TTV；30/60/90/120 秒由 AIOS 长视频合成链路负责。",
-              "Sora currently generates a direct 12-second TTV clip; 30/60/90/120-second videos use the AIOS long-form composition pipeline.",
-              "Sora\u306f\u73fe\u5728\u76f4\u63a512\u79d2\u306eTTV\u30af\u30ea\u30c3\u30d7\u3092\u751f\u6210\u3057\u300130/60/90/120\u79d2\u306fAIOS\u9577\u5c3a\u5408\u6210\u30d1\u30a4\u30d7\u30e9\u30a4\u30f3\u3092\u4f7f\u7528\u3057\u307e\u3059\u3002",
+              "Veo 直接 TTV 单段生成 8 秒；30/60/90/120 秒由 AIOS Composer 长视频链路负责。",
+              "Veo direct TTV generates an 8-second clip; 30/60/90/120-second videos use the AIOS Composer pipeline.",
+              "Veo\u306e\u76f4\u63a5TTV\u306f8\u79d2\u3001 30/60/90/120\u79d2\u306fAIOS Composer\u306e\u9577\u5c3a\u5408\u6210\u30d1\u30a4\u30d7\u30e9\u30a4\u30f3\u3092\u4f7f\u7528\u3057\u307e\u3059\u3002",
             )}
           </div>
         )}
