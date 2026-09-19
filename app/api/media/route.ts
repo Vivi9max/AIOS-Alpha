@@ -34,12 +34,13 @@ import {
 } from "@/lib/runtime/media/openai";
 
 import {
-  createOpenAIVideoJob,
-  retrieveOpenAIVideoJob,
-  downloadOpenAIVideo,
-  type OpenAIVideoModel,
-  type OpenAIVideoSeconds,
-} from "@/lib/runtime/media/openai-video";
+  createGoogleVideoJob,
+  retrieveGoogleVideoJob,
+  downloadGoogleVideo,
+  isGoogleVideoConfigured,
+  type GoogleVideoModel,
+  type GoogleVideoResolution,
+} from "@/lib/runtime/media/google-video";
 
 import {
   MEDIA_ASPECT_RATIO_OPTIONS,
@@ -68,6 +69,11 @@ type MediaOperation =
   | "render"
   | "video-create"
   | "video-status";
+
+type ComposerResolution =
+  | "720p"
+  | "1080p"
+  | "4k";
 
 interface MediaRequestBody {
   operation?: unknown;
@@ -119,6 +125,12 @@ interface MediaRequestBody {
   videoModel?: unknown;
 
   videoSeconds?: unknown;
+
+  videoProvider?: unknown;
+
+  videoResolution?: unknown;
+
+  resolution?: unknown;
 }
 
 function jsonResponse(
@@ -286,12 +298,181 @@ function normalizeAssets(
     );
 }
 
+function resolveComposerResolution(
+  value: unknown,
+): ComposerResolution {
+  if (
+    value === "4k" ||
+    value === "4K"
+  ) {
+    return "4k";
+  }
+
+  if (
+    value === "1080p"
+  ) {
+    return "1080p";
+  }
+
+  return "720p";
+}
+
+function getResolutionDimensions(
+  resolution: ComposerResolution,
+  aspectRatio: string,
+) {
+  const portrait =
+    aspectRatio === "9:16" ||
+    aspectRatio === "4:5";
+
+  const square =
+    aspectRatio === "1:1";
+
+  if (resolution === "4k") {
+    if (portrait) {
+      if (aspectRatio === "4:5") {
+        return {
+          width: 2160,
+          height: 2700,
+        };
+      }
+
+      return {
+        width: 2160,
+        height: 3840,
+      };
+    }
+
+    if (square) {
+      return {
+        width: 2160,
+        height: 2160,
+      };
+    }
+
+    if (aspectRatio === "4:3") {
+      return {
+        width: 3840,
+        height: 2880,
+      };
+    }
+
+    if (aspectRatio === "3:2") {
+      return {
+        width: 3840,
+        height: 2560,
+      };
+    }
+
+    return {
+      width: 3840,
+      height: 2160,
+    };
+  }
+
+  if (
+    resolution === "1080p"
+  ) {
+    if (portrait) {
+      if (aspectRatio === "4:5") {
+        return {
+          width: 1080,
+          height: 1350,
+        };
+      }
+
+      return {
+        width: 1080,
+        height: 1920,
+      };
+    }
+
+    if (square) {
+      return {
+        width: 1080,
+        height: 1080,
+      };
+    }
+
+    if (aspectRatio === "4:3") {
+      return {
+        width: 1440,
+        height: 1080,
+      };
+    }
+
+    if (aspectRatio === "3:2") {
+      return {
+        width: 1620,
+        height: 1080,
+      };
+    }
+
+    return {
+      width: 1920,
+      height: 1080,
+    };
+  }
+
+  if (portrait) {
+    if (aspectRatio === "4:5") {
+      return {
+        width: 720,
+        height: 900,
+      };
+    }
+
+    return {
+      width: 720,
+      height: 1280,
+    };
+  }
+
+  if (square) {
+    return {
+      width: 720,
+      height: 720,
+    };
+  }
+
+  if (aspectRatio === "4:3") {
+    return {
+      width: 960,
+      height: 720,
+    };
+  }
+
+  if (aspectRatio === "3:2") {
+    return {
+      width: 1080,
+      height: 720,
+    };
+  }
+
+  return {
+    width: 1280,
+    height: 720,
+  };
+}
+
 function buildCompositionOptions(
   body: MediaRequestBody,
   mediaOptions: ReturnType<
     typeof normalizeMediaOptions
   >,
 ): VideoCompositionOptions {
+  const resolution =
+    resolveComposerResolution(
+      body.resolution ||
+        body.videoResolution,
+    );
+
+  const dimensions =
+    getResolutionDimensions(
+      resolution,
+      mediaOptions.aspectRatio,
+    );
+
   return {
     title:
       asString(
@@ -304,10 +485,10 @@ function buildCompositionOptions(
       ),
 
     width:
-      mediaOptions.width,
+      dimensions.width,
 
     height:
-      mediaOptions.height,
+      dimensions.height,
 
     frameRate:
       asPositiveNumber(
@@ -338,13 +519,19 @@ function buildCompositionOptions(
       ),
 
     musicPrompt:
-      undefined,
+      asString(
+        body.musicPrompt,
+      ),
 
     musicProvider:
-      undefined,
+      asString(
+        body.musicProvider,
+      ),
 
     musicModel:
-      undefined,
+      asString(
+        body.musicModel,
+      ),
 
     musicVolume:
       asPositiveNumber(
@@ -451,33 +638,50 @@ function buildContext(
   };
 }
 
-function resolveSoraModel(
+function resolveGoogleVideoModel(
   value: unknown,
-): OpenAIVideoModel {
-  return value ===
-    "sora-2-pro"
-    ? "sora-2-pro"
-    : "sora-2";
+): GoogleVideoModel {
+  if (
+    value ===
+    "veo-3.1-fast-generate-preview"
+  ) {
+    return value;
+  }
+
+  if (
+    value ===
+    "veo-3.1-lite-generate-preview"
+  ) {
+    return value;
+  }
+
+  return (
+    process.env.GOOGLE_VIDEO_MODEL ===
+      "veo-3.1-fast-generate-preview" ||
+    process.env.GOOGLE_VIDEO_MODEL ===
+      "veo-3.1-lite-generate-preview"
+      ? process.env
+          .GOOGLE_VIDEO_MODEL
+      : "veo-3.1-generate-preview"
+  ) as GoogleVideoModel;
 }
 
-function resolveSoraSeconds(
+function resolveGoogleResolution(
   value: unknown,
-): OpenAIVideoSeconds {
+): GoogleVideoResolution {
   if (
-    value === "4" ||
-    value === 4
+    value === "4k"
   ) {
-    return "4";
+    return "4k";
   }
 
   if (
-    value === "8" ||
-    value === 8
+    value === "1080p"
   ) {
-    return "8";
+    return "1080p";
   }
 
-  return "12";
+  return "720p";
 }
 
 async function executeDirectVideoCreate(
@@ -492,14 +696,34 @@ async function executeDirectVideoCreate(
   if (!prompt) {
     return {
       success: false,
+
       code:
         "MEDIA_PROMPT_REQUIRED",
+
       content:
         locale === "zh-CN"
           ? "请输入视频需求。"
           : locale === "ja"
             ? "動画の要件を入力してください。"
             : "Please provide a video request.",
+    };
+  }
+
+  if (
+    !isGoogleVideoConfigured()
+  ) {
+    return {
+      success: false,
+
+      code:
+        "GEMINI_API_KEY_MISSING",
+
+      content:
+        locale === "zh-CN"
+          ? "尚未配置 GEMINI_API_KEY。"
+          : locale === "ja"
+            ? "GEMINI_API_KEY が設定されていません。"
+            : "GEMINI_API_KEY is not configured.",
     };
   }
 
@@ -515,57 +739,72 @@ async function executeDirectVideoCreate(
         body.durationSeconds,
     });
 
-  const requestedLongDuration =
-    mediaOptions.durationSeconds;
-
-  /*
-   * Sora Create Video currently supports
-   * 4 / 8 / 12 second clips.
-   *
-   * AIOS therefore uses 12 seconds for
-   * the direct provider path.
-   *
-   * 30 / 60 / 90 / 120 seconds remain
-   * the responsibility of the AIOS
-   * long-form composition pipeline.
-   */
-  const seconds =
-    resolveSoraSeconds(
-      body.videoSeconds,
+  const model =
+    resolveGoogleVideoModel(
+      body.videoModel,
     );
 
+  const resolution =
+    resolveGoogleResolution(
+      body.videoResolution ||
+        body.resolution,
+    );
+
+  if (
+    resolution === "4k" &&
+    model ===
+      "veo-3.1-lite-generate-preview"
+  ) {
+    return {
+      success: false,
+
+      code:
+        "VEO_4K_NOT_SUPPORTED_BY_MODEL",
+
+      content:
+        locale === "zh-CN"
+          ? "当前 Veo Lite 模型不支持 4K，请选择 Veo 3.1 或 Veo 3.1 Fast。"
+          : locale === "ja"
+            ? "現在の Veo Lite モデルは 4K に対応していません。Veo 3.1 または Veo 3.1 Fast を選択してください。"
+            : "The current Veo Lite model does not support 4K. Choose Veo 3.1 or Veo 3.1 Fast.",
+    };
+  }
+
   const job =
-    await createOpenAIVideoJob({
+    await createGoogleVideoJob({
       prompt,
 
-      model:
-        resolveSoraModel(
-          body.videoModel,
-        ),
-
-      seconds,
+      model,
 
       aspectRatio:
         mediaOptions.aspectRatio,
+
+      resolution,
+
+      durationSeconds:
+        8,
     });
 
   return {
     success: true,
 
     code:
-      "C146_11_SORA_TTV_JOB_CREATED",
+      "C146_12_VEO_TTV_JOB_CREATED",
 
     content:
-      "AIOS created a real OpenAI text-to-video generation job.",
+      "AIOS created a real Google Veo text-to-video generation job.",
 
     provider:
-      "openai",
+      "google",
+
+    providerName:
+      "Google Veo",
 
     providerModel:
       job.model,
 
     providerJobId:
-      job.id,
+      job.operationName,
 
     providerStatus:
       job.status,
@@ -574,13 +813,15 @@ async function executeDirectVideoCreate(
       job.progress,
 
     providerSeconds:
-      job.seconds,
+      8,
 
     requestedDurationSeconds:
-      requestedLongDuration,
+      mediaOptions.durationSeconds,
 
     directProviderDurationSupported:
-      seconds,
+      8,
+
+    resolution,
 
     mediaOptions,
 
@@ -599,15 +840,17 @@ async function executeDirectVideoStatus(
   if (!videoId) {
     return {
       success: false,
+
       code:
         "MEDIA_VIDEO_ID_REQUIRED",
+
       content:
         "Video ID is required.",
     };
   }
 
   const job =
-    await retrieveOpenAIVideoJob(
+    await retrieveGoogleVideoJob(
       videoId,
     );
 
@@ -619,27 +862,30 @@ async function executeDirectVideoStatus(
     code:
       job.status ===
         "completed"
-        ? "C146_11_SORA_TTV_COMPLETED"
+        ? "C146_12_VEO_TTV_COMPLETED"
         : job.status ===
             "failed"
-          ? "C146_11_SORA_TTV_FAILED"
-          : "C146_11_SORA_TTV_IN_PROGRESS",
+          ? "C146_12_VEO_TTV_FAILED"
+          : "C146_12_VEO_TTV_IN_PROGRESS",
 
     content:
       job.status ===
         "completed"
-        ? "OpenAI text-to-video generation completed."
+        ? "Google Veo video generation completed."
         : job.status ===
             "failed"
           ? job.error?.message ||
-            "OpenAI text-to-video generation failed."
-          : "OpenAI text-to-video generation is still in progress.",
+            "Google Veo video generation failed."
+          : "Google Veo video generation is still in progress.",
 
     provider:
-      "openai",
+      "google",
+
+    providerName:
+      "Google Veo",
 
     providerJobId:
-      job.id,
+      job.operationName,
 
     providerStatus:
       job.status,
@@ -653,8 +899,8 @@ async function executeDirectVideoStatus(
       job.status ===
       "completed"
         ? `/api/media?videoId=${encodeURIComponent(
-            job.id,
-          )}&content=1`
+            job.operationName,
+          )}&content=1&provider=google`
         : undefined,
   };
 }
@@ -810,11 +1056,17 @@ async function executeMediaRequest(
     operation ===
     "plan"
   ) {
+    const resolution =
+      resolveComposerResolution(
+        body.resolution ||
+          body.videoResolution,
+      );
+
     return {
       success: true,
 
       code:
-        "C146_11_MEDIA_PLAN_READY",
+        "C146_12_MEDIA_PLAN_READY",
 
       content:
         "AIOS Media Runtime prepared the video generation plan.",
@@ -822,6 +1074,17 @@ async function executeMediaRequest(
       operation,
 
       mediaOptions,
+
+      resolution,
+
+      resolutionDimensions:
+        {
+          width:
+            compositionOptions.width,
+
+          height:
+            compositionOptions.height,
+        },
 
       storyboard,
 
@@ -1024,8 +1287,8 @@ async function executeMediaRequest(
       code:
         finalPlan.status ===
         "ready_for_render"
-          ? "C146_11_REAL_MEDIA_GENERATION_READY"
-          : "C146_11_REAL_MEDIA_GENERATION_PARTIAL",
+          ? "C146_12_REAL_MEDIA_GENERATION_READY"
+          : "C146_12_REAL_MEDIA_GENERATION_PARTIAL",
 
       content:
         finalPlan.status ===
@@ -1066,7 +1329,7 @@ async function executeMediaRequest(
       success: false,
 
       code:
-        "C146_11_RENDER_BLOCKED_INCOMPLETE_GENERATION",
+        "C146_12_RENDER_BLOCKED_INCOMPLETE_GENERATION",
 
       content:
         "AIOS did not render the video because the generated media assets are incomplete.",
@@ -1174,40 +1437,92 @@ export async function GET(
       "content",
     );
 
+  const provider =
+    request.nextUrl.searchParams.get(
+      "provider",
+    ) || "google";
+
   if (
     videoId &&
     content === "1"
   ) {
     try {
-      const mediaResponse =
-        await downloadOpenAIVideo(
-          videoId,
-        );
+      if (
+        provider === "google"
+      ) {
+        const job =
+          await retrieveGoogleVideoJob(
+            videoId,
+          );
 
-      const body =
-        await mediaResponse.arrayBuffer();
+        if (
+          job.status !==
+            "completed" ||
+          !job.videoUri
+        ) {
+          return jsonResponse(
+            {
+              success: false,
 
-      return new NextResponse(
-        body,
-        {
-          status:
-            mediaResponse.status ||
-            200,
+              code:
+                "MEDIA_VIDEO_NOT_READY",
 
-          headers: {
-            "Cache-Control":
-              "private, max-age=300",
+              content:
+                "The Google Veo video is not ready.",
 
-            "Content-Type":
-              mediaResponse.headers.get(
-                "content-type",
-              ) ||
-              "video/mp4",
+              providerStatus:
+                job.status,
+            },
+            409,
+          );
+        }
 
-            "Content-Disposition":
-              `inline; filename="aios-${videoId}.mp4"`,
+        const mediaResponse =
+          await downloadGoogleVideo(
+            job.videoUri,
+          );
+
+        const body =
+          await mediaResponse.arrayBuffer();
+
+        return new NextResponse(
+          body,
+          {
+            status: 200,
+
+            headers: {
+              "Cache-Control":
+                "private, max-age=300",
+
+              "Content-Type":
+                mediaResponse.headers.get(
+                  "content-type",
+                ) ||
+                "video/mp4",
+
+              "Content-Disposition":
+                `inline; filename="aios-${encodeURIComponent(
+                  videoId.replace(
+                    /[^a-zA-Z0-9_-]/g,
+                    "-",
+                  ),
+                )}.mp4"`,
+            },
           },
+        );
+      }
+
+      return jsonResponse(
+        {
+          success: false,
+
+          code:
+            "MEDIA_PROVIDER_UNSUPPORTED",
+
+          content:
+            "Unsupported video provider.",
         },
+        400,
       );
     } catch (error) {
       return jsonResponse(
@@ -1232,58 +1547,94 @@ export async function GET(
 
   if (videoId) {
     try {
-      const job =
-        await retrieveOpenAIVideoJob(
-          videoId,
+      if (
+        provider === "google"
+      ) {
+        const job =
+          await retrieveGoogleVideoJob(
+            videoId,
+          );
+
+        return applyIdentityCookie(
+          jsonResponse(
+            {
+              success:
+                job.status !==
+                "failed",
+
+              code:
+                job.status ===
+                  "completed"
+                  ? "C146_12_VEO_TTV_COMPLETED"
+                  : job.status ===
+                      "failed"
+                    ? "C146_12_VEO_TTV_FAILED"
+                    : "C146_12_VEO_TTV_IN_PROGRESS",
+
+              content:
+                job.status ===
+                  "completed"
+                  ? "Google Veo video generation completed."
+                  : job.status ===
+                      "failed"
+                    ? job.error?.message ||
+                      "Google Veo video generation failed."
+                    : "Google Veo video generation is still in progress.",
+
+              provider:
+                "google",
+
+              providerName:
+                "Google Veo",
+
+              providerJobId:
+                job.operationName,
+
+              providerStatus:
+                job.status,
+
+              providerProgress:
+                job.progress,
+
+              job,
+
+              contentUrl:
+                job.status ===
+                "completed"
+                  ? `/api/media?videoId=${encodeURIComponent(
+                      job.operationName,
+                    )}&content=1&provider=google`
+                  : undefined,
+
+              identity: {
+                userId:
+                  identity.userId,
+
+                isolated:
+                  true,
+              },
+            },
+            200,
+          ),
+          identity.userId,
         );
+      }
 
       return applyIdentityCookie(
         jsonResponse(
           {
-            success:
-              job.status !==
-              "failed",
+            success: false,
 
             code:
-              job.status ===
-                "completed"
-                ? "C146_11_SORA_TTV_COMPLETED"
-                : job.status ===
-                    "failed"
-                  ? "C146_11_SORA_TTV_FAILED"
-                  : "C146_11_SORA_TTV_IN_PROGRESS",
+              "MEDIA_PROVIDER_UNSUPPORTED",
 
-            provider:
-              "openai",
+            content:
+              "Unsupported video provider.",
 
-            providerJobId:
-              job.id,
-
-            providerStatus:
-              job.status,
-
-            providerProgress:
-              job.progress,
-
-            job,
-
-            contentUrl:
-              job.status ===
-              "completed"
-                ? `/api/media?videoId=${encodeURIComponent(
-                    job.id,
-                  )}&content=1`
-                : undefined,
-
-            identity: {
-              userId:
-                identity.userId,
-
-              isolated:
-                true,
-            },
+            userId:
+              identity.userId,
           },
-          200,
+          400,
         ),
         identity.userId,
       );
@@ -1311,6 +1662,9 @@ export async function GET(
     }
   }
 
+  const googleConfigured =
+    isGoogleVideoConfigured();
+
   const response =
     jsonResponse(
       {
@@ -1335,7 +1689,8 @@ export async function GET(
           APP_CONFIG.release,
 
         capabilities: {
-          storyboard: true,
+          storyboard:
+            true,
 
           openaiImage:
             Boolean(
@@ -1352,33 +1707,49 @@ export async function GET(
               process.env.OPENAI_API_KEY,
             ),
 
-          ffmpeg: true,
+          ffmpeg:
+            true,
 
-          oneClickVideo: true,
+          oneClickVideo:
+            true,
 
           directProviderVideo:
-            Boolean(
-              process.env.OPENAI_API_KEY,
-            ),
+            googleConfigured,
 
           directProvider:
-            "openai-sora",
+            "google-veo",
         },
 
         directVideo: {
           provider:
-            "openai",
+            "google",
+
+          providerName:
+            "Google Veo 3.1",
 
           models: [
-            "sora-2",
-            "sora-2-pro",
+            "veo-3.1-generate-preview",
+            "veo-3.1-fast-generate-preview",
+            "veo-3.1-lite-generate-preview",
           ],
 
           createSeconds: [
-            4,
             8,
-            12,
           ],
+
+          resolutions: [
+            "720p",
+            "1080p",
+            "4k",
+          ],
+
+          aspectRatios: [
+            "16:9",
+            "9:16",
+          ],
+
+          nativeAudio:
+            true,
 
           async:
             true,
@@ -1388,6 +1759,35 @@ export async function GET(
 
           download:
             true,
+        },
+
+        composer: {
+          resolutions: [
+            {
+              value:
+                "720p",
+              label:
+                "720p",
+            },
+            {
+              value:
+                "1080p",
+              label:
+                "1080p",
+            },
+            {
+              value:
+                "4k",
+              label:
+                "4K",
+            },
+          ],
+
+          durations:
+            MEDIA_DURATION_OPTIONS,
+
+          aspectRatios:
+            MEDIA_ASPECT_RATIO_OPTIONS,
         },
 
         options: {
@@ -1400,6 +1800,27 @@ export async function GET(
           aspectRatios:
             MEDIA_ASPECT_RATIO_OPTIONS,
 
+          resolutions: [
+            {
+              value:
+                "720p",
+              label:
+                "720p",
+            },
+            {
+              value:
+                "1080p",
+              label:
+                "1080p",
+            },
+            {
+              value:
+                "4k",
+              label:
+                "4K",
+            },
+          ],
+
           defaults: {
             language:
               "zh-CN",
@@ -1409,6 +1830,9 @@ export async function GET(
 
             aspectRatio:
               "9:16",
+
+            resolution:
+              "1080p",
 
             width:
               1080,
@@ -1420,31 +1844,20 @@ export async function GET(
 
         pipeline: [
           "prompt",
-
           "normalized-options",
-
           "storyboard",
-
           "openai-image",
-
           "openai-tts",
-
           "ffmpeg-scene-video",
-
           "timeline",
-
           "ffmpeg-final-render",
         ],
 
         directProviderPipeline: [
           "chat-prompt",
-
-          "openai-sora-create",
-
-          "async-video-job",
-
+          "google-veo-create",
+          "async-video-operation",
           "status-polling",
-
           "video-content-proxy",
         ],
 
@@ -1452,7 +1865,8 @@ export async function GET(
           userId:
             identity.userId,
 
-          isolated: true,
+          isolated:
+            true,
 
           mode:
             "anonymous-alpha",
@@ -1575,7 +1989,11 @@ export async function POST(
           : result.code ===
               "MEDIA_PROMPT_REQUIRED" ||
             result.code ===
-              "MEDIA_VIDEO_ID_REQUIRED"
+              "MEDIA_VIDEO_ID_REQUIRED" ||
+            result.code ===
+              "GEMINI_API_KEY_MISSING" ||
+            result.code ===
+              "VEO_4K_NOT_SUPPORTED_BY_MODEL"
             ? 400
             : 500,
       ),
