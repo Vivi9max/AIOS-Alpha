@@ -34,13 +34,18 @@ import {
 } from "@/lib/runtime/media/openai";
 
 import {
-  createGoogleVideoJob,
   retrieveGoogleVideoJob,
   downloadGoogleVideo,
   isGoogleVideoConfigured,
   type GoogleVideoModel,
   type GoogleVideoResolution,
 } from "@/lib/runtime/media/google-video";
+
+import {
+  createMediaGenerationJob,
+  resolveMediaGenerationRoute,
+  getMediaGenerationRoutes,
+} from "@/lib/runtime/media/generation-router";
 
 import {
   MEDIA_ASPECT_RATIO_OPTIONS,
