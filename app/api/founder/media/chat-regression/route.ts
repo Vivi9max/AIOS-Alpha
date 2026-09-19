@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { isFounderRequest } from "@/lib/auth/founder";
+import { isFounderRequest } from "@/lib/founder/auth";
 import {
   getMediaGenerationAvailability,
   resolveAvailableMediaGenerationRoute,
