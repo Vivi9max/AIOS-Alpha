@@ -1,189 +1,159 @@
-import {
-  isFounderRequest,
-} from "@/lib/founder/auth";
+import { NextResponse } from "next/server";
 
+import { isFounderRequest } from "@/lib/founder/auth";
 import {
   runMarketScreeningRuntime,
 } from "@/lib/runtime/market/market-screening-runtime";
-
 import type {
+  MarketScreeningCriteria,
   MarketScreeningRequest,
+  MarketScreeningUniverseItem,
 } from "@/lib/runtime/market/market-screening-types";
 
-export const runtime =
-  "nodejs";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export const dynamic =
-  "force-dynamic";
-
-const DEFAULT_UNIVERSE: MarketScreeningRequest["universe"] =
-  [
-    {
-      symbol:
-        "NVDA",
-      market:
-        "us",
-    },
-    {
-      symbol:
-        "AAPL",
-      market:
-        "us",
-    },
-    {
-      symbol:
-        "MSFT",
-      market:
-        "us",
-    },
-    {
-      symbol:
-        "0700.HK",
-      market:
-        "hk",
-    },
-    {
-      symbol:
-        "9988.HK",
-      market:
-        "hk",
-    },
-    {
-      symbol:
-        "600519.SH",
-      market:
-        "cn",
-    },
-    {
-      symbol:
-        "000858.SZ",
-      market:
-        "cn",
-    },
-  ];
-
-const DEFAULT_CRITERIA =
+const DEFAULT_UNIVERSE: MarketScreeningUniverseItem[] = [
   {
-    minRevenueGrowth:
-      null,
+    symbol: "NVDA",
+    market: "us",
+  },
+  {
+    symbol: "AAPL",
+    market: "us",
+  },
+  {
+    symbol: "MSFT",
+    market: "us",
+  },
+  {
+    symbol: "0700.HK",
+    market: "hk",
+  },
+  {
+    symbol: "9988.HK",
+    market: "hk",
+  },
+  {
+    symbol: "600519.SH",
+    market: "cn",
+  },
+  {
+    symbol: "000858.SZ",
+    market: "cn",
+  },
+];
 
-    minEps:
-      null,
+const DEFAULT_CRITERIA: MarketScreeningCriteria = {
+  minRevenueGrowth: null,
+  minEps: null,
+  minPe: null,
+  maxPe: null,
+  minPb: null,
+  maxPb: null,
+  minEvidenceSources: 3,
+  minIndependentDomains: 2,
+  allowedRiskLevels: [
+    "low",
+    "medium",
+    "unknown",
+  ],
+  requireVerifiedData: false,
+};
 
-    minPe:
-      null,
+function parseMarket(
+  value: string | null,
+): "us" | "hk" | "cn" | "all" {
+  if (
+    value === "us" ||
+    value === "hk" ||
+    value === "cn"
+  ) {
+    return value;
+  }
 
-    maxPe:
-      null,
+  return "all";
+}
 
-    minPb:
-      null,
+function filterUniverse(
+  market: "us" | "hk" | "cn" | "all",
+): MarketScreeningUniverseItem[] {
+  if (market === "all") {
+    return DEFAULT_UNIVERSE;
+  }
 
-    maxPb:
-      null,
-
-    minEvidenceSources:
-      3,
-
-    minIndependentDomains:
-      2,
-
-    allowedRiskLevels: [
-      "low",
-      "medium",
-      "unknown",
-    ],
-
-    requireVerifiedData:
-      false,
-  } as const;
+  return DEFAULT_UNIVERSE.filter(
+    (item) => item.market === market,
+  );
+}
 
 function parseRequest(
   body: unknown,
 ): MarketScreeningRequest {
   if (
-    !body ||
-    typeof body !==
-      "object"
+    body &&
+    typeof body === "object"
   ) {
+    const input =
+      body as Partial<MarketScreeningRequest>;
+
+    const universe =
+      Array.isArray(input.universe) &&
+      input.universe.length > 0
+        ? input.universe
+        : DEFAULT_UNIVERSE;
+
+    const criteria =
+      input.criteria ?? DEFAULT_CRITERIA;
+
+    const mode =
+      input.mode ?? "full";
+
     return {
-      universe:
-        DEFAULT_UNIVERSE,
-
-      criteria:
-        DEFAULT_CRITERIA,
-
-      mode:
-        "full",
+      universe,
+      criteria,
+      mode,
     };
   }
 
-  const value =
-    body as Partial<MarketScreeningRequest>;
-
   return {
-    universe:
-      Array.isArray(
-        value.universe,
-      ) &&
-      value.universe.length
-        ? value.universe
-        : DEFAULT_UNIVERSE,
-
-    criteria:
-      value.criteria ??
-      DEFAULT_CRITERIA,
-
-    mode:
-      value.mode ??
-      "full",
+    universe: DEFAULT_UNIVERSE,
+    criteria: DEFAULT_CRITERIA,
+    mode: "full",
   };
 }
 
 export async function POST(
   request: Request,
 ) {
-  if (
-    !isFounderRequest(
-      request,
-    )
-  ) {
-    return Response.json(
+  if (!isFounderRequest(request)) {
+    return NextResponse.json(
       {
-        success:
-          false,
-
-        verified:
-          false,
-
-        code:
-          "FOUNDER_AUTH_REQUIRED",
-
-        message:
-          "Founder authentication is required.",
+        success: false,
+        code: "FOUNDER_AUTH_REQUIRED",
+        error: "Alpha founder access required.",
       },
       {
-        status:
-          401,
+        status: 401,
       },
     );
   }
 
   try {
     const body =
-      await request.json();
+      await request.json().catch(
+        () => null,
+      );
 
     const input =
-      parseRequest(
-        body,
-      );
+      parseRequest(body);
 
     const result =
       await runMarketScreeningRuntime(
         input,
       );
 
-    return Response.json(
+    return NextResponse.json(
       result,
       {
         status:
@@ -193,25 +163,19 @@ export async function POST(
       },
     );
   } catch (error) {
-    return Response.json(
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown market screening error.";
+
+    return NextResponse.json(
       {
-        success:
-          false,
-
-        verified:
-          false,
-
-        code:
-          "C147_3_SCREENING_RUNTIME_ERROR",
-
-        error:
-          error instanceof Error
-            ? error.message
-            : "Market screening runtime failed.",
+        success: false,
+        code: "C147_3_SCREENING_RUNTIME_ERROR",
+        error: message,
       },
       {
-        status:
-          500,
+        status: 500,
       },
     );
   }
@@ -220,94 +184,66 @@ export async function POST(
 export async function GET(
   request: Request,
 ) {
-  if (
-    !isFounderRequest(
-      request,
-    )
-  ) {
-    return Response.json(
+  if (!isFounderRequest(request)) {
+    return NextResponse.json(
       {
-        success:
-          false,
-
-        verified:
-          false,
-
-        code:
-          "FOUNDER_AUTH_REQUIRED",
-
-        message:
-          "Founder authentication is required.",
+        success: false,
+        code: "FOUNDER_AUTH_REQUIRED",
+        error: "Alpha founder access required.",
       },
       {
-        status:
-          401,
+        status: 401,
       },
     );
   }
 
   try {
     const url =
-      new URL(
-        request.url,
-      );
+      new URL(request.url);
 
     const market =
-      url.searchParams.get(
-        "market",
+      parseMarket(
+        url.searchParams.get(
+          "market",
+        ),
       );
 
-    const filtered =
-      market ===
-        "us" ||
-      market ===
-        "hk" ||
-      market ===
-        "cn"
-        ? DEFAULT_UNIVERSE.filter(
-            (item) =>
-              item.market ===
-              market,
-          )
-        : DEFAULT_UNIVERSE;
+    const universe =
+      filterUniverse(market);
 
     const result =
       await runMarketScreeningRuntime(
         {
-          universe:
-            filtered,
-
+          universe,
           criteria:
             DEFAULT_CRITERIA,
-
-          mode:
-            "full",
+          mode: "full",
         },
       );
 
-    return Response.json(
+    return NextResponse.json(
       result,
-    );
-  } catch (error) {
-    return Response.json(
-      {
-        success:
-          false,
-
-        verified:
-          false,
-
-        code:
-          "C147_3_SCREENING_RUNTIME_ERROR",
-
-        error:
-          error instanceof Error
-            ? error.message
-            : "Market screening runtime failed.",
-      },
       {
         status:
-          500,
+          result.success
+            ? 200
+            : 422,
+      },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown market screening error.";
+
+    return NextResponse.json(
+      {
+        success: false,
+        code: "C147_3_SCREENING_RUNTIME_ERROR",
+        error: message,
+      },
+      {
+        status: 500,
       },
     );
   }
