@@ -511,10 +511,13 @@ export async function POST(
     const job =
       result.job;
 
-    const providerJobId =
-      result.providerJobId ??
-      job?.operationName ??
-      null;
+const providerJobId =
+  result.providerJobId ??
+  (result.route.provider === "google-veo" &&
+  job &&
+  "operationName" in job
+    ? job.operationName ?? null
+    : null);
 
     const status =
       result.providerStatus ??
