@@ -3,6 +3,7 @@ import {
 } from "@/lib/web-intelligence";
 
 import type {
+  MarketDataProviderStatus,
   MarketEvidence,
   MarketInstrument,
   MarketSnapshot,
@@ -20,6 +21,7 @@ function normalizeSymbol(
   if (market === "hk") {
     return value
       .replace(/^HK:/, "")
+      .replace(/\.HK$/, "")
       .replace(/^0+(?=\d)/, "")
       .padStart(4, "0");
   }
@@ -28,7 +30,8 @@ function normalizeSymbol(
     return value
       .replace(/^SH:/, "")
       .replace(/^SZ:/, "")
-      .replace(/^SS:/, "");
+      .replace(/^SS:/, "")
+      .replace(/\.(SH|SZ)$/, "");
   }
 
   return value
@@ -51,7 +54,7 @@ export function detectMarket(
 
   if (
     value.startsWith("HK:") ||
-    /^\d{4,5}\.HK$/.test(value) ||
+    /\.HK$/.test(value) ||
     /^\d{4,5}$/.test(value)
   ) {
     return "hk";
@@ -60,6 +63,7 @@ export function detectMarket(
   if (
     value.startsWith("SH:") ||
     value.startsWith("SZ:") ||
+    value.startsWith("SS:") ||
     /\.SH$/.test(value) ||
     /\.SZ$/.test(value)
   ) {
@@ -73,8 +77,10 @@ function buildInstrument(
   symbol: string,
   market: MarketInstrument["market"],
 ): MarketInstrument {
-  const normalized =
-    normalizeSymbol(symbol, market);
+  const normalized = normalizeSymbol(
+    symbol,
+    market,
+  );
 
   if (market === "hk") {
     return {
@@ -125,8 +131,7 @@ function parseNumber(
     return null;
   }
 
-  const parsed =
-    Number(cleaned);
+  const parsed = Number(cleaned);
 
   return Number.isFinite(parsed)
     ? parsed
@@ -138,16 +143,16 @@ function extractMetric(
   patterns: RegExp[],
 ): number | null {
   for (const pattern of patterns) {
-    const match =
-      text.match(pattern);
+    const match = text.match(pattern);
 
-    if (match?.[1]) {
-      const value =
-        parseNumber(match[1]);
+    if (!match?.[1]) {
+      continue;
+    }
 
-      if (value !== null) {
-        return value;
-      }
+    const value = parseNumber(match[1]);
+
+    if (value !== null) {
+      return value;
     }
   }
 
@@ -161,18 +166,12 @@ function buildEvidence(
 ): MarketEvidence[] {
   return result.evidence
     .map((item) => ({
-      title:
-        item.title,
-      url:
-        item.url,
-      hostname:
-        item.hostname,
-      snippet:
-        item.snippets.join(" "),
-      retrievedAt:
-        item.retrievedAt,
-      confidence:
-        item.confidence,
+      title: item.title,
+      url: item.url,
+      hostname: item.hostname,
+      snippet: item.snippets.join(" "),
+      retrievedAt: item.retrievedAt,
+      confidence: item.confidence,
     }))
     .slice(0, 12);
 }
@@ -180,107 +179,163 @@ function buildEvidence(
 function extractSnapshot(
   evidence: MarketEvidence[],
 ): MarketSnapshot {
-  const combined =
-    evidence
-      .map((item) =>
+  const combined = evidence
+    .map(
+      (item) =>
         `${item.title} ${item.snippet}`,
-      )
-      .join(" ");
+    )
+    .join(" ");
 
-  const price =
-    extractMetric(
-      combined,
-      [
-        /(?:current price|share price|stock price|last price|价格|股价)[^\d]{0,30}([\d,.]+)/i,
-        /(?:USD|HKD|CNY)\s*([\d,.]+)/i,
-      ],
-    );
+  const price = extractMetric(
+    combined,
+    [
+      /(?:current price|share price|stock price|last price|价格|股价)[^\d]{0,30}([\d,.]+)/i,
+      /(?:USD|HKD|CNY)\s*([\d,.]+)/i,
+    ],
+  );
 
-  const changePercent =
-    extractMetric(
-      combined,
-      [
-        /(?:change|涨跌|涨幅|跌幅)[^\d+-]{0,20}([+-]?[\d.]+)%/i,
-        /([+-]?[\d.]+)%\s*(?:today|today's|change|涨跌)/i,
-      ],
-    );
+  const changePercent = extractMetric(
+    combined,
+    [
+      /(?:change|涨跌|涨幅|跌幅)[^\d+-]{0,20}([+-]?[\d.]+)%/i,
+      /([+-]?[\d.]+)%\s*(?:today|today's|change|涨跌)/i,
+    ],
+  );
 
-  const marketCap =
-    extractMetric(
-      combined,
-      [
-        /(?:market cap|市值)[^\d]{0,20}([\d,.]+)/i,
-      ],
-    );
+  const marketCap = extractMetric(
+    combined,
+    [
+      /(?:market cap|market capitalization|市值)[^\d]{0,20}([\d,.]+)/i,
+    ],
+  );
 
-  const pe =
-    extractMetric(
-      combined,
-      [
-        /(?:P\/E|PE|price[- ]to[- ]earnings|市盈率)[^\d]{0,20}([\d.]+)/i,
-      ],
-    );
+  const pe = extractMetric(
+    combined,
+    [
+      /(?:P\/E|PE|price[- ]to[- ]earnings|市盈率)[^\d]{0,20}([\d.]+)/i,
+    ],
+  );
 
-  const pb =
-    extractMetric(
-      combined,
-      [
-        /(?:P\/B|PB|price[- ]to[- ]book|市净率)[^\d]{0,20}([\d.]+)/i,
-      ],
-    );
+  const pb = extractMetric(
+    combined,
+    [
+      /(?:P\/B|PB|price[- ]to[- ]book|市净率)[^\d]{0,20}([\d.]+)/i,
+    ],
+  );
 
-  const eps =
-    extractMetric(
-      combined,
-      [
-        /(?:EPS|每股收益)[^\d-]{0,20}([+-]?[\d.]+)/i,
-      ],
-    );
+  const eps = extractMetric(
+    combined,
+    [
+      /(?:EPS|earnings per share|每股收益)[^\d-]{0,20}([+-]?[\d.]+)/i,
+    ],
+  );
 
-  const revenueGrowth =
-    extractMetric(
-      combined,
-      [
-        /(?:revenue growth|营收增长|收入增长)[^\d+-]{0,20}([+-]?[\d.]+)%/i,
-      ],
-    );
+  const revenueGrowth = extractMetric(
+    combined,
+    [
+      /(?:revenue growth|revenue growth rate|营收增长|收入增长)[^\d+-]{0,20}([+-]?[\d.]+)%/i,
+    ],
+  );
 
-  const hasStructuredQuote =
+  const hasWebQuote =
     price !== null;
+
+  const latestTimestamp =
+    evidence.length > 0
+      ? Math.max(
+          ...evidence.map(
+            (item) => item.retrievedAt,
+          ),
+        )
+      : null;
 
   return {
     price,
-    previousClose:
-      null,
+    previousClose: null,
     changePercent,
+
+    open: null,
+    high: null,
+    low: null,
+    volume: null,
+
     marketCap,
     pe,
     pb,
     eps,
-    revenue:
-      null,
+    revenue: null,
     revenueGrowth,
-    dataQuality:
-      hasStructuredQuote
-        ? "web-evidence"
-        : "insufficient",
-    liveQuoteAvailable:
-      false,
+
+    dataQuality: hasWebQuote
+      ? "web-evidence"
+      : "insufficient",
+
+    liveQuoteAvailable: false,
+
     asOf:
-      evidence.length > 0
+      latestTimestamp !== null
         ? new Date(
-            Math.max(
-              ...evidence.map(
-                (item) =>
-                  item.retrievedAt,
-              ),
-            ),
+            latestTimestamp,
           ).toISOString()
         : null,
+
     source:
-      evidence[0]?.hostname ??
-      null,
+      evidence[0]?.hostname ?? null,
+
+    dataset: null,
+
+    bars: [],
   };
+}
+
+function createProviderStatus(
+  instrument: MarketInstrument,
+  structuredConfigured: boolean,
+  structuredAvailable: boolean,
+): MarketDataProviderStatus {
+  return {
+    provider:
+      structuredAvailable
+        ? "nasdaq-data-link"
+        : "web-intelligence",
+
+    configured:
+      structuredConfigured,
+
+    available:
+      structuredAvailable,
+
+    supportsQuote:
+      false,
+
+    supportsHistorical:
+      structuredAvailable,
+
+    supportsFundamentals:
+      false,
+
+    supportsMarkets:
+      instrument.market === "us"
+        ? ["us"]
+        : [],
+      
+    reason:
+      structuredAvailable
+        ? "Structured market data provider is available."
+        : structuredConfigured
+          ? "Structured market data provider is configured but not available for this request."
+          : "Structured market data provider is not configured; Web Intelligence fallback is used.",
+  };
+}
+
+function isStructuredProviderConfigured(): boolean {
+  return Boolean(
+    process.env.NASDAQ_DATA_LINK_API_KEY?.trim(),
+  );
+}
+
+export function isStructuredRealtimeProviderConfigured(): boolean {
+  return isStructuredProviderConfigured();
 }
 
 export async function retrieveMarketData(
@@ -288,12 +343,37 @@ export async function retrieveMarketData(
 ): Promise<{
   snapshot: MarketSnapshot;
   evidence: MarketEvidence[];
+
   verified: boolean;
   sourceCount: number;
   independentDomains: number;
   primarySourceFound: boolean;
+
+  structuredDataAvailable: boolean;
+  structuredDataVerified: boolean;
+
+  provider: MarketDataProviderStatus;
+
   error?: string;
 }> {
+  const structuredConfigured =
+    isStructuredProviderConfigured();
+
+  /*
+   * C147.2 contract:
+   *
+   * The structured provider is intentionally represented
+   * explicitly in the return contract.
+   *
+   * The provider implementation can be upgraded independently
+   * without changing Market Router's public response shape.
+   *
+   * We do NOT fabricate structured market data when the
+   * configured dataset is unavailable.
+   */
+  let structuredDataAvailable = false;
+  let structuredDataVerified = false;
+
   const marketName =
     instrument.market === "us"
       ? "US stock market"
@@ -302,7 +382,7 @@ export async function retrieveMarketData(
         : "China A-share market";
 
   const query = [
-    `${instrument.normalizedSymbol}`,
+    instrument.normalizedSymbol,
     marketName,
     "company",
     "financial results",
@@ -310,16 +390,79 @@ export async function retrieveMarketData(
     "stock price",
   ].join(" ");
 
-  const result =
-    await retrieveWebEvidence(
-      query,
-    );
+  let webResult:
+    Awaited<
+      ReturnType<typeof retrieveWebEvidence>
+    >;
+
+  try {
+    webResult =
+      await retrieveWebEvidence(
+        query,
+      );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Web market evidence retrieval failed.";
+
+    return {
+      snapshot: {
+        price: null,
+        previousClose: null,
+        changePercent: null,
+
+        open: null,
+        high: null,
+        low: null,
+        volume: null,
+
+        marketCap: null,
+        pe: null,
+        pb: null,
+        eps: null,
+        revenue: null,
+        revenueGrowth: null,
+
+        dataQuality: "insufficient",
+        liveQuoteAvailable: false,
+
+        asOf: null,
+        source: null,
+        dataset: null,
+        bars: [],
+      },
+
+      evidence: [],
+
+      verified: false,
+      sourceCount: 0,
+      independentDomains: 0,
+      primarySourceFound: false,
+
+      structuredDataAvailable: false,
+      structuredDataVerified: false,
+
+      provider:
+        createProviderStatus(
+          instrument,
+          structuredConfigured,
+          false,
+        ),
+
+      error: message,
+    };
+  }
 
   const evidence =
-    buildEvidence(result);
+    buildEvidence(
+      webResult,
+    );
 
   const snapshot =
-    extractSnapshot(evidence);
+    extractSnapshot(
+      evidence,
+    );
 
   const domains =
     new Set(
@@ -327,33 +470,64 @@ export async function retrieveMarketData(
         (item) =>
           item.hostname
             .toLowerCase()
-            .replace(/^www\./, ""),
+            .replace(
+              /^www\./,
+              "",
+            ),
       ),
+    );
+
+  /*
+   * Current safe behavior:
+   *
+   * - No fake live quote.
+   * - No fake structured quote.
+   * - Web evidence remains an explicit fallback.
+   * - Structured provider state is exposed to Router.
+   *
+   * Once structured-provider.ts is present and verified,
+   * this contract can set the two flags to true and return
+   * structured OHLCV data without changing Router.
+   */
+  const verified =
+    webResult.verification
+      ?.verified ?? false;
+
+  const primarySourceFound =
+    webResult.verification
+      ?.primarySourceFound ?? false;
+
+  const provider =
+    createProviderStatus(
+      instrument,
+      structuredConfigured,
+      structuredDataAvailable,
     );
 
   return {
     snapshot,
+
     evidence,
-    verified:
-      result.verification
-        ?.verified ?? false,
+
+    verified,
+
     sourceCount:
-      result.sourceCount,
+      webResult.sourceCount,
+
     independentDomains:
       domains.size,
-    primarySourceFound:
-      result.verification
-        ?.primarySourceFound ??
-      false,
-    error:
-      result.success
-        ? undefined
-        : result.error,
-  };
-}
 
-export function isStructuredRealtimeProviderConfigured(): boolean {
-  return Boolean(
-    process.env.NASDAQ_DATA_LINK_API_KEY?.trim(),
-  );
+    primarySourceFound,
+
+    structuredDataAvailable,
+
+    structuredDataVerified,
+
+    provider,
+
+    error:
+      webResult.success
+        ? undefined
+        : webResult.error,
+  };
 }
