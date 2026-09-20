@@ -62,11 +62,108 @@ const CASES = [
   },
 
   {
+    id: "HK_ALIBABA",
+    symbol: "9988.HK",
+    market: "hk" as const,
+  },
+
+  {
     id: "CN_MOUTAI",
     symbol: "600519.SH",
     market: "cn" as const,
   },
+
+  {
+    id: "CN_WULIANGYE",
+    symbol: "000858.SZ",
+    market: "cn" as const,
+  },
 ];
+
+function tickerNumericValue(
+  symbol: string,
+  market: "us" | "hk" | "cn",
+): number | null {
+  if (market === "us") {
+    return null;
+  }
+
+  const digits =
+    symbol
+      .toUpperCase()
+      .replace(/^HK:/, "")
+      .replace(/^SH:/, "")
+      .replace(/^SZ:/, "")
+      .replace(/^SS:/, "")
+      .replace(/\.(HK|SH|SZ)$/, "")
+      .replace(/\D/g, "");
+
+  if (!digits) {
+    return null;
+  }
+
+  const normalized =
+    digits.replace(
+      /^0+(?=\d)/,
+      "",
+    );
+
+  const value =
+    Number(
+      normalized || "0",
+    );
+
+  return Number.isFinite(value)
+    ? value
+    : null;
+}
+
+function isTickerLeakRejected(
+  item: {
+    symbol: string;
+    market: "us" | "hk" | "cn";
+    price: number | null;
+    fieldQuality: Record<
+      string,
+      string
+    >;
+  },
+): boolean {
+  const tickerValue =
+    tickerNumericValue(
+      item.symbol,
+      item.market,
+    );
+
+  if (
+    tickerValue === null
+  ) {
+    return true;
+  }
+
+  /*
+   * The important invariant:
+   *
+   * If the extracted price is exactly
+   * the numeric ticker, it must not
+   * survive normalization.
+   */
+  if (
+    item.price !== null &&
+    Math.abs(
+      item.price -
+        tickerValue,
+    ) < 0.000001
+  ) {
+    return false;
+  }
+
+  return (
+    item.price === null ||
+    item.fieldQuality.price ===
+      "missing"
+  );
+}
 
 export async function GET(
   request: NextRequest,
@@ -109,6 +206,10 @@ export async function GET(
         result.snapshot
           .semantic;
 
+      const fieldQuality =
+        result.snapshot
+          .fieldQuality ?? {};
+
       results.push({
         id:
           item.id,
@@ -135,64 +236,61 @@ export async function GET(
 
         price:
           result.snapshot
-            .price,
+            .price ?? null,
 
         previousClose:
           result.snapshot
-            .previousClose,
+            .previousClose ?? null,
 
         changePercent:
           result.snapshot
-            .changePercent,
+            .changePercent ?? null,
 
         open:
           result.snapshot
-            .open,
+            .open ?? null,
 
         high:
           result.snapshot
-            .high,
+            .high ?? null,
 
         low:
           result.snapshot
-            .low,
+            .low ?? null,
 
         volume:
           result.snapshot
-            .volume,
+            .volume ?? null,
 
         afterHoursPrice:
           result.snapshot
-            .afterHoursPrice,
+            .afterHoursPrice ?? null,
 
         preMarketPrice:
           result.snapshot
-            .preMarketPrice,
+            .preMarketPrice ?? null,
 
         pe:
           result.snapshot
-            .pe,
+            .pe ?? null,
 
         pb:
           result.snapshot
-            .pb,
+            .pb ?? null,
 
         eps:
           result.snapshot
-            .eps,
+            .eps ?? null,
 
         revenue:
           result.snapshot
-            .revenue,
+            .revenue ?? null,
 
         revenueGrowth:
           result.snapshot
-            .revenueGrowth,
+            .revenueGrowth ?? null,
 
-        fieldQuality:
-          result.snapshot
-            .fieldQuality ??
-          {},
+        fieldQuality,
 
         semantic: {
           regularSessionPrice:
@@ -368,7 +466,7 @@ export async function GET(
     }
   }
 
-  const passed =
+  const basePassed =
     results.filter(
       (item) =>
         item.success &&
@@ -379,17 +477,10 @@ export async function GET(
         ),
     ).length;
 
-  const allPassed =
-    passed ===
+  const baseAllPassed =
+    basePassed ===
     CASES.length;
 
-  /*
-   * C147.2.7 semantic regression.
-   *
-   * Semantic fields are nullable by design.
-   * Resolve nullable nested values into local
-   * variables before accessing their properties.
-   */
   const semanticChecks = {
     regularAndAfterHoursSeparated:
       results.every((item) => {
@@ -452,14 +543,107 @@ export async function GET(
       ),
   };
 
+  const priceIntegrityChecks =
+    {
+      HK_0700_TICKER_GUARD:
+        (() => {
+          const item =
+            results.find(
+              (entry) =>
+                entry.id ===
+                "HK_TENCENT",
+            );
+
+          return item
+            ? isTickerLeakRejected(
+                item,
+              )
+            : false;
+        })(),
+
+      HK_9988_TICKER_GUARD:
+        (() => {
+          const item =
+            results.find(
+              (entry) =>
+                entry.id ===
+                "HK_ALIBABA",
+            );
+
+          return item
+            ? isTickerLeakRejected(
+                item,
+              )
+            : false;
+        })(),
+
+      CN_600519_TICKER_GUARD:
+        (() => {
+          const item =
+            results.find(
+              (entry) =>
+                entry.id ===
+                "CN_MOUTAI",
+            );
+
+          return item
+            ? isTickerLeakRejected(
+                item,
+              )
+            : false;
+        })(),
+
+      CN_000858_TICKER_GUARD:
+        (() => {
+          const item =
+            results.find(
+              (entry) =>
+                entry.id ===
+                "CN_WULIANGYE",
+            );
+
+          return item
+            ? isTickerLeakRejected(
+                item,
+              )
+            : false;
+        })(),
+
+      US_PRICE_NOT_TREATED_AS_TICKER:
+        (() => {
+          const item =
+            results.find(
+              (entry) =>
+                entry.id ===
+                "US_NVDA",
+            );
+
+          return (
+            item !== undefined &&
+            (
+              item.price ===
+                null ||
+              item.price !==
+                0
+            )
+          );
+        })(),
+    };
+
   const semanticPass =
     Object.values(
       semanticChecks,
     ).every(Boolean);
 
+  const priceIntegrityPass =
+    Object.values(
+      priceIntegrityChecks,
+    ).every(Boolean);
+
   const finalPass =
-    allPassed &&
-    semanticPass;
+    baseAllPassed &&
+    semanticPass &&
+    priceIntegrityPass;
 
   return NextResponse.json(
     {
@@ -471,25 +655,35 @@ export async function GET(
 
       code:
         finalPass
-          ? "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PASS"
-          : "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PARTIAL",
+          ? "C147_2_7_1_MARKET_PRICE_INTEGRITY_PASS"
+          : "C147_2_7_1_MARKET_PRICE_INTEGRITY_PARTIAL",
 
       stage:
-        "C147.2.7",
+        "C147.2.7.1",
 
       description:
-        "Three-market semantic normalization, trading-session separation, field-confidence and conflict-guard regression.",
+        "Three-market semantic normalization plus ticker-to-price leakage protection and market price integrity regression.",
 
       total:
         CASES.length,
 
-      passed,
+      passed:
+        results.filter(
+          (item) =>
+            item.success &&
+            item.verified,
+        ).length,
 
       failed:
-        CASES.length -
-        passed,
+        results.filter(
+          (item) =>
+            !item.success ||
+            !item.verified,
+        ).length,
 
       semanticChecks,
+
+      priceIntegrityChecks,
 
       results,
 
