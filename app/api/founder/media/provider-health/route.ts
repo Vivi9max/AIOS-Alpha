@@ -33,8 +33,7 @@ function unauthorizedResponse() {
       success: false,
       verified: false,
       code: "FOUNDER_AUTH_REQUIRED",
-      message:
-        "Founder authentication is required.",
+      message: "Founder authentication is required.",
     },
     {
       status: 401,
@@ -55,8 +54,7 @@ function buildAutomaticRequest() {
     prompt: TEST_PROMPT,
     resolution: DEFAULT_RESOLUTION,
     aspectRatio: DEFAULT_ASPECT_RATIO,
-    durationSeconds:
-      DEFAULT_DURATION_SECONDS,
+    durationSeconds: DEFAULT_DURATION_SECONDS,
   };
 }
 
@@ -69,27 +67,23 @@ function buildProviderRequest(
     prompt: TEST_PROMPT,
     resolution: DEFAULT_RESOLUTION,
     aspectRatio: DEFAULT_ASPECT_RATIO,
-    durationSeconds:
-      DEFAULT_DURATION_SECONDS,
+    durationSeconds: DEFAULT_DURATION_SECONDS,
   };
 }
 
 function buildEnvironment() {
   return {
-    geminiConfigured:
-      isConfigured(
-        process.env.GEMINI_API_KEY,
-      ),
+    geminiConfigured: isConfigured(
+      process.env.GEMINI_API_KEY,
+    ),
 
-    googleConfigured:
-      isConfigured(
-        process.env.GOOGLE_API_KEY,
-      ),
+    googleConfigured: isConfigured(
+      process.env.GOOGLE_API_KEY,
+    ),
 
-    openAIConfigured:
-      isConfigured(
-        process.env.OPENAI_API_KEY,
-      ),
+    openAIConfigured: isConfigured(
+      process.env.OPENAI_API_KEY,
+    ),
   };
 }
 
@@ -169,8 +163,7 @@ function buildHealthChecks() {
         "openai",
 
       automaticFallbackPolicyPresent:
-        automaticRoute.fallback ===
-          true ||
+        automaticRoute.fallback === true ||
         automaticRoute.provider ===
           "google-veo" ||
         automaticRoute.provider ===
@@ -202,6 +195,20 @@ function buildOperationResult(
       ? job.videoUri ?? null
       : null;
 
+  const operationName =
+    isGoogle &&
+    job &&
+    "operationName" in job
+      ? job.operationName ?? null
+      : null;
+
+  const openAIJobId =
+    !isGoogle &&
+    job &&
+    "id" in job
+      ? job.id ?? null
+      : null;
+
   return {
     provider:
       result.route.provider,
@@ -211,6 +218,8 @@ function buildOperationResult(
 
     providerJobId:
       result.providerJobId ??
+      operationName ??
+      openAIJobId ??
       null,
 
     status:
@@ -232,21 +241,24 @@ function buildOperationResult(
     error:
       result.error ??
       null,
+
+    metadata:
+      result.metadata ??
+      null,
   };
 }
 
 /**
  * GET
  *
- * Zero-billable provider health and routing
- * verification.
+ * Zero-billable provider health.
+ *
+ * GET never creates a provider job.
  *
  * Optional:
  *
  * ?operationName=<id>
  * ?provider=google-veo|openai
- *
- * Existing provider operations are READ only.
  */
 export async function GET(
   request: NextRequest,
@@ -268,10 +280,10 @@ export async function GET(
       .get("provider")
       ?.trim();
 
-  /**
-   * Existing operation status.
+  /*
+   * Existing provider operation status.
    *
-   * This does not create a new media job.
+   * Read-only. No new billable job.
    */
   if (operationName) {
     try {
@@ -282,33 +294,42 @@ export async function GET(
             undefined,
         );
 
+      const operation =
+        buildOperationResult(
+          result,
+        );
+
+      const verified =
+        result.success ||
+        result.code ===
+          "MEDIA_GENERATION_IN_PROGRESS";
+
       return NextResponse.json(
         {
           success:
-            result.success ||
-            result.code ===
-              "MEDIA_GENERATION_IN_PROGRESS",
+            verified,
 
-          verified:
-            result.success ||
-            result.code ===
-              "MEDIA_GENERATION_IN_PROGRESS",
+          verified,
 
           code:
             result.code,
 
           message:
-            "C146.18.5 existing media provider operation was read without creating a new job.",
+            "C146.18.6 existing media provider operation was read without creating a new job.",
 
           stage:
-            "C146.18.5",
+            "C146.18.6",
 
-          operation:
-            buildOperationResult(
-              result,
-            ),
+          operation,
+
+          failoverTrace:
+            result.failoverTrace ??
+            null,
 
           billable:
+            false,
+
+          executionCreated:
             false,
 
           latencyMs:
@@ -328,9 +349,12 @@ export async function GET(
       return NextResponse.json(
         {
           success: false,
+
           verified: false,
+
           code:
-            "C146_18_5_STATUS_EXCEPTION",
+            "C146_18_6_STATUS_EXCEPTION",
+
           message:
             "Unable to read the existing media provider operation.",
 
@@ -340,6 +364,9 @@ export async function GET(
               : "Unknown provider status error.",
 
           billable:
+            false,
+
+          executionCreated:
             false,
 
           latencyMs:
@@ -358,8 +385,8 @@ export async function GET(
     }
   }
 
-  /**
-   * Default GET is always non-billable.
+  /*
+   * Default GET is always zero-billable.
    */
   const health =
     buildHealthChecks();
@@ -381,16 +408,16 @@ export async function GET(
 
       code:
         verified
-          ? "C146_18_5_MEDIA_PROVIDER_HEALTH_PASS"
-          : "C146_18_5_MEDIA_PROVIDER_HEALTH_DEGRADED",
+          ? "C146_18_6_MEDIA_PROVIDER_HEALTH_PASS"
+          : "C146_18_6_MEDIA_PROVIDER_HEALTH_DEGRADED",
 
       message:
         verified
-          ? "Media provider routing and configuration health checks passed."
-          : "Media provider routing health is available, but one or more configuration checks require attention.",
+          ? "Media provider routing, configuration, and failover policy checks passed."
+          : "Media provider health is available, but one or more configuration checks require attention.",
 
       stage:
-        "C146.18.5",
+        "C146.18.6",
 
       billable:
         false,
@@ -406,6 +433,9 @@ export async function GET(
 
         explicitProviderMode:
           "No silent provider substitution",
+
+        failureClassification:
+          "Provider failures are classified and preserved in failoverTrace.",
 
         liveExecution:
           "POST with execute=true only",
@@ -432,36 +462,23 @@ export async function GET(
 /**
  * POST
  *
- * Real provider regression.
+ * C146.18.6 provider execution + failover trace.
  *
- * IMPORTANT:
+ * execute=false / omitted:
+ *   zero-billable dry run.
  *
- * execute=true is mandatory.
+ * execute=true:
+ *   real provider execution.
  *
- * Without execute=true this endpoint
- * performs only a dry-run and creates
- * no provider job.
+ * Automatic:
+ *   Google Veo
+ *      ↓ failure
+ *   OpenAI Sora
+ *      ↓ failure
+ *   AIOS Composer
  *
- * Body:
- *
- * {
- *   "execute": true,
- *   "provider": "google-veo"
- * }
- *
- * or:
- *
- * {
- *   "execute": true
- * }
- *
- * The second form tests automatic routing:
- *
- * Google Veo
- *   ↓ execution failure
- * OpenAI Sora
- *   ↓ failure
- * AIOS Composer
+ * Explicit provider:
+ *   never silently substitutes.
  */
 export async function POST(
   request: NextRequest,
@@ -505,29 +522,45 @@ export async function POST(
       ? body.provider.trim()
       : "";
 
-  /**
-   * Safety gate.
+  /*
+   * Dry-run.
    *
-   * No real provider call unless the
-   * caller explicitly sets execute=true.
+   * No provider API call.
    */
   if (!execute) {
     const health =
       buildHealthChecks();
 
+    const requestData =
+      requestedProvider
+        ? buildProviderRequest(
+            requestedProvider,
+          )
+        : buildAutomaticRequest();
+
+    const initialRoute =
+      requestedProvider
+        ? resolveMediaGenerationRoute(
+            requestData,
+          )
+        : resolveAvailableMediaGenerationRoute(
+            requestData,
+          );
+
     return NextResponse.json(
       {
         success: true,
+
         verified: true,
 
         code:
-          "C146_18_5_DRY_RUN_PASS",
+          "C146_18_6_DRY_RUN_PASS",
 
         message:
-          "C146.18.5 dry-run passed. No provider job was created. Set execute=true to perform the real regression.",
+          "C146.18.6 dry-run passed. No provider job was created.",
 
         stage:
-          "C146.18.5",
+          "C146.18.6",
 
         billable:
           false,
@@ -535,9 +568,42 @@ export async function POST(
         executionCreated:
           false,
 
-        requestedProvider:
-          requestedProvider ||
-          null,
+        request: {
+          kind:
+            "video",
+
+          requestedProvider:
+            requestedProvider ||
+            null,
+
+          resolution:
+            DEFAULT_RESOLUTION,
+
+          aspectRatio:
+            DEFAULT_ASPECT_RATIO,
+
+          durationSeconds:
+            DEFAULT_DURATION_SECONDS,
+        },
+
+        routing: {
+          initialRoute,
+
+          finalRoute:
+            initialRoute,
+
+          fallback:
+            false,
+
+          fallbackFrom:
+            null,
+
+          fallbackTo:
+            null,
+
+          silentSubstitution:
+            false,
+        },
 
         health,
 
@@ -546,9 +612,15 @@ export async function POST(
             true,
 
           automaticFallback:
-            requestedProvider
-              ? false
-              : true,
+            !requestedProvider,
+
+          explicitProviderNoFallback:
+            Boolean(
+              requestedProvider,
+            ),
+
+          failureClassification:
+            "Enabled",
 
           silentSubstitution:
             false,
@@ -576,11 +648,6 @@ export async function POST(
         )
       : buildAutomaticRequest();
 
-  /**
-   * Resolve the route before execution
-   * so the response records exactly which
-   * policy was selected.
-   */
   const initialRoute =
     requestedProvider
       ? resolveMediaGenerationRoute(
@@ -596,7 +663,13 @@ export async function POST(
         requestData,
       );
 
+    const trace =
+      result.failoverTrace ??
+      null;
+
     const fallbackOccurred =
+      trace?.fallbackAttempted ===
+        true ||
       result.fallback === true;
 
     const providerJobId =
@@ -608,27 +681,41 @@ export async function POST(
         requestedProvider,
       );
 
-    /**
-     * A successful automatic fallback is
-     * a valid regression result.
-     *
-     * An explicit Google request succeeding
-     * is also valid.
-     *
-     * An explicit Google request failing
-     * remains a failure and must NOT be
-     * converted into a fallback success.
+    /*
+     * Explicit provider must remain on
+     * exactly the requested provider.
      */
+    const explicitRoutePreserved =
+      !isExplicit ||
+      result.route.provider ===
+        initialRoute.provider;
+
     const verified =
       result.success &&
       Boolean(
         result.route.provider,
       ) &&
-      (
-        !isExplicit ||
-        result.route.provider ===
-          initialRoute.provider
-      );
+      explicitRoutePreserved;
+
+    const attempts =
+      trace?.attempts ??
+      [];
+
+    const lastFailure =
+      [...attempts]
+        .reverse()
+        .find(
+          (attempt) =>
+            attempt.status ===
+            "failed",
+        ) ?? null;
+
+    const firstFailure =
+      attempts.find(
+        (attempt) =>
+          attempt.status ===
+          "failed",
+      ) ?? null;
 
     return NextResponse.json(
       {
@@ -640,20 +727,20 @@ export async function POST(
         code:
           verified
             ? fallbackOccurred
-              ? "C146_18_5_AUTOMATIC_FAILOVER_PASS"
-              : "C146_18_5_PROVIDER_EXECUTION_PASS"
+              ? "C146_18_6_AUTOMATIC_FAILOVER_PASS"
+              : "C146_18_6_PROVIDER_EXECUTION_PASS"
             : result.code ||
-              "C146_18_5_PROVIDER_EXECUTION_FAILED",
+              "C146_18_6_PROVIDER_EXECUTION_FAILED",
 
         message:
           verified
             ? fallbackOccurred
-              ? "Automatic media failover executed successfully."
-              : "Media provider execution completed and remained on the requested route."
-            : "Media provider regression did not complete successfully.",
+              ? "Automatic provider failover completed successfully."
+              : "Media provider execution completed without silent substitution."
+            : "Media provider execution did not complete successfully.",
 
         stage:
-          "C146.18.5",
+          "C146.18.6",
 
         request: {
           kind:
@@ -690,18 +777,18 @@ export async function POST(
             fallbackOccurred,
 
           fallbackFrom:
-            fallbackOccurred
-              ? "google-veo"
-              : null,
+            trace?.fallbackFrom ??
+            null,
 
           fallbackTo:
-            fallbackOccurred
-              ? result.route
-                  .provider
-              : null,
+            trace?.fallbackTo ??
+            null,
 
           silentSubstitution:
+            trace?.silentSubstitution ??
             false,
+
+          explicitRoutePreserved,
         },
 
         execution: {
@@ -730,6 +817,81 @@ export async function POST(
             null,
         },
 
+        /*
+         * C146.18.6 core output.
+         *
+         * This is the complete provider
+         * failure chain rather than a
+         * flattened error string.
+         */
+        failoverTrace:
+          trace,
+
+        failureSummary: {
+          firstFailure:
+            firstFailure
+              ? {
+                  provider:
+                    firstFailure.provider,
+
+                  model:
+                    firstFailure.model,
+
+                  failureClass:
+                    firstFailure.failureClass ??
+                    "UNKNOWN",
+
+                  code:
+                    firstFailure.code ??
+                    null,
+
+                  error:
+                    firstFailure.error ??
+                    null,
+                }
+              : null,
+
+          lastFailure:
+            lastFailure
+              ? {
+                  provider:
+                    lastFailure.provider,
+
+                  model:
+                    lastFailure.model,
+
+                  failureClass:
+                    lastFailure.failureClass ??
+                    "UNKNOWN",
+
+                  code:
+                    lastFailure.code ??
+                    null,
+
+                  error:
+                    lastFailure.error ??
+                    null,
+                }
+              : null,
+
+          attemptCount:
+            attempts.length,
+
+          failedAttemptCount:
+            attempts.filter(
+              (attempt) =>
+                attempt.status ===
+                "failed",
+            ).length,
+
+          successfulAttemptCount:
+            attempts.filter(
+              (attempt) =>
+                attempt.status ===
+                "success",
+            ).length,
+        },
+
         environment:
           buildEnvironment(),
 
@@ -745,7 +907,7 @@ export async function POST(
           automaticMode:
             requestedProvider
               ? false
-              : true,
+              : "Google Veo → OpenAI Sora → AIOS Composer",
 
           explicitProviderNoFallback:
             isExplicit,
@@ -753,10 +915,13 @@ export async function POST(
           fallbackAllowed:
             !isExplicit,
 
+          failureClassification:
+            true,
+
           note:
             isExplicit
               ? "Explicit provider requests never silently substitute another provider."
-              : "Automatic video requests may fail over from Google Veo to OpenAI Sora.",
+              : "Automatic video requests preserve every provider attempt and failure classification.",
         },
 
         latencyMs:
@@ -780,13 +945,13 @@ export async function POST(
         verified: false,
 
         code:
-          "C146_18_5_EXECUTION_EXCEPTION",
+          "C146_18_6_EXECUTION_EXCEPTION",
 
         message:
-          "C146.18.5 encountered an exception during provider regression.",
+          "C146.18.6 encountered an exception during provider execution.",
 
         stage:
-          "C146.18.5",
+          "C146.18.6",
 
         request: {
           kind:
@@ -832,7 +997,7 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : "Unknown media provider regression error.",
+            : "Unknown media provider execution error.",
 
         latencyMs:
           Date.now() -
