@@ -383,17 +383,21 @@ export async function GET(
     passed ===
     CASES.length;
 
+  /*
+   * C147.2.7 semantic regression.
+   *
+   * Optional chaining is intentionally used
+   * because semantic and individual semantic
+   * fields may legally be null.
+   */
   const semanticChecks = {
     regularAndAfterHoursSeparated:
       results.every(
         (item) =>
-          item.semantic === null ||
-          (
-            item.semantic
-              .regularSessionPrice
-              .session !==
-              "after_hours"
-          ),
+          item.semantic
+            ?.regularSessionPrice
+            ?.session !==
+          "after_hours",
       ),
 
     afterHoursStoredSeparately:
@@ -410,7 +414,8 @@ export async function GET(
         (item) =>
           item.changePercent ===
             null ||
-          item.semantic?.changePercent
+          item.semantic
+            ?.changePercent
             ?.period !==
             "one_year",
       ),
@@ -438,19 +443,20 @@ export async function GET(
       semanticChecks,
     ).every(Boolean);
 
+  const finalPass =
+    allPassed &&
+    semanticPass;
+
   return NextResponse.json(
     {
       success:
-        allPassed &&
-        semanticPass,
+        finalPass,
 
       verified:
-        allPassed &&
-        semanticPass,
+        finalPass,
 
       code:
-        allPassed &&
-        semanticPass
+        finalPass
           ? "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PASS"
           : "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PARTIAL",
 
@@ -487,8 +493,7 @@ export async function GET(
     },
     {
       status:
-        allPassed &&
-        semanticPass
+        finalPass
           ? 200
           : 207,
 
