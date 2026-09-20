@@ -11,12 +11,67 @@ import type {
   MarketAnalysisMode,
   MarketAnalysisRequest,
   MarketAnalysisResult,
+  MarketInstrument,
 } from "./market-types";
 
 function resolveMode(
   mode?: MarketAnalysisMode,
 ): MarketAnalysisMode {
   return mode ?? "full";
+}
+
+function buildInstrument(
+  rawSymbol: string,
+  market: MarketInstrument["market"],
+): MarketInstrument {
+  const normalized =
+    market === "hk"
+      ? rawSymbol
+          .replace(/^HK:/i, "")
+          .replace(/\.HK$/i, "")
+          .replace(/^0+(?=\d)/, "")
+          .padStart(4, "0")
+      : market === "cn"
+        ? rawSymbol
+            .replace(/^SH:/i, "")
+            .replace(/^SZ:/i, "")
+            .replace(/^SS:/i, "")
+            .replace(/\.(SH|SZ)$/i, "")
+            .toUpperCase()
+        : rawSymbol
+            .replace(
+              /^(NASDAQ:|NYSE:|US:)/i,
+              "",
+            )
+            .toUpperCase();
+
+  return {
+    symbol: rawSymbol,
+
+    normalizedSymbol:
+      normalized,
+
+    market,
+
+    exchange:
+      market === "hk"
+        ? "HKEX"
+        : market === "cn"
+          ? normalized.startsWith("6")
+            ? "SSE"
+            : normalized.startsWith("0") ||
+                normalized.startsWith("3")
+              ? "SZSE"
+              : "CN"
+          : "US",
+
+    currency:
+      market === "hk"
+        ? "HKD"
+        : market === "cn"
+          ? "CNY"
+          : "USD",
+  };
 }
 
 export async function analyzeMarketRequest(
@@ -37,40 +92,11 @@ export async function analyzeMarketRequest(
       request.market,
     );
 
-  const instrument = {
-    symbol: rawSymbol,
-    normalizedSymbol:
-      market === "hk"
-        ? rawSymbol
-            .replace(/^HK:/i, "")
-            .replace(/\.HK$/i, "")
-            .replace(/^0+(?=\d)/, "")
-            .padStart(4, "0")
-        : market === "cn"
-          ? rawSymbol
-              .replace(/^SH:/i, "")
-              .replace(/^SZ:/i, "")
-              .replace(/\.(SH|SZ)$/i, "")
-          : rawSymbol
-              .replace(
-                /^(NASDAQ:|NYSE:|US:)/i,
-                "",
-              )
-              .toUpperCase(),
-    market,
-    exchange:
-      market === "hk"
-        ? "HKEX"
-        : market === "cn"
-          ? "CN"
-          : "US",
-    currency:
-      market === "hk"
-        ? "HKD"
-        : market === "cn"
-          ? "CNY"
-          : "USD",
-  } as const;
+  const instrument =
+    buildInstrument(
+      rawSymbol,
+      market,
+    );
 
   const data =
     await retrieveMarketData(
@@ -84,16 +110,43 @@ export async function analyzeMarketRequest(
     );
 
   const mode =
-    resolveMode(request.mode);
+    resolveMode(
+      request.mode,
+    );
+
+  const structuredDataAvailable =
+    data.structuredDataAvailable;
+
+  const structuredDataVerified =
+    data.structuredDataVerified;
+
+  const webEvidenceAvailable =
+    data.evidence.length > 0;
+
+  const success =
+    structuredDataVerified ||
+    webEvidenceAvailable;
+
+  let code:
+    | "C147_2_STRUCTURED_MARKET_DATA_PASS"
+    | "C147_2_WEB_EVIDENCE_FALLBACK"
+    | "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
+
+  if (structuredDataVerified) {
+    code =
+      "C147_2_STRUCTURED_MARKET_DATA_PASS";
+  } else if (webEvidenceAvailable) {
+    code =
+      "C147_2_WEB_EVIDENCE_FALLBACK";
+  } else {
+    code =
+      "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
+  }
 
   return {
-    success:
-      data.evidence.length > 0,
+    success,
 
-    code:
-      data.evidence.length > 0
-        ? "C147_1_MARKET_ANALYSIS_PASS"
-        : "C147_1_MARKET_EVIDENCE_INSUFFICIENT",
+    code,
 
     instrument,
 
@@ -108,25 +161,39 @@ export async function analyzeMarketRequest(
     verification: {
       verified:
         data.verified,
+
       sourceCount:
         data.sourceCount,
+
       independentDomains:
         data.independentDomains,
+
       primarySourceFound:
         data.primarySourceFound,
+
+      structuredDataAvailable,
+
+      structuredDataVerified,
     },
+
+    provider:
+      data.provider,
 
     metadata: {
       runtime:
         "aios-alpha",
+
       stage:
-        "C147.1",
+        "C147.2",
+
       analysisMode:
         mode,
+
       generatedAt:
         new Date().toISOString(),
+
       disclaimer:
-        "AIOS provides market research and decision-support information, not personalized investment advice or an automatic buy/sell instruction.",
+        "AIOS provides market research and decision-support information, not personalized investment advice or automatic buy/sell instructions.",
     },
 
     error:
