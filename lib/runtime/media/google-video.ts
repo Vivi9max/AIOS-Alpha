@@ -496,9 +496,6 @@ export async function createGoogleVideoJob(
             resolution,
 
             durationSeconds,
-
-            numberOfVideos:
-              1,
           },
         }),
       },
