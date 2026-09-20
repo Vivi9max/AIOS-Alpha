@@ -13,12 +13,12 @@ const ACCESS_VALUE =
  * Public routes that must bypass
  * the normal Alpha access gate.
  *
- * Founder routes are intentionally public
- * at the routing layer because they perform
- * their own Founder authentication.
+ * Founder routes are intentionally allowed
+ * through the routing layer because they
+ * perform their own Founder authentication.
  *
  * This does NOT make Founder data public.
- * Founder API/page authentication remains
+ * Founder page/API authentication remains
  * responsible for access control.
  */
 const PUBLIC_PATHS = [
@@ -36,12 +36,18 @@ const PUBLIC_PATHS = [
 
   /**
    * Founder Console
-   *
-   * These routes must reach their own
-   * Founder authentication layer instead
-   * of being redirected to /alpha.
    */
   "/founder",
+
+  /**
+   * C146.18.3
+   *
+   * Real media execution verification API.
+   *
+   * The route itself performs Founder
+   * authentication using FOUNDER_ACCESS_KEY.
+   */
+  "/api/founder/media/chat-regression",
 
   /**
    * Existing Founder regression pages
@@ -100,20 +106,16 @@ export function proxy(
     request.nextUrl.pathname;
 
   /**
-   * Founder routes intentionally bypass
+   * Public / Founder routes bypass
    * the Alpha cookie gate.
    *
    * IMPORTANT:
+   *
    * This only allows the request to reach
-   * the Founder page/API.
+   * the destination route.
    *
-   * Actual Founder authorization remains
-   * enforced by:
-   *
-   * - Founder page/API auth
-   * - FOUNDER_ACCESS_KEY
-   * - Authorization: Bearer ...
-   * - x-aios-founder-key
+   * Sensitive Founder routes MUST perform
+   * their own authentication.
    */
   if (
     isPublicPath(pathname) ||
@@ -122,6 +124,9 @@ export function proxy(
     return NextResponse.next();
   }
 
+  /**
+   * Normal Alpha access.
+   */
   const access =
     request.cookies.get(
       ACCESS_COOKIE,
@@ -135,8 +140,8 @@ export function proxy(
   }
 
   /**
-   * API requests return JSON instead
-   * of redirecting.
+   * Protected API requests return JSON
+   * instead of redirecting to /alpha.
    */
   if (
     pathname.startsWith(
@@ -167,8 +172,8 @@ export function proxy(
   }
 
   /**
-   * Normal user-facing protected
-   * routes still go through Alpha.
+   * Normal user-facing protected routes
+   * continue through the Alpha gate.
    */
   const alphaUrl =
     request.nextUrl.clone();
