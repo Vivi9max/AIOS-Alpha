@@ -15,6 +15,7 @@ import type {
   MarketAnalysisMode,
   MarketAnalysisRequest,
   MarketAnalysisResult,
+  MarketFreshnessVerification,
   MarketInstrument,
 } from "./market-types";
 
@@ -53,7 +54,8 @@ function buildInstrument(
             .toUpperCase();
 
   return {
-    symbol: rawSymbol,
+    symbol:
+      rawSymbol,
 
     normalizedSymbol:
       normalized,
@@ -78,6 +80,36 @@ function buildInstrument(
         : market === "cn"
           ? "CNY"
           : "USD",
+  };
+}
+
+function buildFreshnessVerification(
+  snapshot: Awaited<
+    ReturnType<
+      typeof retrieveMarketData
+    >
+  >["snapshot"],
+): MarketFreshnessVerification {
+  const assessment =
+    assessMarketFreshness(
+      snapshot,
+    );
+
+  return {
+    freshness:
+      assessment.freshness,
+
+    ageMinutes:
+      assessment.ageMinutes,
+
+    ageHours:
+      assessment.ageHours,
+
+    referenceTime:
+      assessment.referenceTime,
+
+    reason:
+      assessment.reason,
   };
 }
 
@@ -122,7 +154,7 @@ export async function analyzeMarketRequest(
     );
 
   const freshness =
-    assessMarketFreshness(
+    buildFreshnessVerification(
       data.snapshot,
     );
 
@@ -136,10 +168,8 @@ export async function analyzeMarketRequest(
     data.evidence.length > 0;
 
   /*
-   * Verification means the runtime has
-   * a usable evidence path.
-   *
-   * It does NOT mean the price is live.
+   * Evidence availability and live-price
+   * availability are intentionally separate.
    */
   const success =
     structuredDataVerified ||
@@ -161,22 +191,16 @@ export async function analyzeMarketRequest(
       "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
   }
 
-  return {
-    success,
-
-    code,
-
-    instrument,
-
-    snapshot:
-      data.snapshot,
-
-    analysis,
-
-    evidence:
-      data.evidence,
-
-    verification: {
+  /*
+   * Build verification as a standalone object.
+   *
+   * This makes the new C147.2.4 freshness
+   * contract explicit and prevents TypeScript
+   * from accepting an incomplete verification
+   * payload.
+   */
+  const verification: MarketAnalysisResult["verification"] =
+    {
       verified:
         data.verified,
 
@@ -193,23 +217,25 @@ export async function analyzeMarketRequest(
 
       structuredDataVerified,
 
-      freshness: {
-        freshness:
-          freshness.freshness,
+      freshness,
+    };
 
-        ageMinutes:
-          freshness.ageMinutes,
+  return {
+    success,
 
-        ageHours:
-          freshness.ageHours,
+    code,
 
-        referenceTime:
-          freshness.referenceTime,
+    instrument,
 
-        reason:
-          freshness.reason,
-      },
-    },
+    snapshot:
+      data.snapshot,
+
+    analysis,
+
+    evidence:
+      data.evidence,
+
+    verification,
 
     provider:
       data.provider,
