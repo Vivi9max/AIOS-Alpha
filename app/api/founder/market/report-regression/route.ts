@@ -87,10 +87,8 @@ const REGRESSION_CASES: Array<{
   {
     name: "REPORT_STRUCTURE",
     request: {
-      universe:
-        BASE_UNIVERSE,
-      criteria:
-        BASE_CRITERIA,
+      universe: BASE_UNIVERSE,
+      criteria: BASE_CRITERIA,
       mode: "full",
     },
   },
@@ -98,10 +96,8 @@ const REGRESSION_CASES: Array<{
   {
     name: "REPORT_MIXED_MARKET",
     request: {
-      universe:
-        BASE_UNIVERSE,
-      criteria:
-        BASE_CRITERIA,
+      universe: BASE_UNIVERSE,
+      criteria: BASE_CRITERIA,
       mode: "full",
     },
   },
@@ -128,13 +124,36 @@ const REGRESSION_CASES: Array<{
     request: {
       universe: [
         {
-          symbol:
-            "INVALID-AIOS-SYMBOL",
+          symbol: "INVALID-AIOS-SYMBOL",
           market: "us",
         },
       ],
-      criteria:
-        BASE_CRITERIA,
+      criteria: BASE_CRITERIA,
+      mode: "full",
+    },
+  },
+
+  /*
+   * C147.2.7.1 → C147.3.2
+   *
+   * Verify that ticker-code price leakage rejected
+   * by the Market Provider does not reappear in the
+   * Research Report layer.
+   */
+  {
+    name: "REPORT_PRICE_INTEGRITY_PROPAGATION",
+    request: {
+      universe: [
+        {
+          symbol: "600519.SH",
+          market: "cn",
+        },
+        {
+          symbol: "0700.HK",
+          market: "hk",
+        },
+      ],
+      criteria: BASE_CRITERIA,
       mode: "full",
     },
   },
@@ -156,24 +175,17 @@ async function executeCase(
   name: string,
   request: MarketScreeningRequest,
 ): Promise<RegressionCaseResult> {
-  const startedAt =
-    Date.now();
+  const startedAt = Date.now();
 
   const report =
-    await runMarketScreeningResearchReport(
-      {
-        screening:
-          request,
-        title:
-          `C147.3.2 Regression · ${name}`,
-      },
-    );
+    await runMarketScreeningResearchReport({
+      screening: request,
+      title: `C147.3.2 Regression · ${name}`,
+    });
 
-  const checks:
-    RegressionCheck[] = [];
+  const checks: RegressionCheck[] = [];
 
-  const summary =
-    report.report;
+  const summary = report.report;
 
   const allItems = [
     ...summary.candidates,
@@ -182,16 +194,13 @@ async function executeCase(
   ];
 
   const totalSources =
-    summary.evidenceSummary
-      .totalSources;
+    summary.evidenceSummary.totalSources;
 
   const verifiedCount =
-    summary.evidenceSummary
-      .verifiedCount;
+    summary.evidenceSummary.verifiedCount;
 
   const knownTimestampCount =
-    summary.freshnessSummary
-      .knownAsOfCount;
+    summary.freshnessSummary.knownAsOfCount;
 
   checks.push(
     check(
@@ -208,9 +217,7 @@ async function executeCase(
         "C147_3_2_REPORT_PASS",
         "C147_3_2_REPORT_PARTIAL",
         "C147_3_2_REPORT_INSUFFICIENT",
-      ].includes(
-        report.code,
-      ),
+      ].includes(report.code),
       `Report code=${report.code}.`,
     ),
   );
@@ -218,14 +225,13 @@ async function executeCase(
   checks.push(
     check(
       "ITEM_PARTITION_INTEGRITY",
-      allItems.length ===
-        summary.evaluatedCount,
+      allItems.length === summary.evaluatedCount,
       `Candidates ${summary.candidateCount} + excluded ${summary.excludedCount} + insufficient ${summary.insufficientDataCount} = ${allItems.length}; evaluated=${summary.evaluatedCount}.`,
     ),
   );
 
   switch (name) {
-    case "REPORT_STRUCTURE":
+    case "REPORT_STRUCTURE": {
       checks.push(
         check(
           "UNIVERSE_SIZE",
@@ -245,22 +251,36 @@ async function executeCase(
       checks.push(
         check(
           "VERIFICATION_PROPAGATED",
-          verifiedCount ===
-            summary.evaluatedCount,
+          verifiedCount === summary.evaluatedCount,
           `Verified ${verifiedCount}/${summary.evaluatedCount}.`,
         ),
       );
 
+      checks.push(
+        check(
+          "FRESHNESS_PROPAGATED",
+          knownTimestampCount > 0,
+          `Known timestamps=${knownTimestampCount}.`,
+        ),
+      );
+
+      checks.push(
+        check(
+          "HUMAN_DECISION_GATE",
+          summary.humanDecisionRequired === true,
+          "Human decision gate remains enabled.",
+        ),
+      );
+
       break;
+    }
 
     case "REPORT_MIXED_MARKET": {
-      const markets =
-        new Set(
-          allItems.map(
-            (item) =>
-              item.market,
-          ),
-        );
+      const markets = new Set(
+        allItems.map(
+          (item) => item.market,
+        ),
+      );
 
       checks.push(
         check(
@@ -289,8 +309,7 @@ async function executeCase(
       checks.push(
         check(
           "HUMAN_DECISION_GATE",
-          summary.humanDecisionRequired ===
-            true,
+          summary.humanDecisionRequired === true,
           "Human decision gate remains enabled.",
         ),
       );
@@ -313,9 +332,7 @@ async function executeCase(
       checks.push(
         check(
           "PE_FAILURE_PROPAGATED",
-          excluded?.failedCriteria.includes(
-            "pe",
-          ) === true,
+          excluded?.failedCriteria.includes("pe") === true,
           "P/E failure propagated from Screening Runtime into Research Report.",
         ),
       );
@@ -323,9 +340,16 @@ async function executeCase(
       checks.push(
         check(
           "EXCLUSION_COUNT",
-          summary.excludedCount ===
-            1,
+          summary.excludedCount === 1,
           `Excluded count=${summary.excludedCount}.`,
+        ),
+      );
+
+      checks.push(
+        check(
+          "EXCLUSION_DECISION_PRESERVED",
+          excluded?.decision === "excluded",
+          `Decision=${excluded?.decision ?? "missing"}.`,
         ),
       );
 
@@ -336,8 +360,7 @@ async function executeCase(
       checks.push(
         check(
           "INSUFFICIENT_ITEM_PRESENT",
-          summary.insufficientDataCount ===
-            1,
+          summary.insufficientDataCount === 1,
           `Insufficient-data count=${summary.insufficientDataCount}.`,
         ),
       );
@@ -353,6 +376,84 @@ async function executeCase(
         ),
       );
 
+      checks.push(
+        check(
+          "INSUFFICIENT_DECISION_PRESERVED",
+          summary.insufficientData[0]?.decision ===
+            "insufficient-data",
+          `Decision=${summary.insufficientData[0]?.decision ?? "missing"}.`,
+        ),
+      );
+
+      break;
+    }
+
+    case "REPORT_PRICE_INTEGRITY_PROPAGATION": {
+      const cnItem =
+        allItems.find(
+          (item) =>
+            item.symbol === "600519.SH",
+        );
+
+      const hkItem =
+        allItems.find(
+          (item) =>
+            item.symbol === "0700.HK",
+        );
+
+      /*
+       * Exact ticker-derived prices must remain null
+       * after Provider → Screening → Report.
+       */
+      checks.push(
+        check(
+          "CN_TICKER_PRICE_REJECTED",
+          cnItem?.price === null,
+          `600519.SH report price=${String(
+            cnItem?.price,
+          )}; expected null when ticker leakage is rejected.`,
+        ),
+      );
+
+      checks.push(
+        check(
+          "HK_TICKER_PRICE_REJECTED",
+          hkItem?.price === null,
+          `0700.HK report price=${String(
+            hkItem?.price,
+          )}; expected null when ticker leakage is rejected.`,
+        ),
+      );
+
+      checks.push(
+        check(
+          "CN_ITEM_PRESERVED",
+          Boolean(cnItem),
+          "600519.SH remains present in the report.",
+        ),
+      );
+
+      checks.push(
+        check(
+          "HK_ITEM_PRESERVED",
+          Boolean(hkItem),
+          "0700.HK remains present in the report.",
+        ),
+      );
+
+      checks.push(
+        check(
+          "REPORT_DOES_NOT_INVENT_PRICE",
+          cnItem?.price !== 600519 &&
+            hkItem?.price !== 700,
+          `Report prices are CN=${String(
+            cnItem?.price,
+          )}, HK=${String(
+            hkItem?.price,
+          )}.`,
+        ),
+      );
+
       break;
     }
 
@@ -362,18 +463,13 @@ async function executeCase(
 
   const passed =
     checks.every(
-      (item) =>
-        item.passed,
+      (item) => item.passed,
     );
 
   return {
     name,
-
     passed,
-
-    code:
-      report.code,
-
+    code: report.code,
     checks,
 
     universeSize:
@@ -398,24 +494,18 @@ async function executeCase(
     knownTimestampCount,
 
     latencyMs:
-      Date.now() -
-      startedAt,
+      Date.now() - startedAt,
   };
 }
 
 export async function GET(
   request: NextRequest,
 ) {
-  if (
-    !isFounderRequest(
-      request,
-    )
-  ) {
+  if (!isFounderRequest(request)) {
     return NextResponse.json(
       {
         success: false,
-        code:
-          "FOUNDER_AUTH_REQUIRED",
+        code: "FOUNDER_AUTH_REQUIRED",
         error:
           "Alpha founder access required.",
       },
@@ -425,15 +515,13 @@ export async function GET(
     );
   }
 
-  const startedAt =
-    Date.now();
+  const startedAt = Date.now();
 
   const results:
     RegressionCaseResult[] = [];
 
   for (
-    const testCase of
-      REGRESSION_CASES
+    const testCase of REGRESSION_CASES
   ) {
     try {
       results.push(
@@ -444,11 +532,9 @@ export async function GET(
       );
     } catch (error) {
       results.push({
-        name:
-          testCase.name,
+        name: testCase.name,
 
-        passed:
-          false,
+        passed: false,
 
         code:
           "C147_3_2_CASE_ERROR",
@@ -457,8 +543,9 @@ export async function GET(
           {
             name:
               "CASE_EXECUTION",
-            passed:
-              false,
+
+            passed: false,
+
             detail:
               error instanceof Error
                 ? error.message
@@ -467,32 +554,16 @@ export async function GET(
         ],
 
         universeSize:
-          testCase.request
-            .universe.length,
+          testCase.request.universe.length,
 
-        evaluatedCount:
-          0,
-
-        candidateCount:
-          0,
-
-        excludedCount:
-          0,
-
-        insufficientDataCount:
-          0,
-
-        totalSources:
-          0,
-
-        verifiedCount:
-          0,
-
-        knownTimestampCount:
-          0,
-
-        latencyMs:
-          0,
+        evaluatedCount: 0,
+        candidateCount: 0,
+        excludedCount: 0,
+        insufficientDataCount: 0,
+        totalSources: 0,
+        verifiedCount: 0,
+        knownTimestampCount: 0,
+        latencyMs: 0,
 
         error:
           error instanceof Error
@@ -504,13 +575,11 @@ export async function GET(
 
   const passed =
     results.filter(
-      (item) =>
-        item.passed,
+      (item) => item.passed,
     ).length;
 
   const failed =
-    results.length -
-    passed;
+    results.length - passed;
 
   const verified =
     results.length > 0 &&
@@ -518,8 +587,7 @@ export async function GET(
 
   return NextResponse.json(
     {
-      success:
-        verified,
+      success: verified,
 
       code:
         verified
@@ -532,7 +600,6 @@ export async function GET(
       verified,
 
       passed,
-
       failed,
 
       total:
@@ -542,13 +609,12 @@ export async function GET(
         "behavioral",
 
       latencyMs:
-        Date.now() -
-        startedAt,
+        Date.now() - startedAt,
 
       results,
 
       principle:
-        "The research report must preserve screening evidence, decisions, exclusions, missing-data states, freshness information, and the human decision gate without ranking securities or issuing automatic trading instructions.",
+        "The research report must preserve screening evidence, decisions, exclusions, missing-data states, freshness information, price-integrity protections, and the human decision gate without ranking securities or issuing automatic trading instructions.",
 
       disclaimer:
         "AIOS research reports provide transparent decision-support information and do not constitute personalized investment advice or automatic trading instructions.",
