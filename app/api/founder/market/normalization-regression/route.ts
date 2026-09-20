@@ -386,39 +386,53 @@ export async function GET(
   /*
    * C147.2.7 semantic regression.
    *
-   * Optional chaining is intentionally used
-   * because semantic and individual semantic
-   * fields may legally be null.
+   * Semantic fields are nullable by design.
+   * Resolve nullable nested values into local
+   * variables before accessing their properties.
    */
   const semanticChecks = {
     regularAndAfterHoursSeparated:
-      results.every(
-        (item) =>
+      results.every((item) => {
+        const regularSessionPrice =
           item.semantic
-            ?.regularSessionPrice
-            ?.session !==
-          "after_hours",
-      ),
+            ?.regularSessionPrice ??
+          null;
+
+        return (
+          regularSessionPrice?.session !==
+          "after_hours"
+        );
+      }),
 
     afterHoursStoredSeparately:
-      results.every(
-        (item) =>
+      results.every((item) => {
+        if (
           item.afterHoursPrice ===
-            null ||
+          null
+        ) {
+          return true;
+        }
+
+        return (
           item.semantic !==
-            null,
-      ),
+          null
+        );
+      }),
 
     annualChangeNotUsedAsDaily:
-      results.every(
-        (item) =>
+      results.every((item) => {
+        const semanticChangePercent =
+          item.semantic
+            ?.changePercent ??
+          null;
+
+        return (
           item.changePercent ===
             null ||
-          item.semantic
-            ?.changePercent
-            ?.period !==
-            "one_year",
-      ),
+          semanticChangePercent?.period !==
+            "one_year"
+        );
+      }),
 
     peSubstringProtection:
       results.every(
