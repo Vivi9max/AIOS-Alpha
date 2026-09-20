@@ -17,7 +17,7 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
-function headers() {
+function responseHeaders() {
   return {
     "cache-control":
       "no-store",
@@ -42,7 +42,8 @@ function unauthorized() {
     },
     {
       status: 401,
-      headers: headers(),
+      headers:
+        responseHeaders(),
     },
   );
 }
@@ -83,7 +84,9 @@ export async function GET(
 
   const results = [];
 
-  for (const item of CASES) {
+  for (
+    const item of CASES
+  ) {
     const caseStartedAt =
       Date.now();
 
@@ -101,6 +104,10 @@ export async function GET(
               "full",
           },
         );
+
+      const semantic =
+        result.snapshot
+          .semantic;
 
       results.push({
         id:
@@ -130,9 +137,37 @@ export async function GET(
           result.snapshot
             .price,
 
+        previousClose:
+          result.snapshot
+            .previousClose,
+
         changePercent:
           result.snapshot
             .changePercent,
+
+        open:
+          result.snapshot
+            .open,
+
+        high:
+          result.snapshot
+            .high,
+
+        low:
+          result.snapshot
+            .low,
+
+        volume:
+          result.snapshot
+            .volume,
+
+        afterHoursPrice:
+          result.snapshot
+            .afterHoursPrice,
+
+        preMarketPrice:
+          result.snapshot
+            .preMarketPrice,
 
         pe:
           result.snapshot
@@ -146,16 +181,53 @@ export async function GET(
           result.snapshot
             .eps,
 
+        revenue:
+          result.snapshot
+            .revenue,
+
+        revenueGrowth:
+          result.snapshot
+            .revenueGrowth,
+
         fieldQuality:
           result.snapshot
-            .fieldQuality ?? {},
+            .fieldQuality ??
+          {},
+
+        semantic: {
+          regularSessionPrice:
+            semantic
+              ?.regularSessionPrice ??
+            null,
+
+          afterHoursPrice:
+            semantic
+              ?.afterHoursPrice ??
+            null,
+
+          preMarketPrice:
+            semantic
+              ?.preMarketPrice ??
+            null,
+
+          previousClose:
+            semantic
+              ?.previousClose ??
+            null,
+
+          changePercent:
+            semantic
+              ?.changePercent ??
+            null,
+        },
 
         structuredDataVerified:
           result.verification
             .structuredDataVerified,
 
         webEvidence:
-          result.evidence.length > 0,
+          result.evidence.length >
+          0,
 
         sourceCount:
           result.verification
@@ -199,7 +271,7 @@ export async function GET(
           false,
 
         code:
-          "C147_2_6_CASE_ERROR",
+          "C147_2_7_CASE_ERROR",
 
         dataQuality:
           "insufficient",
@@ -207,7 +279,28 @@ export async function GET(
         price:
           null,
 
+        previousClose:
+          null,
+
         changePercent:
+          null,
+
+        open:
+          null,
+
+        high:
+          null,
+
+        low:
+          null,
+
+        volume:
+          null,
+
+        afterHoursPrice:
+          null,
+
+        preMarketPrice:
           null,
 
         pe:
@@ -219,8 +312,17 @@ export async function GET(
         eps:
           null,
 
+        revenue:
+          null,
+
+        revenueGrowth:
+          null,
+
         fieldQuality:
           {},
+
+        semantic:
+          null,
 
         structuredDataVerified:
           false,
@@ -248,7 +350,7 @@ export async function GET(
             null,
 
           reason:
-            "Normalization regression case failed.",
+            "Semantic normalization regression case failed.",
         },
 
         provider:
@@ -281,24 +383,82 @@ export async function GET(
     passed ===
     CASES.length;
 
+  const semanticChecks = {
+    regularAndAfterHoursSeparated:
+      results.every(
+        (item) =>
+          item.semantic === null ||
+          (
+            item.semantic
+              .regularSessionPrice
+              .session !==
+              "after_hours"
+          ),
+      ),
+
+    afterHoursStoredSeparately:
+      results.every(
+        (item) =>
+          item.afterHoursPrice ===
+            null ||
+          item.semantic !==
+            null,
+      ),
+
+    annualChangeNotUsedAsDaily:
+      results.every(
+        (item) =>
+          item.changePercent ===
+            null ||
+          item.semantic?.changePercent
+            ?.period !==
+            "one_year",
+      ),
+
+    peSubstringProtection:
+      results.every(
+        (item) =>
+          item.pe ===
+            null ||
+          item.fieldQuality.pe !==
+            "conflict",
+      ),
+
+    fieldQualityPresent:
+      results.every(
+        (item) =>
+          Object.keys(
+            item.fieldQuality,
+          ).length > 0,
+      ),
+  };
+
+  const semanticPass =
+    Object.values(
+      semanticChecks,
+    ).every(Boolean);
+
   return NextResponse.json(
     {
       success:
-        allPassed,
+        allPassed &&
+        semanticPass,
 
       verified:
-        allPassed,
+        allPassed &&
+        semanticPass,
 
       code:
-        allPassed
-          ? "C147_2_6_MARKET_NORMALIZATION_PASS"
-          : "C147_2_6_MARKET_NORMALIZATION_PARTIAL",
+        allPassed &&
+        semanticPass
+          ? "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PASS"
+          : "C147_2_7_MARKET_SEMANTIC_NORMALIZATION_PARTIAL",
 
       stage:
-        "C147.2.6",
+        "C147.2.7",
 
       description:
-        "Three-market market-data normalization, field-confidence and conflict-guard regression.",
+        "Three-market semantic normalization, trading-session separation, field-confidence and conflict-guard regression.",
 
       total:
         CASES.length,
@@ -309,23 +469,7 @@ export async function GET(
         CASES.length -
         passed,
 
-      normalization:
-        {
-          perSourceExtraction:
-            true,
-
-          conflictGuard:
-            true,
-
-          genericPeSubstringMatch:
-            false,
-
-          annualChangeAsDailyChange:
-            false,
-
-          unresolvedConflictsBecomeNull:
-            true,
-        },
+      semanticChecks,
 
       results,
 
@@ -343,12 +487,13 @@ export async function GET(
     },
     {
       status:
-        allPassed
+        allPassed &&
+        semanticPass
           ? 200
           : 207,
 
       headers:
-        headers(),
+        responseHeaders(),
     },
   );
 }
