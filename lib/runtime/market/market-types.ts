@@ -22,13 +22,38 @@ export type MarketFreshness =
   | "stale"
   | "unknown";
 
+export type MarketFieldName =
+  | "price"
+  | "previousClose"
+  | "changePercent"
+  | "open"
+  | "high"
+  | "low"
+  | "volume"
+  | "marketCap"
+  | "pe"
+  | "pb"
+  | "eps"
+  | "revenue"
+  | "revenueGrowth";
+
+export type MarketFieldQuality =
+  | "corroborated"
+  | "single-source"
+  | "corroborated-with-conflict"
+  | "conflict"
+  | "missing";
+
 export interface MarketInstrument {
   symbol: string;
   normalizedSymbol: string;
   name?: string | null;
   market: MarketRegion;
   exchange: string;
-  currency: "USD" | "HKD" | "CNY";
+  currency:
+    | "USD"
+    | "HKD"
+    | "CNY";
 }
 
 export interface MarketBar {
@@ -65,6 +90,13 @@ export interface MarketSnapshot {
   dataset?: string | null;
 
   bars?: MarketBar[];
+
+  fieldQuality?: Partial<
+    Record<
+      MarketFieldName,
+      MarketFieldQuality
+    >
+  >;
 }
 
 export interface MarketEvidence {
@@ -181,7 +213,11 @@ export interface MarketAnalysisResult {
 
   metadata: {
     runtime: "aios-alpha";
-    stage: "C147.2.4";
+    stage:
+      | "C147.2.4"
+      | "C147.2.5"
+      | "C147.2.6";
+
     analysisMode: MarketAnalysisMode;
     generatedAt: string;
 
