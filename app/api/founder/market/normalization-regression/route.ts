@@ -17,6 +17,26 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
+type Market =
+  | "us"
+  | "hk"
+  | "cn";
+
+type SemanticValue = {
+  session?: string;
+  period?: string;
+  value?: number | null;
+  quality?: string;
+} | null;
+
+type SemanticSnapshot = {
+  regularSessionPrice: SemanticValue;
+  afterHoursPrice: SemanticValue;
+  preMarketPrice: SemanticValue;
+  previousClose: SemanticValue;
+  changePercent: SemanticValue;
+};
+
 function responseHeaders() {
   return {
     "cache-control":
@@ -31,12 +51,9 @@ function unauthorized() {
   return NextResponse.json(
     {
       success: false,
-
       verified: false,
-
       code:
         "FOUNDER_AUTH_REQUIRED",
-
       message:
         "Founder authentication is required.",
     },
@@ -82,7 +99,7 @@ const CASES = [
 
 function tickerNumericValue(
   symbol: string,
-  market: "us" | "hk" | "cn",
+  market: Market,
 ): number | null {
   if (market === "us") {
     return null;
@@ -137,26 +154,10 @@ function isExactTickerValue(
   );
 }
 
-/**
- * C147.2.7.1
- *
- * The regression invariant is deliberately asymmetric:
- *
- * 1. If normalized price exactly equals the numeric ticker,
- *    the ticker-to-price leakage guard must have rejected it.
- *
- * 2. If normalized price is different from the ticker,
- *    it is not ticker leakage and must NOT be rejected merely
- *    because it is a numeric value.
- *
- * 3. null is acceptable:
- *    absence of a reliable price is preferable to contaminated
- *    or fabricated price data.
- */
 function verifyTickerLeakGuard(
   item: {
     symbol: string;
-    market: "us" | "hk" | "cn";
+    market: Market;
     price: number | null;
     fieldQuality: Record<
       string,
@@ -217,9 +218,8 @@ function verifyTickerLeakGuard(
     );
 
   /*
-   * A value equal to the ticker is only
-   * acceptable if the integrity guard has
-   * removed it from the normalized snapshot.
+   * Exact ticker leakage remaining
+   * in the normalized result is a failure.
    */
   if (exactTickerLeak) {
     return {
@@ -239,13 +239,8 @@ function verifyTickerLeakGuard(
   }
 
   /*
-   * null is explicitly accepted.
-   *
-   * This is important for 0700.HK,
-   * 600519.SH and 000858.SZ:
-   *
-   * the system must prefer missing data
-   * over contaminated ticker-derived data.
+   * Null is explicitly accepted.
+   * Missing is safer than contaminated data.
    */
   if (
     item.price === null
@@ -267,13 +262,12 @@ function verifyTickerLeakGuard(
   }
 
   /*
-   * A different numeric value is a valid
-   * non-ticker-derived candidate.
+   * Any finite numeric value that is
+   * different from the ticker is NOT
+   * ticker leakage.
    *
-   * The regression does not claim that the
-   * value is exchange-real-time. That is
-   * handled separately by freshness/data
-   * quality verification.
+   * Freshness / exchange-real-time
+   * verification remains a separate layer.
    */
   return {
     passed: true,
@@ -308,47 +302,61 @@ export async function GET(
   const results: Array<{
     id: string;
     symbol: string;
-    market:
-      | "us"
-      | "hk"
-      | "cn";
+    market: Market;
     success: boolean;
     verified: boolean;
     code: string;
     dataQuality: string;
+
     price: number | null;
     previousClose: number | null;
     changePercent: number | null;
+
     open: number | null;
     high: number | null;
     low: number | null;
     volume: number | null;
+
     afterHoursPrice: number | null;
     preMarketPrice: number | null;
+
     pe: number | null;
     pb: number | null;
     eps: number | null;
     revenue: number | null;
     revenueGrowth: number | null;
+
     fieldQuality: Record<
       string,
       string
     >;
-    semantic: {
-      regularSessionPrice: unknown;
-      afterHoursPrice: unknown;
-      preMarketPrice: unknown;
-      previousClose: unknown;
-      changePercent: unknown;
-    } | null;
-    structuredDataVerified: boolean;
-    webEvidence: boolean;
-    sourceCount: number;
-    independentDomains: number;
-    freshness: unknown;
-    provider: string;
-    error: string | null;
-    latencyMs: number;
+
+    semantic:
+      SemanticSnapshot | null;
+
+    structuredDataVerified:
+      boolean;
+
+    webEvidence:
+      boolean;
+
+    sourceCount:
+      number;
+
+    independentDomains:
+      number;
+
+    freshness:
+      unknown;
+
+    provider:
+      string;
+
+    error:
+      string | null;
+
+    latencyMs:
+      number;
   }> = [];
 
   for (
@@ -372,9 +380,128 @@ export async function GET(
           },
         );
 
-      const semantic =
+      const rawSemantic =
         result.snapshot
           .semantic;
+
+      /*
+       * Explicit structural projection.
+       *
+       * This prevents TypeScript from
+       * collapsing the semantic fields
+       * into `{}` / unknown while still
+       * allowing the regression to inspect
+       * session and period semantics.
+       */
+      const semantic =
+        rawSemantic
+          ? {
+              regularSessionPrice:
+                rawSemantic
+                  .regularSessionPrice
+                  ? {
+                      value:
+                        rawSemantic
+                          .regularSessionPrice
+                          .value,
+
+                      quality:
+                        rawSemantic
+                          .regularSessionPrice
+                          .quality,
+
+                      session:
+                        rawSemantic
+                          .regularSessionPrice
+                          .session,
+                    }
+                  : null,
+
+              afterHoursPrice:
+                rawSemantic
+                  .afterHoursPrice
+                  ? {
+                      value:
+                        rawSemantic
+                          .afterHoursPrice
+                          .value,
+
+                      quality:
+                        rawSemantic
+                          .afterHoursPrice
+                          .quality,
+
+                      session:
+                        rawSemantic
+                          .afterHoursPrice
+                          .session,
+                    }
+                  : null,
+
+              preMarketPrice:
+                rawSemantic
+                  .preMarketPrice
+                  ? {
+                      value:
+                        rawSemantic
+                          .preMarketPrice
+                          .value,
+
+                      quality:
+                        rawSemantic
+                          .preMarketPrice
+                          .quality,
+
+                      session:
+                        rawSemantic
+                          .preMarketPrice
+                          .session,
+                    }
+                  : null,
+
+              previousClose:
+                rawSemantic
+                  .previousClose
+                  ? {
+                      value:
+                        rawSemantic
+                          .previousClose
+                          .value,
+
+                      quality:
+                        rawSemantic
+                          .previousClose
+                          .quality,
+
+                      session:
+                        rawSemantic
+                          .previousClose
+                          .session,
+                    }
+                  : null,
+
+              changePercent:
+                rawSemantic
+                  .changePercent
+                  ? {
+                      value:
+                        rawSemantic
+                          .changePercent
+                          .value,
+
+                      quality:
+                        rawSemantic
+                          .changePercent
+                          .quality,
+
+                      period:
+                        rawSemantic
+                          .changePercent
+                          .period,
+                    }
+                  : null,
+            }
+          : null;
 
       const fieldQuality =
         result.snapshot
@@ -462,32 +589,7 @@ export async function GET(
 
         fieldQuality,
 
-        semantic: {
-          regularSessionPrice:
-            semantic
-              ?.regularSessionPrice ??
-            null,
-
-          afterHoursPrice:
-            semantic
-              ?.afterHoursPrice ??
-            null,
-
-          preMarketPrice:
-            semantic
-              ?.preMarketPrice ??
-            null,
-
-          previousClose:
-            semantic
-              ?.previousClose ??
-            null,
-
-          changePercent:
-            semantic
-              ?.changePercent ??
-            null,
-        },
+        semantic,
 
         structuredDataVerified:
           result.verification
@@ -729,17 +831,6 @@ export async function GET(
    * ------------------------------------------------------------
    * Price integrity checks
    * ------------------------------------------------------------
-   *
-   * These checks deliberately distinguish:
-   *
-   * A. exact ticker leakage
-   * B. safe null
-   * C. legitimate non-ticker numeric value
-   *
-   * We must NOT require every HK/CN price
-   * to be null. Doing that would incorrectly
-   * reject legitimate market prices.
-   * ------------------------------------------------------------
    */
 
   const priceIntegrityResults = {
@@ -768,13 +859,6 @@ export async function GET(
             item,
           );
 
-        /*
-         * 0700 specifically tests
-         * the previously observed
-         * 700 ticker leakage.
-         *
-         * It must not survive.
-         */
         return {
           ...check,
 
@@ -814,14 +898,6 @@ export async function GET(
             item,
           );
 
-        /*
-         * IMPORTANT:
-         *
-         * 9970.857... is not 9988.
-         *
-         * It must NOT be rejected simply
-         * because it is numeric.
-         */
         return {
           ...check,
 
@@ -941,12 +1017,6 @@ export async function GET(
             item,
           );
 
-        /*
-         * US symbols have no numeric
-         * ticker-code leakage rule.
-         *
-         * A normal numeric price is valid.
-         */
         return {
           ...check,
 
@@ -990,12 +1060,6 @@ export async function GET(
     baseAllPassed &&
     semanticPass &&
     priceIntegrityPass;
-
-  /*
-   * ------------------------------------------------------------
-   * Final verification
-   * ------------------------------------------------------------
-   */
 
   const passedCount =
     Object.values(
