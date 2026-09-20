@@ -167,10 +167,6 @@ export async function analyzeMarketRequest(
   const webEvidenceAvailable =
     data.evidence.length > 0;
 
-  /*
-   * Evidence availability and live-price
-   * availability are intentionally separate.
-   */
   const success =
     structuredDataVerified ||
     webEvidenceAvailable;
@@ -180,10 +176,14 @@ export async function analyzeMarketRequest(
     | "C147_2_WEB_EVIDENCE_FALLBACK"
     | "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
 
-  if (structuredDataVerified) {
+  if (
+    structuredDataVerified
+  ) {
     code =
       "C147_2_STRUCTURED_MARKET_DATA_PASS";
-  } else if (webEvidenceAvailable) {
+  } else if (
+    webEvidenceAvailable
+  ) {
     code =
       "C147_2_WEB_EVIDENCE_FALLBACK";
   } else {
@@ -191,15 +191,8 @@ export async function analyzeMarketRequest(
       "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
   }
 
-  /*
-   * Build verification as a standalone object.
-   *
-   * This makes the new C147.2.4 freshness
-   * contract explicit and prevents TypeScript
-   * from accepting an incomplete verification
-   * payload.
-   */
-  const verification: MarketAnalysisResult["verification"] =
+  const verification:
+    MarketAnalysisResult["verification"] =
     {
       verified:
         data.verified,
@@ -245,7 +238,7 @@ export async function analyzeMarketRequest(
         "aios-alpha",
 
       stage:
-        "C147.2.4",
+        "C147.2.7",
 
       analysisMode:
         mode,
