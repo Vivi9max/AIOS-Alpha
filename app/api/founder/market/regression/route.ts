@@ -49,6 +49,7 @@ function headers() {
   return {
     "cache-control":
       "no-store",
+
     "content-type":
       "application/json; charset=utf-8",
   };
@@ -58,9 +59,12 @@ function unauthorized() {
   return NextResponse.json(
     {
       success: false,
+
       verified: false,
+
       code:
         "FOUNDER_AUTH_REQUIRED",
+
       message:
         "Founder authentication is required.",
     },
@@ -74,13 +78,20 @@ function unauthorized() {
 function summarizeResult(
   item: RegressionCase,
   result: Awaited<
-    ReturnType<typeof analyzeMarketRequest>
+    ReturnType<
+      typeof analyzeMarketRequest
+    >
   >,
 ) {
   return {
-    id: item.id,
-    symbol: item.symbol,
-    market: item.market,
+    id:
+      item.id,
+
+    symbol:
+      item.symbol,
+
+    market:
+      item.market,
 
     success:
       result.success,
@@ -108,6 +119,22 @@ function summarizeResult(
     liveQuoteAvailable:
       result.snapshot
         .liveQuoteAvailable,
+
+    freshness:
+      result.verification
+        .freshness.freshness,
+
+    ageMinutes:
+      result.verification
+        .freshness.ageMinutes,
+
+    ageHours:
+      result.verification
+        .freshness.ageHours,
+
+    freshnessReason:
+      result.verification
+        .freshness.reason,
 
     asOf:
       result.snapshot.asOf,
@@ -207,7 +234,7 @@ export async function GET(
           false,
 
         code:
-          "C147_2_3_CASE_ERROR",
+          "C147_2_4_CASE_ERROR",
 
         verified:
           false,
@@ -226,6 +253,18 @@ export async function GET(
 
         liveQuoteAvailable:
           false,
+
+        freshness:
+          "unknown",
+
+        ageMinutes:
+          null,
+
+        ageHours:
+          null,
+
+        freshnessReason:
+          "Regression case failed before freshness assessment.",
 
         asOf:
           null,
@@ -297,6 +336,27 @@ export async function GET(
         item.webEvidenceAvailable,
     ).length;
 
+  const freshCount =
+    results.filter(
+      (item) =>
+        item.freshness ===
+        "fresh",
+    ).length;
+
+  const staleCount =
+    results.filter(
+      (item) =>
+        item.freshness ===
+        "stale",
+    ).length;
+
+  const unknownFreshnessCount =
+    results.filter(
+      (item) =>
+        item.freshness ===
+        "unknown",
+    ).length;
+
   return NextResponse.json(
     {
       success:
@@ -307,14 +367,14 @@ export async function GET(
 
       code:
         allPassed
-          ? "C147_2_3_THREE_MARKET_REGRESSION_PASS"
-          : "C147_2_3_THREE_MARKET_REGRESSION_PARTIAL",
+          ? "C147_2_4_MARKET_EVIDENCE_QUALITY_PASS"
+          : "C147_2_4_MARKET_EVIDENCE_QUALITY_PARTIAL",
 
       stage:
-        "C147.2.3",
+        "C147.2.4",
 
       description:
-        "US / HK / A-share unified market intelligence regression.",
+        "US / HK / A-share market evidence, data-quality and freshness regression.",
 
       total:
         CASES.length,
@@ -330,6 +390,15 @@ export async function GET(
 
       webFallback:
         webFallbackCount,
+
+      fresh:
+        freshCount,
+
+      stale:
+        staleCount,
+
+      unknownFreshness:
+        unknownFreshnessCount,
 
       liveQuoteVerified:
         results.filter(
