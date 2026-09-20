@@ -240,9 +240,7 @@ export default function MarketRuntimeRegressionPage() {
       setResponse(
         json,
       );
-    } catch (
-      caught,
-    ) {
+    } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
@@ -251,7 +249,6 @@ export default function MarketRuntimeRegressionPage() {
     } finally {
       setLoading(false);
     }
-  }
 
   return (
     <main
