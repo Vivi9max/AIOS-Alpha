@@ -17,6 +17,11 @@ export type MarketDataQuality =
   | "web-evidence"
   | "insufficient";
 
+export type MarketFreshness =
+  | "fresh"
+  | "stale"
+  | "unknown";
+
 export interface MarketInstrument {
   symbol: string;
   normalizedSymbol: string;
@@ -140,6 +145,14 @@ export interface MarketAnalysisRequest {
   query?: string | null;
 }
 
+export interface MarketFreshnessVerification {
+  freshness: MarketFreshness;
+  ageMinutes: number | null;
+  ageHours: number | null;
+  referenceTime: string | null;
+  reason: string;
+}
+
 export interface MarketAnalysisResult {
   success: boolean;
   code: string;
@@ -160,13 +173,15 @@ export interface MarketAnalysisResult {
 
     structuredDataAvailable: boolean;
     structuredDataVerified: boolean;
+
+    freshness: MarketFreshnessVerification;
   };
 
   provider: MarketDataProviderStatus;
 
   metadata: {
     runtime: "aios-alpha";
-    stage: "C147.2";
+    stage: "C147.2.4";
     analysisMode: MarketAnalysisMode;
     generatedAt: string;
 
