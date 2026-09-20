@@ -1,3 +1,7 @@
+import {
+  buildSemanticSnapshot,
+} from "./market-semantic";
+
 import type {
   MarketEvidence,
   MarketFieldName,
@@ -11,6 +15,12 @@ type MetricCandidate = {
   source: string;
   confidence: number;
   retrievedAt: number;
+  session:
+    | "regular"
+    | "after_hours"
+    | "pre_market"
+    | "intraday"
+    | "unknown";
 };
 
 type ResolvedMetric = {
@@ -19,17 +29,21 @@ type ResolvedMetric = {
   candidates: MetricCandidate[];
 };
 
-function parseNumber(value: string): number | null {
-  const cleaned = value
-    .replace(/,/g, "")
-    .replace(/%/g, "")
-    .trim();
+function parseNumber(
+  value: string,
+): number | null {
+  const cleaned =
+    value
+      .replace(/,/g, "")
+      .replace(/%/g, "")
+      .trim();
 
   if (!cleaned) {
     return null;
   }
 
-  const parsed = Number(cleaned);
+  const parsed =
+    Number(cleaned);
 
   return Number.isFinite(parsed)
     ? parsed
@@ -39,28 +53,29 @@ function parseNumber(value: string): number | null {
 function parseScaledNumber(
   value: string,
 ): number | null {
-  const normalized = value
-    .replace(/,/g, "")
-    .trim()
-    .toUpperCase();
+  const normalized =
+    value
+      .replace(/,/g, "")
+      .trim()
+      .toUpperCase();
 
-  const match = normalized.match(
-    /^([+-]?\d+(?:\.\d+)?)\s*([TBMK])?$/,
-  );
+  const match =
+    normalized.match(
+      /^([+-]?\d+(?:\.\d+)?)\s*([TBMK])?$/,
+    );
 
   if (!match?.[1]) {
     return null;
   }
 
-  const base = Number(match[1]);
+  const base =
+    Number(match[1]);
 
   if (!Number.isFinite(base)) {
     return null;
   }
 
-  const unit = match[2];
-
-  switch (unit) {
+  switch (match[2]) {
     case "T":
       return base * 1_000_000_000_000;
 
@@ -78,11 +93,55 @@ function parseScaledNumber(
   }
 }
 
+function detectSession(
+  text: string,
+):
+  | "regular"
+  | "after_hours"
+  | "pre_market"
+  | "intraday"
+  | "unknown" {
+  if (
+    /after[- ]hours|post[- ]market/i.test(
+      text,
+    )
+  ) {
+    return "after_hours";
+  }
+
+  if (
+    /pre[- ]market|premarket|pre market/i.test(
+      text,
+    )
+  ) {
+    return "pre_market";
+  }
+
+  if (
+    /intraday|during the trading session|today's range|today range/i.test(
+      text,
+    )
+  ) {
+    return "intraday";
+  }
+
+  if (
+    /at close|closed|closing price|previous close|regular session/i.test(
+      text,
+    )
+  ) {
+    return "regular";
+  }
+
+  return "unknown";
+}
+
 function addCandidate(
   candidates: MetricCandidate[],
   field: MarketFieldName,
   value: number | null,
   evidence: MarketEvidence,
+  text: string,
 ): void {
   if (
     value === null ||
@@ -94,16 +153,20 @@ function addCandidate(
   candidates.push({
     field,
     value,
-    source: evidence.hostname,
-    confidence: Math.max(
-      0,
-      Math.min(
-        1,
-        evidence.confidence,
+    source:
+      evidence.hostname,
+    confidence:
+      Math.max(
+        0,
+        Math.min(
+          1,
+          evidence.confidence,
+        ),
       ),
-    ),
     retrievedAt:
       evidence.retrievedAt,
+    session:
+      detectSession(text),
   });
 }
 
@@ -113,15 +176,27 @@ function extractCandidatesFromEvidence(
   const text =
     `${evidence.title} ${evidence.snippet}`;
 
-  const candidates: MetricCandidate[] = [];
+  const candidates: MetricCandidate[] =
+    [];
+
+  const add =
+    (
+      field: MarketFieldName,
+      value: number | null,
+    ) =>
+      addCandidate(
+        candidates,
+        field,
+        value,
+        evidence,
+        text,
+      );
 
   /*
-   * PRICE
+   * Regular / generic price.
    *
-   * Important:
-   * Never use a generic "price" regex.
-   * This prevents open/high/low/targets
-   * from being interpreted as current price.
+   * We intentionally exclude explicit
+   * after-hours and pre-market prices.
    */
   const pricePatterns: RegExp[] = [
     /\b(?:current price|share price|stock price|last price|price today)\b[^$£€\d]{0,35}(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
@@ -131,15 +206,186 @@ function extractCandidatesFromEvidence(
     /(?:价格|股价)\s*(?:为|是|:)?\s*(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
   ];
 
-  for (const pattern of pricePatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of pricePatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "price",
         parseNumber(match[1]),
-        evidence,
+      );
+      break;
+    }
+  }
+
+  /*
+   * After-hours price.
+   */
+  const afterHoursPatterns: RegExp[] = [
+    /after[- ]hours[^$0-9]{0,30}(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
+
+    /post[- ]market[^$0-9]{0,30}(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of afterHoursPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "afterHoursPrice",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * Pre-market price.
+   */
+  const preMarketPatterns: RegExp[] = [
+    /pre[- ]market[^$0-9]{0,30}(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
+
+    /premarket[^$0-9]{0,30}(?:USD|HKD|CNY|\$|HK\$|¥)?\s*([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of preMarketPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "preMarketPrice",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * Previous close.
+   */
+  const previousClosePatterns: RegExp[] = [
+    /\bprevious close\b[^0-9]{0,20}([\d,.]+)/i,
+
+    /\blast close\b[^0-9]{0,20}([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of previousClosePatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "previousClose",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * Open.
+   */
+  const openPatterns: RegExp[] = [
+    /\bopen(?:ing price)?\b[^0-9]{0,15}([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of openPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "open",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * High.
+   */
+  const highPatterns: RegExp[] = [
+    /\bhigh today\b[^0-9]{0,15}([\d,.]+)/i,
+
+    /\bdaily high\b[^0-9]{0,15}([\d,.]+)/i,
+
+    /\bhigh price\b[^0-9]{0,15}([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of highPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "high",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * Low.
+   */
+  const lowPatterns: RegExp[] = [
+    /\blow today\b[^0-9]{0,15}([\d,.]+)/i,
+
+    /\bdaily low\b[^0-9]{0,15}([\d,.]+)/i,
+
+    /\blow price\b[^0-9]{0,15}([\d,.]+)/i,
+  ];
+
+  for (
+    const pattern of lowPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "low",
+        parseNumber(match[1]),
+      );
+      break;
+    }
+  }
+
+  /*
+   * Volume.
+   */
+  const volumePatterns: RegExp[] = [
+    /\bvolume\b[^0-9]{0,15}([\d,.]+\s*[TBMK]?)/i,
+  ];
+
+  for (
+    const pattern of volumePatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match?.[1]) {
+      add(
+        "volume",
+        parseScaledNumber(
+          match[1],
+        ),
       );
       break;
     }
@@ -148,8 +394,9 @@ function extractCandidatesFromEvidence(
   /*
    * P/E
    *
-   * Use word boundaries.
-   * Never match "PE" inside "open".
+   * Word boundaries are mandatory.
+   * This prevents "open price" from
+   * being interpreted as "PE".
    */
   const pePatterns: RegExp[] = [
     /\bP\/E(?:\s+ratio)?\b[^0-9]{0,25}([\d.]+)/i,
@@ -161,22 +408,23 @@ function extractCandidatesFromEvidence(
     /\b市盈率\b[^0-9]{0,25}([\d.]+)/i,
   ];
 
-  for (const pattern of pePatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of pePatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "pe",
         parseNumber(match[1]),
-        evidence,
       );
       break;
     }
   }
 
   /*
-   * P/B
+   * P/B.
    */
   const pbPatterns: RegExp[] = [
     /\bP\/B(?:\s+ratio)?\b[^0-9]{0,25}([\d.]+)/i,
@@ -188,22 +436,23 @@ function extractCandidatesFromEvidence(
     /\b市净率\b[^0-9]{0,25}([\d.]+)/i,
   ];
 
-  for (const pattern of pbPatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of pbPatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "pb",
         parseNumber(match[1]),
-        evidence,
       );
       break;
     }
   }
 
   /*
-   * EPS
+   * EPS.
    */
   const epsPatterns: RegExp[] = [
     /\bEPS\b[^0-9+-]{0,25}([+-]?[\d.]+)/i,
@@ -213,22 +462,23 @@ function extractCandidatesFromEvidence(
     /\b每股收益\b[^0-9+-]{0,25}([+-]?[\d.]+)/i,
   ];
 
-  for (const pattern of epsPatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of epsPatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "eps",
         parseNumber(match[1]),
-        evidence,
       );
       break;
     }
   }
 
   /*
-   * MARKET CAP
+   * Market cap.
    */
   const marketCapPatterns: RegExp[] = [
     /\bmarket capitalization\b[^0-9]{0,20}([\d,.]+\s*[TBMK]?)/i,
@@ -238,22 +488,25 @@ function extractCandidatesFromEvidence(
     /\b市值\b[^0-9]{0,20}([\d,.]+\s*[TBMK]?)/i,
   ];
 
-  for (const pattern of marketCapPatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of marketCapPatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "marketCap",
-        parseScaledNumber(match[1]),
-        evidence,
+        parseScaledNumber(
+          match[1],
+        ),
       );
       break;
     }
   }
 
   /*
-   * REVENUE
+   * Revenue.
    */
   const revenuePatterns: RegExp[] = [
     /\brevenue\b[^0-9]{0,20}([\d,.]+\s*[TBMK]?)/i,
@@ -265,22 +518,25 @@ function extractCandidatesFromEvidence(
     /\b收入\b[^0-9]{0,20}([\d,.]+\s*[TBMK]?)/i,
   ];
 
-  for (const pattern of revenuePatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of revenuePatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "revenue",
-        parseScaledNumber(match[1]),
-        evidence,
+        parseScaledNumber(
+          match[1],
+        ),
       );
       break;
     }
   }
 
   /*
-   * REVENUE GROWTH
+   * Revenue growth.
    */
   const revenueGrowthPatterns: RegExp[] = [
     /\brevenue growth\b[^0-9+-]{0,25}([+-]?[\d.]+)%/i,
@@ -292,29 +548,29 @@ function extractCandidatesFromEvidence(
     /(?:营收增长|收入增长)\s*(?:约|为|:)?\s*([+-]?[\d.]+)%/i,
   ];
 
-  for (const pattern of revenueGrowthPatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of revenueGrowthPatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "revenueGrowth",
         parseNumber(match[1]),
-        evidence,
       );
       break;
     }
   }
 
   /*
-   * CHANGE %
+   * Current daily change only.
    *
-   * Do NOT accept:
-   * "1 year change"
-   * "52-week change"
-   * "3 year return"
-   *
-   * Only daily/current/explicit change signals.
+   * Explicitly reject:
+   * 1-Year Change
+   * 52-Week Change
+   * YTD
+   * multi-year return
    */
   const changePatterns: RegExp[] = [
     /\b(?:today|today's|daily|1D|1-day)\b[^%]{0,45}([+-]?[\d.]+)%/i,
@@ -324,15 +580,16 @@ function extractCandidatesFromEvidence(
     /(?:涨跌|日涨跌|今日涨跌|涨幅|跌幅)\s*(?:为|:)?\s*([+-]?[\d.]+)%/i,
   ];
 
-  for (const pattern of changePatterns) {
-    const match = text.match(pattern);
+  for (
+    const pattern of changePatterns
+  ) {
+    const match =
+      text.match(pattern);
 
     if (match?.[1]) {
-      addCandidate(
-        candidates,
+      add(
         "changePercent",
         parseNumber(match[1]),
-        evidence,
       );
       break;
     }
@@ -359,10 +616,11 @@ function relativeDifference(
 }
 
 function resolveCandidates(
-  field: MarketFieldName,
   candidates: MetricCandidate[],
 ): ResolvedMetric {
-  if (candidates.length === 0) {
+  if (
+    candidates.length === 0
+  ) {
     return {
       value: null,
       quality: "missing",
@@ -370,19 +628,19 @@ function resolveCandidates(
     };
   }
 
-  /*
-   * Build weighted clusters.
-   *
-   * Values within 5% belong to the same
-   * evidence cluster.
-   */
-  const clusters: MetricCandidate[][] = [];
+  const clusters:
+    MetricCandidate[][] = [];
 
-  for (const candidate of candidates) {
-    let target: MetricCandidate[] | null =
-      null;
+  for (
+    const candidate of candidates
+  ) {
+    let target:
+      | MetricCandidate[]
+      | null = null;
 
-    for (const cluster of clusters) {
+    for (
+      const cluster of clusters
+    ) {
       const representative =
         cluster[0];
 
@@ -401,41 +659,44 @@ function resolveCandidates(
     if (target) {
       target.push(candidate);
     } else {
-      clusters.push([candidate]);
+      clusters.push([
+        candidate,
+      ]);
     }
   }
 
-  clusters.sort((a, b) => {
-    const scoreA = a.reduce(
-      (sum, item) =>
-        sum + item.confidence,
-      0,
-    );
+  clusters.sort(
+    (a, b) => {
+      const scoreA =
+        a.reduce(
+          (sum, item) =>
+            sum +
+            item.confidence,
+          0,
+        );
 
-    const scoreB = b.reduce(
-      (sum, item) =>
-        sum + item.confidence,
-      0,
-    );
+      const scoreB =
+        b.reduce(
+          (sum, item) =>
+            sum +
+            item.confidence,
+          0,
+        );
 
-    return scoreB - scoreA;
-  });
+      return (
+        scoreB - scoreA
+      );
+    },
+  );
 
   const winner =
     clusters[0] ?? [];
 
-  if (winner.length === 0) {
-    return {
-      value: null,
-      quality: "missing",
-      candidates,
-    };
-  }
-
   const totalWeight =
     winner.reduce(
       (sum, item) =>
-        sum + Math.max(
+        sum +
+        Math.max(
           item.confidence,
           0.05,
         ),
@@ -477,17 +738,6 @@ function resolveCandidates(
       },
     );
 
-  /*
-   * If several independent sources agree,
-   * the field is corroborated.
-   *
-   * If only one source exists, retain it
-   * but mark it single-source.
-   *
-   * If materially conflicting evidence exists,
-   * only accept the winner when it has
-   * meaningful corroboration.
-   */
   const uniqueSources =
     new Set(
       winner.map(
@@ -507,15 +757,20 @@ function resolveCandidates(
     };
   }
 
-  if (hasMaterialConflict) {
+  if (
+    hasMaterialConflict
+  ) {
     return {
       value: weightedValue,
-      quality: "corroborated-with-conflict",
+      quality:
+        "corroborated-with-conflict",
       candidates,
     };
   }
 
-  if (uniqueSources >= 2) {
+  if (
+    uniqueSources >= 2
+  ) {
     return {
       value: weightedValue,
       quality: "corroborated",
@@ -541,7 +796,7 @@ export function normalizeMarketEvidence(
     >
   >;
 } {
-  const candidates: MetricCandidate[] =
+  const candidates =
     evidence.flatMap(
       extractCandidatesFromEvidence,
     );
@@ -553,32 +808,39 @@ export function normalizeMarketEvidence(
     >
   > = {};
 
-  for (const candidate of candidates) {
+  for (
+    const candidate of candidates
+  ) {
     const current =
-      byField[candidate.field] ??
-      [];
+      byField[
+        candidate.field
+      ] ?? [];
 
     current.push(candidate);
 
-    byField[candidate.field] =
-      current;
+    byField[
+      candidate.field
+    ] = current;
   }
 
-  const fields: MarketFieldName[] = [
-    "price",
-    "previousClose",
-    "changePercent",
-    "open",
-    "high",
-    "low",
-    "volume",
-    "marketCap",
-    "pe",
-    "pb",
-    "eps",
-    "revenue",
-    "revenueGrowth",
-  ];
+  const fields:
+    MarketFieldName[] = [
+      "price",
+      "previousClose",
+      "changePercent",
+      "open",
+      "high",
+      "low",
+      "volume",
+      "marketCap",
+      "pe",
+      "pb",
+      "eps",
+      "revenue",
+      "revenueGrowth",
+      "afterHoursPrice",
+      "preMarketPrice",
+    ];
 
   const resolved: Partial<
     Record<
@@ -587,116 +849,157 @@ export function normalizeMarketEvidence(
     >
   > = {};
 
-  for (const field of fields) {
+  for (
+    const field of fields
+  ) {
     resolved[field] =
       resolveCandidates(
-        field,
         byField[field] ?? [],
       );
   }
 
-  const snapshot: MarketSnapshot = {
-    price:
-      resolved.price?.value ??
-      null,
+  const fieldQuality:
+    Partial<
+      Record<
+        MarketFieldName,
+        MarketFieldQuality
+      >
+    > = {};
 
-    previousClose: null,
+  for (
+    const field of fields
+  ) {
+    fieldQuality[field] =
+      resolved[field]?.quality ??
+      "missing";
+  }
 
-    changePercent:
-      resolved.changePercent?.value ??
-      null,
-
-    open: null,
-    high: null,
-    low: null,
-    volume: null,
-
-    marketCap:
-      resolved.marketCap?.value ??
-      null,
-
-    pe:
-      resolved.pe?.value ??
-      null,
-
-    pb:
-      resolved.pb?.value ??
-      null,
-
-    eps:
-      resolved.eps?.value ??
-      null,
-
-    revenue:
-      resolved.revenue?.value ??
-      null,
-
-    revenueGrowth:
-      resolved.revenueGrowth?.value ??
-      null,
-
-    dataQuality:
-      resolved.price?.value !== null &&
-      resolved.price?.value !== undefined
-        ? "web-evidence"
-        : "insufficient",
-
-    liveQuoteAvailable: false,
-
-    asOf:
-      evidence.length > 0
-        ? new Date(
-            Math.max(
-              ...evidence.map(
-                (item) =>
-                  item.retrievedAt,
-              ),
+  const latestEvidence =
+    evidence.length > 0
+      ? new Date(
+          Math.max(
+            ...evidence.map(
+              (item) =>
+                item.retrievedAt,
             ),
-          ).toISOString()
-        : null,
+          ),
+        ).toISOString()
+      : null;
 
-    source:
-      evidence[0]?.hostname ??
-      null,
-
-    dataset: null,
-
-    bars: [],
-
-    fieldQuality: {
+  const snapshot: MarketSnapshot =
+    {
       price:
-        resolved.price?.quality ??
-        "missing",
+        resolved.price?.value ??
+        null,
+
+      previousClose:
+        resolved.previousClose?.value ??
+        null,
 
       changePercent:
-        resolved.changePercent?.quality ??
-        "missing",
+        resolved.changePercent?.value ??
+        null,
+
+      open:
+        resolved.open?.value ??
+        null,
+
+      high:
+        resolved.high?.value ??
+        null,
+
+      low:
+        resolved.low?.value ??
+        null,
+
+      volume:
+        resolved.volume?.value ??
+        null,
 
       marketCap:
-        resolved.marketCap?.quality ??
-        "missing",
+        resolved.marketCap?.value ??
+        null,
 
       pe:
-        resolved.pe?.quality ??
-        "missing",
+        resolved.pe?.value ??
+        null,
 
       pb:
-        resolved.pb?.quality ??
-        "missing",
+        resolved.pb?.value ??
+        null,
 
       eps:
-        resolved.eps?.quality ??
-        "missing",
+        resolved.eps?.value ??
+        null,
 
       revenue:
-        resolved.revenue?.quality ??
-        "missing",
+        resolved.revenue?.value ??
+        null,
 
       revenueGrowth:
-        resolved.revenueGrowth?.quality ??
-        "missing",
-    },
-  };
+        resolved.revenueGrowth?.value ??
+        null,
+
+      afterHoursPrice:
+        resolved.afterHoursPrice?.value ??
+        null,
+
+      preMarketPrice:
+        resolved.preMarketPrice?.value ??
+        null,
+
+      dataQuality:
+        resolved.price?.value !== null &&
+        resolved.price?.value !== undefined
+          ? "web-evidence"
+          : "insufficient",
+
+      liveQuoteAvailable:
+        false,
+
+      asOf:
+        latestEvidence,
+
+      source:
+        evidence[0]?.hostname ??
+        null,
+
+      dataset:
+        null,
+
+      bars: [],
+
+      fieldQuality,
+    };
+
+  snapshot.semantic =
+    buildSemanticSnapshot(
+      snapshot,
+      evidence,
+    );
+
+  /*
+   * C147.2.7 semantic selection:
+   *
+   * Generic `price` must represent the
+   * regular/current evidence price only.
+   *
+   * After-hours and pre-market values are
+   * preserved independently.
+   */
+  if (
+    snapshot.afterHoursPrice !== null
+  ) {
+    snapshot.semantic.afterHoursPrice.value =
+      snapshot.afterHoursPrice;
+  }
+
+  if (
+    snapshot.preMarketPrice !== null
+  ) {
+    snapshot.semantic.preMarketPrice.value =
+      snapshot.preMarketPrice;
+  }
 
   return {
     snapshot,
