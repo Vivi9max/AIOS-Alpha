@@ -7,6 +7,10 @@ import {
   retrieveMarketData,
 } from "./market-provider";
 
+import {
+  assessMarketFreshness,
+} from "./evidence-quality";
+
 import type {
   MarketAnalysisMode,
   MarketAnalysisRequest,
@@ -36,7 +40,10 @@ function buildInstrument(
             .replace(/^SH:/i, "")
             .replace(/^SZ:/i, "")
             .replace(/^SS:/i, "")
-            .replace(/\.(SH|SZ)$/i, "")
+            .replace(
+              /\.(SH|SZ)$/i,
+              "",
+            )
             .toUpperCase()
         : rawSymbol
             .replace(
@@ -114,6 +121,11 @@ export async function analyzeMarketRequest(
       request.mode,
     );
 
+  const freshness =
+    assessMarketFreshness(
+      data.snapshot,
+    );
+
   const structuredDataAvailable =
     data.structuredDataAvailable;
 
@@ -123,6 +135,12 @@ export async function analyzeMarketRequest(
   const webEvidenceAvailable =
     data.evidence.length > 0;
 
+  /*
+   * Verification means the runtime has
+   * a usable evidence path.
+   *
+   * It does NOT mean the price is live.
+   */
   const success =
     structuredDataVerified ||
     webEvidenceAvailable;
@@ -174,6 +192,23 @@ export async function analyzeMarketRequest(
       structuredDataAvailable,
 
       structuredDataVerified,
+
+      freshness: {
+        freshness:
+          freshness.freshness,
+
+        ageMinutes:
+          freshness.ageMinutes,
+
+        ageHours:
+          freshness.ageHours,
+
+        referenceTime:
+          freshness.referenceTime,
+
+        reason:
+          freshness.reason,
+      },
     },
 
     provider:
@@ -184,7 +219,7 @@ export async function analyzeMarketRequest(
         "aios-alpha",
 
       stage:
-        "C147.2",
+        "C147.2.4",
 
       analysisMode:
         mode,
