@@ -22,6 +22,24 @@ export type MarketFreshness =
   | "stale"
   | "unknown";
 
+export type MarketTradingSession =
+  | "regular"
+  | "after_hours"
+  | "pre_market"
+  | "intraday"
+  | "unknown";
+
+export type MarketPeriod =
+  | "intraday"
+  | "daily"
+  | "ttm"
+  | "quarterly"
+  | "annual"
+  | "ytd"
+  | "one_year"
+  | "multi_year"
+  | "unknown";
+
 export type MarketFieldName =
   | "price"
   | "previousClose"
@@ -35,7 +53,9 @@ export type MarketFieldName =
   | "pb"
   | "eps"
   | "revenue"
-  | "revenueGrowth";
+  | "revenueGrowth"
+  | "afterHoursPrice"
+  | "preMarketPrice";
 
 export type MarketFieldQuality =
   | "corroborated"
@@ -65,6 +85,49 @@ export interface MarketBar {
   volume?: number | null;
 }
 
+export interface MarketSemanticValue {
+  value: number | null;
+  unit:
+    | "price"
+    | "percent"
+    | "shares"
+    | "currency"
+    | "multiple"
+    | "unknown";
+  currency:
+    | "USD"
+    | "HKD"
+    | "CNY"
+    | null;
+  session: MarketTradingSession;
+  period: MarketPeriod;
+  timestamp: string | null;
+  source: string | null;
+  quality: MarketFieldQuality;
+}
+
+export interface MarketSemanticSnapshot {
+  price: MarketSemanticValue;
+  previousClose: MarketSemanticValue;
+  changePercent: MarketSemanticValue;
+  open: MarketSemanticValue;
+  high: MarketSemanticValue;
+  low: MarketSemanticValue;
+  volume: MarketSemanticValue;
+
+  afterHoursPrice: MarketSemanticValue;
+  preMarketPrice: MarketSemanticValue;
+
+  marketCap: MarketSemanticValue;
+  pe: MarketSemanticValue;
+  pb: MarketSemanticValue;
+  eps: MarketSemanticValue;
+  revenue: MarketSemanticValue;
+  revenueGrowth: MarketSemanticValue;
+
+  regularSessionPrice: MarketSemanticValue;
+}
+
 export interface MarketSnapshot {
   price?: number | null;
   previousClose?: number | null;
@@ -82,6 +145,9 @@ export interface MarketSnapshot {
   revenue?: number | null;
   revenueGrowth?: number | null;
 
+  afterHoursPrice?: number | null;
+  preMarketPrice?: number | null;
+
   dataQuality: MarketDataQuality;
   liveQuoteAvailable: boolean;
 
@@ -97,6 +163,8 @@ export interface MarketSnapshot {
       MarketFieldQuality
     >
   >;
+
+  semantic?: MarketSemanticSnapshot;
 }
 
 export interface MarketEvidence {
@@ -216,7 +284,8 @@ export interface MarketAnalysisResult {
     stage:
       | "C147.2.4"
       | "C147.2.5"
-      | "C147.2.6";
+      | "C147.2.6"
+      | "C147.2.7";
 
     analysisMode: MarketAnalysisMode;
     generatedAt: string;
