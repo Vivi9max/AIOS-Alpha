@@ -17,11 +17,14 @@ export type MarketRuntimeRequest = {
 
 export type MarketRuntimeTrace = {
   stage: string;
+
   status:
     | "completed"
     | "skipped"
     | "failed";
+
   detail: string;
+
   timestamp: string;
 };
 
@@ -37,13 +40,19 @@ export type MarketIntelligenceRuntimeResult = {
     mode: MarketAnalysisMode;
   };
 
-  result: MarketAnalysisResult;
+  result:
+    | MarketAnalysisResult
+    | null;
 
   trace: MarketRuntimeTrace[];
 
   runtime: {
-    name: "market-intelligence-runtime";
-    version: "C147.2.5";
+    name:
+      "market-intelligence-runtime";
+
+    version:
+      "C147.2.8";
+
     generatedAt: string;
   };
 };
@@ -52,7 +61,8 @@ function normalizePrompt(
   value: unknown,
 ): string {
   if (
-    typeof value !== "string"
+    typeof value !==
+    "string"
   ) {
     return "";
   }
@@ -66,14 +76,18 @@ function normalizeSymbol(
   value: unknown,
 ): string {
   if (
-    typeof value !== "string"
+    typeof value !==
+    "string"
   ) {
     return "";
   }
 
   return value
     .trim()
-    .replace(/[，。！？、；：]/g, " ")
+    .replace(
+      /[，。！？、；：]/g,
+      " ",
+    )
     .split(/\s+/)[0] ?? "";
 }
 
@@ -87,8 +101,12 @@ function detectMarketFromPrompt(
     value.includes("港股") ||
     value.includes("HKEX") ||
     value.includes("HONG KONG") ||
-    /\bHK[:\s]?\d{4,5}\b/.test(value) ||
-    /\b\d{4,5}\.HK\b/.test(value)
+    /\bHK[:\s]?\d{4,5}\b/.test(
+      value,
+    ) ||
+    /\b\d{4,5}\.HK\b/.test(
+      value,
+    )
   ) {
     return "hk";
   }
@@ -99,9 +117,15 @@ function detectMarketFromPrompt(
     value.includes("A SHARE") ||
     value.includes("上证") ||
     value.includes("深证") ||
-    /\bSH[:\s]?\d{6}\b/.test(value) ||
-    /\bSZ[:\s]?\d{6}\b/.test(value) ||
-    /\b\d{6}\.(SH|SZ)\b/.test(value)
+    /\bSH[:\s]?\d{6}\b/.test(
+      value,
+    ) ||
+    /\bSZ[:\s]?\d{6}\b/.test(
+      value,
+    ) ||
+    /\b\d{6}\.(SH|SZ)\b/.test(
+      value,
+    )
   ) {
     return "cn";
   }
@@ -128,78 +152,94 @@ function extractSymbolFromPrompt(
   }
 
   /*
-   * Explicit exchange formats first.
+   * Explicit exchange-qualified symbols.
    */
   const exchangeMatch =
     prompt.match(
       /\b(?:NASDAQ:|NYSE:|US:|HK:|SH:|SZ:|SS:)[A-Z0-9._-]+\b/i,
     );
 
-  if (exchangeMatch?.[0]) {
+  if (
+    exchangeMatch?.[0]
+  ) {
     return exchangeMatch[0];
   }
 
   /*
-   * HK symbols such as 0700.HK.
+   * Hong Kong symbols.
    */
   const hkMatch =
     prompt.match(
       /\b\d{4,5}\.HK\b/i,
     );
 
-  if (hkMatch?.[0]) {
+  if (
+    hkMatch?.[0]
+  ) {
     return hkMatch[0];
   }
 
   /*
-   * China A-share symbols.
+   * Mainland China symbols.
    */
   const cnMatch =
     prompt.match(
       /\b\d{6}\.(?:SH|SZ)\b/i,
     );
 
-  if (cnMatch?.[0]) {
+  if (
+    cnMatch?.[0]
+  ) {
     return cnMatch[0];
   }
 
   /*
-   * Six-digit mainland ticker with explicit CN context.
+   * Six-digit mainland ticker
+   * when CN market is explicit.
    */
   if (
-    explicitMarket === "cn"
+    explicitMarket ===
+    "cn"
   ) {
     const mainland =
       prompt.match(
         /\b\d{6}\b/,
       );
 
-    if (mainland?.[0]) {
+    if (
+      mainland?.[0]
+    ) {
       return mainland[0];
     }
   }
 
   /*
-   * Four/five digit HK ticker.
+   * Four/five digit HK ticker
+   * when HK market is explicit.
    */
   if (
-    explicitMarket === "hk"
+    explicitMarket ===
+    "hk"
   ) {
     const hongKong =
       prompt.match(
         /\b\d{4,5}\b/,
       );
 
-    if (hongKong?.[0]) {
+    if (
+      hongKong?.[0]
+    ) {
       return hongKong[0];
     }
   }
 
   /*
-   * US ticker:
-   * 1-5 uppercase letters.
+   * US ticker detection.
    *
-   * Ignore common English words.
+   * Avoid common English words so
+   * natural-language requests such as
+   * "analyze the stock market" do not
+   * accidentally become ticker "THE".
    */
   const ignored =
     new Set([
@@ -224,6 +264,14 @@ function extractSymbolFromPrompt(
       "COMPANY",
       "SHARE",
       "SHARES",
+      "PLEASE",
+      "SHOW",
+      "GIVE",
+      "LOOK",
+      "AT",
+      "ME",
+      "CAN",
+      "YOU",
     ]);
 
   const candidates =
@@ -232,10 +280,13 @@ function extractSymbolFromPrompt(
     ) ?? [];
 
   for (
-    const candidate of candidates
+    const candidate of
+      candidates
   ) {
     if (
-      !ignored.has(candidate)
+      !ignored.has(
+        candidate,
+      )
     ) {
       return candidate;
     }
@@ -250,13 +301,16 @@ function extractSymbolFromPrompt(
     ) ?? [];
 
   for (
-    const candidate of lowercaseCandidates
+    const candidate of
+      lowercaseCandidates
   ) {
     const normalized =
       candidate.toUpperCase();
 
     if (
-      !ignored.has(normalized)
+      !ignored.has(
+        normalized,
+      )
     ) {
       return normalized;
     }
@@ -269,7 +323,9 @@ function resolveMode(
   prompt: string,
   requested?: MarketAnalysisMode | null,
 ): MarketAnalysisMode {
-  if (requested) {
+  if (
+    requested
+  ) {
     return requested;
   }
 
@@ -336,17 +392,18 @@ function buildRuntimeCode(
     result.verification
       .structuredDataVerified
   ) {
-    return "C147_2_5_STRUCTURED_DATA_RUNTIME_PASS";
+    return "C147_2_8_STRUCTURED_DATA_RUNTIME_PASS";
   }
 
   if (
     result.success &&
-    result.evidence.length > 0
+    result.evidence.length >
+      0
   ) {
-    return "C147_2_5_WEB_EVIDENCE_RUNTIME_PASS";
+    return "C147_2_8_WEB_EVIDENCE_RUNTIME_PASS";
   }
 
-  return "C147_2_5_MARKET_RUNTIME_INSUFFICIENT";
+  return "C147_2_8_MARKET_RUNTIME_INSUFFICIENT";
 }
 
 export async function runMarketIntelligenceRuntime(
@@ -370,21 +427,17 @@ export async function runMarketIntelligenceRuntime(
       prompt,
     );
 
-  const market =
+  const resolvedMarket =
     request.market ??
     promptMarket ??
-    undefined;
+    "us";
 
   const symbol =
     explicitSymbol ||
     extractSymbolFromPrompt(
       prompt,
-      market,
+      resolvedMarket,
     );
-
-  const resolvedMarket =
-    market ??
-    undefined;
 
   const resolvedMode =
     resolveMode(
@@ -405,52 +458,90 @@ export async function runMarketIntelligenceRuntime(
     ),
   );
 
+  /*
+   * C147.2.8:
+   *
+   * Missing symbols are now a normal,
+   * structured runtime result.
+   *
+   * Do not call market-router with an
+   * intentionally invalid empty symbol.
+   */
   if (!symbol) {
-    const fallbackResult =
-      await analyzeMarketRequest({
-        symbol: "",
-        market:
-          resolvedMarket,
-        mode:
-          resolvedMode,
-      }).catch(
-        (error) => {
-          throw new Error(
-            error instanceof Error
-              ? error.message
-              : "A stock symbol is required.",
-          );
-        },
-      );
+    trace.push(
+      buildTrace(
+        "symbol.resolve",
+        "failed",
+        "No stock symbol could be resolved from the request.",
+      ),
+    );
+
+    trace.push(
+      buildTrace(
+        "provider.resolve",
+        "skipped",
+        "Provider lookup skipped because no valid stock symbol was resolved.",
+      ),
+    );
+
+    trace.push(
+      buildTrace(
+        "analysis.execute",
+        "skipped",
+        "Market analysis skipped because the instrument is unknown.",
+      ),
+    );
+
+    trace.push(
+      buildTrace(
+        "execution-gate",
+        "skipped",
+        "No broker or trading execution is permitted without a resolved instrument.",
+      ),
+    );
+
+    trace.push(
+      buildTrace(
+        "runtime.complete",
+        "failed",
+        `Runtime completed with SYMBOL_REQUIRED in ${Date.now() - startedAt}ms.`,
+      ),
+    );
 
     return {
-      success: false,
+      success:
+        false,
+
       code:
-        "C147_2_5_SYMBOL_REQUIRED",
+        "C147_2_8_SYMBOL_REQUIRED",
+
       request: {
         prompt:
-          prompt || null,
-        symbol: "",
+          prompt ||
+          null,
+
+        symbol:
+          "",
+
         market:
-          resolvedMarket ?? "us",
+          resolvedMarket,
+
         mode:
           resolvedMode,
       },
+
       result:
-        fallbackResult,
-      trace: [
-        ...trace,
-        buildTrace(
-          "symbol.resolve",
-          "failed",
-          "No stock symbol could be resolved from the request.",
-        ),
-      ],
+        null,
+
+      trace,
+
       runtime: {
         name:
           "market-intelligence-runtime",
+
         version:
-          "C147.2.5",
+          "C147.2.8",
+
         generatedAt:
           new Date().toISOString(),
       },
@@ -466,15 +557,21 @@ export async function runMarketIntelligenceRuntime(
   );
 
   const result =
-    await analyzeMarketRequest({
-      symbol,
-      market:
-        resolvedMarket,
-      mode:
-        resolvedMode,
-      query:
-        prompt || null,
-    });
+    await analyzeMarketRequest(
+      {
+        symbol,
+
+        market:
+          resolvedMarket,
+
+        mode:
+          resolvedMode,
+
+        query:
+          prompt ||
+          null,
+      },
+    );
 
   trace.push(
     buildTrace(
@@ -497,7 +594,8 @@ export async function runMarketIntelligenceRuntime(
   trace.push(
     buildTrace(
       "evidence.verify",
-      result.verification.verified
+      result.verification
+        .verified
         ? "completed"
         : "failed",
       `sources=${result.verification.sourceCount}; independentDomains=${result.verification.independentDomains}; primarySource=${result.verification.primarySourceFound}.`,
@@ -533,36 +631,48 @@ export async function runMarketIntelligenceRuntime(
       result,
     );
 
+  trace.push(
+    buildTrace(
+      "runtime.complete",
+      result.success
+        ? "completed"
+        : "failed",
+      `Market intelligence runtime completed in ${Date.now() - startedAt}ms.`,
+    ),
+  );
+
   return {
     success:
       result.success,
+
     code:
       runtimeCode,
+
     request: {
       prompt:
-        prompt || null,
+        prompt ||
+        null,
+
       symbol,
+
       market:
         result.instrument.market,
+
       mode:
         resolvedMode,
     },
+
     result,
-    trace: [
-      ...trace,
-      buildTrace(
-        "runtime.complete",
-        result.success
-          ? "completed"
-          : "failed",
-        `Market intelligence runtime completed in ${Date.now() - startedAt}ms.`,
-      ),
-    ],
+
+    trace,
+
     runtime: {
       name:
         "market-intelligence-runtime",
+
       version:
-        "C147.2.5",
+        "C147.2.8",
+
       generatedAt:
         new Date().toISOString(),
     },
