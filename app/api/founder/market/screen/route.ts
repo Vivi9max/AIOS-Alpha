@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { isFounderRequest } from "@/lib/founder/auth";
 import {
@@ -124,7 +124,7 @@ function parseRequest(
 }
 
 export async function POST(
-  request: Request,
+  request: NextRequest,
 ) {
   if (!isFounderRequest(request)) {
     return NextResponse.json(
@@ -182,7 +182,7 @@ export async function POST(
 }
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
 ) {
   if (!isFounderRequest(request)) {
     return NextResponse.json(
@@ -198,12 +198,9 @@ export async function GET(
   }
 
   try {
-    const url =
-      new URL(request.url);
-
     const market =
       parseMarket(
-        url.searchParams.get(
+        request.nextUrl.searchParams.get(
           "market",
         ),
       );
