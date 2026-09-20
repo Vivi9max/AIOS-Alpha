@@ -58,10 +58,13 @@ const CASES = [
       "Analyze NVDA",
 
     symbol:
-      null,
+      "NVDA",
 
     market:
       "us" as const,
+
+    mode:
+      "full" as const,
   },
 
   {
@@ -75,6 +78,9 @@ const CASES = [
       null,
 
     market:
+      null,
+
+    mode:
       null,
   },
 
@@ -90,6 +96,9 @@ const CASES = [
 
     market:
       null,
+
+    mode:
+      null,
   },
 
   {
@@ -103,6 +112,9 @@ const CASES = [
       null,
 
     market:
+      null,
+
+    mode:
       null,
   },
 
@@ -118,12 +130,18 @@ const CASES = [
 
     market:
       null,
+
+    mode:
+      null,
   },
 ];
 
 export async function GET(
   request: NextRequest,
 ) {
+  const startedAt =
+    Date.now();
+
   if (
     !isFounderRequest(
       request,
@@ -131,9 +149,6 @@ export async function GET(
   ) {
     return unauthorized();
   }
-
-  const startedAt =
-    Date.now();
 
   const results = [];
 
@@ -144,7 +159,7 @@ export async function GET(
       Date.now();
 
     try {
-      const result =
+      const runtime =
         await runMarketIntelligenceRuntime(
           {
             prompt:
@@ -155,66 +170,51 @@ export async function GET(
 
             market:
               item.market,
+
+            mode:
+              item.mode,
           },
         );
 
-      const expectedMissingSymbol =
+      const isSymbolRequired =
         item.id ===
         "SYMBOL_REQUIRED";
 
-      const symbolResolutionPass =
-        expectedMissingSymbol
-          ? result.code ===
-              "C147_2_8_SYMBOL_REQUIRED" &&
-            result.success ===
-              false &&
-            result.result ===
-              null
-          : Boolean(
-              result.request
-                .symbol,
-            );
+      const symbolResolved =
+        Boolean(
+          runtime.request.symbol,
+        );
 
-      const tracePass =
-        expectedMissingSymbol
-          ? result.trace.some(
-              (trace) =>
-                trace.stage ===
-                  "symbol.resolve" &&
-                trace.status ===
-                  "failed",
-            )
-          : result.trace.some(
-              (trace) =>
-                trace.stage ===
-                  "symbol.resolve" &&
-                trace.status ===
-                  "completed",
-            );
+      const expectedSymbolRequired =
+        isSymbolRequired &&
+        runtime.code ===
+          "C147_2_8_SYMBOL_REQUIRED" &&
+        runtime.result ===
+          null;
 
-      const marketPass =
-        expectedMissingSymbol
-          ? true
-          : Boolean(
-              result.result
-                ?.instrument
-                ?.market,
-            );
-
-      const noInvalidRouterCall =
-        expectedMissingSymbol
-          ? result.trace.every(
-              (trace) =>
-                trace.stage !==
-                "provider.resolve",
-            )
-          : true;
+      const normalCasePassed =
+        !isSymbolRequired &&
+        runtime.success &&
+        symbolResolved &&
+        runtime.result !==
+          null &&
+        runtime.trace.some(
+          (trace) =>
+            trace.stage ===
+              "symbol.resolve" &&
+            trace.status ===
+              "completed",
+        ) &&
+        runtime.trace.some(
+          (trace) =>
+            trace.stage ===
+              "runtime.complete",
+        );
 
       const passed =
-        symbolResolutionPass &&
-        tracePass &&
-        marketPass &&
-        noInvalidRouterCall;
+        isSymbolRequired
+          ? expectedSymbolRequired
+          : normalCasePassed;
 
       results.push({
         id:
@@ -223,54 +223,97 @@ export async function GET(
         prompt:
           item.prompt,
 
-        expectedMissingSymbol,
-
         success:
-          result.success,
-
-        code:
-          result.code,
-
-        resolvedSymbol:
-          result.request
-            .symbol,
-
-        resolvedMarket:
-          result.request
-            .market,
-
-        mode:
-          result.request
-            .mode,
-
-        symbolResolutionPass,
-
-        tracePass,
-
-        marketPass,
-
-        noInvalidRouterCall,
+          runtime.success,
 
         passed,
 
-        trace:
-          result.trace,
+        code:
+          runtime.code,
+
+        symbol:
+          runtime.request
+            .symbol,
+
+        market:
+          runtime.request
+            .market,
+
+        mode:
+          runtime.request
+            .mode,
+
+        resultAvailable:
+          runtime.result !==
+          null,
 
         provider:
-          result.result
+          runtime.result
             ?.provider
             ?.provider ??
           null,
 
+        providerAvailable:
+          runtime.result
+            ?.provider
+            ?.available ??
+          false,
+
+        structuredDataVerified:
+          runtime.result
+            ?.verification
+            ?.structuredDataVerified ??
+          false,
+
+        webEvidenceAvailable:
+          (runtime.result
+            ?.evidence
+            ?.length ?? 0) >
+          0,
+
         dataQuality:
-          result.result
+          runtime.result
             ?.snapshot
             ?.dataQuality ??
           null,
 
+        freshness:
+          runtime.result
+            ?.verification
+            ?.freshness ??
+          null,
+
+        sourceCount:
+          runtime.result
+            ?.verification
+            ?.sourceCount ??
+          0,
+
+        independentDomains:
+          runtime.result
+            ?.verification
+            ?.independentDomains ??
+          0,
+
+        traceStages:
+          runtime.trace.map(
+            (trace) => ({
+              stage:
+                trace.stage,
+
+              status:
+                trace.status,
+            }),
+          ),
+
         latencyMs:
           Date.now() -
           caseStartedAt,
+
+        error:
+          runtime.result
+            ?.error ??
+          null,
       });
     } catch (error) {
       results.push({
@@ -280,58 +323,64 @@ export async function GET(
         prompt:
           item.prompt,
 
-        expectedMissingSymbol:
-          item.id ===
-          "SYMBOL_REQUIRED",
-
         success:
-          false,
-
-        code:
-          "C147_2_8_CASE_ERROR",
-
-        resolvedSymbol:
-          "",
-
-        resolvedMarket:
-          item.market ??
-          "us",
-
-        mode:
-          "full",
-
-        symbolResolutionPass:
-          false,
-
-        tracePass:
-          false,
-
-        marketPass:
-          false,
-
-        noInvalidRouterCall:
           false,
 
         passed:
           false,
 
-        trace:
-          [],
+        code:
+          "C147_2_8_1_CASE_ERROR",
+
+        symbol:
+          "",
+
+        market:
+          item.market ??
+          "us",
+
+        mode:
+          item.mode ??
+          "full",
+
+        resultAvailable:
+          false,
 
         provider:
           null,
 
+        providerAvailable:
+          false,
+
+        structuredDataVerified:
+          false,
+
+        webEvidenceAvailable:
+          false,
+
         dataQuality:
           null,
+
+        freshness:
+          null,
+
+        sourceCount:
+          0,
+
+        independentDomains:
+          0,
+
+        traceStages:
+          [],
+
+        latencyMs:
+          Date.now() -
+          caseStartedAt,
 
         error:
           error instanceof Error
             ? error.message
             : "Runtime regression case failed.",
-
-        latencyMs:
-          Date.now() -
-          caseStartedAt,
       });
     }
   }
@@ -342,12 +391,13 @@ export async function GET(
         item.passed,
     ).length;
 
-  const total =
-    CASES.length;
+  const failed =
+    results.length -
+    passed;
 
   const finalPass =
     passed ===
-    total;
+    results.length;
 
   return NextResponse.json(
     {
@@ -359,22 +409,21 @@ export async function GET(
 
       code:
         finalPass
-          ? "C147_2_8_MARKET_RUNTIME_REGRESSION_PASS"
-          : "C147_2_8_MARKET_RUNTIME_REGRESSION_PARTIAL",
+          ? "C147_2_8_1_MARKET_RUNTIME_REGRESSION_PASS"
+          : "C147_2_8_1_MARKET_RUNTIME_REGRESSION_PARTIAL",
 
       stage:
-        "C147.2.8",
+        "C147.2.8.1",
 
       description:
-        "Market Intelligence Runtime symbol resolution, natural-language routing and structured failure regression.",
+        "Founder-session regression for explicit symbols, natural-language symbol resolution, HK/A-share routing, and SYMBOL_REQUIRED protection.",
 
-      total,
+      total:
+        results.length,
 
       passed,
 
-      failed:
-        total -
-        passed,
+      failed,
 
       results,
 
