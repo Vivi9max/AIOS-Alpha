@@ -13,6 +13,7 @@ export type MarketAnalysisMode =
 export type MarketDataQuality =
   | "live"
   | "delayed"
+  | "historical"
   | "web-evidence"
   | "insufficient";
 
@@ -25,20 +26,40 @@ export interface MarketInstrument {
   currency: "USD" | "HKD" | "CNY";
 }
 
+export interface MarketBar {
+  timestamp: string;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+  volume?: number | null;
+}
+
 export interface MarketSnapshot {
   price?: number | null;
   previousClose?: number | null;
   changePercent?: number | null;
+
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  volume?: number | null;
+
   marketCap?: number | null;
   pe?: number | null;
   pb?: number | null;
   eps?: number | null;
   revenue?: number | null;
   revenueGrowth?: number | null;
+
   dataQuality: MarketDataQuality;
   liveQuoteAvailable: boolean;
+
   asOf?: string | null;
   source?: string | null;
+  dataset?: string | null;
+
+  bars?: MarketBar[];
 }
 
 export interface MarketEvidence {
@@ -48,6 +69,17 @@ export interface MarketEvidence {
   snippet: string;
   retrievedAt: number;
   confidence: number;
+}
+
+export interface MarketDataProviderStatus {
+  provider: string;
+  configured: boolean;
+  available: boolean;
+  supportsQuote: boolean;
+  supportsHistorical: boolean;
+  supportsFundamentals: boolean;
+  supportsMarkets: MarketRegion[];
+  reason?: string;
 }
 
 export interface MarketAnalysis {
@@ -78,7 +110,12 @@ export interface MarketAnalysis {
   };
 
   risk: {
-    level: "low" | "medium" | "high" | "unknown";
+    level:
+      | "low"
+      | "medium"
+      | "high"
+      | "unknown";
+
     factors: string[];
   };
 
@@ -87,6 +124,7 @@ export interface MarketAnalysis {
     supportingFactors: string[];
     invalidationConditions: string[];
     watchMetrics: string[];
+
     scenarios: Array<{
       name: string;
       condition: string;
@@ -119,13 +157,19 @@ export interface MarketAnalysisResult {
     sourceCount: number;
     independentDomains: number;
     primarySourceFound: boolean;
+
+    structuredDataAvailable: boolean;
+    structuredDataVerified: boolean;
   };
+
+  provider: MarketDataProviderStatus;
 
   metadata: {
     runtime: "aios-alpha";
-    stage: "C147.1";
+    stage: "C147.2";
     analysisMode: MarketAnalysisMode;
     generatedAt: string;
+
     disclaimer: string;
   };
 
