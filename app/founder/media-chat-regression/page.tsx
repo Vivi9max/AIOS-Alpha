@@ -1,6 +1,9 @@
 "use client";
+
 import { useEffect, useState } from "react";
+
 const STORAGE_KEY = "aios-founder-access-key";
+
 type MediaRegressionResponse = {
   success?: boolean;
   verified?: boolean;
@@ -40,35 +43,44 @@ type MediaRegressionResponse = {
   latencyMs?: number;
   timestamp?: number;
 };
+
 function safeJson(value: unknown): string {
   if (value === undefined) {
     return "";
   }
+
   if (typeof value === "string") {
     return value;
   }
+
   try {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
   }
 }
+
 function displayValue(value: unknown): string {
   if (value === undefined || value === null) {
     return "—";
   }
+
   if (typeof value === "string") {
     return value;
   }
+
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   return safeJson(value);
 }
+
 async function readJsonResponse(
   response: Response,
 ): Promise<MediaRegressionResponse> {
   const text = await response.text();
+
   if (!text.trim()) {
     return {
       success: false,
@@ -77,6 +89,7 @@ async function readJsonResponse(
       message: `Server returned an empty response (HTTP ${response.status}).`,
     };
   }
+
   try {
     return JSON.parse(text) as MediaRegressionResponse;
   } catch {
@@ -89,27 +102,33 @@ async function readJsonResponse(
     };
   }
 }
+
 export default function FounderMediaChatRegressionPage() {
   const [result, setResult] =
     useState<MediaRegressionResponse | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
   const [operationName, setOperationName] = useState("");
   const [accessReady, setAccessReady] = useState(false);
+
   useEffect(() => {
     try {
       const key =
         window.sessionStorage
           .getItem(STORAGE_KEY)
           ?.trim() ?? "";
+
       setAccessReady(Boolean(key));
     } catch {
       setAccessReady(false);
     }
   }, []);
+
   async function runVerification() {
     let key = "";
+
     try {
       key =
         window.sessionStorage
@@ -118,16 +137,19 @@ export default function FounderMediaChatRegressionPage() {
     } catch {
       key = "";
     }
+
     if (!key) {
       setError(
         "未检测到 Founder Console 会话。请先返回 /founder 完成 Founder 登录。",
       );
       return;
     }
+
     setLoading(true);
     setError("");
     setResult(null);
     setOperationName("");
+
     try {
       const response = await fetch(
         "/api/founder/media/chat-regression",
@@ -140,16 +162,21 @@ export default function FounderMediaChatRegressionPage() {
           },
         },
       );
+
       const data = await readJsonResponse(response);
+
       setResult(data);
+
       const returnedOperation =
         data.operationName ??
         data.execution?.operationName ??
         data.providerJobId ??
         "";
+
       if (returnedOperation) {
         setOperationName(returnedOperation);
       }
+
       if (!response.ok || data.success !== true) {
         setError(
           data.message ||
@@ -169,8 +196,10 @@ export default function FounderMediaChatRegressionPage() {
       setLoading(false);
     }
   }
+
   async function refreshExistingJob() {
     let key = "";
+
     try {
       key =
         window.sessionStorage
@@ -179,24 +208,30 @@ export default function FounderMediaChatRegressionPage() {
     } catch {
       key = "";
     }
+
     const operation = operationName.trim();
+
     if (!key) {
       setError(
         "未检测到 Founder Console 会话。请先返回 /founder 完成 Founder 登录。",
       );
       return;
     }
+
     if (!operation) {
       setError("当前没有可查询的 Veo operation。");
       return;
     }
+
     setPolling(true);
     setError("");
+
     try {
       const url =
         `/api/founder/media/chat-regression?operationName=${encodeURIComponent(
           operation,
         )}`;
+
       const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
@@ -205,13 +240,18 @@ export default function FounderMediaChatRegressionPage() {
           Authorization: `Bearer ${key}`,
         },
       });
+
       const data = await readJsonResponse(response);
+
       setResult(data);
+
       const returnedOperation =
         data.operationName ??
         data.execution?.operationName ??
         operation;
+
       setOperationName(returnedOperation);
+
       if (!response.ok || data.success !== true) {
         setError(
           data.message ||
@@ -230,35 +270,44 @@ export default function FounderMediaChatRegressionPage() {
       setPolling(false);
     }
   }
+
   const status =
     result?.status ??
     result?.execution?.status ??
     "NOT_STARTED";
+
   const completed = status === "completed";
+
   const active =
     status === "queued" ||
     status === "in_progress";
+
   const providerJobId =
     result?.providerJobId ??
     result?.execution?.operationName ??
     null;
+
   const resolvedOperation =
     operationName ||
     result?.operationName ||
     providerJobId ||
     "";
+
   const progress =
     result?.progress ??
     result?.execution?.progress ??
     null;
+
   const videoUri =
     result?.videoUri ??
     result?.execution?.videoUri ??
     null;
+
   const passed =
     result?.success === true &&
     result?.verified === true &&
     Boolean(providerJobId || resolvedOperation);
+
   return (
     <main
       style={{
@@ -287,6 +336,7 @@ export default function FounderMediaChatRegressionPage() {
           >
             PRIVATE FOUNDER ACCESS
           </div>
+
           <h1
             style={{
               margin: "8px 0 0",
@@ -296,6 +346,7 @@ export default function FounderMediaChatRegressionPage() {
           >
             Real Media Execution
           </h1>
+
           <p
             style={{
               margin: "9px 0 0",
@@ -306,6 +357,7 @@ export default function FounderMediaChatRegressionPage() {
             C146.18.3 Founder Live Verification
           </p>
         </header>
+
         <section
           style={{
             marginTop: 22,
@@ -323,6 +375,7 @@ export default function FounderMediaChatRegressionPage() {
           >
             Chat Prompt → Runtime → Google Veo
           </div>
+
           <p
             style={{
               margin: "9px 0 0",
@@ -335,6 +388,7 @@ export default function FounderMediaChatRegressionPage() {
             自动完成认证。不需要再次输入 Access Key，
             也不会在页面中显示密钥。
           </p>
+
           <div
             style={{
               marginTop: 16,
@@ -350,6 +404,7 @@ export default function FounderMediaChatRegressionPage() {
             如果 Gemini / Veo 已配置，点击执行会创建真实
             Veo Long Running Operation，可能产生 API 用量。
           </div>
+
           <button
             type="button"
             onClick={() => void runVerification()}
@@ -377,6 +432,7 @@ export default function FounderMediaChatRegressionPage() {
               ? "正在创建真实 Veo Operation…"
               : "▶ Run C146.18.3 Real Verification"}
           </button>
+
           {!accessReady && (
             <div
               style={{
@@ -389,6 +445,7 @@ export default function FounderMediaChatRegressionPage() {
               Founder Console 登录。
             </div>
           )}
+
           {error && (
             <div
               role="alert"
@@ -411,10 +468,12 @@ export default function FounderMediaChatRegressionPage() {
               >
                 Verification Error
               </div>
+
               <div>{error}</div>
             </div>
           )}
         </section>
+
         {result && (
           <section
             style={{
@@ -440,6 +499,7 @@ export default function FounderMediaChatRegressionPage() {
                 ? "✓ REAL MEDIA EXECUTION VERIFIED"
                 : "✕ REAL MEDIA EXECUTION NOT VERIFIED"}
             </div>
+
             <div
               style={{
                 marginTop: 7,
@@ -450,6 +510,7 @@ export default function FounderMediaChatRegressionPage() {
             >
               {result.code ?? "UNKNOWN"}
             </div>
+
             {result.message && (
               <div
                 style={{
@@ -465,6 +526,7 @@ export default function FounderMediaChatRegressionPage() {
                 {result.message}
               </div>
             )}
+
             <div
               style={{
                 display: "grid",
@@ -480,6 +542,7 @@ export default function FounderMediaChatRegressionPage() {
                     : "NOT VERIFIED"
                 }
               />
+
               <ResultRow
                 label="Gemini"
                 value={
@@ -489,6 +552,7 @@ export default function FounderMediaChatRegressionPage() {
                     : "NOT CONFIGURED"
                 }
               />
+
               <ResultRow
                 label="Provider"
                 value={
@@ -497,6 +561,7 @@ export default function FounderMediaChatRegressionPage() {
                   "unknown"
                 }
               />
+
               <ResultRow
                 label="Model"
                 value={
@@ -505,6 +570,7 @@ export default function FounderMediaChatRegressionPage() {
                   "unknown"
                 }
               />
+
               <ResultRow
                 label="Resolution"
                 value={
@@ -512,6 +578,7 @@ export default function FounderMediaChatRegressionPage() {
                   "1080p"
                 }
               />
+
               <ResultRow
                 label="Aspect Ratio"
                 value={
@@ -519,6 +586,7 @@ export default function FounderMediaChatRegressionPage() {
                   "9:16"
                 }
               />
+
               <ResultRow
                 label="Duration"
                 value={
@@ -528,10 +596,12 @@ export default function FounderMediaChatRegressionPage() {
                     : "8s"
                 }
               />
+
               <ResultRow
                 label="Status"
                 value={displayValue(status)}
               />
+
               <ResultRow
                 label="Progress"
                 value={
@@ -541,14 +611,17 @@ export default function FounderMediaChatRegressionPage() {
                     : "unknown"
                 }
               />
+
               <ResultRow
                 label="Provider Job"
                 value={displayValue(providerJobId)}
               />
+
               <ResultRow
                 label="Operation"
                 value={displayValue(resolvedOperation)}
               />
+
               {result.latencyMs !== undefined && (
                 <ResultRow
                   label="Latency"
@@ -556,6 +629,7 @@ export default function FounderMediaChatRegressionPage() {
                 />
               )}
             </div>
+
             {resolvedOperation && (
               <div
                 style={{
@@ -574,6 +648,7 @@ export default function FounderMediaChatRegressionPage() {
                 >
                   EXISTING OPERATION
                 </div>
+
                 <div
                   style={{
                     marginTop: 8,
@@ -584,6 +659,7 @@ export default function FounderMediaChatRegressionPage() {
                 >
                   {resolvedOperation}
                 </div>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -607,6 +683,7 @@ export default function FounderMediaChatRegressionPage() {
                 </button>
               </div>
             )}
+
             {active && (
               <div
                 style={{
@@ -623,6 +700,7 @@ export default function FounderMediaChatRegressionPage() {
                 Refresh 只读取现有 Operation，不会创建新的生成任务。
               </div>
             )}
+
             {completed && videoUri && (
               <div
                 style={{
@@ -640,6 +718,7 @@ export default function FounderMediaChatRegressionPage() {
                 >
                   ✓ Video Generation Completed
                 </div>
+
                 <div
                   style={{
                     marginTop: 8,
@@ -652,6 +731,7 @@ export default function FounderMediaChatRegressionPage() {
                 </div>
               </div>
             )}
+
             {result.providerError && (
               <div
                 style={{
@@ -669,72 +749,79 @@ export default function FounderMediaChatRegressionPage() {
                 {result.providerError}
               </div>
             )}
-            {result.executionPolicy && (
-              <div
-                style={{
-                  marginTop: 18,
-                  padding: 14,
-                  borderRadius: 14,
-                  background: "#f8fafc",
-                  color: "#475569",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                }}
-              >
+
+            {result.executionPolicy !== undefined &&
+              result.executionPolicy !== null && (
                 <div
                   style={{
-                    fontWeight: 900,
-                    marginBottom: 8,
+                    marginTop: 18,
+                    padding: 14,
+                    borderRadius: 14,
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontSize: 12,
+                    lineHeight: 1.6,
                   }}
                 >
-                  Execution Policy
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Execution Policy
+                  </div>
+
+                  <pre
+                    style={{
+                      margin: 0,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    }}
+                  >
+                    {safeJson(result.executionPolicy)}
+                  </pre>
                 </div>
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    fontFamily:
-                      "ui-monospace, SFMono-Regular, Menlo, monospace",
-                  }}
-                >
-                  {safeJson(result.executionPolicy)}
-                </pre>
-              </div>
-            )}
-            {result.nextVerification && (
-              <div
-                style={{
-                  marginTop: 18,
-                  padding: 14,
-                  borderRadius: 14,
-                  background: "#f8fafc",
-                  color: "#475569",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                }}
-              >
+              )}
+
+            {result.nextVerification !== undefined &&
+              result.nextVerification !== null && (
                 <div
                   style={{
-                    fontWeight: 900,
-                    marginBottom: 8,
+                    marginTop: 18,
+                    padding: 14,
+                    borderRadius: 14,
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontSize: 12,
+                    lineHeight: 1.6,
                   }}
                 >
-                  Next Verification
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Next Verification
+                  </div>
+
+                  <pre
+                    style={{
+                      margin: 0,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    }}
+                  >
+                    {safeJson(result.nextVerification)}
+                  </pre>
                 </div>
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    fontFamily:
-                      "ui-monospace, SFMono-Regular, Menlo, monospace",
-                  }}
-                >
-                  {safeJson(result.nextVerification)}
-                </pre>
-              </div>
-            )}
+              )}
+
             <details style={{ marginTop: 18 }}>
               <summary
                 style={{
@@ -745,6 +832,7 @@ export default function FounderMediaChatRegressionPage() {
               >
                 查看完整 Verification JSON
               </summary>
+
               <pre
                 style={{
                   marginTop: 12,
@@ -764,6 +852,7 @@ export default function FounderMediaChatRegressionPage() {
             </details>
           </section>
         )}
+
         <div
           style={{
             marginTop: 18,
@@ -786,6 +875,7 @@ export default function FounderMediaChatRegressionPage() {
     </main>
   );
 }
+
 function ResultRow({
   label,
   value,
@@ -815,6 +905,7 @@ function ResultRow({
       >
         {label}
       </span>
+
       <span
         style={{
           color: "#0f172a",
