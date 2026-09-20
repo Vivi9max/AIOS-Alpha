@@ -10,6 +10,10 @@ import {
   normalizeMarketEvidence,
 } from "./market-normalizer";
 
+import {
+  guardMarketPriceIntegrity,
+} from "./market-price-integrity";
+
 import type {
   MarketDataProviderStatus,
   MarketEvidence,
@@ -21,10 +25,11 @@ function normalizeSymbol(
   symbol: string,
   market: MarketInstrument["market"],
 ): string {
-  const value = symbol
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "");
+  const value =
+    symbol
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
 
   if (market === "hk") {
     return value
@@ -128,6 +133,9 @@ function emptySnapshot(): MarketSnapshot {
     revenue: null,
     revenueGrowth: null,
 
+    afterHoursPrice: null,
+    preMarketPrice: null,
+
     dataQuality:
       "insufficient",
 
@@ -206,7 +214,7 @@ export async function retrieveMarketData(
 
   /*
    * ============================================================
-   * C147.2.6
+   * C147.2.6 / C147.2.7
    *
    * Structured Provider
    *        ↓
@@ -214,9 +222,12 @@ export async function retrieveMarketData(
    *        ↓
    * Conflict Guard
    *        ↓
+   * Price Integrity Guard
+   *        ↓
    * Market Snapshot
    *
-   * Never treat raw web extraction as trusted structured data.
+   * Never treat raw web extraction as trusted
+   * structured market data.
    * ============================================================
    */
 
@@ -325,12 +336,7 @@ export async function retrieveMarketData(
       );
 
     /*
-     * C147.2.6:
-     *
-     * Do not parse all evidence as one
-     * giant string.
-     *
-     * Parse each source separately,
+     * Parse each source independently,
      * then resolve conflicts.
      */
     const normalized =
@@ -338,8 +344,25 @@ export async function retrieveMarketData(
         evidence,
       );
 
-    const snapshot =
+    let snapshot =
       normalized.snapshot;
+
+    /*
+     * C147.2.7.1
+     *
+     * Prevent ticker-code leakage from becoming
+     * a market price.
+     */
+    const priceIntegrity =
+      guardMarketPriceIntegrity(
+        snapshot,
+        instrument.normalizedSymbol,
+        instrument.market,
+        evidence,
+      );
+
+    snapshot =
+      priceIntegrity.snapshot;
 
     const domains =
       new Set(
@@ -362,6 +385,23 @@ export async function retrieveMarketData(
       webResult.verification
         ?.primarySourceFound ??
       false;
+
+    let providerReason:
+      | string
+      | undefined;
+
+    if (priceIntegrity.priceRejected) {
+      providerReason =
+        [
+          "Price integrity guard rejected a ticker-derived value.",
+          priceIntegrity.reason,
+        ]
+          .filter(Boolean)
+          .join(" ");
+    } else if (structuredError) {
+      providerReason =
+        `Structured provider unavailable; Web Intelligence fallback used. ${structuredError}`;
+    }
 
     return {
       snapshot,
@@ -387,14 +427,15 @@ export async function retrieveMarketData(
       provider:
         createWebProviderStatus(
           instrument,
-          structuredError
-            ? `Structured provider unavailable; Web Intelligence fallback used. ${structuredError}`
-            : undefined,
+          providerReason,
         ),
 
       error:
         webResult.success
-          ? undefined
+          ? priceIntegrity.priceRejected
+            ? priceIntegrity.reason ??
+              undefined
+            : undefined
           : webResult.error ??
             structuredError,
     };
