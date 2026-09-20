@@ -7,12 +7,9 @@ import type {
 export interface StructuredMarketResult {
   success: boolean;
   verified: boolean;
-
   provider: string;
   dataset: string | null;
-
   snapshot: MarketSnapshot;
-
   sourceCount: number;
   error?: string;
 }
@@ -33,24 +30,16 @@ function env(name: string): string {
   return process.env[name]?.trim() ?? "";
 }
 
-function parseNumber(
-  value: unknown,
-): number | null {
-  if (
-    typeof value === "number" &&
-    Number.isFinite(value)
-  ) {
+function parseNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (
-    typeof value !== "string" &&
-    typeof value !== "number"
-  ) {
+  if (typeof value !== "string") {
     return null;
   }
 
-  const normalized = String(value)
+  const normalized = value
     .replace(/,/g, "")
     .replace(/%/g, "")
     .trim();
@@ -61,30 +50,17 @@ function parseNumber(
 
   const parsed = Number(normalized);
 
-  return Number.isFinite(parsed)
-    ? parsed
-    : null;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeDate(
-  value: unknown,
-): string | null {
-  if (
-    typeof value !== "string" &&
-    typeof value !== "number"
-  ) {
+function normalizeDate(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") {
     return null;
   }
 
-  const parsed = new Date(
-    String(value),
-  );
+  const parsed = new Date(String(value));
 
-  if (
-    Number.isNaN(
-      parsed.getTime(),
-    )
-  ) {
+  if (Number.isNaN(parsed.getTime())) {
     return null;
   }
 
@@ -132,8 +108,7 @@ function getColumn(
   columns: string[],
   name: string,
 ): unknown {
-  const index =
-    columns.indexOf(name);
+  const index = columns.indexOf(name);
 
   if (index < 0) {
     return null;
@@ -144,39 +119,25 @@ function getColumn(
 
 function buildColumns(): string[] {
   const ticker =
-    env(
-      "NASDAQ_DATA_LINK_TICKER_COLUMN",
-    ) || "ticker";
+    env("NASDAQ_DATA_LINK_TICKER_COLUMN") || "ticker";
 
   const date =
-    env(
-      "NASDAQ_DATA_LINK_DATE_COLUMN",
-    ) || "date";
+    env("NASDAQ_DATA_LINK_DATE_COLUMN") || "date";
 
   const open =
-    env(
-      "NASDAQ_DATA_LINK_OPEN_COLUMN",
-    ) || "open";
+    env("NASDAQ_DATA_LINK_OPEN_COLUMN") || "open";
 
   const high =
-    env(
-      "NASDAQ_DATA_LINK_HIGH_COLUMN",
-    ) || "high";
+    env("NASDAQ_DATA_LINK_HIGH_COLUMN") || "high";
 
   const low =
-    env(
-      "NASDAQ_DATA_LINK_LOW_COLUMN",
-    ) || "low";
+    env("NASDAQ_DATA_LINK_LOW_COLUMN") || "low";
 
   const close =
-    env(
-      "NASDAQ_DATA_LINK_CLOSE_COLUMN",
-    ) || "close";
+    env("NASDAQ_DATA_LINK_CLOSE_COLUMN") || "close";
 
   const volume =
-    env(
-      "NASDAQ_DATA_LINK_VOLUME_COLUMN",
-    ) || "volume";
+    env("NASDAQ_DATA_LINK_VOLUME_COLUMN") || "volume";
 
   return [
     ticker,
@@ -189,148 +150,123 @@ function buildColumns(): string[] {
   ];
 }
 
+/**
+ * Convert Nasdaq Data Link rows into strictly typed MarketBar[].
+ *
+ * This intentionally uses an explicit accumulator rather than
+ * map(...).filter(...) so TypeScript can never infer
+ * `(MarketBar | null)[]` here.
+ */
 function buildBars(
   payload: NasdaqDatatableResponse,
 ): MarketBar[] {
-  const columns =
-    buildColumns();
+  const columns = buildColumns();
+  const rows = payload.datatable?.data ?? [];
 
-  const rows =
-    payload.datatable?.data ?? [];
+  const dateColumn = columns[1];
+  const openColumn = columns[2];
+  const highColumn = columns[3];
+  const lowColumn = columns[4];
+  const closeColumn = columns[5];
+  const volumeColumn = columns[6];
 
-  const dateColumn =
-    columns[1];
+  const bars: MarketBar[] = [];
 
-  const openColumn =
-    columns[2];
+  for (const row of rows) {
+    if (!Array.isArray(row)) {
+      continue;
+    }
 
-  const highColumn =
-    columns[3];
-
-  const lowColumn =
-    columns[4];
-
-  const closeColumn =
-    columns[5];
-
-  const volumeColumn =
-    columns[6];
-
-  return rows
-    .map((row) => {
-      if (!Array.isArray(row)) {
-        return null;
-      }
-
-      const timestamp =
-        normalizeDate(
-          getColumn(
-            row,
-            columns,
-            dateColumn,
-          ),
-        );
-
-      if (!timestamp) {
-        return null;
-      }
-
-      return {
-        timestamp,
-
-        open:
-          parseNumber(
-            getColumn(
-              row,
-              columns,
-              openColumn,
-            ),
-          ),
-
-        high:
-          parseNumber(
-            getColumn(
-              row,
-              columns,
-              highColumn,
-            ),
-          ),
-
-        low:
-          parseNumber(
-            getColumn(
-              row,
-              columns,
-              lowColumn,
-            ),
-          ),
-
-        close:
-          parseNumber(
-            getColumn(
-              row,
-              columns,
-              closeColumn,
-            ),
-          ),
-
-        volume:
-          parseNumber(
-            getColumn(
-              row,
-              columns,
-              volumeColumn,
-            ),
-          ),
-      };
-    })
-    .filter(
-      (
-        value,
-      ): value is MarketBar =>
-        value !== null,
-    )
-    .sort(
-      (a, b) =>
-        new Date(
-          a.timestamp,
-        ).getTime() -
-        new Date(
-          b.timestamp,
-        ).getTime(),
+    const timestamp = normalizeDate(
+      getColumn(
+        row,
+        columns,
+        dateColumn,
+      ),
     );
+
+    if (!timestamp) {
+      continue;
+    }
+
+    const bar: MarketBar = {
+      timestamp,
+
+      open: parseNumber(
+        getColumn(
+          row,
+          columns,
+          openColumn,
+        ),
+      ),
+
+      high: parseNumber(
+        getColumn(
+          row,
+          columns,
+          highColumn,
+        ),
+      ),
+
+      low: parseNumber(
+        getColumn(
+          row,
+          columns,
+          lowColumn,
+        ),
+      ),
+
+      close: parseNumber(
+        getColumn(
+          row,
+          columns,
+          closeColumn,
+        ),
+      ),
+
+      volume: parseNumber(
+        getColumn(
+          row,
+          columns,
+          volumeColumn,
+        ),
+      ),
+    };
+
+    bars.push(bar);
+  }
+
+  bars.sort(
+    (a, b) =>
+      new Date(a.timestamp).getTime() -
+      new Date(b.timestamp).getTime(),
+  );
+
+  return bars;
 }
 
 function buildUrl(
   instrument: MarketInstrument,
 ): string {
   const apiKey =
-    env(
-      "NASDAQ_DATA_LINK_API_KEY",
-    );
+    env("NASDAQ_DATA_LINK_API_KEY");
 
   const table =
-    env(
-      "NASDAQ_DATA_LINK_PRICE_TABLE",
-    );
+    env("NASDAQ_DATA_LINK_PRICE_TABLE");
 
   const tickerColumn =
-    env(
-      "NASDAQ_DATA_LINK_TICKER_COLUMN",
-    ) || "ticker";
+    env("NASDAQ_DATA_LINK_TICKER_COLUMN") ||
+    "ticker";
 
   const dateColumn =
-    env(
-      "NASDAQ_DATA_LINK_DATE_COLUMN",
-    ) || "date";
+    env("NASDAQ_DATA_LINK_DATE_COLUMN") ||
+    "date";
 
-  const columns =
-    buildColumns();
+  const columns = buildColumns();
 
-  const url =
-    new URL(
-      `https://data.nasdaq.com/api/v3/datatables/${table}.json`,
-    );
+  const url = new URL(
+    `https://data.nasdaq.com/api/v3/datatables/${table}.json`,
+  );
 
   url.searchParams.set(
     tickerColumn,
@@ -348,24 +284,22 @@ function buildUrl(
   );
 
   /*
-   * Limit the request to a recent
-   * historical window.
+   * Historical window only.
    *
-   * This is deliberately not called
-   * "real-time". The actual freshness
-   * is determined by the returned data.
+   * This provider must not claim real-time
+   * market data unless the underlying dataset
+   * actually provides it.
    */
-  const since =
-    new Date(
-      Date.now() -
-        1000 *
-          60 *
-          60 *
-          24 *
-          90,
-    )
-      .toISOString()
-      .slice(0, 10);
+  const since = new Date(
+    Date.now() -
+      1000 *
+        60 *
+        60 *
+        24 *
+        90,
+  )
+    .toISOString()
+    .slice(0, 10);
 
   url.searchParams.set(
     `${dateColumn}.gte`,
@@ -383,8 +317,11 @@ function buildUrl(
 export async function retrieveStructuredMarketData(
   instrument: MarketInstrument,
 ): Promise<StructuredMarketResult> {
-  const empty =
-    emptySnapshot();
+  const empty = emptySnapshot();
+
+  const dataset =
+    env("NASDAQ_DATA_LINK_PRICE_TABLE") ||
+    null;
 
   if (!configured()) {
     return {
@@ -394,10 +331,7 @@ export async function retrieveStructuredMarketData(
       provider:
         "nasdaq-data-link",
 
-      dataset:
-        env(
-          "NASDAQ_DATA_LINK_PRICE_TABLE",
-        ) || null,
+      dataset,
 
       snapshot: empty,
 
@@ -409,13 +343,12 @@ export async function retrieveStructuredMarketData(
   }
 
   /*
-   * Current structured implementation
-   * deliberately targets US equities.
+   * C147.2 structured provider currently
+   * targets US equities.
    *
-   * HK/CN remain on Web Intelligence
-   * until a corresponding licensed/
-   * configured structured provider is
-   * added.
+   * HK/CN intentionally remain on the
+   * Web Intelligence path until a
+   * configured structured provider exists.
    */
   if (instrument.market !== "us") {
     return {
@@ -425,10 +358,7 @@ export async function retrieveStructuredMarketData(
       provider:
         "nasdaq-data-link",
 
-      dataset:
-        env(
-          "NASDAQ_DATA_LINK_PRICE_TABLE",
-        ) || null,
+      dataset,
 
       snapshot: empty,
 
@@ -439,26 +369,21 @@ export async function retrieveStructuredMarketData(
     };
   }
 
-  const url =
-    buildUrl(
-      instrument,
-    );
+  const url = buildUrl(instrument);
 
   try {
-    const response =
-      await fetch(
-        url,
-        {
-          method: "GET",
+    const response = await fetch(
+      url,
+      {
+        method: "GET",
 
-          headers: {
-            Accept:
-              "application/json",
-          },
-
-          cache: "no-store",
+        headers: {
+          Accept: "application/json",
         },
-      );
+
+        cache: "no-store",
+      },
+    );
 
     const payload =
       (await response.json()) as
@@ -467,9 +392,7 @@ export async function retrieveStructuredMarketData(
     if (!response.ok) {
       const message =
         payload.message ||
-        payload.errors?.join(
-          "; ",
-        ) ||
+        payload.errors?.join("; ") ||
         `Nasdaq Data Link returned HTTP ${response.status}.`;
 
       return {
@@ -479,10 +402,7 @@ export async function retrieveStructuredMarketData(
         provider:
           "nasdaq-data-link",
 
-        dataset:
-          env(
-            "NASDAQ_DATA_LINK_PRICE_TABLE",
-          ) || null,
+        dataset,
 
         snapshot: empty,
 
@@ -492,10 +412,7 @@ export async function retrieveStructuredMarketData(
       };
     }
 
-    const bars =
-      buildBars(
-        payload,
-      );
+    const bars = buildBars(payload);
 
     if (bars.length === 0) {
       return {
@@ -505,10 +422,7 @@ export async function retrieveStructuredMarketData(
         provider:
           "nasdaq-data-link",
 
-        dataset:
-          env(
-            "NASDAQ_DATA_LINK_PRICE_TABLE",
-          ) || null,
+        dataset,
 
         snapshot: empty,
 
@@ -544,24 +458,19 @@ export async function retrieveStructuredMarketData(
         : null;
 
     const snapshot: MarketSnapshot = {
-      price:
-        latestClose,
+      price: latestClose,
 
       previousClose,
 
       changePercent,
 
-      open:
-        latest.open ?? null,
+      open: latest.open ?? null,
 
-      high:
-        latest.high ?? null,
+      high: latest.high ?? null,
 
-      low:
-        latest.low ?? null,
+      low: latest.low ?? null,
 
-      volume:
-        latest.volume ?? null,
+      volume: latest.volume ?? null,
 
       marketCap: null,
       pe: null,
@@ -571,9 +480,7 @@ export async function retrieveStructuredMarketData(
       revenueGrowth: null,
 
       /*
-       * Historical is intentional.
-       * We do not claim live quotes merely
-       * because the API returned data.
+       * Deliberately historical.
        */
       dataQuality:
         "historical",
@@ -587,34 +494,24 @@ export async function retrieveStructuredMarketData(
       source:
         "Nasdaq Data Link",
 
-      dataset:
-        env(
-          "NASDAQ_DATA_LINK_PRICE_TABLE",
-        ),
+      dataset,
 
       bars,
     };
 
+    const verified =
+      bars.length > 0 &&
+      latestClose !== null;
+
     return {
       success: true,
 
-      /*
-       * Verification requires:
-       * 1. rows returned
-       * 2. valid timestamp
-       * 3. usable close price
-       */
-      verified:
-        bars.length > 0 &&
-        latestClose !== null,
+      verified,
 
       provider:
         "nasdaq-data-link",
 
-      dataset:
-        env(
-          "NASDAQ_DATA_LINK_PRICE_TABLE",
-        ),
+      dataset,
 
       snapshot,
 
@@ -628,10 +525,7 @@ export async function retrieveStructuredMarketData(
       provider:
         "nasdaq-data-link",
 
-      dataset:
-        env(
-          "NASDAQ_DATA_LINK_PRICE_TABLE",
-        ) || null,
+      dataset,
 
       snapshot: empty,
 
