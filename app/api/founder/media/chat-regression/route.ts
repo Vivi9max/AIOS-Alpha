@@ -164,9 +164,12 @@ export async function GET(
                 progress:
                   result.providerProgress ??
                   null,
-                videoUri:
-                  result.job?.videoUri ??
-                  null,
+videoUri:
+  result.route.provider === "google-veo" &&
+  result.job &&
+  "videoUri" in result.job
+    ? result.job.videoUri ?? null
+    : null,
               },
               providerJob:
                 result.job ??
@@ -561,9 +564,12 @@ export async function POST(
                 result.providerProgress ??
                 job?.progress ??
                 null,
-              videoUri:
-                job?.videoUri ??
-                null,
+videoUri:
+  result.route.provider === "google-veo" &&
+  job &&
+  "videoUri" in job
+    ? job.videoUri ?? null
+    : null,
             },
             providerJob:
               job ??
