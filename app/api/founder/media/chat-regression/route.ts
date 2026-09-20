@@ -6,7 +6,7 @@ import {
   createMediaGenerationJob,
   getMediaGenerationJob,
   getMediaGenerationAvailability,
-  resolveAvailableMediaGenerationRoute,
+  resolveMediaGenerationRoute,
 } from "@/lib/runtime/media/generation-router";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 const TEST_PROMPT =
   "A cinematic vertical AIOS technology scene showing an autonomous AI operating system coordinating intelligence, planning, execution, and media generation. Clean futuristic environment, professional product demonstration.";
 
+const TEST_PROVIDER = "google-veo";
 const TEST_RESOLUTION = "1080p";
 const TEST_ASPECT_RATIO = "9:16";
 const TEST_DURATION_SECONDS = 8;
@@ -23,6 +24,13 @@ function isConfigured(
   value: string | undefined,
 ): boolean {
   return Boolean(value?.trim());
+}
+
+function noStoreHeaders() {
+  return {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8",
+  };
 }
 
 function unauthorizedResponse() {
@@ -36,9 +44,7 @@ function unauthorizedResponse() {
     },
     {
       status: 401,
-      headers: {
-        "cache-control": "no-store",
-      },
+      headers: noStoreHeaders(),
     },
   );
 }
@@ -46,26 +52,62 @@ function unauthorizedResponse() {
 function buildExecutionRequest() {
   return {
     kind: "video" as const,
+    provider: TEST_PROVIDER,
     prompt: TEST_PROMPT,
     resolution: TEST_RESOLUTION,
     aspectRatio: TEST_ASPECT_RATIO,
-    durationSeconds:
-      TEST_DURATION_SECONDS,
+    durationSeconds: TEST_DURATION_SECONDS,
+  };
+}
+
+function buildDiagnosticPayload(
+  startedAt: number,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    runtime: "aios-alpha",
+    stage: "C146.18.3",
+    verification: "real-google-veo",
+    request: {
+      kind: "video",
+      provider: TEST_PROVIDER,
+      resolution: TEST_RESOLUTION,
+      aspectRatio: TEST_ASPECT_RATIO,
+      durationSeconds: TEST_DURATION_SECONDS,
+    },
+    environment: {
+      geminiConfigured:
+        isConfigured(
+          process.env.GEMINI_API_KEY,
+        ),
+      googleConfigured:
+        isConfigured(
+          process.env.GOOGLE_API_KEY,
+        ),
+      openAIConfigured:
+        isConfigured(
+          process.env.OPENAI_API_KEY,
+        ),
+    },
+    latencyMs:
+      Date.now() - startedAt,
+    timestamp: Date.now(),
+    ...extra,
   };
 }
 
 /**
  * GET
  *
- * Non-billable preflight verification.
+ * Two modes:
  *
- * This confirms:
- * Chat regression contract
- * → media capability
- * → automatic provider routing
- * → provider configuration
+ * 1. No operationName:
+ *    Non-billable preflight.
  *
- * It does NOT create a media generation job.
+ * 2. operationName:
+ *    Read an existing Veo operation.
+ *
+ * GET never creates a new provider job.
  */
 export async function GET(
   request: NextRequest,
@@ -81,78 +123,122 @@ export async function GET(
       .get("operationName")
       ?.trim();
 
-  /*
-   * When an operation name is supplied,
-   * GET becomes a status/read operation.
-   *
-   * It never creates another job.
+  /**
+   * Existing operation status verification.
    */
   if (operationName) {
-    const result =
-      await getMediaGenerationJob(
-        operationName,
+    try {
+      const result =
+        await getMediaGenerationJob(
+          operationName,
+        );
+
+      const verified =
+        result.success ||
+        result.code ===
+          "MEDIA_GENERATION_IN_PROGRESS";
+
+      return NextResponse.json(
+        {
+          success: verified,
+          verified,
+          code:
+            result.code,
+          message: verified
+            ? "C146.18.3 existing Google Veo operation was read successfully."
+            : "C146.18.3 could not verify the existing Google Veo operation.",
+          ...buildDiagnosticPayload(
+            startedAt,
+            {
+              execution: {
+                provider:
+                  result.route.provider,
+                model:
+                  result.route.model,
+                operationName:
+                  result.providerJobId ??
+                  operationName,
+                status:
+                  result.providerStatus ??
+                  null,
+                progress:
+                  result.providerProgress ??
+                  null,
+                videoUri:
+                  result.job?.videoUri ??
+                  null,
+              },
+              providerJob:
+                result.job ??
+                null,
+              error:
+                result.error ??
+                null,
+              operationPolicy: {
+                createsNewJob: false,
+                billable: false,
+              },
+            },
+          ),
+        },
+        {
+          /**
+           * IMPORTANT:
+           *
+           * A verification failure is still a valid
+           * API response. Do not turn provider state
+           * into a generic browser "page couldn't load".
+           */
+          status: 200,
+          headers: noStoreHeaders(),
+        },
       );
-
-    const verified =
-      result.success ||
-      result.code ===
-        "MEDIA_GENERATION_IN_PROGRESS";
-
-    return NextResponse.json(
-      {
-        success: verified,
-        verified,
-        code:
-          result.code,
-        message:
-          verified
-            ? "C146.18.3 media generation job status was read successfully."
-            : "C146.18.3 media generation job status could not be verified.",
-        runtime: "aios-alpha",
-        stage: "C146.18.3",
-        execution: {
-          provider:
-            result.route.provider,
-          model:
-            result.route.model,
-          operationName:
-            result.providerJobId ??
-            operationName,
-          status:
-            result.providerStatus,
-          progress:
-            result.providerProgress,
-          videoUri:
-            result.job?.videoUri ??
-            null,
+    } catch (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          verified: false,
+          code:
+            "C146_18_3_STATUS_EXCEPTION",
+          message:
+            "C146.18.3 encountered an exception while reading the existing Google Veo operation.",
+          ...buildDiagnosticPayload(
+            startedAt,
+            {
+              operationName,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown status error.",
+            },
+          ),
         },
-        providerJob:
-          result.job ?? null,
-        error:
-          result.error ?? null,
-        latencyMs:
-          Date.now() -
-          startedAt,
-        timestamp:
-          Date.now(),
-      },
-      {
-        status: verified ? 200 : 500,
-        headers: {
-          "cache-control":
-            "no-store",
+        {
+          status: 200,
+          headers: noStoreHeaders(),
         },
-      },
-    );
+      );
+    }
   }
+
+  /**
+   * Non-billable preflight.
+   *
+   * IMPORTANT:
+   * Explicitly resolve Google Veo.
+   * Do not allow automatic Composer fallback
+   * to hide a missing Google configuration.
+   */
+  const requestData =
+    buildExecutionRequest();
+
+  const route =
+    resolveMediaGenerationRoute(
+      requestData,
+    );
 
   const availability =
     getMediaGenerationAvailability();
-
-  const route =
-    resolveAvailableMediaGenerationRoute(
-      buildExecutionRequest(),
-    );
 
   const geminiConfigured =
     isConfigured(
@@ -162,53 +248,23 @@ export async function GET(
       process.env.GOOGLE_API_KEY,
     );
 
-  const openAIConfigured =
-    isConfigured(
-      process.env.OPENAI_API_KEY,
-    );
-
-  const providerIsKnown =
-    route.provider ===
-      "google-veo" ||
-    route.provider ===
-      "aios-composer";
-
-  const providerConfigurationIsValid =
-    route.provider ===
-      "google-veo"
-      ? route.configured ===
-        geminiConfigured
-      : route.provider ===
-          "aios-composer"
-        ? route.configured ===
-          openAIConfigured
-        : false;
-
-  const resolutionPreserved =
-    route.resolution ===
-    TEST_RESOLUTION;
-
-  const aspectRatioPreserved =
-    TEST_ASPECT_RATIO ===
-    "9:16";
-
-  const durationPreserved =
-    TEST_DURATION_SECONDS >= 4 &&
-    TEST_DURATION_SECONDS <= 8;
-
   const checks = {
     founderAuth: true,
-    availabilityReturned:
-      Array.isArray(
-        availability,
-      ),
-    routerResolved:
-      Boolean(route.provider),
-    providerIsKnown,
-    providerConfigurationIsValid,
-    resolutionPreserved,
-    aspectRatioPreserved,
-    durationPreserved,
+    googleVeoRequested:
+      route.provider ===
+      "google-veo",
+    googleVeoConfigured:
+      route.configured ===
+      geminiConfigured,
+    resolutionPreserved:
+      route.resolution ===
+      TEST_RESOLUTION,
+    aspectRatioPreserved:
+      TEST_ASPECT_RATIO ===
+      "9:16",
+    durationPreserved:
+      TEST_DURATION_SECONDS >= 4 &&
+      TEST_DURATION_SECONDS <= 8,
   };
 
   const verified =
@@ -224,51 +280,32 @@ export async function GET(
         ? "C146_18_3_MEDIA_PREFLIGHT_PASS"
         : "C146_18_3_MEDIA_PREFLIGHT_FAILED",
       message: verified
-        ? "C146.18.3 media execution preflight passed. No provider job was created."
-        : "C146.18.3 media execution preflight failed.",
-      runtime: "aios-alpha",
-      stage: "C146.18.3",
-      environment: {
-        geminiConfigured,
-        openAIConfigured,
-      },
-      request: {
-        kind: "video",
-        prompt:
-          TEST_PROMPT,
-        resolution:
-          TEST_RESOLUTION,
-        aspectRatio:
-          TEST_ASPECT_RATIO,
-        durationSeconds:
-          TEST_DURATION_SECONDS,
-      },
-      route,
-      availability,
-      checks,
-      executionPolicy: {
-        billableExecution:
-          false,
-        providerJobCreated:
-          false,
-        nextStep:
-          "POST this endpoint to create one real media generation job.",
-      },
-      latencyMs:
-        Date.now() -
+        ? "C146.18.3 Google Veo preflight passed. No provider job was created."
+        : "C146.18.3 Google Veo preflight failed. No provider job was created.",
+      ...buildDiagnosticPayload(
         startedAt,
-      timestamp:
-        Date.now(),
+        {
+          route,
+          availability,
+          checks,
+          executionPolicy: {
+            provider:
+              TEST_PROVIDER,
+            billableExecution:
+              false,
+            providerJobCreated:
+              false,
+            automaticFallback:
+              false,
+            nextStep:
+              "POST this endpoint to create exactly one real Google Veo job.",
+          },
+        },
+      ),
     },
     {
-      status:
-        verified
-          ? 200
-          : 500,
-      headers: {
-        "cache-control":
-          "no-store",
-      },
+      status: 200,
+      headers: noStoreHeaders(),
     },
   );
 }
@@ -276,12 +313,10 @@ export async function GET(
 /**
  * POST
  *
- * Real provider execution.
+ * REAL Google Veo execution.
  *
- * This intentionally creates exactly one
- * media generation job when the automatic
- * route resolves to an available Google Veo
- * provider.
+ * Exactly one provider job may be created
+ * by one POST request.
  */
 export async function POST(
   request: NextRequest,
@@ -292,63 +327,82 @@ export async function POST(
     return unauthorizedResponse();
   }
 
+  const requestData =
+    buildExecutionRequest();
+
+  /**
+   * Force the direct Google Veo route.
+   *
+   * This is intentionally NOT:
+   *
+   * resolveAvailableMediaGenerationRoute()
+   *
+   * because C146.18.3 is a direct provider
+   * verification, not a generic fallback test.
+   */
   const route =
-    resolveAvailableMediaGenerationRoute(
-      buildExecutionRequest(),
+    resolveMediaGenerationRoute(
+      requestData,
     );
 
-  /*
-   * C146.18.3 is specifically a real
-   * provider execution verification.
-   *
-   * Do not silently execute a different
-   * provider if the requested real
-   * execution provider is unavailable.
+  const geminiConfigured =
+    isConfigured(
+      process.env.GEMINI_API_KEY,
+    ) ||
+    isConfigured(
+      process.env.GOOGLE_API_KEY,
+    );
+
+  /**
+   * Provider mismatch should never silently
+   * execute another provider.
    */
   if (
     route.provider !==
-    "google-veo"
+    TEST_PROVIDER
   ) {
     return NextResponse.json(
       {
         success: false,
         verified: false,
         code:
-          route.configured
-            ? "C146_18_3_REAL_PROVIDER_NOT_SELECTED"
-            : "C146_18_3_REAL_PROVIDER_UNAVAILABLE",
+          "C146_18_3_PROVIDER_ROUTE_INVALID",
         message:
-          route.configured
-            ? "C146.18.3 requires the direct Google Veo provider for real execution."
-            : "C146.18.3 cannot perform real provider execution because Google Veo is unavailable.",
-        runtime:
-          "aios-alpha",
-        stage:
-          "C146.18.3",
-        route,
-        executionPolicy: {
-          providerJobCreated:
-            false,
-          reason:
-            "The regression does not silently substitute a different provider for a real execution test.",
-        },
-        latencyMs:
-          Date.now() -
+          "C146.18.3 requires the direct Google Veo provider.",
+        ...buildDiagnosticPayload(
           startedAt,
-        timestamp:
-          Date.now(),
+          {
+            route,
+            executionPolicy: {
+              provider:
+                TEST_PROVIDER,
+              providerJobCreated:
+                false,
+              automaticFallback:
+                false,
+              reason:
+                "The real media verification never silently substitutes another provider.",
+            },
+          },
+        ),
       },
       {
-        status: 503,
-        headers: {
-          "cache-control":
-            "no-store",
-        },
+        /**
+         * Return a normal JSON response so the
+         * Founder Console can display the actual
+         * diagnostic state instead of a browser
+         * error page.
+         */
+        status: 200,
+        headers: noStoreHeaders(),
       },
     );
   }
 
-  if (!route.configured) {
+  /**
+   * Explicit configuration diagnostic.
+   */
+  if (!geminiConfigured) {
     return NextResponse.json(
       {
         success: false,
@@ -356,94 +410,97 @@ export async function POST(
         code:
           "GEMINI_API_KEY_MISSING",
         message:
-          "GEMINI_API_KEY or GOOGLE_API_KEY is not configured. No media generation job was created.",
-        runtime:
-          "aios-alpha",
-        stage:
-          "C146.18.3",
-        route,
-        executionPolicy: {
-          providerJobCreated:
-            false,
-        },
-        latencyMs:
-          Date.now() -
+          "GEMINI_API_KEY or GOOGLE_API_KEY is not configured. No Google Veo job was created.",
+        ...buildDiagnosticPayload(
           startedAt,
-        timestamp:
-          Date.now(),
+          {
+            route,
+            executionPolicy: {
+              provider:
+                TEST_PROVIDER,
+              providerJobCreated:
+                false,
+              automaticFallback:
+                false,
+            },
+          },
+        ),
       },
       {
-        status: 503,
-        headers: {
-          "cache-control":
-            "no-store",
-        },
+        status: 200,
+        headers: noStoreHeaders(),
       },
     );
   }
 
   try {
+    /**
+     * Create exactly one real provider job.
+     */
     const result =
       await createMediaGenerationJob(
-        buildExecutionRequest(),
+        requestData,
       );
 
+    /**
+     * Provider/runtime rejected the job.
+     *
+     * Keep this as JSON 200 so the Founder
+     * Console can show the real error.
+     */
     if (!result.success) {
       return NextResponse.json(
         {
           success: false,
           verified: false,
           code:
-            result.code,
+            result.code ||
+            "C146_18_3_PROVIDER_EXECUTION_FAILED",
           message:
-            "C146.18.3 real media provider execution failed before a verified job was created.",
-          runtime:
-            "aios-alpha",
-          stage:
-            "C146.18.3",
-          route:
-            result.route,
-          execution: {
-            attempted:
-              true,
-            provider:
-              result.route.provider,
-            model:
-              result.route.model,
-            operationName:
-              result.providerJobId ??
-              null,
-            status:
-              result.providerStatus ??
-              null,
-            progress:
-              result.providerProgress ??
-              null,
-          },
-          providerJob:
-            result.job ??
-            null,
-          error:
-            result.error ??
-            null,
-          executionPolicy: {
-            providerJobCreated:
-              Boolean(
-                result.providerJobId,
-              ),
-          },
-          latencyMs:
-            Date.now() -
+            "C146.18.3 Google Veo execution did not create a verified provider job.",
+          ...buildDiagnosticPayload(
             startedAt,
-          timestamp:
-            Date.now(),
+            {
+              route:
+                result.route,
+              execution: {
+                attempted: true,
+                provider:
+                  result.route.provider,
+                model:
+                  result.route.model,
+                operationName:
+                  result.providerJobId ??
+                  null,
+                status:
+                  result.providerStatus ??
+                  null,
+                progress:
+                  result.providerProgress ??
+                  null,
+              },
+              providerJob:
+                result.job ??
+                null,
+              providerError:
+                result.error ??
+                null,
+              executionPolicy: {
+                provider:
+                  TEST_PROVIDER,
+                providerJobCreated:
+                  Boolean(
+                    result.providerJobId,
+                  ),
+                automaticFallback:
+                  false,
+              },
+            },
+          ),
         },
         {
-          status: 502,
-          headers: {
-            "cache-control":
-              "no-store",
-          },
+          status: 200,
+          headers: noStoreHeaders(),
         },
       );
     }
@@ -451,27 +508,32 @@ export async function POST(
     const job =
       result.job;
 
-    const jobCreated =
-      Boolean(
-        result.providerJobId,
-      );
+    const providerJobId =
+      result.providerJobId ??
+      job?.operationName ??
+      null;
 
-    const statusIsReal =
-      job?.status ===
-        "queued" ||
-      job?.status ===
-        "in_progress" ||
-      job?.status ===
-        "completed";
+    const status =
+      result.providerStatus ??
+      job?.status ??
+      null;
+
+    const jobCreated =
+      Boolean(providerJobId);
+
+    const validStatus =
+      status === "queued" ||
+      status === "in_progress" ||
+      status === "completed";
 
     const providerIsGoogle =
       result.route.provider ===
-      "google-veo";
+      TEST_PROVIDER;
 
     const verified =
       jobCreated &&
       providerIsGoogle &&
-      statusIsReal;
+      validStatus;
 
     return NextResponse.json(
       {
@@ -481,84 +543,67 @@ export async function POST(
           ? "C146_18_3_REAL_MEDIA_JOB_CREATED"
           : "C146_18_3_REAL_MEDIA_EXECUTION_UNVERIFIED",
         message: verified
-          ? "C146.18.3 created a real Google Veo media generation job."
-          : "C146.18.3 could not verify creation of a real media generation job.",
-        runtime:
-          "aios-alpha",
-        stage:
-          "C146.18.3",
-        execution: {
-          attempted:
-            true,
-          provider:
-            result.route.provider,
-          model:
-            result.route.model,
-          operationName:
-            result.providerJobId ??
-            null,
-          status:
-            result.providerStatus ??
-            job?.status ??
-            null,
-          progress:
-            result.providerProgress ??
-            job?.progress ??
-            null,
-          videoUri:
-            job?.videoUri ??
-            null,
-        },
-        providerJob:
-          job ?? null,
-        route:
-          result.route,
-        request: {
-          kind: "video",
-          resolution:
-            TEST_RESOLUTION,
-          aspectRatio:
-            TEST_ASPECT_RATIO,
-          durationSeconds:
-            TEST_DURATION_SECONDS,
-        },
-        executionPolicy: {
-          providerJobCreated:
-            jobCreated,
-          automaticPolling:
-            false,
-          repeatedCreation:
-            false,
-          note:
-            "The operationName is returned for subsequent status verification. This request creates one provider job only.",
-        },
-        nextVerification: {
-          method:
-            "GET",
-          operationName:
-            result.providerJobId ??
-            null,
-          purpose:
-            "Read the provider job until completed or failed without creating another job.",
-        },
-        latencyMs:
-          Date.now() -
+          ? "C146.18.3 created one real Google Veo media generation job."
+          : "C146.18.3 could not verify creation of the Google Veo media generation job.",
+        ...buildDiagnosticPayload(
           startedAt,
-        timestamp:
-          Date.now(),
+          {
+            execution: {
+              attempted: true,
+              provider:
+                result.route.provider,
+              model:
+                result.route.model,
+              operationName:
+                providerJobId,
+              status,
+              progress:
+                result.providerProgress ??
+                job?.progress ??
+                null,
+              videoUri:
+                job?.videoUri ??
+                null,
+            },
+            providerJob:
+              job ??
+              null,
+            route:
+              result.route,
+            executionPolicy: {
+              provider:
+                TEST_PROVIDER,
+              providerJobCreated:
+                jobCreated,
+              automaticPolling:
+                false,
+              repeatedCreation:
+                false,
+              note:
+                "One POST creates one provider job. Subsequent GET requests only read the existing operation.",
+            },
+            nextVerification: {
+              method: "GET",
+              operationName:
+                providerJobId,
+              purpose:
+                "Read the existing Google Veo operation until completed or failed without creating another job.",
+            },
+          },
+        ),
       },
       {
-        status:
-          verified
-            ? 200
-            : 500,
-        headers: {
-          "cache-control":
-            "no-store",
-        },
+        status: 200,
+        headers: noStoreHeaders(),
       },
     );
   } catch (error) {
+    /**
+     * Catch everything at the route boundary.
+     *
+     * The user must receive the actual runtime
+     * failure instead of a generic page-load error.
+     */
     return NextResponse.json(
       {
         success: false,
@@ -566,31 +611,29 @@ export async function POST(
         code:
           "C146_18_3_REAL_MEDIA_EXECUTION_EXCEPTION",
         message:
-          "C146.18.3 encountered an exception during real media provider execution.",
-        runtime:
-          "aios-alpha",
-        stage:
-          "C146.18.3",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown media execution error.",
-        executionPolicy: {
-          providerJobCreated:
-            false,
-        },
-        latencyMs:
-          Date.now() -
+          "C146.18.3 encountered an exception during Google Veo execution.",
+        ...buildDiagnosticPayload(
           startedAt,
-        timestamp:
-          Date.now(),
+          {
+            route,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unknown Google Veo execution error.",
+            executionPolicy: {
+              provider:
+                TEST_PROVIDER,
+              providerJobCreated:
+                false,
+              automaticFallback:
+                false,
+            },
+          },
+        ),
       },
       {
-        status: 500,
-        headers: {
-          "cache-control":
-            "no-store",
-        },
+        status: 200,
+        headers: noStoreHeaders(),
       },
     );
   }
