@@ -405,6 +405,27 @@ function snapshotValue(
     : null;
 }
 
+function buildEmptyMetric(
+  metric: MarketEvidenceMetric,
+  explanation: string,
+): MarketEvidenceMetricMatrix {
+  return {
+    metric,
+    value: null,
+    agreement:
+      "unavailable",
+    quality:
+      "insufficient",
+    observationCount: 0,
+    independentDomains: 0,
+    observations: [],
+    conflict: false,
+    humanVerificationRequired:
+      true,
+    explanation,
+  };
+}
+
 function buildObservations(
   analysis: MarketAnalysisResult,
   symbol: string,
@@ -523,8 +544,10 @@ function buildMetricMatrix(
     return {
       metric,
       value: null,
-      agreement: "unavailable",
-      quality: "insufficient",
+      agreement:
+        "unavailable",
+      quality:
+        "insufficient",
       observationCount:
         observations.length,
       independentDomains:
@@ -562,6 +585,34 @@ function buildMetricMatrix(
   };
 }
 
+function buildIdentityMatchList(
+  analysis:
+    | MarketAnalysisResult
+    | null,
+  symbol: string,
+  market: MarketRegion,
+) {
+  if (!analysis) {
+    return [];
+  }
+
+  const identityTokens =
+    buildIdentityTokens(
+      symbol,
+      market,
+    );
+
+  return analysis.evidence.filter(
+    (item) =>
+      evidenceContainsIdentity(
+        item.title,
+        item.url,
+        item.snippet,
+        identityTokens,
+      ),
+  );
+}
+
 function buildItem(
   symbol: string,
   market: MarketRegion,
@@ -569,6 +620,95 @@ function buildItem(
     | MarketAnalysisResult
     | null,
 ): MarketEvidenceMatrixItem {
+  const identityMatches =
+    buildIdentityMatchList(
+      analysis,
+      symbol,
+      market,
+    );
+
+  const identityVerified =
+    identityMatches.length > 0;
+
+  /*
+   * C147.6.2 IDENTITY GATE
+   *
+   * Evidence returned by a generic financial
+   * search is not sufficient to attribute
+   * normalized market metrics to the
+   * requested security.
+   *
+   * Identity must therefore be established
+   * BEFORE any normalized metric is exposed
+   * through the evidence matrix.
+   */
+  if (!identityVerified) {
+    const metrics =
+      {} as Record<
+        MarketEvidenceMetric,
+        MarketEvidenceMetricMatrix
+      >;
+
+    for (
+      const metric of METRICS
+    ) {
+      metrics[metric] =
+        buildEmptyMetric(
+          metric,
+          `Security identity was not verified for ${symbol}. Generic financial evidence is not sufficient to attribute ${metric} to the requested security.`,
+        );
+    }
+
+    return {
+      symbol,
+      market,
+
+      identityVerified:
+        false,
+
+      metrics,
+
+      evidenceSummary: {
+        sourceCount:
+          analysis?.evidence.length ??
+          0,
+
+        independentDomains: 0,
+
+        verified: false,
+      },
+
+      freshness: {
+        status:
+          analysis?.verification
+            .freshness
+            .freshness ??
+          "unknown",
+
+        asOf:
+          analysis?.verification
+            .freshness
+            .referenceTime ??
+          analysis?.snapshot
+            .asOf ??
+          null,
+      },
+
+      dataQuality:
+        "insufficient",
+
+      humanReviewRequired:
+        true,
+
+      /*
+       * Keep the raw analysis internally available
+       * for diagnostics, but expose NO normalized
+       * metric values through the evidence matrix.
+       */
+      analysis,
+    };
+  }
+
   const metrics =
     {} as Record<
       MarketEvidenceMetric,
@@ -586,40 +726,11 @@ function buildItem(
             market,
             metric,
           )
-        : {
+        : buildEmptyMetric(
             metric,
-            value: null,
-            agreement:
-              "unavailable",
-            quality:
-              "insufficient",
-            observationCount: 0,
-            independentDomains: 0,
-            observations: [],
-            conflict: false,
-            humanVerificationRequired:
-              true,
-            explanation:
-              "Market analysis failed before normalized evidence became available.",
-          };
+            "Market analysis failed before normalized evidence became available.",
+          );
   }
-
-  const identityTokens =
-    buildIdentityTokens(
-      symbol,
-      market,
-    );
-
-  const identityMatches =
-    analysis?.evidence.filter(
-      (item) =>
-        evidenceContainsIdentity(
-          item.title,
-          item.url,
-          item.snippet,
-          identityTokens,
-        ),
-    ) ?? [];
 
   const independentDomains =
     unique(
@@ -636,7 +747,7 @@ function buildItem(
     market,
 
     identityVerified:
-      identityMatches.length > 0,
+      true,
 
     metrics,
 
@@ -799,6 +910,7 @@ export async function runMarketEvidenceMatrix(
   const verified =
     items.filter(
       (item) =>
+        item.identityVerified &&
         Object.values(
           item.metrics,
         ).some(
@@ -811,6 +923,7 @@ export async function runMarketEvidenceMatrix(
   const conflicted =
     items.filter(
       (item) =>
+        item.identityVerified &&
         Object.values(
           item.metrics,
         ).some(
@@ -881,10 +994,11 @@ export async function runMarketEvidenceMatrix(
     principles: [
       "Metric values come from the existing C147.2 normalization layer.",
       "Existing fieldQuality is preserved rather than recalculated.",
+      "Security identity is verified before normalized metrics are exposed.",
+      "Generic financial evidence cannot be attributed to an unverified security.",
       "Evidence observations provide source provenance without replacing normalized values.",
       "Multiple independent domains remain visible.",
       "Material conflicts remain visible.",
-      "Security identity is checked before evidence is attributed.",
       "Evidence freshness remains visible.",
       "Human verification remains required.",
       "No ranking, prediction, order placement, or automated trading is performed.",
