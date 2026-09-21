@@ -4,7 +4,7 @@ import {
 } from "next/server";
 
 import {
-  requireFounderAuth,
+  isFounderRequest,
 } from "@/lib/founder/auth";
 
 import {
@@ -14,17 +14,11 @@ import {
 export async function POST(
   request: NextRequest,
 ) {
-  const auth =
-    requireFounderAuth(
-      request,
-    );
-
-  if (!auth.ok) {
+  if (!isFounderRequest(request)) {
     return NextResponse.json(
       {
         success: false,
-        code:
-          "FOUNDER_AUTH_REQUIRED",
+        code: "FOUNDER_AUTH_REQUIRED",
         error:
           "Founder authentication required.",
       },
@@ -35,8 +29,14 @@ export async function POST(
   }
 
   try {
-    const body =
+    const rawBody =
       await request.json();
+
+    const body =
+      rawBody &&
+      typeof rawBody === "object"
+        ? rawBody
+        : {};
 
     const result =
       await runMarketDecisionSupport(
