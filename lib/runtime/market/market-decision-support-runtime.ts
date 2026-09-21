@@ -18,7 +18,9 @@ function unique(
   values: string[],
 ): string[] {
   return Array.from(
-    new Set(values),
+    new Set(
+      values.filter(Boolean),
+    ),
   );
 }
 
@@ -36,8 +38,19 @@ function normalizeUniverse(
         return false;
       }
 
+      const market =
+        item.market;
+
+      if (
+        market !== "us" &&
+        market !== "hk" &&
+        market !== "cn"
+      ) {
+        return false;
+      }
+
       const key =
-        `${item.market}:${symbol.toUpperCase()}`;
+        `${market}:${symbol.toUpperCase()}`;
 
       if (seen.has(key)) {
         return false;
@@ -55,125 +68,204 @@ function buildFallbackScenarios(
 ): MarketDecisionSupportScenario[] {
   const scenarios =
     analysis.analysis
-      .decisionSupport
-      .scenarios ?? [];
+      ?.decisionSupport
+      ?.scenarios;
 
-  if (scenarios.length > 0) {
-    return scenarios.map(
-      (scenario) => ({
-        name:
-          scenario.name,
+  if (
+    Array.isArray(scenarios) &&
+    scenarios.length > 0
+  ) {
+    return scenarios
+      .filter(
+        (scenario) =>
+          Boolean(
+            scenario?.name,
+          ),
+      )
+      .map(
+        (scenario) => ({
+          name:
+            scenario.name,
 
-        condition:
-          scenario.condition,
+          condition:
+            scenario.condition,
 
-        implication:
-          scenario.implication,
-      }),
-    );
+          implication:
+            scenario.implication,
+        }),
+      );
   }
 
   return [
     {
-      name: "Current conditions persist",
+      name:
+        "Current conditions persist",
+
       condition:
         "Current observed business, valuation, risk and evidence conditions remain broadly unchanged.",
+
       implication:
         "The current research state remains subject to continued monitoring.",
     },
 
     {
-      name: "Supporting conditions improve",
+      name:
+        "Supporting conditions improve",
+
       condition:
-        "Key supporting operating or valuation indicators improve and remain corroborated by evidence.",
+        "Key operating or valuation indicators improve and remain corroborated by evidence.",
+
       implication:
-        "The research thesis may require reassessment using the updated evidence.",
+        "The research interpretation should be reassessed using the updated evidence.",
     },
 
     {
-      name: "Supporting conditions deteriorate",
+      name:
+        "Supporting conditions deteriorate",
+
       condition:
         "Key operating, valuation, evidence or risk conditions deteriorate.",
+
       implication:
         "The current research interpretation should be reassessed.",
     },
   ];
 }
 
+function buildInsufficientItem(
+  symbol: string,
+  market: MarketRegion,
+): MarketDecisionSupportItem {
+  return {
+    symbol,
+
+    market,
+
+    state:
+      "insufficient-data",
+
+    currentState:
+      "Insufficient verified market analysis is available to construct reliable decision-support context.",
+
+    supportingFactors: [],
+
+    invalidationConditions: [
+      "Verified market evidence must become available before the current interpretation can be relied upon.",
+    ],
+
+    watchMetrics: [
+      "Data availability",
+      "Evidence quality",
+      "Source independence",
+      "Freshness",
+    ],
+
+    scenarios: [],
+
+    industry: null,
+
+    company: null,
+
+    fundamentals: {
+      assessment: null,
+      revenueGrowth: null,
+      eps: null,
+    },
+
+    valuation: {
+      assessment: null,
+      pe: null,
+      pb: null,
+    },
+
+    risk: {
+      level: "unknown",
+      factors: [],
+    },
+
+    evidence: {
+      sourceCount: 0,
+      independentDomains: 0,
+      verified: false,
+    },
+
+    freshness: {
+      freshness: "unknown",
+      asOf: null,
+    },
+
+    dataQuality:
+      "insufficient",
+
+    humanReviewRequired:
+      true,
+
+    analysis: null,
+  };
+}
+
 function buildItem(
   symbol: string,
   market: MarketRegion,
-  analysis: MarketAnalysisResult | null,
-  state: MarketDecisionSupportItem["state"],
+  analysis: MarketAnalysisResult,
 ): MarketDecisionSupportItem {
-  if (!analysis) {
-    return {
-      symbol,
-      market,
-      state,
-      currentState:
-        "Insufficient market analysis is available to construct decision-support context.",
-      supportingFactors: [],
-      invalidationConditions: [
-        "A verified market analysis must become available before the current interpretation can be relied upon.",
-      ],
-      watchMetrics: [
-        "Data availability",
-        "Evidence quality",
-        "Freshness",
-      ],
-      scenarios: [],
-      industry: null,
-      company: null,
-      fundamentals: {
-        assessment: null,
-        revenueGrowth: null,
-        eps: null,
-      },
-      valuation: {
-        assessment: null,
-        pe: null,
-        pb: null,
-      },
-      risk: {
-        level: "unknown",
-        factors: [],
-      },
-      evidence: {
-        sourceCount: 0,
-        independentDomains: 0,
-        verified: false,
-      },
-      freshness: {
-        freshness: "unknown",
-        asOf: null,
-      },
-      dataQuality: "insufficient",
-      humanReviewRequired: true,
-      analysis: null,
-    };
-  }
+  const engineAnalysis =
+    analysis.analysis;
 
   const decisionSupport =
-    analysis.analysis
-      .decisionSupport;
+    engineAnalysis
+      ?.decisionSupport;
+
+  const industry =
+    engineAnalysis
+      ?.industry;
+
+  const company =
+    engineAnalysis
+      ?.company;
+
+  const fundamentals =
+    engineAnalysis
+      ?.fundamentals;
+
+  const valuation =
+    engineAnalysis
+      ?.valuation;
+
+  const risk =
+    engineAnalysis
+      ?.risk;
+
+  const snapshot =
+    analysis.snapshot;
+
+  const verification =
+    analysis.verification;
+
+  const currentState =
+    decisionSupport
+      ?.currentState ||
+    "Current state was not explicitly summarized by the analysis engine.";
 
   const supportingFactors =
     unique(
       decisionSupport
-        .supportingFactors ?? [],
+        ?.supportingFactors ??
+        [],
     );
 
   const invalidationConditions =
     unique(
       decisionSupport
-        .invalidationConditions ?? [],
+        ?.invalidationConditions ??
+        [],
     );
 
   const watchMetrics =
     unique(
       decisionSupport
-        .watchMetrics ?? [],
+        ?.watchMetrics ??
+        [],
     );
 
   const scenarios =
@@ -181,16 +273,36 @@ function buildItem(
       analysis,
     );
 
+  const riskLevel =
+    risk?.level;
+
+  const normalizedRisk =
+    riskLevel === "low" ||
+    riskLevel === "medium" ||
+    riskLevel === "high"
+      ? riskLevel
+      : "unknown";
+
+  const dataQuality =
+    snapshot?.dataQuality;
+
+  const normalizedDataQuality =
+    dataQuality === "live" ||
+    dataQuality === "delayed" ||
+    dataQuality === "historical" ||
+    dataQuality === "web-evidence"
+      ? dataQuality
+      : "insufficient";
+
   return {
     symbol,
 
     market,
 
-    state,
+    state:
+      "research-candidate",
 
-    currentState:
-      decisionSupport.currentState ||
-      "Current state was not explicitly summarized by the analysis engine.",
+    currentState,
 
     supportingFactors,
 
@@ -201,89 +313,83 @@ function buildItem(
     scenarios,
 
     industry:
-      analysis.analysis
-        .industry.summary ||
+      industry?.summary ??
       null,
 
     company:
-      analysis.analysis
-        .company.summary ||
+      company?.summary ??
       null,
 
     fundamentals: {
       assessment:
-        analysis.analysis
-          .fundamentals
-          .assessment ||
+        fundamentals?.assessment ??
         null,
 
       revenueGrowth:
-        analysis.snapshot
-          .revenueGrowth ??
+        snapshot?.revenueGrowth ??
         null,
 
       eps:
-        analysis.snapshot.eps ??
+        snapshot?.eps ??
         null,
     },
 
     valuation: {
       assessment:
-        analysis.analysis
-          .valuation
-          .assessment ||
+        valuation?.assessment ??
         null,
 
       pe:
-        analysis.snapshot.pe ??
+        snapshot?.pe ??
         null,
 
       pb:
-        analysis.snapshot.pb ??
+        snapshot?.pb ??
         null,
     },
 
     risk: {
       level:
-        analysis.analysis
-          .risk.level,
+        normalizedRisk,
 
       factors:
         unique(
-          analysis.analysis
-            .risk.factors ?? [],
+          risk?.factors ??
+            [],
         ),
     },
 
     evidence: {
       sourceCount:
-        analysis.verification
-          .sourceCount,
+        verification
+          ?.sourceCount ??
+        0,
 
       independentDomains:
-        analysis.verification
-          .independentDomains,
+        verification
+          ?.independentDomains ??
+        0,
 
       verified:
-        analysis.verification
-          .verified,
+        verification
+          ?.verified ??
+        false,
     },
 
     freshness: {
       freshness:
-        analysis.verification
-          .freshness
-          .freshness,
+        verification
+          ?.freshness
+          ?.freshness ??
+        "unknown",
 
       asOf:
-        analysis.snapshot
-          .asOf ??
+        snapshot?.asOf ??
         null,
     },
 
     dataQuality:
-      analysis.snapshot
-        .dataQuality,
+      normalizedDataQuality,
 
     humanReviewRequired:
       true,
@@ -295,11 +401,13 @@ function buildItem(
 async function evaluateItem(
   item: MarketDecisionSupportRequest["universe"][number],
 ): Promise<MarketDecisionSupportItem> {
+  const symbol =
+    item.symbol.trim();
+
   try {
     const analysis =
       await analyzeMarketRequest({
-        symbol:
-          item.symbol,
+        symbol,
 
         market:
           item.market,
@@ -309,32 +417,28 @@ async function evaluateItem(
 
         query:
           item.query ??
-          `Decision support ${item.market} ${item.symbol}`,
+          `Decision support ${item.market} ${symbol}`,
       });
 
     if (
+      !analysis ||
       !analysis.success
     ) {
-      return buildItem(
-        item.symbol,
+      return buildInsufficientItem(
+        symbol,
         item.market,
-        analysis,
-        "insufficient-data",
       );
     }
 
     return buildItem(
-      item.symbol,
+      symbol,
       item.market,
       analysis,
-      "research-candidate",
     );
   } catch {
-    return buildItem(
-      item.symbol,
+    return buildInsufficientItem(
+      symbol,
       item.market,
-      null,
-      "insufficient-data",
     );
   }
 }
@@ -349,6 +453,9 @@ export async function runMarketDecisionSupport(
     normalizeUniverse(
       request.universe ?? [],
     );
+
+  const disclaimer =
+    "AIOS provides transparent market research and decision-support information. It does not rank securities, provide personalized investment advice, or issue automatic buy/sell instructions.";
 
   if (
     universe.length === 0
@@ -395,13 +502,11 @@ export async function runMarketDecisionSupport(
           startedAt,
       },
 
-      disclaimer:
-        "AIOS provides research and decision-support information. It does not rank securities, provide personalized investment advice, or issue automatic trading instructions.",
+      disclaimer,
     };
   }
 
-  const items:
-    MarketDecisionSupportItem[] =
+  const items: MarketDecisionSupportItem[] =
     [];
 
   for (
@@ -419,7 +524,7 @@ export async function runMarketDecisionSupport(
       (item) => {
         if (
           item.state ===
-          "excluded" &&
+            "excluded" &&
           !request.includeExcluded
         ) {
           return false;
@@ -427,7 +532,7 @@ export async function runMarketDecisionSupport(
 
         if (
           item.state ===
-          "insufficient-data" &&
+            "insufficient-data" &&
           !request.includeInsufficientData
         ) {
           return false;
@@ -458,15 +563,20 @@ export async function runMarketDecisionSupport(
         "insufficient-data",
     ).length;
 
-  return {
-    success:
-      items.length > 0,
+  const success =
+    items.length > 0;
 
-    code:
-      insufficientDataCount ===
-        0
-        ? "C147_5_DECISION_SUPPORT_PASS"
-        : "C147_5_DECISION_SUPPORT_PARTIAL",
+  const code =
+    items.length === 0
+      ? "C147_5_DECISION_SUPPORT_INSUFFICIENT"
+      : insufficientDataCount > 0
+        ? "C147_5_DECISION_SUPPORT_PARTIAL"
+        : "C147_5_DECISION_SUPPORT_PASS";
+
+  return {
+    success,
+
+    code,
 
     universeSize:
       universe.length,
@@ -510,7 +620,6 @@ export async function runMarketDecisionSupport(
         startedAt,
     },
 
-    disclaimer:
-      "AIOS provides transparent research and decision-support information. This engine does not rank securities, provide personalized investment advice, or issue automatic buy/sell instructions.",
+    disclaimer,
   };
 }
