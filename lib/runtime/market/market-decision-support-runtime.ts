@@ -1,6 +1,4 @@
-import {
-  analyzeMarketRequest,
-} from "./market-router";
+import { analyzeMarketRequest } from "./market-router";
 
 import type {
   MarketAnalysisResult,
@@ -14,29 +12,21 @@ import type {
   MarketDecisionSupportScenario,
 } from "./market-decision-support-types";
 
-function unique(
-  values: string[],
-): string[] {
-  return Array.from(
-    new Set(
-      values.filter(
-        Boolean,
-      ),
-    ),
-  );
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function normalizeUniverse(
-  universe:
-    | MarketDecisionSupportRequest["universe"]
-    | undefined,
-) {
+  universe: MarketDecisionSupportRequest["universe"] | undefined,
+): Array<{
+  symbol: string;
+  market: MarketRegion;
+}> {
   if (!Array.isArray(universe)) {
     return [];
   }
 
-  const seen =
-    new Set<string>();
+  const seen = new Set<string>();
 
   return universe
     .filter(
@@ -48,9 +38,8 @@ function normalizeUniverse(
       } =>
         Boolean(
           item &&
-          typeof item.symbol ===
-            "string" &&
-          item.symbol.trim(),
+            typeof item.symbol === "string" &&
+            item.symbol.trim(),
         ) &&
         (
           item.market === "us" ||
@@ -58,78 +47,54 @@ function normalizeUniverse(
           item.market === "cn"
         ),
     )
-    .map(
-      (item) => ({
-        symbol:
-          item.symbol.trim(),
-        market:
-          item.market,
-      }),
-    )
-    .filter(
-      (item) => {
-        const key =
-          `${item.market}:${item.symbol.toUpperCase()}`;
+    .map((item) => ({
+      symbol: item.symbol.trim(),
+      market: item.market,
+    }))
+    .filter((item) => {
+      const key =
+        `${item.market}:${item.symbol.toUpperCase()}`;
 
-        if (seen.has(key)) {
-          return false;
-        }
+      if (seen.has(key)) {
+        return false;
+      }
 
-        seen.add(key);
-        return true;
-      },
-    );
+      seen.add(key);
+      return true;
+    });
 }
 
 function buildFallbackScenarios(
-  analysis:
-    | MarketAnalysisResult
-    | null,
+  analysis: MarketAnalysisResult | null,
 ): MarketDecisionSupportScenario[] {
   const scenarios =
-    analysis
-      ?.analysis
-      ?.decisionSupport
-      ?.scenarios;
+    analysis?.analysis?.decisionSupport?.scenarios;
 
-  if (
-    Array.isArray(
-      scenarios,
-    ) &&
-    scenarios.length > 0
-  ) {
-    return scenarios.map(
-      (scenario) => ({
-        name:
-          scenario.name,
-        condition:
-          scenario.condition,
-        implication:
-          scenario.implication,
-      }),
-    );
+  if (Array.isArray(scenarios) && scenarios.length > 0) {
+    return scenarios.map((scenario) => ({
+      name: scenario.name,
+      condition: scenario.condition,
+      implication: scenario.implication,
+    }));
   }
 
   return [
     {
-      name:
-        "Fundamentals improve",
+      name: "Fundamentals improve",
       condition:
         "Revenue, earnings, or other monitored fundamentals improve relative to the current evidence.",
       implication:
         "Reassess the fundamental thesis using updated evidence.",
     },
     {
-      name:
-        "Valuation expands",
+      name: "Valuation expands",
       condition:
         "Observed valuation multiples increase materially.",
       implication:
         "Reassess valuation assumptions and downside sensitivity.",
     },
     {
-      name:
-        "Fundamentals deteriorate",
+      name: "Fundamentals deteriorate",
       condition:
         "Revenue, earnings, guidance, or other monitored fundamentals deteriorate.",
       implication:
@@ -146,12 +111,9 @@ function buildInsufficientItem(
   return {
     symbol,
     market,
+    state: "insufficient-data",
 
-    state:
-      "insufficient-data",
-
-    currentState:
-      reason,
+    currentState: reason,
 
     supportingFactors: [],
 
@@ -167,13 +129,9 @@ function buildInsufficientItem(
       "Valuation data",
     ],
 
-    scenarios:
-      buildFallbackScenarios(
-        null,
-      ),
+    scenarios: buildFallbackScenarios(null),
 
     industry: null,
-
     company: null,
 
     fundamentals: {
@@ -206,21 +164,16 @@ function buildInsufficientItem(
       asOf: null,
     },
 
-    dataQuality:
-      "insufficient",
+    dataQuality: "insufficient",
 
-    humanReviewRequired:
-      true,
+    humanReviewRequired: true,
 
     analysis: null,
   };
 }
 
 function normalizeRiskLevel(
-  value:
-    | string
-    | null
-    | undefined,
+  value: string | null | undefined,
 ): "low" | "medium" | "high" | "unknown" {
   if (
     value === "low" ||
@@ -234,10 +187,7 @@ function normalizeRiskLevel(
 }
 
 function normalizeDataQuality(
-  value:
-    | string
-    | null
-    | undefined,
+  value: string | null | undefined,
 ):
   | "live"
   | "delayed"
@@ -262,38 +212,22 @@ function buildItem(
   analysis: MarketAnalysisResult,
 ): MarketDecisionSupportItem {
   const decisionSupport =
-    analysis
-      .analysis
-      ?.decisionSupport;
+    analysis.analysis?.decisionSupport;
 
   const industry =
-    analysis
-      .analysis
-      ?.industry
-      ?.summary ??
-    null;
+    analysis.analysis?.industry?.summary ?? null;
 
   const company =
-    analysis
-      .analysis
-      ?.company
-      ?.summary ??
-    null;
+    analysis.analysis?.company?.summary ?? null;
 
   const fundamentals =
-    analysis
-      .analysis
-      ?.fundamentals;
+    analysis.analysis?.fundamentals;
 
   const valuation =
-    analysis
-      .analysis
-      ?.valuation;
+    analysis.analysis?.valuation;
 
   const risk =
-    analysis
-      .analysis
-      ?.risk;
+    analysis.analysis?.risk;
 
   const snapshot =
     analysis.snapshot;
@@ -302,9 +236,7 @@ function buildItem(
     analysis.verification;
 
   const evidence =
-    Array.isArray(
-      analysis.evidence,
-    )
+    Array.isArray(analysis.evidence)
       ? analysis.evidence
       : [];
 
@@ -316,55 +248,73 @@ function buildItem(
       evidence
         .map(
           (item) =>
-            item.domain ??
-            null,
+            item.hostname ?? null,
         )
         .filter(
           (
-            domain,
-          ): domain is string =>
-            Boolean(domain),
+            hostname,
+          ): hostname is string =>
+            Boolean(hostname),
         ),
     ).length;
 
   const verified =
     Boolean(
-      verification
-        ?.verified,
+      verification?.verified,
     );
+
+  /*
+   * MarketAnalysis currently exposes fundamental
+   * and valuation assessments/signals rather than
+   * duplicate numeric fields. Numeric values therefore
+   * come from the normalized MarketSnapshot.
+   */
+  const revenueGrowth =
+    snapshot?.revenueGrowth ?? null;
+
+  const eps =
+    snapshot?.eps ?? null;
+
+  const pe =
+    snapshot?.pe ?? null;
+
+  const pb =
+    snapshot?.pb ?? null;
+
+  /*
+   * Freshness is part of MarketAnalysisResult.verification,
+   * not MarketSnapshot in the current market type contract.
+   */
+  const freshness =
+    verification?.freshness;
 
   return {
     symbol,
     market,
 
-    state:
-      "research-candidate",
+    state: "research-candidate",
 
     currentState:
-      decisionSupport
-        ?.currentState ??
+      decisionSupport?.currentState ??
       "Evidence-based market state available; real-time status must be verified separately.",
 
     supportingFactors:
       Array.isArray(
-        decisionSupport
-          ?.supportingFactors,
+        decisionSupport?.supportingFactors,
       )
         ? decisionSupport.supportingFactors
         : [],
 
     invalidationConditions:
       Array.isArray(
-        decisionSupport
-          ?.invalidationConditions,
+        decisionSupport?.invalidationConditions,
       )
         ? decisionSupport.invalidationConditions
         : [],
 
     watchMetrics:
       Array.isArray(
-        decisionSupport
-          ?.watchMetrics,
+        decisionSupport?.watchMetrics,
       )
         ? decisionSupport.watchMetrics
         : [],
@@ -380,44 +330,22 @@ function buildItem(
 
     fundamentals: {
       assessment:
-        fundamentals
-          ?.assessment ??
+        fundamentals?.assessment ??
         null,
 
-      revenueGrowth:
-        fundamentals
-          ?.revenueGrowth ??
-        snapshot
-          ?.revenueGrowth ??
-        null,
+      revenueGrowth,
 
-      eps:
-        fundamentals
-          ?.eps ??
-        snapshot
-          ?.eps ??
-        null,
+      eps,
     },
 
     valuation: {
       assessment:
-        valuation
-          ?.assessment ??
+        valuation?.assessment ??
         null,
 
-      pe:
-        valuation
-          ?.pe ??
-        snapshot
-          ?.pe ??
-        null,
+      pe,
 
-      pb:
-        valuation
-          ?.pb ??
-        snapshot
-          ?.pb ??
-        null,
+      pb,
     },
 
     risk: {
@@ -444,22 +372,18 @@ function buildItem(
 
     freshness: {
       freshness:
-        snapshot
-          ?.freshness
-          ?.status ??
+        freshness?.freshness ??
         "unknown",
 
       asOf:
-        snapshot
-          ?.freshness
-          ?.asOf ??
+        freshness?.referenceTime ??
+        snapshot?.asOf ??
         null,
     },
 
     dataQuality:
       normalizeDataQuality(
-        snapshot
-          ?.dataQuality,
+        snapshot?.dataQuality,
       ),
 
     humanReviewRequired:
@@ -474,10 +398,7 @@ async function evaluateItem(
     symbol: string;
     market: MarketRegion;
   },
-  query:
-    | string
-    | null
-    | undefined,
+  query: string | null | undefined,
 ): Promise<MarketDecisionSupportItem> {
   const symbol =
     item.symbol.trim();
@@ -494,17 +415,14 @@ async function evaluateItem(
     const analysis =
       await analyzeMarketRequest({
         symbol,
-        market:
-          item.market,
+        market: item.market,
         mode: "full",
         query:
           query ??
           `Decision support ${item.market} ${symbol}`,
       });
 
-    if (
-      !analysis.success
-    ) {
+    if (!analysis.success) {
       return buildInsufficientItem(
         symbol,
         item.market,
@@ -530,8 +448,7 @@ async function evaluateItem(
 }
 
 export async function runMarketDecisionSupport(
-  request:
-    MarketDecisionSupportRequest,
+  request: MarketDecisionSupportRequest,
 ): Promise<MarketDecisionSupportResult> {
   const startedAt =
     Date.now();
@@ -541,9 +458,7 @@ export async function runMarketDecisionSupport(
       request?.universe,
     );
 
-  if (
-    universe.length === 0
-  ) {
+  if (universe.length === 0) {
     return {
       success: false,
 
@@ -631,7 +546,7 @@ export async function runMarketDecisionSupport(
       (item) => {
         if (
           item.state ===
-          "excluded" &&
+            "excluded" &&
           request?.includeExcluded ===
             false
         ) {
@@ -640,7 +555,7 @@ export async function runMarketDecisionSupport(
 
         if (
           item.state ===
-          "insufficient-data" &&
+            "insufficient-data" &&
           request?.includeInsufficientData ===
             false
         ) {
