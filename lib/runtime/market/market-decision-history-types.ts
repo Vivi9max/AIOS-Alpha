@@ -20,6 +20,18 @@ export interface MarketDecisionHistoryEntry {
     MarketReassessmentResult | null;
 
   savedAt: string;
+
+  /**
+   * C147.11
+   *
+   * Stable fingerprint of the meaningful
+   * decision observation.
+   *
+   * Optional for backward compatibility
+   * with C147.9 history entries.
+   */
+  observationFingerprint?:
+    string;
 }
 
 export interface MarketDecisionHistory {
