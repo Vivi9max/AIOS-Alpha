@@ -6,8 +6,7 @@ import {
   type ReactNode,
 } from "react";
 
-const STORAGE_KEY =
-  "aios-founder-access-key";
+const STORAGE_KEY = "aios-founder-access-key";
 
 type Stage = {
   stage: string;
@@ -67,6 +66,17 @@ type FrameworkItem = {
     asOf: string | null;
   };
 
+  /*
+   * C147.4.1.1
+   * Keep the UI contract aligned with
+   * MarketSelectionFrameworkItem.
+   */
+  analysis: {
+    snapshot?: {
+      dataQuality?: string | null;
+    } | null;
+  } | null;
+
   humanReviewRequired: boolean;
 };
 
@@ -102,10 +112,8 @@ function Section({
         marginTop: 16,
         padding: 16,
         borderRadius: 14,
-        border:
-          "1px solid rgba(255,255,255,0.10)",
-        background:
-          "rgba(255,255,255,0.035)",
+        border: "1px solid rgba(255,255,255,0.10)",
+        background: "rgba(255,255,255,0.035)",
       }}
     >
       <h2
@@ -130,15 +138,10 @@ function Status({
   return (
     <strong
       style={{
-        color:
-          passed
-            ? "#86efac"
-            : "#fca5a5",
+        color: passed ? "#86efac" : "#fca5a5",
       }}
     >
-      {passed
-        ? "PASS"
-        : "FAIL"}
+      {passed ? "PASS" : "FAIL"}
     </strong>
   );
 }
@@ -155,8 +158,7 @@ function Metric({
       style={{
         padding: 12,
         borderRadius: 10,
-        background:
-          "rgba(255,255,255,0.045)",
+        background: "rgba(255,255,255,0.045)",
       }}
     >
       <div
@@ -181,28 +183,16 @@ function Metric({
 }
 
 export default function MarketFrameworkPage() {
-  const [
-    founderReady,
-    setFounderReady,
-  ] = useState(false);
+  const [founderReady, setFounderReady] =
+    useState(false);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
+  const [loading, setLoading] =
+    useState(false);
 
-  const [
-    response,
-    setResponse,
-  ] =
-    useState<FrameworkResponse | null>(
-      null,
-    );
+  const [response, setResponse] =
+    useState<FrameworkResponse | null>(null);
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const key =
@@ -210,9 +200,7 @@ export default function MarketFrameworkPage() {
         STORAGE_KEY,
       );
 
-    setFounderReady(
-      Boolean(key),
-    );
+    setFounderReady(Boolean(key));
   }, []);
 
   async function runFramework() {
@@ -232,29 +220,22 @@ export default function MarketFrameworkPage() {
         );
       }
 
-      const result =
-        await fetch(
-          "/api/founder/market/framework",
-          {
-            method: "GET",
-            cache: "no-store",
-            headers: {
-              Authorization:
-                `Bearer ${key}`,
-
-              "x-aios-founder-key":
-                key,
-            },
+      const result = await fetch(
+        "/api/founder/market/framework",
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "x-aios-founder-key": key,
           },
-        );
+        },
+      );
 
       const data =
         (await result.json()) as FrameworkResponse;
 
-      if (
-        !result.ok &&
-        !data.code
-      ) {
+      if (!result.ok && !data.code) {
         throw new Error(
           `Framework request failed with HTTP ${result.status}.`,
         );
@@ -329,10 +310,9 @@ export default function MarketFrameworkPage() {
             Session:{" "}
             <strong
               style={{
-                color:
-                  founderReady
-                    ? "#86efac"
-                    : "#fca5a5",
+                color: founderReady
+                  ? "#86efac"
+                  : "#fca5a5",
               }}
             >
               {founderReady
@@ -349,12 +329,9 @@ export default function MarketFrameworkPage() {
           </div>
 
           <button
-            onClick={
-              runFramework
-            }
+            onClick={runFramework}
             disabled={
-              loading ||
-              !founderReady
+              loading || !founderReady
             }
             style={{
               marginTop: 14,
@@ -363,20 +340,17 @@ export default function MarketFrameworkPage() {
               borderRadius: 10,
               border: "none",
               background:
-                loading ||
-                !founderReady
+                loading || !founderReady
                   ? "#3f3f46"
                   : "#fff",
               color:
-                loading ||
-                !founderReady
+                loading || !founderReady
                   ? "#aaa"
                   : "#09090b",
               fontWeight: 700,
-              cursor:
-                loading
-                  ? "wait"
-                  : "pointer",
+              cursor: loading
+                ? "wait"
+                : "pointer",
             }}
           >
             {loading
@@ -400,22 +374,20 @@ export default function MarketFrameworkPage() {
               "5. Risk",
               "6. Evidence",
               "7. Human Review",
-            ].map(
-              (item) => (
-                <div
-                  key={item}
-                  style={{
-                    padding: 11,
-                    borderRadius: 9,
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    fontSize: 13,
-                  }}
-                >
-                  {item}
-                </div>
-              ),
-            )}
+            ].map((item) => (
+              <div
+                key={item}
+                style={{
+                  padding: 11,
+                  borderRadius: 9,
+                  background:
+                    "rgba(255,255,255,0.04)",
+                  fontSize: 13,
+                }}
+              >
+                {item}
+              </div>
+            ))}
           </div>
         </Section>
 
@@ -442,9 +414,7 @@ export default function MarketFrameworkPage() {
                 }}
               >
                 <Status
-                  passed={
-                    response.success
-                  }
+                  passed={response.success}
                 />
 
                 {" · "}
@@ -528,9 +498,7 @@ export default function MarketFrameworkPage() {
                               : "#facc15",
                       }}
                     >
-                      {
-                        item.decision
-                      }
+                      {item.decision}
                     </strong>
                   </div>
 
@@ -592,9 +560,8 @@ export default function MarketFrameworkPage() {
                     <Metric
                       label="Data Quality"
                       value={
-                        item.analysis
-                          ?.snapshot
-                          .dataQuality ??
+                        item.analysis?.snapshot
+                          ?.dataQuality ??
                         "insufficient"
                       }
                     />
@@ -616,9 +583,7 @@ export default function MarketFrameworkPage() {
                     {item.stages.map(
                       (stage) => (
                         <div
-                          key={
-                            stage.stage
-                          }
+                          key={stage.stage}
                           style={{
                             padding:
                               "9px 0",
@@ -631,33 +596,25 @@ export default function MarketFrameworkPage() {
                             passed={
                               stage.passed
                             }
-                            />
+                          />
 
                           {"  "}
 
                           <strong>
-                            {
-                              stage.stage
-                            }
+                            {stage.stage}
                           </strong>
 
                           {" · "}
 
-                          {
-                            stage.status
-                          }
+                          {stage.status}
 
                           {stage.reasons
-                            .length >
-                            0 && (
+                            .length > 0 && (
                             <div
                               style={{
-                                marginTop:
-                                  3,
-                                opacity:
-                                  0.65,
-                                lineHeight:
-                                  1.5,
+                                marginTop: 3,
+                                opacity: 0.65,
+                                lineHeight: 1.5,
                               }}
                             >
                               {stage.reasons.join(
@@ -667,12 +624,10 @@ export default function MarketFrameworkPage() {
                           )}
 
                           {stage.missing
-                            .length >
-                            0 && (
+                            .length > 0 && (
                             <div
                               style={{
-                                marginTop:
-                                  3,
+                                marginTop: 3,
                                 color:
                                   "#facc15",
                               }}
@@ -689,8 +644,7 @@ export default function MarketFrameworkPage() {
                   </div>
 
                   {item.risk.factors
-                    .length >
-                    0 && (
+                    .length > 0 && (
                     <div
                       style={{
                         marginTop: 14,
@@ -701,11 +655,9 @@ export default function MarketFrameworkPage() {
                     >
                       Risk factors:
                       <br />
-                      {
-                        item.risk.factors.join(
-                          " · ",
-                        )
-                      }
+                      {item.risk.factors.join(
+                        " · ",
+                      )}
                     </div>
                   )}
 
@@ -740,8 +692,10 @@ export default function MarketFrameworkPage() {
                 }}
               >
                 {response.principle}
+
                 <br />
                 <br />
+
                 {response.disclaimer}
               </div>
             </Section>
