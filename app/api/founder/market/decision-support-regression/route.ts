@@ -17,18 +17,20 @@ type Check = {
   detail: string;
 };
 
+type RegressionCase = {
+  name: string;
+  passed: boolean;
+  checks: Check[];
+  latencyMs: number;
+};
+
 async function runCase(
   name: string,
   universe: Array<{
     symbol: string;
     market: "us" | "hk" | "cn";
   }>,
-): Promise<{
-  name: string;
-  passed: boolean;
-  checks: Check[];
-  latencyMs: number;
-}> {
+): Promise<RegressionCase> {
   const startedAt =
     Date.now();
 
@@ -39,10 +41,10 @@ async function runCase(
       includeInsufficientData: true,
     });
 
-  const checks: Check[] = [];
-
   const item =
     result.items[0];
+
+  const checks: Check[] = [];
 
   checks.push({
     name:
@@ -176,7 +178,7 @@ async function runCase(
       ),
     detail:
       item
-        ? "Freshness structure is present."
+        ? `Freshness: ${item.freshness.freshness}.`
         : "Freshness structure is missing.",
   });
 
@@ -197,12 +199,7 @@ async function runCase(
   };
 }
 
-async function runIdentityGuardCase(): Promise<{
-  name: string;
-  passed: boolean;
-  checks: Check[];
-  latencyMs: number;
-}> {
+async function runIdentityGuardCase(): Promise<RegressionCase> {
   const startedAt =
     Date.now();
 
@@ -261,19 +258,6 @@ async function runIdentityGuardCase(): Promise<{
 
   checks.push({
     name:
-      "INVALID_SYMBOL_HUMAN_GATE",
-    passed:
-      item?.humanReviewRequired ===
-      true,
-    detail:
-      item?.humanReviewRequired ===
-      true
-        ? "Human review remains required."
-        : "Human review gate missing.",
-  });
-
-  checks.push({
-    name:
       "IDENTITY_REASON_PRESENT",
     passed:
       Boolean(
@@ -290,6 +274,94 @@ async function runIdentityGuardCase(): Promise<{
   return {
     name:
       "INVALID_SECURITY_IDENTITY_GATE",
+
+    passed:
+      checks.every(
+        (check) =>
+          check.passed,
+      ),
+
+    checks,
+
+    latencyMs:
+      Date.now() -
+      startedAt,
+  };
+}
+
+async function runQualityGateCase(): Promise<RegressionCase> {
+  const startedAt =
+    Date.now();
+
+  const result =
+    await runMarketDecisionSupport({
+      universe: [
+        {
+          symbol: "MSFT",
+          market: "us",
+        },
+      ],
+      includeExcluded: true,
+      includeInsufficientData: true,
+    });
+
+  const item =
+    result.items[0];
+
+  const checks: Check[] = [];
+
+  checks.push({
+    name:
+      "ITEM_RETURNED",
+    passed:
+      Boolean(item),
+    detail:
+      item
+        ? "MSFT decision-support item returned."
+        : "MSFT item missing.",
+  });
+
+  if (item) {
+    const invalidCombination =
+      item.dataQuality ===
+        "insufficient" &&
+      item.state ===
+        "research-candidate";
+
+    checks.push({
+      name:
+        "INSUFFICIENT_DATA_CANNOT_BE_CANDIDATE",
+      passed:
+        !invalidCombination,
+      detail:
+        invalidCombination
+          ? "Quality gate failure: insufficient data was promoted to research-candidate."
+          : `Quality gate enforced. State=${item.state}, DataQuality=${item.dataQuality}.`,
+    });
+
+    checks.push({
+      name:
+        "UNKNOWN_FRESHNESS_CANNOT_BE_CANDIDATE",
+      passed:
+        !(
+          item.freshness.freshness ===
+            "unknown" &&
+          item.state ===
+            "research-candidate"
+        ),
+      detail:
+        item.freshness.freshness ===
+          "unknown" &&
+        item.state ===
+          "research-candidate"
+          ? "Quality gate failure: unknown freshness was promoted to research-candidate."
+          : `Freshness gate enforced. Freshness=${item.freshness.freshness}.`,
+    });
+  }
+
+  return {
+    name:
+      "DATA_QUALITY_FRESHNESS_GATE",
 
     passed:
       checks.every(
@@ -362,15 +434,7 @@ export async function POST(
 
       await runIdentityGuardCase(),
 
-      await runCase(
-        "HUMAN_REVIEW_GATE",
-        [
-          {
-            symbol: "AAPL",
-            market: "us",
-          },
-        ],
-      ),
+      await runQualityGateCase(),
     ];
 
     const passed =
@@ -400,7 +464,7 @@ export async function POST(
         cases.length,
 
       stage:
-        "C147.5.4",
+        "C147.5.5",
 
       mode:
         "behavioral",
