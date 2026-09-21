@@ -4,7 +4,7 @@ import {
 } from "next/server";
 
 import {
-  requireFounderAuth,
+  isFounderRequest,
 } from "@/lib/founder/auth";
 
 import {
@@ -42,8 +42,7 @@ async function runCase(
         true,
     });
 
-  const checks: Check[] =
-    [];
+  const checks: Check[] = [];
 
   const item =
     result.items[0];
@@ -132,14 +131,68 @@ async function runCase(
         : "Human review gate is missing.",
   });
 
+  checks.push({
+    name:
+      "DATA_QUALITY_PRESENT",
+    passed:
+      Boolean(
+        item &&
+        typeof item.dataQuality ===
+          "string",
+      ),
+    detail:
+      item
+        ? `Data quality: ${item.dataQuality}.`
+        : "Data quality field missing.",
+  });
+
+  checks.push({
+    name:
+      "EVIDENCE_STRUCTURE_PRESENT",
+    passed:
+      Boolean(
+        item &&
+        item.evidence &&
+        typeof item.evidence.sourceCount ===
+          "number" &&
+        typeof item.evidence.independentDomains ===
+          "number" &&
+        typeof item.evidence.verified ===
+          "boolean",
+      ),
+    detail:
+      item
+        ? "Evidence structure is present."
+        : "Evidence structure is missing.",
+  });
+
+  checks.push({
+    name:
+      "FRESHNESS_STRUCTURE_PRESENT",
+    passed:
+      Boolean(
+        item &&
+        item.freshness &&
+        typeof item.freshness.freshness ===
+          "string",
+      ),
+    detail:
+      item
+        ? "Freshness structure is present."
+        : "Freshness structure is missing.",
+  });
+
   return {
     name,
+
     passed:
       checks.every(
         (check) =>
           check.passed,
       ),
+
     checks,
+
     latencyMs:
       Date.now() -
       startedAt,
@@ -149,17 +202,14 @@ async function runCase(
 export async function POST(
   request: NextRequest,
 ) {
-  const auth =
-    requireFounderAuth(
-      request,
-    );
-
-  if (!auth.ok) {
+  if (!isFounderRequest(request)) {
     return NextResponse.json(
       {
         success: false,
         code:
           "FOUNDER_AUTH_REQUIRED",
+        error:
+          "Founder authentication required.",
       },
       {
         status: 401,
