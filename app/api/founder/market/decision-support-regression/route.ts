@@ -35,11 +35,8 @@ async function runCase(
   const result =
     await runMarketDecisionSupport({
       universe,
-
       includeExcluded: true,
-
-      includeInsufficientData:
-        true,
+      includeInsufficientData: true,
     });
 
   const checks: Check[] = [];
@@ -48,7 +45,8 @@ async function runCase(
     result.items[0];
 
   checks.push({
-    name: "ITEM_RETURNED",
+    name:
+      "ITEM_RETURNED",
     passed:
       Boolean(item),
     detail:
@@ -76,9 +74,9 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        Array.isArray(
-          item.invalidationConditions,
-        ),
+          Array.isArray(
+            item.invalidationConditions,
+          ),
       ),
     detail:
       item
@@ -92,9 +90,9 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        Array.isArray(
-          item.watchMetrics,
-        ),
+          Array.isArray(
+            item.watchMetrics,
+          ),
       ),
     detail:
       item
@@ -108,9 +106,9 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        Array.isArray(
-          item.scenarios,
-        ),
+          Array.isArray(
+            item.scenarios,
+          ),
       ),
     detail:
       item
@@ -137,8 +135,8 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        typeof item.dataQuality ===
-          "string",
+          typeof item.dataQuality ===
+            "string",
       ),
     detail:
       item
@@ -152,13 +150,13 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        item.evidence &&
-        typeof item.evidence.sourceCount ===
-          "number" &&
-        typeof item.evidence.independentDomains ===
-          "number" &&
-        typeof item.evidence.verified ===
-          "boolean",
+          item.evidence &&
+          typeof item.evidence.sourceCount ===
+            "number" &&
+          typeof item.evidence.independentDomains ===
+            "number" &&
+          typeof item.evidence.verified ===
+            "boolean",
       ),
     detail:
       item
@@ -172,9 +170,9 @@ async function runCase(
     passed:
       Boolean(
         item &&
-        item.freshness &&
-        typeof item.freshness.freshness ===
-          "string",
+          item.freshness &&
+          typeof item.freshness.freshness ===
+            "string",
       ),
     detail:
       item
@@ -199,10 +197,122 @@ async function runCase(
   };
 }
 
+async function runIdentityGuardCase(): Promise<{
+  name: string;
+  passed: boolean;
+  checks: Check[];
+  latencyMs: number;
+}> {
+  const startedAt =
+    Date.now();
+
+  const result =
+    await runMarketDecisionSupport({
+      universe: [
+        {
+          symbol:
+            "INVALID-AIOS-SYMBOL",
+          market: "us",
+        },
+      ],
+      includeExcluded: true,
+      includeInsufficientData: true,
+    });
+
+  const item =
+    result.items[0];
+
+  const checks: Check[] = [];
+
+  checks.push({
+    name:
+      "INVALID_SYMBOL_RETURNED",
+    passed:
+      Boolean(item),
+    detail:
+      item
+        ? "Invalid-symbol item returned."
+        : "Invalid-symbol item missing.",
+  });
+
+  checks.push({
+    name:
+      "INVALID_SYMBOL_NOT_CANDIDATE",
+    passed:
+      item?.state !==
+      "research-candidate",
+    detail:
+      item
+        ? `State: ${item.state}.`
+        : "Item missing.",
+  });
+
+  checks.push({
+    name:
+      "INVALID_SYMBOL_INSUFFICIENT",
+    passed:
+      item?.state ===
+      "insufficient-data",
+    detail:
+      item
+        ? `Invalid symbol state: ${item.state}.`
+        : "Item missing.",
+  });
+
+  checks.push({
+    name:
+      "INVALID_SYMBOL_HUMAN_GATE",
+    passed:
+      item?.humanReviewRequired ===
+      true,
+    detail:
+      item?.humanReviewRequired ===
+      true
+        ? "Human review remains required."
+        : "Human review gate missing.",
+  });
+
+  checks.push({
+    name:
+      "IDENTITY_REASON_PRESENT",
+    passed:
+      Boolean(
+        item?.currentState &&
+          /identity|security/i.test(
+            item.currentState,
+          ),
+      ),
+    detail:
+      item?.currentState ??
+      "Identity rejection reason missing.",
+  });
+
+  return {
+    name:
+      "INVALID_SECURITY_IDENTITY_GATE",
+
+    passed:
+      checks.every(
+        (check) =>
+          check.passed,
+      ),
+
+    checks,
+
+    latencyMs:
+      Date.now() -
+      startedAt,
+  };
+}
+
 export async function POST(
   request: NextRequest,
 ) {
-  if (!isFounderRequest(request)) {
+  if (
+    !isFounderRequest(
+      request,
+    )
+  ) {
     return NextResponse.json(
       {
         success: false,
@@ -250,16 +360,7 @@ export async function POST(
         ],
       ),
 
-      await runCase(
-        "INVALID_SECURITY_GUARD",
-        [
-          {
-            symbol:
-              "INVALID-AIOS-SYMBOL",
-            market: "us",
-          },
-        ],
-      ),
+      await runIdentityGuardCase(),
 
       await runCase(
         "HUMAN_REVIEW_GATE",
@@ -299,7 +400,7 @@ export async function POST(
         cases.length,
 
       stage:
-        "C147.5",
+        "C147.5.4",
 
       mode:
         "behavioral",
