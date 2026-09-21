@@ -1,4 +1,10 @@
-import { analyzeMarketRequest } from "./market-router";
+import {
+  analyzeMarketRequest,
+} from "./market-router";
+
+import {
+  evaluateMarketDecisionSupportQualityGate,
+} from "./market-decision-support-quality-gate";
 
 import type {
   MarketAnalysisResult,
@@ -12,7 +18,9 @@ import type {
   MarketDecisionSupportScenario,
 } from "./market-decision-support-types";
 
-function unique(values: string[]): string[] {
+function unique(
+  values: string[],
+): string[] {
   return Array.from(
     new Set(
       values.filter(Boolean),
@@ -44,7 +52,8 @@ function normalizeUniverse(
       } =>
         Boolean(
           item &&
-            typeof item.symbol === "string" &&
+            typeof item.symbol ===
+              "string" &&
             item.symbol.trim(),
         ) &&
         (
@@ -54,8 +63,10 @@ function normalizeUniverse(
         ),
     )
     .map((item) => ({
-      symbol: item.symbol.trim(),
-      market: item.market,
+      symbol:
+        item.symbol.trim(),
+      market:
+        item.market,
     }))
     .filter((item) => {
       const key =
@@ -66,6 +77,7 @@ function normalizeUniverse(
       }
 
       seen.add(key);
+
       return true;
     });
 }
@@ -88,7 +100,8 @@ function buildIdentityTokens(
       symbol,
     );
 
-  const tokens = new Set<string>();
+  const tokens =
+    new Set<string>();
 
   if (raw) {
     tokens.add(raw);
@@ -119,10 +132,12 @@ function buildIdentityTokens(
 
       tokens.add(digits);
       tokens.add(padded);
-      tokens.add(`${padded}.HK`);
+      tokens.add(
+        `${padded}.HK`,
+      );
     }
 
-    const hkAliases: Record<
+    const aliases: Record<
       string,
       string[]
     > = {
@@ -132,7 +147,6 @@ function buildIdentityTokens(
         "騰訊",
         "腾讯",
       ],
-
       "9988": [
         "ALIBABA",
         "ALIBABAGROUP",
@@ -143,9 +157,12 @@ function buildIdentityTokens(
 
     for (
       const alias of
-      hkAliases[
-        digits.padStart(4, "0")
-      ] ?? []
+        aliases[
+          digits.padStart(
+            4,
+            "0",
+          )
+        ] ?? []
     ) {
       tokens.add(
         normalizeIdentityToken(
@@ -177,7 +194,7 @@ function buildIdentityTokens(
       );
     }
 
-    const cnAliases: Record<
+    const aliases: Record<
       string,
       string[]
     > = {
@@ -188,7 +205,6 @@ function buildIdentityTokens(
         "贵州茅台",
         "贵州茅台酒",
       ],
-
       "000858": [
         "WULIANGYE",
         "WULIANGYEYIBIN",
@@ -199,7 +215,7 @@ function buildIdentityTokens(
 
     for (
       const alias of
-      cnAliases[digits] ?? []
+        aliases[digits] ?? []
     ) {
       tokens.add(
         normalizeIdentityToken(
@@ -395,7 +411,8 @@ function buildInsufficientItem(
     ).length;
 
   const freshness =
-    analysis?.verification?.freshness;
+    analysis?.verification
+      ?.freshness;
 
   return {
     symbol,
@@ -407,7 +424,8 @@ function buildInsufficientItem(
     currentState:
       reason,
 
-    supportingFactors: [],
+    supportingFactors:
+      [],
 
     invalidationConditions: [
       "Obtain sufficient independent evidence before making a human decision.",
@@ -436,7 +454,8 @@ function buildInsufficientItem(
 
     fundamentals: {
       assessment:
-        analysis?.analysis?.fundamentals
+        analysis?.analysis
+          ?.fundamentals
           ?.assessment ?? null,
 
       revenueGrowth:
@@ -450,7 +469,8 @@ function buildInsufficientItem(
 
     valuation: {
       assessment:
-        analysis?.analysis?.valuation
+        analysis?.analysis
+          ?.valuation
           ?.assessment ?? null,
 
       pe:
@@ -464,12 +484,12 @@ function buildInsufficientItem(
 
     risk: {
       level:
-        analysis?.analysis?.risk?.level ??
-        "unknown",
+        analysis?.analysis?.risk
+          ?.level ?? "unknown",
 
       factors:
-        analysis?.analysis?.risk?.factors ??
-        [
+        analysis?.analysis?.risk
+          ?.factors ?? [
           "Insufficient verified market evidence.",
         ],
     },
@@ -562,28 +582,6 @@ function buildItem(
     analysis.analysis
       ?.decisionSupport;
 
-  const industry =
-    analysis.analysis
-      ?.industry
-      ?.summary ?? null;
-
-  const company =
-    analysis.analysis
-      ?.company
-      ?.summary ?? null;
-
-  const fundamentals =
-    analysis.analysis
-      ?.fundamentals;
-
-  const valuation =
-    analysis.analysis
-      ?.valuation;
-
-  const risk =
-    analysis.analysis
-      ?.risk;
-
   const snapshot =
     analysis.snapshot;
 
@@ -609,11 +607,6 @@ function buildItem(
         )
         .filter(Boolean),
     ).length;
-
-  const verified =
-    Boolean(
-      verification?.verified,
-    );
 
   const freshness =
     verification?.freshness;
@@ -659,19 +652,24 @@ function buildItem(
         analysis,
       ),
 
-    industry,
+    industry:
+      analysis.analysis
+        ?.industry
+        ?.summary ?? null,
 
-    company,
+    company:
+      analysis.analysis
+        ?.company
+        ?.summary ?? null,
 
     fundamentals: {
       assessment:
-        fundamentals
-          ?.assessment ??
-        null,
+        analysis.analysis
+          ?.fundamentals
+          ?.assessment ?? null,
 
       revenueGrowth:
-        snapshot
-          ?.revenueGrowth ??
+        snapshot?.revenueGrowth ??
         null,
 
       eps:
@@ -681,9 +679,9 @@ function buildItem(
 
     valuation: {
       assessment:
-        valuation
-          ?.assessment ??
-        null,
+        analysis.analysis
+          ?.valuation
+          ?.assessment ?? null,
 
       pe:
         snapshot?.pe ??
@@ -697,15 +695,13 @@ function buildItem(
     risk: {
       level:
         normalizeRiskLevel(
-          risk?.level,
+          analysis.analysis
+            ?.risk?.level,
         ),
 
       factors:
-        Array.isArray(
-          risk?.factors,
-        )
-          ? risk.factors
-          : [],
+        analysis.analysis
+          ?.risk?.factors ?? [],
     },
 
     evidence: {
@@ -713,7 +709,10 @@ function buildItem(
 
       independentDomains,
 
-      verified,
+      verified:
+        Boolean(
+          verification?.verified,
+        ),
     },
 
     freshness: {
@@ -801,6 +800,26 @@ async function evaluateItem(
       );
     }
 
+    const qualityGate =
+      evaluateMarketDecisionSupportQualityGate(
+        analysis,
+        identity.verified,
+      );
+
+    if (
+      !qualityGate.eligible
+    ) {
+      return buildInsufficientItem(
+        symbol,
+        item.market,
+        [
+          `Decision-support quality gate rejected research-candidate promotion for ${symbol}.`,
+          ...qualityGate.reasons,
+        ].join(" "),
+        analysis,
+      );
+    }
+
     return buildItem(
       symbol,
       item.market,
@@ -853,6 +872,7 @@ export async function runMarketDecisionSupport(
       principles: [
         "Decision support requires at least one valid market instrument.",
         "Security identity must be verified from retrieved evidence.",
+        "Research-candidate promotion requires sufficient data quality and known freshness.",
         "No automatic trading action is performed.",
       ],
 
@@ -989,6 +1009,7 @@ export async function runMarketDecisionSupport(
     principles: [
       "The runtime describes market states and evidence; it does not rank securities.",
       "Security identity must be verified before an instrument can become a research candidate.",
+      "Research-candidate promotion requires sufficient data quality and known freshness.",
       "Supporting factors and invalidation conditions are kept separate.",
       "Watch metrics are explicit so a human can reassess the thesis when evidence changes.",
       "Scenarios are conditional and do not predict an outcome.",
