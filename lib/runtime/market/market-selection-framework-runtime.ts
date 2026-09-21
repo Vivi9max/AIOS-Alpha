@@ -15,28 +15,27 @@ import type {
   MarketSelectionStageResult,
 } from "./market-selection-framework-types";
 
-const DEFAULT_CRITERIA:
-  MarketSelectionFrameworkCriteria = {
-    minRevenueGrowth: null,
-    minEps: null,
+const DEFAULT_CRITERIA: MarketSelectionFrameworkCriteria = {
+  minRevenueGrowth: null,
+  minEps: null,
 
-    minPe: null,
-    maxPe: null,
+  minPe: null,
+  maxPe: null,
 
-    minPb: null,
-    maxPb: null,
+  minPb: null,
+  maxPb: null,
 
-    minEvidenceSources: 3,
-    minIndependentDomains: 2,
+  minEvidenceSources: 3,
+  minIndependentDomains: 2,
 
-    allowedRiskLevels: [
-      "low",
-      "medium",
-      "unknown",
-    ],
+  allowedRiskLevels: [
+    "low",
+    "medium",
+    "unknown",
+  ],
 
-    requireVerifiedData: false,
-  };
+  requireVerifiedData: false,
+};
 
 function mergeCriteria(
   criteria?: MarketSelectionFrameworkCriteria,
@@ -47,11 +46,18 @@ function mergeCriteria(
   };
 }
 
+function unique(
+  values: string[],
+): string[] {
+  return Array.from(
+    new Set(values),
+  );
+}
+
 function normalizeUniverse(
   universe: MarketSelectionFrameworkRequest["universe"],
 ) {
-  const seen =
-    new Set<string>();
+  const seen = new Set<string>();
 
   return universe.filter(
     (item) => {
@@ -76,14 +82,6 @@ function normalizeUniverse(
   );
 }
 
-function unique(
-  values: string[],
-): string[] {
-  return Array.from(
-    new Set(values),
-  );
-}
-
 function buildStage(
   stage: MarketSelectionStageResult["stage"],
   passed: boolean,
@@ -100,6 +98,276 @@ function buildStage(
     status,
     reasons: unique(reasons),
     missing: unique(missing),
+  };
+}
+
+/*
+ * ============================================================
+ * C147.4 Identity Verification
+ * ============================================================
+ *
+ * Web evidence existence is NOT sufficient to establish that
+ * the requested security is the security being analyzed.
+ *
+ * Identity verification therefore happens before the framework
+ * can classify a security as a research candidate.
+ *
+ * For US securities:
+ *   exact ticker is preferred.
+ *
+ * For HK / CN securities:
+ *   ticker variants + known canonical company names are allowed.
+ *
+ * This is deliberately conservative:
+ * generic financial evidence does not satisfy identity.
+ * ============================================================
+ */
+
+function normalizeIdentityToken(
+  value: string,
+): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
+function buildIdentityTokens(
+  symbol: string,
+  market: MarketRegion,
+): string[] {
+  const raw =
+    normalizeIdentityToken(
+      symbol,
+    );
+
+  const tokens =
+    new Set<string>();
+
+  if (raw) {
+    tokens.add(raw);
+  }
+
+  if (market === "us") {
+    const ticker =
+      raw
+        .replace(/^US:/, "");
+
+    if (ticker) {
+      tokens.add(ticker);
+    }
+  }
+
+  if (market === "hk") {
+    const digits =
+      raw
+        .replace(/^HK:/, "")
+        .replace(/\.HK$/, "")
+        .replace(/\D/g, "");
+
+    if (digits) {
+      const padded =
+        digits.padStart(4, "0");
+
+      tokens.add(digits);
+      tokens.add(padded);
+      tokens.add(`${padded}.HK`);
+    }
+
+    /*
+     * Canonical aliases for the common C147 universe.
+     * These are identity aliases, not recommendations.
+     */
+    const hkAliases: Record<
+      string,
+      string[]
+    > = {
+      "0700": [
+        "TENCENT",
+        "TENCENTHOLDINGS",
+        "TENCENTHOLDINGS",
+        "騰訊",
+        "腾讯",
+      ],
+
+      "9988": [
+        "ALIBABA",
+        "ALIBABAGROUP",
+        "阿里巴巴",
+        "阿里巴巴集团",
+      ],
+    };
+
+    const aliases =
+      hkAliases[
+        digits.padStart(4, "0")
+      ] ?? [];
+
+    for (const alias of aliases) {
+      tokens.add(
+        normalizeIdentityToken(alias),
+      );
+    }
+  }
+
+  if (market === "cn") {
+    const digits =
+      raw
+        .replace(/^SH:/, "")
+        .replace(/^SZ:/, "")
+        .replace(/^SS:/, "")
+        .replace(/\.(SH|SZ)$/, "")
+        .replace(/\D/g, "");
+
+    if (digits) {
+      tokens.add(digits);
+      tokens.add(
+        `${digits}.SH`,
+      );
+      tokens.add(
+        `${digits}.SZ`,
+      );
+    }
+
+    /*
+     * Canonical aliases for the common C147 universe.
+     */
+    const cnAliases: Record<
+      string,
+      string[]
+    > = {
+      "600519": [
+        "KWEICHOWMOUTAI",
+        "KWEICHOWMOUTAICO",
+        "MOUTAI",
+        "贵州茅台",
+        "贵州茅台酒",
+      ],
+
+      "000858": [
+        "WULIANGYE",
+        "WULIANGYEYIBIN",
+        "五粮液",
+        "宜宾五粮液",
+      ],
+    };
+
+    const aliases =
+      cnAliases[digits] ?? [];
+
+    for (const alias of aliases) {
+      tokens.add(
+        normalizeIdentityToken(alias),
+      );
+    }
+  }
+
+  return Array.from(tokens)
+    .filter(Boolean);
+}
+
+function evidenceContainsIdentity(
+  title: string,
+  url: string,
+  snippet: string,
+  tokens: string[],
+): boolean {
+  const haystack =
+    [
+      title,
+      url,
+      snippet,
+    ]
+      .join(" ")
+      .toUpperCase();
+
+  /*
+   * Prefer exact normalized token matches.
+   *
+   * For short numeric CN/HK tokens, require a stronger
+   * representation to reduce accidental substring matches.
+   */
+  return tokens.some(
+    (token) => {
+      if (!token) {
+        return false;
+      }
+
+      if (/^\d{3,6}$/.test(token)) {
+        const escaped =
+          token.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&",
+          );
+
+        return new RegExp(
+          `(^|[^0-9])${escaped}([^0-9]|$)`,
+        ).test(
+          haystack,
+        );
+      }
+
+      return haystack.includes(
+        token,
+      );
+    },
+  );
+}
+
+function verifyInstrumentIdentity(
+  analysis: MarketAnalysisResult,
+  symbol: string,
+  market: MarketRegion,
+): {
+  verified: boolean;
+  matchedEvidenceCount: number;
+  reason: string;
+} {
+  const tokens =
+    buildIdentityTokens(
+      symbol,
+      market,
+    );
+
+  if (
+    tokens.length === 0
+  ) {
+    return {
+      verified: false,
+      matchedEvidenceCount: 0,
+      reason:
+        "No usable security identity token could be derived from the requested symbol.",
+    };
+  }
+
+  const matched =
+    analysis.evidence.filter(
+      (item) =>
+        evidenceContainsIdentity(
+          item.title,
+          item.url,
+          item.snippet,
+          tokens,
+        ),
+    );
+
+  if (
+    matched.length === 0
+  ) {
+    return {
+      verified: false,
+      matchedEvidenceCount: 0,
+      reason:
+        `No retrieved evidence explicitly references the requested security identity ${symbol}. Generic financial evidence is not sufficient for the framework.`,
+    };
+  }
+
+  return {
+    verified: true,
+    matchedEvidenceCount:
+      matched.length,
+    reason:
+      `Requested security identity ${symbol} is referenced by ${matched.length} retrieved evidence item(s).`,
   };
 }
 
@@ -199,11 +467,8 @@ function fundamentalsStage(
   const snapshot =
     analysis.snapshot;
 
-  const missing: string[] =
-    [];
-
-  const reasons: string[] =
-    [];
+  const missing: string[] = [];
+  const reasons: string[] = [];
 
   if (
     criteria.minRevenueGrowth !==
@@ -247,9 +512,7 @@ function fundamentalsStage(
       snapshot.eps === null ||
       snapshot.eps === undefined
     ) {
-      missing.push(
-        "eps",
-      );
+      missing.push("eps");
     } else if (
       snapshot.eps >=
       criteria.minEps
@@ -267,6 +530,19 @@ function fundamentalsStage(
         ],
       );
     }
+  }
+
+  if (
+    snapshot.dataQuality ===
+    "insufficient"
+  ) {
+    missing.push(
+      "dataQuality",
+    );
+
+    reasons.push(
+      "Market snapshot data quality is explicitly insufficient for a complete fundamental assessment.",
+    );
   }
 
   if (
@@ -303,11 +579,8 @@ function valuationStage(
   const pb =
     analysis.snapshot.pb;
 
-  const missing: string[] =
-    [];
-
-  const reasons: string[] =
-    [];
+  const missing: string[] = [];
+  const reasons: string[] = [];
 
   const hasPeRule =
     (
@@ -524,6 +797,22 @@ function evidenceStage(
     0;
 
   if (
+    analysis.snapshot.dataQuality ===
+    "insufficient"
+  ) {
+    return buildStage(
+      "evidence",
+      false,
+      "insufficient-data",
+      [
+        "The market snapshot is explicitly marked as insufficient quality.",
+        "Evidence presence alone cannot upgrade an insufficient market snapshot to a complete research candidate.",
+      ],
+      ["dataQuality"],
+    );
+  }
+
+  if (
     sources < minSources
   ) {
     return buildStage(
@@ -571,6 +860,125 @@ function evidenceStage(
       `Evidence quality passed with ${sources} sources across ${domains} independent domains.`,
     ],
   );
+}
+
+function buildIdentityFailureStages(
+  symbol: string,
+  reason: string,
+): MarketSelectionStageResult[] {
+  return [
+    buildStage(
+      "industry",
+      false,
+      "insufficient-data",
+      [reason],
+      ["identity"],
+    ),
+
+    buildStage(
+      "company",
+      false,
+      "insufficient-data",
+      [
+        `Company stage blocked because ${symbol} identity was not verified.`,
+      ],
+      ["identity"],
+    ),
+
+    buildStage(
+      "fundamentals",
+      false,
+      "insufficient-data",
+      [
+        `Fundamentals stage blocked because ${symbol} identity was not verified.`,
+      ],
+      ["identity"],
+    ),
+
+    buildStage(
+      "valuation",
+      false,
+      "insufficient-data",
+      [
+        `Valuation stage blocked because ${symbol} identity was not verified.`,
+      ],
+      ["identity"],
+    ),
+
+    buildStage(
+      "risk",
+      false,
+      "insufficient-data",
+      [
+        `Risk stage blocked because ${symbol} identity was not verified.`,
+      ],
+      ["identity"],
+    ),
+
+    buildStage(
+      "evidence",
+      false,
+      "insufficient-data",
+      [
+        `Evidence stage blocked because ${symbol} identity was not verified.`,
+      ],
+      ["identity"],
+    ),
+  ];
+}
+
+function buildAnalysisFailureStages(
+  reason: string,
+): MarketSelectionStageResult[] {
+  return [
+    buildStage(
+      "industry",
+      false,
+      "insufficient-data",
+      [reason],
+      ["analysis"],
+    ),
+
+    buildStage(
+      "company",
+      false,
+      "insufficient-data",
+      ["Analysis unavailable."],
+      ["analysis"],
+    ),
+
+    buildStage(
+      "fundamentals",
+      false,
+      "insufficient-data",
+      ["Analysis unavailable."],
+      ["analysis"],
+    ),
+
+    buildStage(
+      "valuation",
+      false,
+      "insufficient-data",
+      ["Analysis unavailable."],
+      ["analysis"],
+    ),
+
+    buildStage(
+      "risk",
+      false,
+      "insufficient-data",
+      ["Analysis unavailable."],
+      ["analysis"],
+    ),
+
+    buildStage(
+      "evidence",
+      false,
+      "insufficient-data",
+      ["Analysis unavailable."],
+      ["analysis"],
+    ),
+  ];
 }
 
 function buildItem(
@@ -763,10 +1171,13 @@ async function evaluateItem(
       await analyzeMarketRequest({
         symbol:
           item.symbol,
+
         market:
           item.market,
+
         mode:
           "full",
+
         query:
           `Research framework ${item.market} ${item.symbol}`,
       });
@@ -777,90 +1188,60 @@ async function evaluateItem(
       return buildItem(
         item,
         analysis,
-        [
-          buildStage(
-            "industry",
-            false,
-            "insufficient-data",
-            [
-              analysis.error ??
-                "Market analysis returned insufficient evidence.",
-            ],
-            ["analysis"],
-          ),
-        ],
+        buildAnalysisFailureStages(
+          analysis.error ??
+            "Market analysis returned insufficient evidence.",
+        ),
       );
     }
 
-    const identityTokens =
-      [
-        item.symbol
-          .trim()
-          .toUpperCase(),
-      ];
-
-    const identityMatched =
-      analysis.evidence.some(
-        (evidence) => {
-          const haystack =
-            [
-              evidence.title,
-              evidence.url,
-              evidence.snippet,
-            ]
-              .join(" ")
-              .toUpperCase();
-
-          return identityTokens.some(
-            (token) =>
-              haystack.includes(
-                token,
-              ),
-          );
-        },
+    const identity =
+      verifyInstrumentIdentity(
+        analysis,
+        item.symbol,
+        item.market,
       );
 
     if (
-      !identityMatched
+      !identity.verified
     ) {
       return buildItem(
         item,
         analysis,
-        [
-          buildStage(
-            "industry",
-            false,
-            "insufficient-data",
-            [
-              `No evidence explicitly references ${item.symbol}.`,
-            ],
-            ["identity"],
-          ),
-        ],
+        buildIdentityFailureStages(
+          item.symbol,
+          identity.reason,
+        ),
       );
     }
 
-    const stages: MarketSelectionStageResult[] =
+    const stages:
+      MarketSelectionStageResult[] =
       [
         industryStage(
           analysis,
           criteria,
         ),
+
         companyStage(
           analysis,
         ),
+
         fundamentalsStage(
           analysis,
           criteria,
         ),
+
         valuationStage(
           analysis,
           criteria,
         ),
+
         riskStage(
           analysis,
           criteria,
         ),
+
         evidenceStage(
           analysis,
           criteria,
@@ -876,19 +1257,11 @@ async function evaluateItem(
     return buildItem(
       item,
       null,
-      [
-        buildStage(
-          "industry",
-          false,
-          "insufficient-data",
-          [
-            error instanceof Error
-              ? error.message
-              : "Framework evaluation failed.",
-          ],
-          ["analysis"],
-        ),
-      ],
+      buildAnalysisFailureStages(
+        error instanceof Error
+          ? error.message
+          : "Framework evaluation failed.",
+      ),
     );
   }
 }
@@ -906,8 +1279,7 @@ export async function runMarketSelectionFramework(
 
   const universe =
     normalizeUniverse(
-      request.universe ??
-        [],
+      request.universe ?? [],
     );
 
   if (
@@ -916,30 +1288,45 @@ export async function runMarketSelectionFramework(
   ) {
     return {
       success: false,
+
       code:
         "C147_4_FRAMEWORK_INSUFFICIENT",
+
       universeSize: 0,
+
       evaluatedCount: 0,
+
       researchCandidateCount: 0,
+
       excludedCount: 0,
+
       insufficientDataCount: 0,
+
       criteria,
+
       items: [],
+
       principle:
         "Industry → Company → Fundamentals → Valuation → Risk → Evidence is an explainable research framework, not an automatic trading strategy.",
+
       humanDecisionRequired:
         true,
+
       runtime: {
         name:
           "market-selection-framework",
+
         version:
           "C147.4",
+
         generatedAt:
           new Date().toISOString(),
+
         latencyMs:
           Date.now() -
           startedAt,
       },
+
       disclaimer:
         "AIOS provides research and decision-support information and does not issue automatic buy/sell instructions.",
     };
@@ -949,6 +1336,13 @@ export async function runMarketSelectionFramework(
     MarketSelectionFrameworkItem[] =
     [];
 
+  /*
+   * Sequential execution is intentional.
+   *
+   * The current market provider may invoke external
+   * evidence retrieval. Sequential evaluation prevents
+   * uncontrolled request bursts against providers.
+   */
   for (
     const item of universe
   ) {
