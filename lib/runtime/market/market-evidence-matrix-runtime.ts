@@ -4,6 +4,8 @@ import {
 
 import type {
   MarketAnalysisResult,
+  MarketFieldName,
+  MarketFieldQuality,
   MarketRegion,
 } from "./market-types";
 
@@ -27,12 +29,88 @@ const METRICS: MarketEvidenceMetric[] = [
   "revenueGrowth",
 ];
 
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean)));
+const FIELD_BY_METRIC: Record<
+  MarketEvidenceMetric,
+  MarketFieldName
+> = {
+  price: "price",
+  marketCap: "marketCap",
+  pe: "pe",
+  pb: "pb",
+  eps: "eps",
+  revenue: "revenue",
+  revenueGrowth: "revenueGrowth",
+};
+
+const METRIC_PATTERNS: Record<
+  MarketEvidenceMetric,
+  RegExp[]
+> = {
+  price: [
+    /\bcurrent price\b/i,
+    /\bstock price\b/i,
+    /\bshare price\b/i,
+    /\btrading at\b/i,
+    /\bprice today\b/i,
+    /价格/i,
+    /股价/i,
+  ],
+
+  marketCap: [
+    /\bmarket cap\b/i,
+    /\bmarket capitalization\b/i,
+    /市值/i,
+  ],
+
+  pe: [
+    /\bP\/E\b/i,
+    /\bPE ratio\b/i,
+    /\bprice[- ]to[- ]earnings\b/i,
+    /市盈率/i,
+  ],
+
+  pb: [
+    /\bP\/B\b/i,
+    /\bPB ratio\b/i,
+    /\bprice[- ]to[- ]book\b/i,
+    /市净率/i,
+  ],
+
+  eps: [
+    /\bEPS\b/i,
+    /\bearnings per share\b/i,
+    /每股收益/i,
+  ],
+
+  revenue: [
+    /\brevenue\b/i,
+    /\bannual sales\b/i,
+    /营收/i,
+    /收入/i,
+  ],
+
+  revenueGrowth: [
+    /\brevenue growth\b/i,
+    /\bsales growth\b/i,
+    /营收增长/i,
+    /收入增长/i,
+  ],
+};
+
+function unique(
+  values: string[],
+): string[] {
+  return Array.from(
+    new Set(
+      values.filter(Boolean),
+    ),
+  );
 }
 
 function normalizeUniverse(
-  universe: MarketEvidenceMatrixRequest["universe"] | undefined,
+  universe:
+    | MarketEvidenceMatrixRequest["universe"]
+    | undefined,
 ): Array<{
   symbol: string;
   market: MarketRegion;
@@ -53,7 +131,8 @@ function normalizeUniverse(
       } =>
         Boolean(
           item &&
-            typeof item.symbol === "string" &&
+            typeof item.symbol ===
+              "string" &&
             item.symbol.trim(),
         ) &&
         (
@@ -63,8 +142,10 @@ function normalizeUniverse(
         ),
     )
     .map((item) => ({
-      symbol: item.symbol.trim(),
-      market: item.market,
+      symbol:
+        item.symbol.trim(),
+      market:
+        item.market,
     }))
     .filter((item) => {
       const key =
@@ -89,7 +170,7 @@ function normalizeIdentityToken(
     .replace(/\s+/g, "");
 }
 
-function identityTokens(
+function buildIdentityTokens(
   symbol: string,
   market: MarketRegion,
 ): string[] {
@@ -124,13 +205,17 @@ function identityTokens(
       tokens.add(`${padded}.HK`);
     }
 
-    const aliases: Record<string, string[]> = {
+    const aliases: Record<
+      string,
+      string[]
+    > = {
       "0700": [
         "TENCENT",
         "TENCENTHOLDINGS",
         "騰訊",
         "腾讯",
       ],
+
       "9988": [
         "ALIBABA",
         "ALIBABAGROUP",
@@ -141,10 +226,14 @@ function identityTokens(
 
     for (
       const alias of
-        aliases[digits.padStart(4, "0")] ?? []
+        aliases[
+          digits.padStart(4, "0")
+        ] ?? []
     ) {
       tokens.add(
-        normalizeIdentityToken(alias),
+        normalizeIdentityToken(
+          alias,
+        ),
       );
     }
   }
@@ -164,7 +253,10 @@ function identityTokens(
       tokens.add(`${digits}.SZ`);
     }
 
-    const aliases: Record<string, string[]> = {
+    const aliases: Record<
+      string,
+      string[]
+    > = {
       "600519": [
         "KWEICHOWMOUTAI",
         "KWEICHOWMOUTAICO",
@@ -172,6 +264,7 @@ function identityTokens(
         "贵州茅台",
         "贵州茅台酒",
       ],
+
       "000858": [
         "WULIANGYE",
         "WULIANGYEYIBIN",
@@ -181,18 +274,23 @@ function identityTokens(
     };
 
     for (
-      const alias of aliases[digits] ?? []
+      const alias of
+        aliases[digits] ?? []
     ) {
       tokens.add(
-        normalizeIdentityToken(alias),
+        normalizeIdentityToken(
+          alias,
+        ),
       );
     }
   }
 
-  return Array.from(tokens).filter(Boolean);
+  return Array.from(
+    tokens,
+  ).filter(Boolean);
 }
 
-function containsIdentity(
+function evidenceContainsIdentity(
   title: string,
   url: string,
   snippet: string,
@@ -207,245 +305,244 @@ function containsIdentity(
       .join(" ")
       .toUpperCase();
 
-  return tokens.some((token) => {
-    if (/^\d{3,6}$/.test(token)) {
-      const escaped =
-        token.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&",
-        );
+  return tokens.some(
+    (token) => {
+      if (
+        /^\d{3,6}$/.test(
+          token,
+        )
+      ) {
+        const escaped =
+          token.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&",
+          );
 
-      return new RegExp(
-        `(^|[^0-9])${escaped}([^0-9]|$)`,
-      ).test(text);
-    }
+        return new RegExp(
+          `(^|[^0-9])${escaped}([^0-9]|$)`,
+        ).test(text);
+      }
 
-    return text.includes(token);
-  });
+      return text.includes(token);
+    },
+  );
 }
 
-function extractMetric(
-  text: string,
+function evidenceMatchesMetric(
+  evidenceTitle: string,
+  evidenceSnippet: string,
+  metric: MarketEvidenceMetric,
+): boolean {
+  const text =
+    `${evidenceTitle} ${evidenceSnippet}`;
+
+  return METRIC_PATTERNS[
+    metric
+  ].some(
+    (pattern) =>
+      pattern.test(text),
+  );
+}
+
+function mapFieldQuality(
+  quality:
+    | MarketFieldQuality
+    | undefined,
+): MarketEvidenceMetricMatrix["quality"] {
+  switch (quality) {
+    case "corroborated":
+      return "verified";
+
+    case "single-source":
+      return "supported";
+
+    case "corroborated-with-conflict":
+    case "conflict":
+      return "conflicted";
+
+    case "missing":
+    default:
+      return "insufficient";
+  }
+}
+
+function mapAgreement(
+  quality:
+    | MarketFieldQuality
+    | undefined,
+): MarketEvidenceAgreement {
+  switch (quality) {
+    case "corroborated":
+      return "corroborated";
+
+    case "single-source":
+      return "single-source";
+
+    case "corroborated-with-conflict":
+    case "conflict":
+      return "conflict";
+
+    case "missing":
+    default:
+      return "unavailable";
+  }
+}
+
+function snapshotValue(
+  analysis: MarketAnalysisResult,
   metric: MarketEvidenceMetric,
 ): number | null {
-  const normalized =
-    text
-      .replace(/,/g, "")
-      .replace(/\$/g, "")
-      .replace(/%/g, "");
+  const field =
+    FIELD_BY_METRIC[metric];
 
-  const patterns: Record<
-    MarketEvidenceMetric,
-    RegExp[]
-  > = {
-    price: [
-      /(?:price|share price|stock price)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
+  const value =
+    analysis.snapshot[field];
 
-    marketCap: [
-      /(?:market cap|market capitalization)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
-
-    pe: [
-      /(?:p\/e|price[\s-]*to[\s-]*earnings|pe ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
-
-    pb: [
-      /(?:p\/b|price[\s-]*to[\s-]*book|pb ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
-
-    eps: [
-      /(?:eps|earnings per share)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
-
-    revenue: [
-      /(?:revenue|sales)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-    ],
-
-    revenueGrowth: [
-      /(?:revenue growth|sales growth)[^\d-]{0,20}(-?\d+(?:\.\d+)?)/i,
-    ],
-  };
-
-  for (
-    const pattern of patterns[metric]
-  ) {
-    const match =
-      normalized.match(pattern);
-
-    if (match?.[1]) {
-      const value =
-        Number(match[1]);
-
-      if (Number.isFinite(value)) {
-        return value;
-      }
-    }
-  }
-
-  return null;
+  return typeof value ===
+    "number" &&
+    Number.isFinite(value)
+    ? value
+    : null;
 }
 
-function collectObservations(
+function buildObservations(
   analysis: MarketAnalysisResult,
   symbol: string,
   market: MarketRegion,
   metric: MarketEvidenceMetric,
 ): MarketEvidenceObservation[] {
-  const tokens =
-    identityTokens(
+  const identityTokens =
+    buildIdentityTokens(
       symbol,
       market,
     );
 
-  const observations:
-    MarketEvidenceObservation[] = [];
-
-  for (
-    const evidence of analysis.evidence
-  ) {
-    if (
-      !containsIdentity(
-        evidence.title,
-        evidence.url,
-        evidence.snippet,
-        tokens,
-      )
-    ) {
-      continue;
-    }
-
-    const observedText =
-      [
-        evidence.title,
-        evidence.snippet,
-      ].join(" ");
-
-    const value =
-      extractMetric(
-        observedText,
-        metric,
-      );
-
-    if (value === null) {
-      continue;
-    }
-
-    observations.push({
+  const value =
+    snapshotValue(
+      analysis,
       metric,
-      value,
-      sourceTitle:
-        evidence.title,
-      sourceUrl:
-        evidence.url,
-      hostname:
-        evidence.hostname,
-      observedText,
-      freshness:
-        analysis.verification
-          .freshness
-          .freshness,
-    });
+    );
+
+  if (value === null) {
+    return [];
   }
 
-  return observations;
+  return analysis.evidence
+    .filter(
+      (evidence) =>
+        evidenceContainsIdentity(
+          evidence.title,
+          evidence.url,
+          evidence.snippet,
+          identityTokens,
+        ),
+    )
+    .filter(
+      (evidence) =>
+        evidenceMatchesMetric(
+          evidence.title,
+          evidence.snippet,
+          metric,
+        ),
+    )
+    .map(
+      (evidence) => ({
+        metric,
+        value,
+        sourceTitle:
+          evidence.title,
+        sourceUrl:
+          evidence.url,
+        hostname:
+          evidence.hostname,
+        observedText:
+          `${evidence.title} ${evidence.snippet}`,
+        freshness:
+          analysis.verification
+            .freshness
+            .freshness,
+      }),
+    );
 }
 
 function buildMetricMatrix(
+  analysis: MarketAnalysisResult,
+  symbol: string,
+  market: MarketRegion,
   metric: MarketEvidenceMetric,
-  observations: MarketEvidenceObservation[],
 ): MarketEvidenceMetricMatrix {
-  if (observations.length === 0) {
+  const field =
+    FIELD_BY_METRIC[metric];
+
+  const fieldQuality =
+    analysis.snapshot
+      .fieldQuality?.[field];
+
+  const value =
+    snapshotValue(
+      analysis,
+      metric,
+    );
+
+  const observations =
+    buildObservations(
+      analysis,
+      symbol,
+      market,
+      metric,
+    );
+
+  const domains =
+    unique(
+      observations.map(
+        (item) =>
+          item.hostname,
+      ),
+    );
+
+  const quality =
+    mapFieldQuality(
+      fieldQuality,
+    );
+
+  const agreement =
+    mapAgreement(
+      fieldQuality,
+    );
+
+  const conflict =
+    fieldQuality ===
+      "conflict" ||
+    fieldQuality ===
+      "corroborated-with-conflict";
+
+  if (
+    value === null ||
+    quality === "insufficient"
+  ) {
     return {
       metric,
       value: null,
       agreement: "unavailable",
       quality: "insufficient",
-      observationCount: 0,
-      independentDomains: 0,
-      observations: [],
+      observationCount:
+        observations.length,
+      independentDomains:
+        domains.length,
+      observations,
       conflict: false,
-      humanVerificationRequired: true,
+      humanVerificationRequired:
+        true,
       explanation:
-        `No identity-matched evidence provided a usable ${metric} value.`,
+        `No normalized ${metric} value is available from the market normalization layer.`,
     };
   }
-
-  const domains =
-    unique(
-      observations.map(
-        (item) => item.hostname,
-      ),
-    );
-
-  const values =
-    observations
-      .map(
-        (item) => item.value,
-      )
-      .filter(
-        (
-          value,
-        ): value is number =>
-          typeof value === "number" &&
-          Number.isFinite(value),
-      );
-
-  const average =
-    values.length > 0
-      ? values.reduce(
-          (sum, value) =>
-            sum + value,
-          0,
-        ) / values.length
-      : null;
-
-  const conflict =
-    values.length >= 2 &&
-    average !== null &&
-    values.some(
-      (value) =>
-        Math.abs(
-          value - average,
-        ) /
-          Math.max(
-            Math.abs(average),
-            0.000001,
-          ) >
-        0.05,
-    );
-
-  let agreement:
-    MarketEvidenceAgreement;
-
-  if (conflict) {
-    agreement = "conflict";
-  } else if (
-    observations.length >= 2 &&
-    domains.length >= 2
-  ) {
-    agreement = "corroborated";
-  } else {
-    agreement = "single-source";
-  }
-
-  const value =
-    average !== null
-      ? Number(
-          average.toFixed(6),
-        )
-      : null;
 
   return {
     metric,
     value,
     agreement,
-    quality:
-      conflict
-        ? "conflicted"
-        : agreement === "corroborated"
-          ? "verified"
-          : "supported",
+    quality,
     observationCount:
       observations.length,
     independentDomains:
@@ -454,38 +551,24 @@ function buildMetricMatrix(
     conflict,
     humanVerificationRequired:
       conflict ||
-      agreement !== "corroborated",
+      quality !== "verified",
     explanation:
       conflict
-        ? `${metric} observations differ materially across retrieved evidence and require human verification.`
-        : agreement === "corroborated"
-          ? `${metric} is supported by multiple independent evidence domains.`
-          : `${metric} is supported by a limited evidence set and should be human-verified.`,
+        ? `${metric} is normalized but contains source conflict; human verification is required.`
+        : agreement ===
+            "corroborated"
+          ? `${metric} is corroborated by the existing market normalization layer.`
+          : `${metric} is available from normalized market evidence but is not fully corroborated.`,
   };
 }
 
 function buildItem(
   symbol: string,
   market: MarketRegion,
-  analysis: MarketAnalysisResult | null,
+  analysis:
+    | MarketAnalysisResult
+    | null,
 ): MarketEvidenceMatrixItem {
-  const tokens =
-    identityTokens(
-      symbol,
-      market,
-    );
-
-  const identityMatches =
-    analysis?.evidence.filter(
-      (item) =>
-        containsIdentity(
-          item.title,
-          item.url,
-          item.snippet,
-          tokens,
-        ),
-    ) ?? [];
-
   const metrics =
     {} as Record<
       MarketEvidenceMetric,
@@ -498,19 +581,45 @@ function buildItem(
     metrics[metric] =
       analysis
         ? buildMetricMatrix(
+            analysis,
+            symbol,
+            market,
             metric,
-            collectObservations(
-              analysis,
-              symbol,
-              market,
-              metric,
-            ),
           )
-        : buildMetricMatrix(
+        : {
             metric,
-            [],
-          );
+            value: null,
+            agreement:
+              "unavailable",
+            quality:
+              "insufficient",
+            observationCount: 0,
+            independentDomains: 0,
+            observations: [],
+            conflict: false,
+            humanVerificationRequired:
+              true,
+            explanation:
+              "Market analysis failed before normalized evidence became available.",
+          };
   }
+
+  const identityTokens =
+    buildIdentityTokens(
+      symbol,
+      market,
+    );
+
+  const identityMatches =
+    analysis?.evidence.filter(
+      (item) =>
+        evidenceContainsIdentity(
+          item.title,
+          item.url,
+          item.snippet,
+          identityTokens,
+        ),
+    ) ?? [];
 
   const independentDomains =
     unique(
@@ -533,7 +642,8 @@ function buildItem(
 
     evidenceSummary: {
       sourceCount:
-        analysis?.evidence.length ?? 0,
+        analysis?.evidence.length ??
+        0,
 
       independentDomains,
 
@@ -584,9 +694,12 @@ async function evaluateItem(
 ): Promise<MarketEvidenceMatrixItem> {
   const analysis =
     await analyzeMarketRequest({
-      symbol: item.symbol,
-      market: item.market,
-      mode: "full",
+      symbol:
+        item.symbol,
+      market:
+        item.market,
+      mode:
+        "full",
       query:
         query ??
         `Evidence matrix ${item.market} ${item.symbol}`,
@@ -610,7 +723,9 @@ export async function runMarketEvidenceMatrix(
       request?.universe,
     );
 
-  if (universe.length === 0) {
+  if (
+    universe.length === 0
+  ) {
     return {
       success: false,
 
@@ -627,7 +742,8 @@ export async function runMarketEvidenceMatrix(
 
       principles: [
         "Evidence matrix requires at least one valid security.",
-        "Evidence is preserved per source rather than silently collapsed.",
+        "Metric values are sourced from the existing normalized market snapshot.",
+        "Existing fieldQuality is preserved.",
         "Conflicts remain visible.",
         "Human verification remains required.",
       ],
@@ -638,10 +754,13 @@ export async function runMarketEvidenceMatrix(
       runtime: {
         name:
           "market-evidence-matrix-runtime",
+
         version:
           "C147.6",
+
         generatedAt:
           new Date().toISOString(),
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -653,7 +772,8 @@ export async function runMarketEvidenceMatrix(
   }
 
   const items:
-    MarketEvidenceMatrixItem[] = [];
+    MarketEvidenceMatrixItem[] =
+    [];
 
   for (
     const item of universe
@@ -666,11 +786,6 @@ export async function runMarketEvidenceMatrix(
         ),
       );
     } catch {
-      /*
-       * Do not manufacture a fake MarketAnalysisResult here.
-       * The matrix itself can represent an analysis failure safely
-       * with analysis: null and all metric observations unavailable.
-       */
       items.push(
         buildItem(
           item.symbol,
@@ -764,13 +879,14 @@ export async function runMarketEvidenceMatrix(
     items,
 
     principles: [
-      "Market metrics remain linked to their underlying evidence.",
-      "Multiple independent sources are required for corroboration.",
-      "Material source disagreement is preserved as conflict.",
-      "A single-source metric is not silently treated as fully verified.",
+      "Metric values come from the existing C147.2 normalization layer.",
+      "Existing fieldQuality is preserved rather than recalculated.",
+      "Evidence observations provide source provenance without replacing normalized values.",
+      "Multiple independent domains remain visible.",
+      "Material conflicts remain visible.",
+      "Security identity is checked before evidence is attributed.",
       "Evidence freshness remains visible.",
-      "Security identity is checked before evidence is attributed to an instrument.",
-      "Human verification remains required before investment decisions.",
+      "Human verification remains required.",
       "No ranking, prediction, order placement, or automated trading is performed.",
     ],
 
@@ -793,6 +909,6 @@ export async function runMarketEvidenceMatrix(
     },
 
     disclaimer:
-      "This evidence matrix organizes market evidence and metric provenance. It does not provide personalized investment advice or execute trades.",
+      "This evidence matrix organizes normalized market data and source provenance. It does not provide personalized investment advice or execute trades.",
   };
 }
