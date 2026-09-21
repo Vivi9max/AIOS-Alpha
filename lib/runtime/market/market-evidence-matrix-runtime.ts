@@ -17,31 +17,22 @@ import type {
   MarketEvidenceObservation,
 } from "./market-evidence-matrix-types";
 
-const METRICS:
-  MarketEvidenceMetric[] = [
-    "price",
-    "marketCap",
-    "pe",
-    "pb",
-    "eps",
-    "revenue",
-    "revenueGrowth",
-  ];
+const METRICS: MarketEvidenceMetric[] = [
+  "price",
+  "marketCap",
+  "pe",
+  "pb",
+  "eps",
+  "revenue",
+  "revenueGrowth",
+];
 
-function unique(
-  values: string[],
-): string[] {
-  return Array.from(
-    new Set(
-      values.filter(Boolean),
-    ),
-  );
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function normalizeUniverse(
-  universe:
-    | MarketEvidenceMatrixRequest["universe"]
-    | undefined,
+  universe: MarketEvidenceMatrixRequest["universe"] | undefined,
 ): Array<{
   symbol: string;
   market: MarketRegion;
@@ -62,8 +53,7 @@ function normalizeUniverse(
       } =>
         Boolean(
           item &&
-            typeof item.symbol ===
-              "string" &&
+            typeof item.symbol === "string" &&
             item.symbol.trim(),
         ) &&
         (
@@ -73,10 +63,8 @@ function normalizeUniverse(
         ),
     )
     .map((item) => ({
-      symbol:
-        item.symbol.trim(),
-      market:
-        item.market,
+      symbol: item.symbol.trim(),
+      market: item.market,
     }))
     .filter((item) => {
       const key =
@@ -106,9 +94,7 @@ function identityTokens(
   market: MarketRegion,
 ): string[] {
   const raw =
-    normalizeIdentityToken(
-      symbol,
-    );
+    normalizeIdentityToken(symbol);
 
   const tokens = new Set<string>();
 
@@ -135,15 +121,10 @@ function identityTokens(
 
       tokens.add(digits);
       tokens.add(padded);
-      tokens.add(
-        `${padded}.HK`,
-      );
+      tokens.add(`${padded}.HK`);
     }
 
-    const aliases: Record<
-      string,
-      string[]
-    > = {
+    const aliases: Record<string, string[]> = {
       "0700": [
         "TENCENT",
         "TENCENTHOLDINGS",
@@ -160,14 +141,10 @@ function identityTokens(
 
     for (
       const alias of
-        aliases[
-          digits.padStart(4, "0")
-        ] ?? []
+        aliases[digits.padStart(4, "0")] ?? []
     ) {
       tokens.add(
-        normalizeIdentityToken(
-          alias,
-        ),
+        normalizeIdentityToken(alias),
       );
     }
   }
@@ -183,18 +160,11 @@ function identityTokens(
 
     if (digits) {
       tokens.add(digits);
-      tokens.add(
-        `${digits}.SH`,
-      );
-      tokens.add(
-        `${digits}.SZ`,
-      );
+      tokens.add(`${digits}.SH`);
+      tokens.add(`${digits}.SZ`);
     }
 
-    const aliases: Record<
-      string,
-      string[]
-    > = {
+    const aliases: Record<string, string[]> = {
       "600519": [
         "KWEICHOWMOUTAI",
         "KWEICHOWMOUTAICO",
@@ -211,19 +181,15 @@ function identityTokens(
     };
 
     for (
-      const alias of
-        aliases[digits] ?? []
+      const alias of aliases[digits] ?? []
     ) {
       tokens.add(
-        normalizeIdentityToken(
-          alias,
-        ),
+        normalizeIdentityToken(alias),
       );
     }
   }
 
-  return Array.from(tokens)
-    .filter(Boolean);
+  return Array.from(tokens).filter(Boolean);
 }
 
 function containsIdentity(
@@ -241,27 +207,21 @@ function containsIdentity(
       .join(" ")
       .toUpperCase();
 
-  return tokens.some(
-    (token) => {
-      if (
-        /^\d{3,6}$/.test(
-          token,
-        )
-      ) {
-        const escaped =
-          token.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            "\\$&",
-          );
+  return tokens.some((token) => {
+    if (/^\d{3,6}$/.test(token)) {
+      const escaped =
+        token.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&",
+        );
 
-        return new RegExp(
-          `(^|[^0-9])${escaped}([^0-9]|$)`,
-        ).test(text);
-      }
+      return new RegExp(
+        `(^|[^0-9])${escaped}([^0-9]|$)`,
+      ).test(text);
+    }
 
-      return text.includes(token);
-    },
-  );
+    return text.includes(token);
+  });
 }
 
 function extractMetric(
@@ -274,56 +234,50 @@ function extractMetric(
       .replace(/\$/g, "")
       .replace(/%/g, "");
 
-  const patterns:
-    Record<
-      MarketEvidenceMetric,
-      RegExp[]
-    > = {
-      price: [
-        /(?:price|share price|stock price)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+  const patterns: Record<
+    MarketEvidenceMetric,
+    RegExp[]
+  > = {
+    price: [
+      /(?:price|share price|stock price)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      marketCap: [
-        /(?:market cap|market capitalization)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+    marketCap: [
+      /(?:market cap|market capitalization)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      pe: [
-        /(?:p\/e|price[\s-]*to[\s-]*earnings|pe ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+    pe: [
+      /(?:p\/e|price[\s-]*to[\s-]*earnings|pe ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      pb: [
-        /(?:p\/b|price[\s-]*to[\s-]*book|pb ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+    pb: [
+      /(?:p\/b|price[\s-]*to[\s-]*book|pb ratio)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      eps: [
-        /(?:eps|earnings per share)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+    eps: [
+      /(?:eps|earnings per share)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      revenue: [
-        /(?:revenue|sales)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
-      ],
+    revenue: [
+      /(?:revenue|sales)[^\d]{0,20}(\d+(?:\.\d+)?)/i,
+    ],
 
-      revenueGrowth: [
-        /(?:revenue growth|sales growth)[^\d-]{0,20}(-?\d+(?:\.\d+)?)/i,
-      ],
-    };
+    revenueGrowth: [
+      /(?:revenue growth|sales growth)[^\d-]{0,20}(-?\d+(?:\.\d+)?)/i,
+    ],
+  };
 
   for (
-    const pattern of
-      patterns[metric]
+    const pattern of patterns[metric]
   ) {
     const match =
-      normalized.match(
-        pattern,
-      );
+      normalized.match(pattern);
 
     if (match?.[1]) {
       const value =
         Number(match[1]);
 
-      if (
-        Number.isFinite(value)
-      ) {
+      if (Number.isFinite(value)) {
         return value;
       }
     }
@@ -345,12 +299,10 @@ function collectObservations(
     );
 
   const observations:
-    MarketEvidenceObservation[] =
-    [];
+    MarketEvidenceObservation[] = [];
 
   for (
-    const evidence of
-      analysis.evidence
+    const evidence of analysis.evidence
   ) {
     if (
       !containsIdentity(
@@ -375,9 +327,7 @@ function collectObservations(
         metric,
       );
 
-    if (
-      value === null
-    ) {
+    if (value === null) {
       continue;
     }
 
@@ -393,9 +343,8 @@ function collectObservations(
       observedText,
       freshness:
         analysis.verification
-          ?.freshness
-          ?.freshness ??
-        "unknown",
+          .freshness
+          .freshness,
     });
   }
 
@@ -406,22 +355,17 @@ function buildMetricMatrix(
   metric: MarketEvidenceMetric,
   observations: MarketEvidenceObservation[],
 ): MarketEvidenceMetricMatrix {
-  if (
-    observations.length === 0
-  ) {
+  if (observations.length === 0) {
     return {
       metric,
       value: null,
-      agreement:
-        "unavailable",
-      quality:
-        "insufficient",
+      agreement: "unavailable",
+      quality: "insufficient",
       observationCount: 0,
       independentDomains: 0,
       observations: [],
       conflict: false,
-      humanVerificationRequired:
-        true,
+      humanVerificationRequired: true,
       explanation:
         `No identity-matched evidence provided a usable ${metric} value.`,
     };
@@ -430,26 +374,21 @@ function buildMetricMatrix(
   const domains =
     unique(
       observations.map(
-        (item) =>
-          item.hostname,
+        (item) => item.hostname,
       ),
     );
 
   const values =
     observations
       .map(
-        (item) =>
-          item.value,
+        (item) => item.value,
       )
       .filter(
         (
           value,
         ): value is number =>
-          typeof value ===
-            "number" &&
-          Number.isFinite(
-            value,
-          ),
+          typeof value === "number" &&
+          Number.isFinite(value),
       );
 
   const average =
@@ -458,8 +397,7 @@ function buildMetricMatrix(
           (sum, value) =>
             sum + value,
           0,
-        ) /
-        values.length
+        ) / values.length
       : null;
 
   const conflict =
@@ -480,20 +418,15 @@ function buildMetricMatrix(
   let agreement:
     MarketEvidenceAgreement;
 
-  if (
-    conflict
-  ) {
-    agreement =
-      "conflict";
+  if (conflict) {
+    agreement = "conflict";
   } else if (
     observations.length >= 2 &&
     domains.length >= 2
   ) {
-    agreement =
-      "corroborated";
+    agreement = "corroborated";
   } else {
-    agreement =
-      "single-source";
+    agreement = "single-source";
   }
 
   const value =
@@ -510,8 +443,7 @@ function buildMetricMatrix(
     quality:
       conflict
         ? "conflicted"
-        : agreement ===
-            "corroborated"
+        : agreement === "corroborated"
           ? "verified"
           : "supported",
     observationCount:
@@ -522,13 +454,11 @@ function buildMetricMatrix(
     conflict,
     humanVerificationRequired:
       conflict ||
-      agreement !==
-        "corroborated",
+      agreement !== "corroborated",
     explanation:
       conflict
         ? `${metric} observations differ materially across retrieved evidence and require human verification.`
-        : agreement ===
-            "corroborated"
+        : agreement === "corroborated"
           ? `${metric} is supported by multiple independent evidence domains.`
           : `${metric} is supported by a limited evidence set and should be human-verified.`,
   };
@@ -537,7 +467,7 @@ function buildMetricMatrix(
 function buildItem(
   symbol: string,
   market: MarketRegion,
-  analysis: MarketAnalysisResult,
+  analysis: MarketAnalysisResult | null,
 ): MarketEvidenceMatrixItem {
   const tokens =
     identityTokens(
@@ -546,7 +476,7 @@ function buildItem(
     );
 
   const identityMatches =
-    analysis.evidence.filter(
+    analysis?.evidence.filter(
       (item) =>
         containsIdentity(
           item.title,
@@ -554,7 +484,7 @@ function buildItem(
           item.snippet,
           tokens,
         ),
-    );
+    ) ?? [];
 
   const metrics =
     {} as Record<
@@ -566,15 +496,20 @@ function buildItem(
     const metric of METRICS
   ) {
     metrics[metric] =
-      buildMetricMatrix(
-        metric,
-        collectObservations(
-          analysis,
-          symbol,
-          market,
-          metric,
-        ),
-      );
+      analysis
+        ? buildMetricMatrix(
+            metric,
+            collectObservations(
+              analysis,
+              symbol,
+              market,
+              metric,
+            ),
+          )
+        : buildMetricMatrix(
+            metric,
+            [],
+          );
   }
 
   const independentDomains =
@@ -587,62 +522,47 @@ function buildItem(
         .filter(Boolean),
     ).length;
 
-  const conflictedCount =
-    METRICS.filter(
-      (metric) =>
-        metrics[metric].conflict,
-    ).length;
-
-  const insufficientCount =
-    METRICS.filter(
-      (metric) =>
-        metrics[metric]
-          .quality ===
-        "insufficient",
-    ).length;
-
   return {
     symbol,
     market,
 
     identityVerified:
-      identityMatches.length >
-      0,
+      identityMatches.length > 0,
 
     metrics,
 
     evidenceSummary: {
       sourceCount:
-        analysis.evidence.length,
+        analysis?.evidence.length ?? 0,
 
       independentDomains,
 
       verified:
         Boolean(
-          analysis.verification
-            ?.verified,
+          analysis?.verification
+            .verified,
         ),
     },
 
     freshness: {
       status:
-        analysis.verification
-          ?.freshness
-          ?.freshness ??
+        analysis?.verification
+          .freshness
+          .freshness ??
         "unknown",
 
       asOf:
-        analysis.verification
-          ?.freshness
-          ?.referenceTime ??
-        analysis.snapshot
-          ?.asOf ??
+        analysis?.verification
+          .freshness
+          .referenceTime ??
+        analysis?.snapshot
+          .asOf ??
         null,
     },
 
     dataQuality:
-      analysis.snapshot
-        ?.dataQuality ??
+      analysis?.snapshot
+        .dataQuality ??
       "insufficient",
 
     humanReviewRequired:
@@ -664,12 +584,9 @@ async function evaluateItem(
 ): Promise<MarketEvidenceMatrixItem> {
   const analysis =
     await analyzeMarketRequest({
-      symbol:
-        item.symbol,
-      market:
-        item.market,
-      mode:
-        "full",
+      symbol: item.symbol,
+      market: item.market,
+      mode: "full",
       query:
         query ??
         `Evidence matrix ${item.market} ${item.symbol}`,
@@ -683,8 +600,7 @@ async function evaluateItem(
 }
 
 export async function runMarketEvidenceMatrix(
-  request:
-    MarketEvidenceMatrixRequest,
+  request: MarketEvidenceMatrixRequest,
 ): Promise<MarketEvidenceMatrixResult> {
   const startedAt =
     Date.now();
@@ -694,27 +610,31 @@ export async function runMarketEvidenceMatrix(
       request?.universe,
     );
 
-  if (
-    universe.length === 0
-  ) {
+  if (universe.length === 0) {
     return {
       success: false,
+
       code:
         "C147_6_EVIDENCE_MATRIX_INSUFFICIENT",
+
       universeSize: 0,
       evaluatedCount: 0,
       verifiedCount: 0,
       conflictedCount: 0,
       insufficientCount: 0,
+
       items: [],
+
       principles: [
         "Evidence matrix requires at least one valid security.",
         "Evidence is preserved per source rather than silently collapsed.",
         "Conflicts remain visible.",
         "Human verification remains required.",
       ],
+
       humanDecisionRequired:
         true,
+
       runtime: {
         name:
           "market-evidence-matrix-runtime",
@@ -726,14 +646,14 @@ export async function runMarketEvidenceMatrix(
           Date.now() -
           startedAt,
       },
+
       disclaimer:
         "Evidence matrix output is research support only and does not constitute personalized investment advice or automated trading.",
     };
   }
 
   const items:
-    MarketEvidenceMatrixItem[] =
-    [];
+    MarketEvidenceMatrixItem[] = [];
 
   for (
     const item of universe
@@ -746,52 +666,16 @@ export async function runMarketEvidenceMatrix(
         ),
       );
     } catch {
+      /*
+       * Do not manufacture a fake MarketAnalysisResult here.
+       * The matrix itself can represent an analysis failure safely
+       * with analysis: null and all metric observations unavailable.
+       */
       items.push(
         buildItem(
           item.symbol,
           item.market,
-          {
-            success: false,
-            code:
-              "MARKET_ANALYSIS_ERROR",
-instrument: {
-  symbol: item.symbol,
-  normalizedSymbol: item.symbol.trim().toUpperCase(),
-  market: item.market,
-  exchange:
-    item.market === "us"
-      ? "NASDAQ"
-      : item.market === "hk"
-        ? "HKEX"
-        : item.symbol.startsWith("600") ||
-            item.symbol.startsWith("601") ||
-            item.symbol.startsWith("603") ||
-            item.symbol.startsWith("688")
-          ? "SSE"
-          : "SZSE",
-  currency:
-    item.market === "us"
-      ? "USD"
-      : item.market === "hk"
-        ? "HKD"
-        : "CNY",
-},
-            snapshot: {
-              dataQuality:
-                "insufficient",
-            } as never,
-            analysis:
-              {} as never,
-            evidence: [],
-            verification:
-              {} as never,
-            provider:
-              "none",
-            metadata:
-              {} as never,
-            error:
-              "Market analysis failed.",
-          } as MarketAnalysisResult,
+          null,
         ),
       );
     }
