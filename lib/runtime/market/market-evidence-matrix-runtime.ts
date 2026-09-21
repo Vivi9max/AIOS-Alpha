@@ -754,12 +754,28 @@ export async function runMarketEvidenceMatrix(
             success: false,
             code:
               "MARKET_ANALYSIS_ERROR",
-            instrument: {
-              symbol:
-                item.symbol,
-              market:
-                item.market,
-            },
+instrument: {
+  symbol: item.symbol,
+  normalizedSymbol: item.symbol.trim().toUpperCase(),
+  market: item.market,
+  exchange:
+    item.market === "us"
+      ? "NASDAQ"
+      : item.market === "hk"
+        ? "HKEX"
+        : item.symbol.startsWith("600") ||
+            item.symbol.startsWith("601") ||
+            item.symbol.startsWith("603") ||
+            item.symbol.startsWith("688")
+          ? "SSE"
+          : "SZSE",
+  currency:
+    item.market === "us"
+      ? "USD"
+      : item.market === "hk"
+        ? "HKD"
+        : "CNY",
+},
             snapshot: {
               dataQuality:
                 "insufficient",
