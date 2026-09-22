@@ -35,7 +35,7 @@ export interface MarketDecisionChangeDetectionItem {
   currentRecordId: string;
   currentRecord: MarketDecisionRecord;
   reassessment: MarketReassessmentResult | null;
-  humanDecisionRequired: boolean;
+  humanDecisionRequired: true;
   mutationPerformed: false;
 }
 export interface MarketDecisionChangeDetectionResult {
@@ -60,8 +60,10 @@ export interface MarketDecisionChangeDetectionResult {
     persistent: boolean;
   };
   runtime: {
-    name: "market-decision-change-detection-runtime";
-    version: "C147.12";
+    name:
+      "market-decision-change-detection-runtime";
+    version:
+      "C147.12";
     generatedAt: string;
     latencyMs: number;
   };
