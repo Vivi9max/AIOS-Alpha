@@ -90,18 +90,15 @@ function getLatestRecord(
   history: MarketDecisionHistory | null,
 ): MarketDecisionRecord | null {
   return (
-    getLatestEntry(
-      history,
-    )?.record ?? null
+    getLatestEntry(history)
+      ?.record ?? null
   );
 }
 function getLatestFingerprint(
   history: MarketDecisionHistory | null,
 ): string | null {
   const entry =
-    getLatestEntry(
-      history,
-    );
+    getLatestEntry(history);
   if (!entry) {
     return null;
   }
@@ -117,6 +114,18 @@ function getLatestFingerprint(
     entry.record,
   );
 }
+/**
+ * C147.12
+ *
+ * Interpret the REAL C147.8 reassessment
+ * union without introducing a new changeType.
+ *
+ * Real C147.8 values:
+ * - no-material-change
+ * - assessment-change
+ * - invalidation-risk
+ * - insufficient-data
+ */
 function isMaterialReassessment(
   reassessment:
     MarketReassessmentResult | null,
@@ -141,12 +150,14 @@ function isMaterialReassessment(
     "assessment-change"
   ) {
     return (
-      reassessment.materialChanges
-        .length > 0 ||
-      reassessment.changedWatchMetrics
-        .length > 0 ||
-      reassessment.whatChanged
-        .length > 0
+      reassessment.materialChanges.length >
+        0 ||
+      reassessment.changedWatchMetrics.length >
+        0 ||
+      reassessment.whatChanged.length >
+        0 ||
+      reassessment.triggeredInvalidationConditions.length >
+        0
     );
   }
   return false;
@@ -461,7 +472,8 @@ export async function runMarketDecisionChangeDetection(
       "generatedAt-only differences are ignored by the fingerprint mechanism.",
       "The latest persisted history entry is the comparison baseline.",
       "Changed observations are evaluated through the existing C147.8 reassessment engine.",
-      "C147.8 assessment-change and invalidation-risk states are interpreted as requiring human reassessment when material evidence changed.",
+      "C147.8 assessment-change and invalidation-risk states are interpreted using the real C147.8 result fields.",
+      "insufficient-data does not produce a reassessment-required action.",
       "C147.12 never writes market decision history.",
       "C147.11 explicit mutation remains separate.",
       "Human review remains mandatory.",
