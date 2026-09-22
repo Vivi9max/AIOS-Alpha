@@ -237,7 +237,6 @@ export async function runMarketHumanReview(
         "C147_15_HUMAN_REVIEW_INSUFFICIENT",
       action:
         "review-blocked",
-      taskId,
       taskFound:
         false,
       review:
@@ -264,7 +263,6 @@ export async function runMarketHumanReview(
         "C147_15_HUMAN_REVIEW_TASK_NOT_FOUND",
       action:
         "task-not-found",
-      taskId,
       taskFound:
         false,
       review:
@@ -293,7 +291,6 @@ export async function runMarketHumanReview(
         "C147_15_HUMAN_REVIEW_ALREADY_RECORDED",
       action:
         "review-already-recorded",
-      taskId,
       taskFound:
         true,
       review:
@@ -325,7 +322,6 @@ export async function runMarketHumanReview(
         "C147_15_HUMAN_REVIEW_BLOCKED",
       action:
         "review-blocked",
-      taskId,
       taskFound:
         true,
       review:
@@ -396,7 +392,6 @@ export async function runMarketHumanReview(
       "C147_15_HUMAN_REVIEW_PASS",
     action:
       "review-recorded",
-    taskId,
     taskFound:
       true,
     review,
