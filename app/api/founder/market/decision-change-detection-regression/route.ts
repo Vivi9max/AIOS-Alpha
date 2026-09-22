@@ -7,6 +7,8 @@ import {
 } from "@/lib/founder/auth";
 import {
   resetMarketDecisionHistory,
+} from "@/lib/runtime/market/market-decision-history-runtime";
+import {
   runMarketDecisionHistoryQuery,
 } from "@/lib/runtime/market/market-decision-history-query-runtime";
 import {
@@ -37,12 +39,14 @@ async function getHistoryVersion(): Promise<number> {
     await runMarketDecisionHistoryQuery({
       symbol: "NVDA",
       market: "us",
+      includeReassessment: true,
     });
   return result.currentVersion;
 }
 async function createBaseline(): Promise<{
   success: boolean;
   code: string;
+  version: number;
 }> {
   const observed =
     await runMarketDecisionObservation({
@@ -55,8 +59,8 @@ async function createBaseline(): Promise<{
   ) {
     return {
       success: false,
-      code:
-        observed.code,
+      code: observed.code,
+      version: 0,
     };
   }
   const mutation =
@@ -65,6 +69,10 @@ async function createBaseline(): Promise<{
       record:
         observed.observation.record,
     });
+  const version =
+    mutation.observation
+      ?.currentVersion ??
+    0;
   return {
     success:
       mutation.success &&
@@ -73,9 +81,11 @@ async function createBaseline(): Promise<{
           "C147_11_MUTATION_PASS" ||
         mutation.code ===
           "C147_11_MUTATION_NOOP"
-      ),
+      ) &&
+      version >= 1,
     code:
       mutation.code,
+    version,
   };
 }
 async function runNoHistoryDetection(): Promise<RegressionCase> {
@@ -92,11 +102,13 @@ async function runNoHistoryDetection(): Promise<RegressionCase> {
       universe,
       includeExcluded: true,
       includeInsufficientData: true,
+      query: null,
     });
   const after =
     await getHistoryVersion();
   const item =
-    result.items[0] ?? null;
+    result.items[0] ??
+    null;
   const checks: Check[] = [
     {
       name:
@@ -111,9 +123,9 @@ async function runNoHistoryDetection(): Promise<RegressionCase> {
         "NO_HISTORY_DETECTED",
       passed:
         item?.action ===
-        "no-history" ||
+          "no-history" ||
         item?.action ===
-        "blocked",
+          "blocked",
       detail:
         `Action=${item?.action ?? "none"}.`,
     },
@@ -122,9 +134,11 @@ async function runNoHistoryDetection(): Promise<RegressionCase> {
         "READ_ONLY",
       passed:
         result.mutationPerformed ===
+        false &&
+        item?.mutationPerformed ===
         false,
       detail:
-        "C147.12 reported mutationPerformed=false.",
+        "C147.12 remained read-only.",
     },
     {
       name:
@@ -132,7 +146,7 @@ async function runNoHistoryDetection(): Promise<RegressionCase> {
       passed:
         before === after,
       detail:
-        `History version before=${before}, after=${after}.`,
+        `History version ${before} → ${after}.`,
     },
   ];
   return {
@@ -165,20 +179,23 @@ async function runBaselineDetection(): Promise<RegressionCase> {
       universe,
       includeExcluded: true,
       includeInsufficientData: true,
+      query: null,
     });
   const after =
     await getHistoryVersion();
   const item =
-    result.items[0] ?? null;
+    result.items[0] ??
+    null;
   const checks: Check[] = [
     {
       name:
         "BASELINE_CREATED",
       passed:
         baseline.success &&
+        baseline.version >= 1 &&
         before >= 1,
       detail:
-        `Baseline code=${baseline.code}; version=${before}.`,
+        `Baseline code=${baseline.code}; mutationVersion=${baseline.version}; historyVersion=${before}.`,
     },
     {
       name:
@@ -201,9 +218,9 @@ async function runBaselineDetection(): Promise<RegressionCase> {
         "MUTATION_NOT_PERFORMED",
       passed:
         result.mutationPerformed ===
-        false &&
+          false &&
         item?.mutationPerformed ===
-        false,
+          false,
       detail:
         "C147.12 did not execute the C147.11 mutation path.",
     },
@@ -213,7 +230,7 @@ async function runBaselineDetection(): Promise<RegressionCase> {
       passed:
         before === after,
       detail:
-        `History version before=${before}, after=${after}.`,
+        `History version ${before} → ${after}.`,
     },
   ];
   return {
@@ -240,6 +257,7 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
       universe,
       includeExcluded: true,
       includeInsufficientData: true,
+      query: null,
     });
   const middle =
     await getHistoryVersion();
@@ -248,13 +266,16 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
       universe,
       includeExcluded: true,
       includeInsufficientData: true,
+      query: null,
     });
   const after =
     await getHistoryVersion();
   const firstItem =
-    first.items[0] ?? null;
+    first.items[0] ??
+    null;
   const secondItem =
-    second.items[0] ?? null;
+    second.items[0] ??
+    null;
   const checks: Check[] = [
     {
       name:
@@ -277,9 +298,9 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
         "NO_MUTATION_FIRST_RUN",
       passed:
         first.mutationPerformed ===
-        false &&
+          false &&
         firstItem?.mutationPerformed ===
-        false,
+          false,
       detail:
         "First C147.12 run remained read-only.",
     },
@@ -288,9 +309,9 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
         "NO_MUTATION_SECOND_RUN",
       passed:
         second.mutationPerformed ===
-        false &&
+          false &&
         secondItem?.mutationPerformed ===
-        false,
+          false,
       detail:
         "Second C147.12 run remained read-only.",
     },
@@ -298,10 +319,8 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
       name:
         "VERSION_STABLE",
       passed:
-        before ===
-          middle &&
-        middle ===
-          after,
+        before === middle &&
+        middle === after,
       detail:
         `Versions=${before} → ${middle} → ${after}.`,
     },
@@ -309,12 +328,14 @@ async function runRepeatReadOnlyDetection(): Promise<RegressionCase> {
       name:
         "NO_HISTORY_WRITE",
       passed:
-        firstItem?.currentVersion ===
-          firstItem?.previousVersion ||
-        firstItem?.observationChanged ===
-          true,
+        firstItem !== null &&
+        secondItem !== null &&
+        firstItem.currentVersion ===
+          firstItem.previousVersion &&
+        secondItem.currentVersion ===
+          secondItem.previousVersion,
       detail:
-        "Detection result is informational and does not itself create a history version.",
+        `First=${firstItem?.previousVersion ?? "none"}→${firstItem?.currentVersion ?? "none"}; Second=${secondItem?.previousVersion ?? "none"}→${secondItem?.currentVersion ?? "none"}.`,
     },
   ];
   return {
@@ -370,6 +391,7 @@ async function executeRegression() {
       "C147.12 never creates or increments decision-history versions.",
       "C147.11 remains the explicit mutation boundary.",
       "C147.12 may invoke C147.8 reassessment for changed observations.",
+      "C147.10 history query remains read-only.",
       "Human review remains mandatory.",
     ],
     cases,
@@ -385,12 +407,16 @@ export async function GET(
   ) {
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
         code:
           "FOUNDER_AUTH_REQUIRED",
+        error:
+          "Founder authentication required.",
       },
       {
-        status: 401,
+        status:
+          401,
       },
     );
   }
@@ -409,16 +435,18 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
         code:
           "C147_12_CHANGE_DETECTION_REGRESSION_ERROR",
         error:
           error instanceof Error
             ? error.message
-            : "C147.12 regression failed.",
+            : "C147.12.1 regression failed.",
       },
       {
-        status: 500,
+        status:
+          500,
       },
     );
   }
