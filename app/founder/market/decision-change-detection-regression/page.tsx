@@ -55,9 +55,9 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
     result,
     setResult,
   ] =
-    useState<
-      RegressionResult | null
-    >(null);
+    useState<RegressionResult | null>(
+      null,
+    );
   const [
     error,
     setError,
@@ -76,22 +76,32 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
     const key =
       getFounderKey();
     if (!key) {
-      setSessionReady(false);
+      setSessionReady(
+        false,
+      );
       setError(
         "Founder Session is required. Enter the Founder Console first.",
       );
       return;
     }
-    setRunning(true);
-    setResult(null);
-    setError(null);
+    setRunning(
+      true,
+    );
+    setResult(
+      null,
+    );
+    setError(
+      null,
+    );
     try {
       const response =
         await fetch(
           "/api/founder/market/decision-change-detection-regression",
           {
-            method: "GET",
-            cache: "no-store",
+            method:
+              "GET",
+            cache:
+              "no-store",
             headers: {
               Accept:
                 "application/json",
@@ -111,7 +121,9 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
         window.sessionStorage.removeItem(
           STORAGE_KEY,
         );
-        setSessionReady(false);
+        setSessionReady(
+          false,
+        );
         throw new Error(
           "Founder Session expired. Please enter the Founder Console again.",
         );
@@ -126,7 +138,7 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
         );
       }
       setResult(
-        payload,
+        payload as RegressionResult,
       );
     } catch (err) {
       setError(
@@ -135,7 +147,9 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
           : "Regression failed.",
       );
     } finally {
-      setRunning(false);
+      setRunning(
+        false,
+      );
     }
   }
   return (
@@ -191,8 +205,7 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
               24,
           }}
         >
-          C147.12.1 · Detect → Reassess →
-          Preserve History
+          C147.12.1 · Detect → Reassess → Preserve History
         </div>
         {!sessionReady && (
           <section
@@ -233,9 +246,9 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
                   16,
               }}
             >
-              This regression uses the existing
-              Founder Console session. The Access
-              Key is never displayed.
+              This regression uses the existing Founder
+              Console session. The Access Key is never
+              displayed.
             </div>
             <Link
               href="/founder"
@@ -305,8 +318,8 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
                   6,
               }}
             >
-              C147.12.1 validates runtime behavior
-              without exposing the Founder Access Key.
+              C147.12.1 validates the actual runtime
+              behavior without exposing the Founder Access Key.
             </div>
           </section>
         )}
@@ -409,11 +422,15 @@ export default function MarketDecisionChangeDetectionRegressionPage() {
                 ],
                 [
                   "Passed",
-                  result.passed,
+                  String(
+                    result.passed,
+                  ),
                 ],
                 [
                   "Failed",
-                  result.failed,
+                  String(
+                    result.failed,
+                  ),
                 ],
                 [
                   "Runtime",
