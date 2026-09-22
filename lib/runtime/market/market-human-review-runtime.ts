@@ -46,14 +46,10 @@ function isDecision(
   value: unknown,
 ): value is MarketHumanReviewDecision {
   return (
-    value ===
-      "acknowledged" ||
-    value ===
-      "accepted" ||
-    value ===
-      "rejected" ||
-    value ===
-      "deferred"
+    value === "acknowledged" ||
+    value === "accepted" ||
+    value === "rejected" ||
+    value === "deferred"
   );
 }
 function getStorageKey(
@@ -421,5 +417,29 @@ export async function getMarketHumanReview(
   }
   return getExistingReview(
     normalized,
+  );
+}
+/**
+ * Internal regression cleanup.
+ *
+ * This is intentionally not exposed through the public
+ * Human Review API. It exists only so C147.15.1 can remove
+ * its temporary Founder regression record after verification.
+ */
+export async function deleteMarketHumanReview(
+  taskId: string,
+): Promise<void> {
+  const normalized =
+    normalizeText(
+      taskId,
+      200,
+    );
+  if (!normalized) {
+    return;
+  }
+  await storage.delete(
+    getStorageKey(
+      normalized,
+    ),
   );
 }
