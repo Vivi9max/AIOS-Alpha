@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
+
 import {
+  useEffect,
   useState,
 } from "react";
 
@@ -29,6 +32,9 @@ type RegressionResult = {
   cases: RegressionCase[];
 };
 
+const STORAGE_KEY =
+  "aios-founder-access-key";
+
 function getFounderKey(): string {
   if (
     typeof window ===
@@ -39,12 +45,17 @@ function getFounderKey(): string {
 
   return (
     window.sessionStorage.getItem(
-      "aios-founder-access-key",
+      STORAGE_KEY,
     ) ?? ""
   );
 }
 
 export default function MarketDecisionObservationRegressionPage() {
+  const [
+    sessionReady,
+    setSessionReady,
+  ] = useState(false);
+
   const [
     running,
     setRunning,
@@ -66,7 +77,26 @@ export default function MarketDecisionObservationRegressionPage() {
       string | null
     >(null);
 
+  useEffect(() => {
+    setSessionReady(
+      Boolean(
+        getFounderKey(),
+      ),
+    );
+  }, []);
+
   async function runRegression() {
+    const key =
+      getFounderKey();
+
+    if (!key) {
+      setSessionReady(false);
+      setError(
+        "Founder Session is required. Enter the Founder Console first.",
+      );
+      return;
+    }
+
     setRunning(true);
 
     setResult(null);
@@ -74,9 +104,6 @@ export default function MarketDecisionObservationRegressionPage() {
     setError(null);
 
     try {
-      const key =
-        getFounderKey();
-
       const response =
         await fetch(
           "/api/founder/market/decision-observation-regression",
@@ -84,13 +111,16 @@ export default function MarketDecisionObservationRegressionPage() {
             method:
               "GET",
 
-            headers:
-              key
-                ? {
-                    Authorization:
-                      `Bearer ${key}`,
-                  }
-                : {},
+            cache:
+              "no-store",
+
+            headers: {
+              Accept:
+                "application/json",
+
+              Authorization:
+                `Bearer ${key}`,
+            },
           },
         );
 
@@ -98,10 +128,28 @@ export default function MarketDecisionObservationRegressionPage() {
         await response.json();
 
       if (
+        response.status ===
+          401 ||
+        payload?.code ===
+          "FOUNDER_AUTH_REQUIRED"
+      ) {
+        window.sessionStorage.removeItem(
+          STORAGE_KEY,
+        );
+
+        setSessionReady(false);
+
+        throw new Error(
+          "Founder Session expired. Please enter the Founder Console again.",
+        );
+      }
+
+      if (
         !response.ok
       ) {
         throw new Error(
           payload?.error ??
+            payload?.code ??
             `Regression request failed with HTTP ${response.status}.`,
         );
       }
@@ -188,71 +236,159 @@ export default function MarketDecisionObservationRegressionPage() {
           Compare → Explicit Mutation
         </div>
 
-        <section
-          style={{
-            border:
-              "1px solid #252525",
-
-            borderRadius:
-              12,
-
-            padding:
-              18,
-
-            marginBottom:
-              20,
-          }}
-        >
-          <div
+        {!sessionReady && (
+          <section
             style={{
-              fontWeight:
-                700,
+              border:
+                "1px solid #4a3d20",
+
+              borderRadius:
+                12,
+
+              padding:
+                20,
 
               marginBottom:
-                6,
+                20,
+
+              background:
+                "#151108",
             }}
           >
-            Founder Session
-          </div>
+            <div
+              style={{
+                fontWeight:
+                  700,
 
-          <div
+                fontSize:
+                  17,
+
+                marginBottom:
+                  8,
+              }}
+            >
+              Founder Session Required
+            </div>
+
+            <div
+              style={{
+                fontSize:
+                  14,
+
+                opacity:
+                  0.7,
+
+                lineHeight:
+                  1.6,
+
+                marginBottom:
+                  16,
+              }}
+            >
+              C147.11 Regression is protected
+              by the existing Founder authentication
+              boundary. No Access Key is requested
+              or displayed on this page.
+            </div>
+
+            <Link
+              href="/founder"
+              style={{
+                display:
+                  "block",
+
+                textAlign:
+                  "center",
+
+                padding:
+                  "13px 16px",
+
+                borderRadius:
+                  9,
+
+                background:
+                  "#f5f5f5",
+
+                color:
+                  "#000",
+
+                textDecoration:
+                  "none",
+
+                fontWeight:
+                  700,
+              }}
+            >
+              Enter Founder Console
+            </Link>
+          </section>
+        )}
+
+        {sessionReady && (
+          <section
             style={{
-              fontSize:
-                14,
+              border:
+                "1px solid #252525",
 
-              opacity:
-                0.7,
+              borderRadius:
+                12,
+
+              padding:
+                18,
+
+              marginBottom:
+                20,
             }}
           >
-            Session:{" "}
-            {getFounderKey()
-              ? "READY"
-              : "MISSING"}
-          </div>
+            <div
+              style={{
+                fontWeight:
+                  700,
 
-          <div
-            style={{
-              fontSize:
-                13,
+                marginBottom:
+                  6,
+              }}
+            >
+              Founder Session
+            </div>
 
-              opacity:
-                0.55,
+            <div
+              style={{
+                fontSize:
+                  14,
 
-              marginTop:
-                6,
-            }}
-          >
-            Uses the existing Founder
-            Console session.
-          </div>
-        </section>
+                opacity:
+                  0.7,
+              }}
+            >
+              Status: READY
+            </div>
+
+            <div
+              style={{
+                fontSize:
+                  13,
+
+                opacity:
+                  0.55,
+
+                marginTop:
+                  6,
+              }}
+            >
+              Existing Founder Console session
+              will be used automatically.
+            </div>
+          </section>
+        )}
 
         <button
           onClick={
             runRegression
           }
           disabled={
-            running
+            running ||
+            !sessionReady
           }
           style={{
             width:
@@ -268,18 +404,21 @@ export default function MarketDecisionObservationRegressionPage() {
               "1px solid #444",
 
             background:
-              running
+              running ||
+              !sessionReady
                 ? "#222"
                 : "#f5f5f5",
 
             color:
-              running
-                ? "#aaa"
+              running ||
+              !sessionReady
+                ? "#777"
                 : "#000",
 
             cursor:
-              running
-                ? "wait"
+              running ||
+              !sessionReady
+                ? "not-allowed"
                 : "pointer",
 
             fontWeight:
@@ -318,10 +457,34 @@ export default function MarketDecisionObservationRegressionPage() {
               style={{
                 marginTop:
                   8,
+
+                lineHeight:
+                  1.6,
               }}
             >
               {error}
             </div>
+
+            {!sessionReady && (
+              <Link
+                href="/founder"
+                style={{
+                  display:
+                    "inline-block",
+
+                  marginTop:
+                    14,
+
+                  color:
+                    "#fff",
+
+                  textDecoration:
+                    "underline",
+                }}
+              >
+                Return to Founder Console
+              </Link>
+            )}
           </section>
         )}
 
@@ -559,6 +722,9 @@ export default function MarketDecisionObservationRegressionPage() {
 
                             marginTop:
                               3,
+
+                            lineHeight:
+                              1.5,
                           }}
                         >
                           {
