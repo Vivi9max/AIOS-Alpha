@@ -35,21 +35,15 @@ function buildTaskDescription(
 ): string {
   const changed =
     event.whatChanged.length > 0
-      ? event.whatChanged.join(
-          " | ",
-        )
+      ? event.whatChanged.join(" | ")
       : "Material decision-state change detected.";
   const why =
     event.whyItMatters.length > 0
-      ? event.whyItMatters.join(
-          " | ",
-        )
+      ? event.whyItMatters.join(" | ")
       : "Human review is required.";
   const review =
     event.whatRequiresHumanReview.length > 0
-      ? event.whatRequiresHumanReview.join(
-          " | ",
-        )
+      ? event.whatRequiresHumanReview.join(" | ")
       : "Review the evidence and reassessment before any decision.";
   return [
     "Source: C147.13 Market Change Event Runtime.",
@@ -84,9 +78,7 @@ function buildNoTaskItem(
 ): MarketChangeEventTaskBridgeItem {
   return {
     symbol:
-      normalizeSymbol(
-        event.symbol,
-      ),
+      normalizeSymbol(event.symbol),
     market:
       event.market,
     eventId:
@@ -120,7 +112,7 @@ async function bridgeEvent(
 ): Promise<MarketChangeEventTaskBridgeItem> {
   if (
     event.eventType ===
-      "market-decision-blocked"
+    "market-decision-blocked"
   ) {
     return buildNoTaskItem(
       event,
@@ -140,9 +132,7 @@ async function bridgeEvent(
     );
   }
   const taskTitle =
-    buildTaskTitle(
-      event,
-    );
+    buildTaskTitle(event);
   const duplicate =
     await findDuplicateActiveTask(
       taskTitle,
@@ -150,9 +140,7 @@ async function bridgeEvent(
   if (duplicate) {
     return {
       symbol:
-        normalizeSymbol(
-          event.symbol,
-        ),
+        normalizeSymbol(event.symbol),
       market:
         event.market,
       eventId:
@@ -193,9 +181,7 @@ async function bridgeEvent(
       );
     return {
       symbol:
-        normalizeSymbol(
-          event.symbol,
-        ),
+        normalizeSymbol(event.symbol),
       market:
         event.market,
       eventId:
@@ -237,14 +223,11 @@ async function bridgeEvent(
     ) {
       const duplicateId =
         message.slice(
-          "DUPLICATE_TASK:"
-            .length,
+          "DUPLICATE_TASK:".length,
         );
       return {
         symbol:
-          normalizeSymbol(
-            event.symbol,
-          ),
+          normalizeSymbol(event.symbol),
         market:
           event.market,
         eventId:
@@ -282,52 +265,64 @@ async function bridgeEvent(
     );
   }
 }
+/**
+ * Internal bridge execution.
+ *
+ * eventsOverride is intentionally not part of the public request type.
+ * It exists only so Founder regression can inject a verified C147.13-shaped
+ * event and test Task creation / duplicate protection without changing
+ * production event-detection behavior.
+ */
 export async function runMarketChangeEventTaskBridge(
   request:
     MarketChangeEventTaskBridgeRequest,
+  eventsOverride?: MarketChangeEvent[],
 ): Promise<MarketChangeEventTaskBridgeResult> {
   const startedAt =
     Date.now();
   const eventRuntime =
-    await runMarketChangeEventRuntime({
-      universe:
-        Array.isArray(
-          request?.universe,
-        )
-          ? request.universe
-          : [],
-      query:
-        request?.query ??
-        null,
-      includeExcluded:
-        request?.includeExcluded ??
-        true,
-      includeInsufficientData:
-        request?.includeInsufficientData ??
-        true,
-    });
+    eventsOverride
+      ? null
+      : await runMarketChangeEventRuntime({
+          universe:
+            Array.isArray(
+              request?.universe,
+            )
+              ? request.universe
+              : [],
+          query:
+            request?.query ??
+            null,
+          includeExcluded:
+            request?.includeExcluded ??
+            true,
+          includeInsufficientData:
+            request?.includeInsufficientData ??
+            true,
+        });
+  const events =
+    eventsOverride ??
+    eventRuntime?.events ??
+    [];
+  const universeSize =
+    eventsOverride
+      ? eventsOverride.length
+      : eventRuntime?.universeSize ??
+        0;
   if (
-    eventRuntime.events.length ===
-    0
+    events.length === 0
   ) {
     return {
       success: false,
       code:
         "C147_14_MARKET_EVENT_TASK_BRIDGE_INSUFFICIENT",
-      universeSize:
-        eventRuntime.universeSize,
-      eventCount:
-        0,
-      materialEventCount:
-        0,
-      taskCreatedCount:
-        0,
-      taskExistingCount:
-        0,
-      noTaskRequiredCount:
-        0,
-      blockedCount:
-        0,
+      universeSize,
+      eventCount: 0,
+      materialEventCount: 0,
+      taskCreatedCount: 0,
+      taskExistingCount: 0,
+      noTaskRequiredCount: 0,
+      blockedCount: 0,
       items: [],
       mutationPerformed:
         false,
@@ -364,12 +359,9 @@ export async function runMarketChangeEventTaskBridge(
         DISCLAIMER,
     };
   }
-  const items:
-    MarketChangeEventTaskBridgeItem[] =
-    [];
+  const items: MarketChangeEventTaskBridgeItem[] = [];
   for (
-    const event of
-      eventRuntime.events
+    const event of events
   ) {
     items.push(
       await bridgeEvent(
@@ -378,7 +370,7 @@ export async function runMarketChangeEventTaskBridge(
     );
   }
   const materialEventCount =
-    eventRuntime.events.filter(
+    events.filter(
       (event) =>
         event.materialChange ===
         true,
@@ -418,10 +410,10 @@ export async function runMarketChangeEventTaskBridge(
       items.length > 0 &&
       blockedCount === 0,
     code,
-    universeSize:
-      eventRuntime.universeSize,
+    universeSize,
     eventCount:
-      eventRuntime.eventCount,
+      eventRuntime?.eventCount ??
+      events.length,
     materialEventCount,
     taskCreatedCount,
     taskExistingCount,
