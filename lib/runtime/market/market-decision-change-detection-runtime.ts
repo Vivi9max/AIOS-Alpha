@@ -31,7 +31,7 @@ import type {
 const HISTORY_PREFIX =
   "aios:market:decision-history:v1:";
 const DISCLAIMER =
-  "C147.12 detects changes between the latest persisted market decision observation and the current decision record. It does not mutate history, rank securities, predict outcomes, provide personalized investment advice, or execute trades. Explicit mutation remains a separate operation.";
+  "C147.12 detects changes between the latest persisted market decision observation and the current decision record. It is read-only and does not mutate history, rank securities, predict outcomes, provide personalized investment advice, or execute trades.";
 function normalizeSymbol(
   symbol: string,
 ): string {
@@ -70,9 +70,9 @@ async function loadHistory(
     ),
   );
 }
-function latestRecord(
+function getLatestEntry(
   history: MarketDecisionHistory | null,
-): MarketDecisionRecord | null {
+) {
   if (
     !history ||
     !Array.isArray(history.entries) ||
@@ -83,25 +83,30 @@ function latestRecord(
   return (
     history.entries[
       history.entries.length - 1
-    ]?.record ?? null
+    ] ?? null
   );
 }
-function latestFingerprint(
+function getLatestRecord(
+  history: MarketDecisionHistory | null,
+): MarketDecisionRecord | null {
+  return (
+    getLatestEntry(
+      history,
+    )?.record ?? null
+  );
+}
+function getLatestFingerprint(
   history: MarketDecisionHistory | null,
 ): string | null {
-  if (
-    !history ||
-    !Array.isArray(history.entries) ||
-    history.entries.length === 0
-  ) {
+  const entry =
+    getLatestEntry(
+      history,
+    );
+  if (!entry) {
     return null;
   }
-  const latest =
-    history.entries[
-      history.entries.length - 1
-    ];
   const stored =
-    latest.observationFingerprint;
+    entry.observationFingerprint;
   if (
     typeof stored === "string" &&
     stored.length > 0
@@ -109,10 +114,10 @@ function latestFingerprint(
     return stored;
   }
   return buildObservationFingerprint(
-    latest.record,
+    entry.record,
   );
 }
-function hasMaterialChange(
+function isMaterialReassessment(
   reassessment:
     MarketReassessmentResult | null,
 ): boolean {
@@ -127,32 +132,29 @@ function hasMaterialChange(
   }
   if (
     reassessment.changeType ===
-    "material-change"
+    "invalidation-risk"
   ) {
     return true;
   }
   if (
     reassessment.changeType ===
-      "assessment-change" ||
-    reassessment.changeType ===
-      "invalidation-risk"
+    "assessment-change"
   ) {
-    return true;
-  }
-  if (
-    Array.isArray(
-      reassessment.materialChanges,
-    ) &&
-    reassessment.materialChanges.length > 0
-  ) {
-    return true;
+    return (
+      reassessment.materialChanges
+        .length > 0 ||
+      reassessment.changedWatchMetrics
+        .length > 0 ||
+      reassessment.whatChanged
+        .length > 0
+    );
   }
   return false;
 }
-function buildBaseItem(
+function buildItem(
   currentRecord: MarketDecisionRecord,
   history: MarketDecisionHistory | null,
-  previous: MarketDecisionRecord | null,
+  previousRecord: MarketDecisionRecord | null,
   previousFingerprint: string | null,
   currentFingerprint: string,
   action:
@@ -183,7 +185,8 @@ function buildBaseItem(
     observationChanged,
     materialChange,
     previousRecordId:
-      previous?.recordId ?? null,
+      previousRecord?.recordId ??
+      null,
     currentRecordId:
       currentRecord.recordId,
     currentRecord,
@@ -200,6 +203,8 @@ export async function runMarketDecisionChangeDetection(
 ): Promise<MarketDecisionChangeDetectionResult> {
   const startedAt =
     Date.now();
+  const storageMode =
+    getStorageMode();
   const universe =
     Array.isArray(
       request?.universe,
@@ -222,8 +227,6 @@ export async function runMarketDecisionChangeDetection(
             ),
         )
       : [];
-  const storageMode =
-    getStorageMode();
   if (
     universe.length === 0
   ) {
@@ -244,13 +247,14 @@ export async function runMarketDecisionChangeDetection(
       principles: [
         "At least one valid market instrument is required.",
         "Change detection is read-only.",
-        "Explicit mutation remains a separate C147.11 operation.",
+        "The C147.11 mutation path is not called.",
         "Human review remains mandatory.",
       ],
       humanDecisionRequired:
         true,
       storage: {
-        mode: storageMode,
+        mode:
+          storageMode,
         persistent:
           storageMode ===
           "redis",
@@ -301,12 +305,12 @@ export async function runMarketDecisionChangeDetection(
         symbol,
         market,
       );
-    const previous =
-      latestRecord(
+    const previousRecord =
+      getLatestRecord(
         history,
       );
     const previousFingerprint =
-      latestFingerprint(
+      getLatestFingerprint(
         history,
       );
     const currentFingerprint =
@@ -322,9 +326,9 @@ export async function runMarketDecisionChangeDetection(
         "blocked" ||
       currentRecord.state ===
         "insufficient-data";
-    if (!previous) {
+    if (!previousRecord) {
       items.push(
-        buildBaseItem(
+        buildItem(
           currentRecord,
           history,
           null,
@@ -342,10 +346,10 @@ export async function runMarketDecisionChangeDetection(
     }
     if (blocked) {
       items.push(
-        buildBaseItem(
+        buildItem(
           currentRecord,
           history,
-          previous,
+          previousRecord,
           previousFingerprint,
           currentFingerprint,
           "blocked",
@@ -358,10 +362,10 @@ export async function runMarketDecisionChangeDetection(
     }
     if (!observationChanged) {
       items.push(
-        buildBaseItem(
+        buildItem(
           currentRecord,
           history,
-          previous,
+          previousRecord,
           previousFingerprint,
           currentFingerprint,
           "no-material-change",
@@ -374,21 +378,20 @@ export async function runMarketDecisionChangeDetection(
     }
     const reassessmentRuntime =
       runMarketReassessment({
-        previousRecord:
-          previous,
+        previousRecord,
         currentRecord,
       });
     const reassessment =
       reassessmentRuntime.reassessment;
     const materialChange =
-      hasMaterialChange(
+      isMaterialReassessment(
         reassessment,
       );
     items.push(
-      buildBaseItem(
+      buildItem(
         currentRecord,
         history,
-        previous,
+        previousRecord,
         previousFingerprint,
         currentFingerprint,
         materialChange
@@ -453,23 +456,24 @@ export async function runMarketDecisionChangeDetection(
       false,
     items,
     principles: [
-      "Current decision records are generated through the existing C147.7 Decision Record runtime.",
-      "Observation fingerprints reuse the C147.11 stable fingerprint mechanism.",
-      "generatedAt-only changes do not trigger a new observation.",
-      "The latest persisted observation is the comparison baseline.",
-      "Changed observations are reassessed through the existing C147.8 reassessment engine.",
-      "Only material reassessment changes produce reassessment-required.",
-      "Change detection never writes history.",
-      "Explicit mutation remains a separate C147.11 operation.",
+      "Current records come from the existing C147.7 Decision Record runtime.",
+      "Observation fingerprints reuse the existing C147.11 fingerprint mechanism.",
+      "generatedAt-only differences are ignored by the fingerprint mechanism.",
+      "The latest persisted history entry is the comparison baseline.",
+      "Changed observations are evaluated through the existing C147.8 reassessment engine.",
+      "C147.8 assessment-change and invalidation-risk states are interpreted as requiring human reassessment when material evidence changed.",
+      "C147.12 never writes market decision history.",
+      "C147.11 explicit mutation remains separate.",
       "Human review remains mandatory.",
-      "No security is ranked.",
+      "No securities are ranked.",
       "No buy, sell, hold, target price, or probability recommendation is generated.",
       "No automated order or portfolio execution is performed.",
     ],
     humanDecisionRequired:
       true,
     storage: {
-      mode: storageMode,
+      mode:
+        storageMode,
       persistent:
         storageMode ===
         "redis",
