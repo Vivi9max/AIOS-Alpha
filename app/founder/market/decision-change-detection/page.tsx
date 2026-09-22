@@ -93,7 +93,8 @@ export default function MarketDecisionChangeDetectionPage() {
           "/api/founder/market/decision-change-detection",
           {
             method: "POST",
-            cache: "no-store",
+            cache:
+              "no-store",
             headers: {
               Accept:
                 "application/json",
@@ -148,7 +149,9 @@ export default function MarketDecisionChangeDetectionPage() {
         window.sessionStorage.removeItem(
           STORAGE_KEY,
         );
-        setSessionReady(false);
+        setSessionReady(
+          false,
+        );
         throw new Error(
           "Founder Session expired. Please enter the Founder Console again.",
         );
@@ -327,7 +330,8 @@ export default function MarketDecisionChangeDetectionPage() {
               Reads the latest persisted observation,
               generates the current decision record,
               compares fingerprints, and invokes
-              reassessment only when an observation changed.
+              C147.8 reassessment only when an
+              observation changed.
             </div>
             <button
               type="button"
