@@ -10,7 +10,6 @@ import {
   deletePersistentTask,
 } from "@/lib/task/server-store";
 import {
-  deleteMarketHumanReview,
   getMarketHumanReview,
   runMarketHumanReview,
 } from "@/lib/runtime/market/market-human-review-runtime";
@@ -334,10 +333,11 @@ export async function GET(
           "No Planner development dispatch occurs.",
           "No automated execution occurs.",
           "No trading occurs.",
-          "Regression artifacts are cleaned after verification.",
+          "The regression Task is removed after verification.",
+          "The persisted review record remains available for subsequent verification.",
         ],
         safetyBoundary:
-          "C147.15.1 verifies explicit human review persistence only. It does not generate investment advice or execute trading.",
+          "C147.15.1 verifies explicit human-review persistence and immutable duplicate protection only. It does not generate investment advice or execute trading.",
       },
     );
   } catch (error) {
@@ -378,19 +378,11 @@ export async function GET(
   } finally {
     if (taskId) {
       try {
-        await deleteMarketHumanReview(
-          taskId,
-        );
-      } catch {
-        // Regression cleanup must never replace
-        // the actual regression result.
-      }
-      try {
         await deletePersistentTask(
           taskId,
         );
       } catch {
-        // Regression cleanup must never replace
+        // Cleanup failure must never replace
         // the actual regression result.
       }
     }
