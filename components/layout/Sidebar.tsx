@@ -56,6 +56,15 @@ const menus = [
   },
 ];
 
+const marketIntelligenceLabels = {
+  en:
+    "Market Intelligence",
+  "zh-CN":
+    "市场情报",
+  ja:
+    "市場インテリジェンス",
+} as const;
+
 function isProjectActive(
   pathname: string,
   projectId: string,
@@ -72,6 +81,7 @@ function isProjectActive(
 export default function Sidebar() {
   const {
     t,
+    locale,
   } = useLanguage();
 
   const pathname =
@@ -278,6 +288,22 @@ export default function Sidebar() {
                 pathname === "/"
               );
 
+            const label =
+              item.href ===
+              "/market-intelligence"
+                ? marketIntelligenceLabels[
+                    locale
+                  ]
+                : typeof item.label ===
+                    "string" &&
+                  item.label.includes(
+                    ".",
+                  )
+                ? t(
+                    item.label as MessageKey,
+                  )
+                : item.label;
+
             return (
               <Link
                 key={
@@ -315,15 +341,7 @@ export default function Sidebar() {
                 }}
               >
                 {item.icon}{" "}
-                {typeof item.label ===
-                  "string" &&
-                item.label.includes(
-                  ".",
-                )
-                  ? t(
-                      item.label as MessageKey,
-                    )
-                  : item.label}
+                {label}
               </Link>
             );
           },
