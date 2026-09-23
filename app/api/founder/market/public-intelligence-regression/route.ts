@@ -34,6 +34,15 @@ function unauthorized() {
   );
 }
 
+function asRecord(
+  value: unknown,
+): Record<string, unknown> {
+  return value !== null &&
+    typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -50,15 +59,8 @@ export async function GET(
 
   try {
     /*
-     * Call the real public endpoint.
-     *
-     * Deliberately DO NOT forward:
-     * - Authorization
-     * - x-aios-founder-key
-     *
-     * This verifies the actual public
-     * boundary instead of only testing
-     * the underlying runtime directly.
+     * Real public boundary test:
+     * no Founder auth is forwarded.
      */
     const response =
       await fetch(
@@ -69,44 +71,57 @@ export async function GET(
         {
           method:
             "POST",
-
           headers: {
             "Content-Type":
               "application/json",
           },
-
           body:
             JSON.stringify({
               symbol:
                 "AAPL",
-
               market:
                 "us",
             }),
-
           cache:
             "no-store",
         },
       );
 
     const data =
-      (await response.json()) as Record<
-        string,
-        unknown
-      >;
+      asRecord(
+        await response.json(),
+      );
 
-    const checks: RegressionCheck[] =
-      [
+    const snapshot =
+      asRecord(
+        data.snapshot,
+      );
+
+    const verification =
+      asRecord(
+        data.verification,
+      );
+
+    const provider =
+      asRecord(
+        data.provider,
+      );
+
+    const freshness =
+      asRecord(
+        verification.freshness,
+      );
+
+    const checks:
+      RegressionCheck[] = [
         {
           name:
             "PUBLIC_HTTP_ACCESS",
-
           passed:
             response.status !==
               401 &&
             response.status !==
               403,
-
           detail:
             `Public endpoint returned HTTP ${response.status} without Founder headers.`,
         },
@@ -114,11 +129,9 @@ export async function GET(
         {
           name:
             "REAL_MARKET_RUNTIME",
-
           passed:
             data.success ===
               true,
-
           detail:
             `success=${String(
               data.success,
@@ -127,14 +140,136 @@ export async function GET(
 
         {
           name:
-            "EVIDENCE_RUNTIME_CODE",
+            "STRUCTURED_PROVIDER",
+          passed:
+            provider.provider ===
+              "alltick" &&
+            provider.configured ===
+              true &&
+            provider.available ===
+              true &&
+            verification.structuredDataAvailable ===
+              true &&
+            verification.structuredDataVerified ===
+              true,
+          detail:
+            `provider=${String(
+              provider.provider,
+            )}; structuredAvailable=${String(
+              verification.structuredDataAvailable,
+            )}; structuredVerified=${String(
+              verification.structuredDataVerified,
+            )}.`,
+        },
 
+        {
+          name:
+            "LIVE_QUOTE_AVAILABLE",
+          passed:
+            snapshot.liveQuoteAvailable ===
+              true &&
+            snapshot.dataQuality ===
+              "live" &&
+            snapshot.quoteQuality ===
+              "live",
+          detail:
+            `liveQuoteAvailable=${String(
+              snapshot.liveQuoteAvailable,
+            )}; dataQuality=${String(
+              snapshot.dataQuality,
+            )}; quoteQuality=${String(
+              snapshot.quoteQuality,
+            )}.`,
+        },
+
+        {
+          name:
+            "AS_OF_TIMESTAMP",
+          passed:
+            typeof snapshot.asOf ===
+              "string" &&
+            Number.isFinite(
+              new Date(
+                String(
+                  snapshot.asOf,
+                ),
+              ).getTime(),
+            ),
+          detail:
+            `asOf=${String(
+              snapshot.asOf ??
+                "none",
+            )}.`,
+        },
+
+        {
+          name:
+            "FRESHNESS_METADATA",
+          passed:
+            typeof freshness.freshness ===
+              "string" &&
+            typeof freshness.referenceTime ===
+              "string" &&
+            typeof freshness.ageMinutes ===
+              "number",
+          detail:
+            `freshness=${String(
+              freshness.freshness,
+            )}; ageMinutes=${String(
+              freshness.ageMinutes,
+            )}.`,
+        },
+
+        {
+          name:
+            "MARKET_COVERAGE",
+          passed:
+            Array.isArray(
+              provider.supportsMarkets,
+            ) &&
+            ["us", "hk", "cn"].every(
+              (market) =>
+                (
+                  provider.supportsMarkets as unknown[]
+                ).includes(market),
+            ),
+          detail:
+            `supportsMarkets=${JSON.stringify(
+              provider.supportsMarkets ??
+                [],
+            )}.`,
+        },
+
+        {
+          name:
+            "HISTORICAL_OHLCV",
+          passed:
+            Array.isArray(
+              snapshot.bars,
+            ) &&
+            (
+              snapshot.bars as unknown[]
+            ).length > 0 &&
+            snapshot.historicalQuality ===
+              "historical",
+          detail:
+            `bars=${String(
+              Array.isArray(
+                snapshot.bars,
+              )
+                ? snapshot.bars.length
+                : 0,
+            )}; historicalQuality=${String(
+              snapshot.historicalQuality,
+            )}.`,
+        },
+
+        {
+          name:
+            "EVIDENCE_RUNTIME_CODE",
           passed:
             data.code ===
-              "C147_2_WEB_EVIDENCE_FALLBACK" ||
-            data.code ===
               "C147_2_STRUCTURED_MARKET_DATA_PASS",
-
           detail:
             `Runtime code=${String(
               data.code ??
@@ -145,11 +280,9 @@ export async function GET(
         {
           name:
             "PUBLIC_BOUNDARY",
-
           passed:
             data.publicBoundary ===
-            "C147.21",
-
+              "C147.21",
           detail:
             `publicBoundary=${String(
               data.publicBoundary ??
@@ -160,36 +293,18 @@ export async function GET(
         {
           name:
             "IDENTITY_NOT_EXPOSED",
-
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
               "userId",
             ),
-
           detail:
             "Internal anonymous userId is not returned to the public client.",
         },
 
         {
           name:
-            "VERIFICATION_METADATA",
-
-          passed:
-            Boolean(
-              data.verification &&
-                typeof data.verification ===
-                  "object",
-            ),
-
-          detail:
-            "Market verification metadata is present.",
-        },
-
-        {
-          name:
             "NO_AUTOMATED_EXECUTION",
-
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
@@ -203,7 +318,6 @@ export async function GET(
               data,
               "tradingExecuted",
             ),
-
           detail:
             "Public response exposes no automated execution, Planner or trading result.",
         },
@@ -211,14 +325,12 @@ export async function GET(
         {
           name:
             "IDENTITY_COOKIE",
-
           passed:
             Boolean(
               response.headers.get(
                 "set-cookie",
               ),
             ),
-
           detail:
             "Anonymous Alpha identity cookie was issued server-side.",
         },
@@ -254,16 +366,43 @@ export async function GET(
 
         checks,
 
+        liveMarketVerification: {
+          provider:
+            provider.provider ??
+            null,
+          liveQuoteAvailable:
+            snapshot.liveQuoteAvailable ??
+            false,
+          dataQuality:
+            snapshot.dataQuality ??
+            "insufficient",
+          quoteQuality:
+            snapshot.quoteQuality ??
+            null,
+          historicalQuality:
+            snapshot.historicalQuality ??
+            null,
+          asOf:
+            snapshot.asOf ??
+            null,
+          freshness:
+            freshness.freshness ??
+            "unknown",
+          ageMinutes:
+            freshness.ageMinutes ??
+            null,
+          supportsMarkets:
+            provider.supportsMarkets ??
+            [],
+        },
+
         safetyBoundary: {
           founderAuthRequired:
             false,
-
           humanReviewMutation:
             false,
-
           plannerDispatched:
             false,
-
           tradingExecuted:
             false,
         },
@@ -271,27 +410,23 @@ export async function GET(
         runtime: {
           name:
             "public-market-intelligence-regression-runtime",
-
           version:
             "C147.21.1",
-
           upstream:
-            "C147.21+C147.2",
-
+            "C147.21+C147.2+C147.22",
           generatedAt:
             new Date().toISOString(),
-
           latencyMs:
             Date.now() -
             startedAt,
         },
 
         principles: [
-          "Public Market Intelligence uses the existing read-only Market Runtime.",
-          "Founder authentication is not required by the public endpoint.",
+          "Public Market Intelligence uses the read-only Market Runtime.",
+          "AllTick is the structured realtime-first provider.",
+          "Web Intelligence is fallback evidence and cannot claim live quotes.",
           "Internal anonymous identity is maintained by an HttpOnly cookie.",
           "Internal userId is not returned to the public client.",
-          "Market evidence verification remains visible.",
           "No Planner dispatch occurs.",
           "No automated trading occurs.",
           "Human-review persistence remains outside the public boundary.",
@@ -308,13 +443,10 @@ export async function GET(
       {
         success:
           false,
-
         code:
           "C147_21_1_PUBLIC_MARKET_INTELLIGENCE_REGRESSION_ERROR",
-
         stage:
           "C147.21.1",
-
         error:
           error instanceof Error
             ? error.message
