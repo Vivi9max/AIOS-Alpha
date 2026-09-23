@@ -1,27 +1,27 @@
 import {
   retrieveWebEvidence,
 } from "@/lib/web-intelligence";
-
 import {
   isAllTickConfigured,
+  probeAllTickCapabilities,
   retrieveStructuredMarketData,
 } from "./structured-provider";
-
 import {
   normalizeMarketEvidence,
 } from "./market-normalizer";
-
 import {
   guardMarketPriceIntegrity,
 } from "./market-price-integrity";
-
+import type {
+  AllTickCapabilityProbeResult,
+} from "./structured-provider";
 import type {
   MarketDataProviderStatus,
   MarketEvidence,
   MarketInstrument,
+  MarketRegion,
   MarketSnapshot,
 } from "./market-types";
-
 function normalizeSymbol(
   symbol: string,
   market: MarketInstrument["market"],
@@ -30,7 +30,6 @@ function normalizeSymbol(
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
-
   if (market === "hk") {
     return value
       .replace(/^HK:/, "")
@@ -38,7 +37,6 @@ function normalizeSymbol(
       .replace(/^0+(?=\d)/, "")
       .padStart(4, "0");
   }
-
   if (market === "cn") {
     return value
       .replace(/^SH:/, "")
@@ -46,14 +44,12 @@ function normalizeSymbol(
       .replace(/^SS:/, "")
       .replace(/\.(SH|SZ)$/, "");
   }
-
   return value
     .replace(/^NASDAQ:/, "")
     .replace(/^NYSE:/, "")
     .replace(/^US:/, "")
     .replace(/\.US$/, "");
 }
-
 export function detectMarket(
   symbol: string,
   explicitMarket?: MarketInstrument["market"] | null,
@@ -61,10 +57,8 @@ export function detectMarket(
   if (explicitMarket) {
     return explicitMarket;
   }
-
   const value =
     symbol.trim().toUpperCase();
-
   if (
     value.startsWith("HK:") ||
     /\.HK$/.test(value) ||
@@ -72,7 +66,6 @@ export function detectMarket(
   ) {
     return "hk";
   }
-
   if (
     value.startsWith("SH:") ||
     value.startsWith("SZ:") ||
@@ -82,10 +75,8 @@ export function detectMarket(
   ) {
     return "cn";
   }
-
   return "us";
 }
-
 function buildEvidence(
   result: Awaited<
     ReturnType<typeof retrieveWebEvidence>
@@ -94,179 +85,148 @@ function buildEvidence(
   return result.evidence
     .map((item) => ({
       title: item.title,
-
       url: item.url,
-
       hostname: item.hostname,
-
       snippet:
         item.snippets.join(" "),
-
       retrievedAt:
         item.retrievedAt,
-
       confidence:
         item.confidence,
     }))
     .slice(0, 12);
 }
-
 function emptySnapshot(): MarketSnapshot {
   return {
     price: null,
-
     previousClose: null,
-
     changePercent: null,
-
     open: null,
-
     high: null,
-
     low: null,
-
     volume: null,
-
     marketCap: null,
-
     pe: null,
-
     pb: null,
-
     eps: null,
-
     revenue: null,
-
     revenueGrowth: null,
-
     afterHoursPrice: null,
-
     preMarketPrice: null,
-
     dataQuality: "insufficient",
-
     liveQuoteAvailable: false,
-
     quoteQuality: "insufficient",
-
     historicalQuality: "insufficient",
-
     asOf: null,
-
     source: null,
-
     dataset: null,
-
     bars: [],
   };
 }
-
 function createWebProviderStatus(
   reason?: string,
 ): MarketDataProviderStatus {
   return {
     provider:
       "web-intelligence",
-
     configured: true,
-
     available: true,
-
     supportsQuote: false,
-
     supportsRealtime: false,
-
     supportsHistorical: false,
-
     supportsFundamentals: true,
-
     /*
-     * IMPORTANT:
-     *
-     * This is intentionally empty.
-     *
-     * Web Intelligence does not become a
-     * structured market provider simply because
-     * it is querying a particular market.
+     * Web Intelligence is evidence fallback only.
+     * It must never be represented as a structured
+     * US / HK / CN quote provider.
      */
     supportsMarkets: [],
-
     reason:
       reason ??
       "Web Intelligence evidence fallback is active; it is not a realtime structured quote provider.",
   };
 }
-
 function createStructuredProviderStatus(
   supportsHistorical: boolean,
   reason: string,
 ): MarketDataProviderStatus {
   return {
     provider: "alltick",
-
     configured: true,
-
     available: true,
-
     supportsQuote: true,
-
     supportsRealtime: true,
-
     supportsHistorical,
-
     supportsFundamentals: false,
-
     /*
      * Technical provider capability.
      *
-     * Actual entitlement for a specific symbol
-     * is still determined by the current request.
+     * This does NOT mean the current API key has
+     * entitlement for every market.
+     *
+     * Actual account entitlement and realtime
+     * verification are exposed by the capability probe.
      */
     supportsMarkets: [
       "us",
       "hk",
       "cn",
     ],
-
     reason,
   };
 }
-
+/**
+ * C147.22.3
+ *
+ * Founder / diagnostic capability probe.
+ *
+ * IMPORTANT:
+ * This function is intentionally separate from
+ * retrieveMarketData().
+ *
+ * A normal market request MUST NOT automatically
+ * trigger three additional AllTick requests.
+ *
+ * The caller should invoke this only from a
+ * controlled Founder regression / diagnostic flow.
+ */
+export async function probeStructuredMarketCapabilities(): Promise<AllTickCapabilityProbeResult> {
+  return probeAllTickCapabilities();
+}
+/**
+ * Returns the technical market capability list without
+ * claiming current account entitlement.
+ */
+export function getStructuredTechnicalMarkets(): MarketRegion[] {
+  return [
+    "us",
+    "hk",
+    "cn",
+  ];
+}
 export function isStructuredRealtimeProviderConfigured(): boolean {
   return isAllTickConfigured();
 }
-
 export async function retrieveMarketData(
   instrument: MarketInstrument,
 ): Promise<{
   snapshot: MarketSnapshot;
-
   evidence: MarketEvidence[];
-
   verified: boolean;
-
   sourceCount: number;
-
   independentDomains: number;
-
   primarySourceFound: boolean;
-
   structuredDataAvailable: boolean;
-
   structuredDataVerified: boolean;
-
   provider: MarketDataProviderStatus;
-
   error?: string;
 }> {
   let structuredError:
     | string
     | undefined;
-
   let structuredHistoricalSnapshot:
     | MarketSnapshot
     | undefined;
-
   /*
    * =========================================================
    * C147.22.2
@@ -275,20 +235,17 @@ export async function retrieveMarketData(
    *
    * =========================================================
    */
-
   try {
     const structured =
       await retrieveStructuredMarketData(
         instrument,
       );
-
     /*
      * STRICT REALTIME PASS
      *
      * Only a verified AllTick Trade Tick
      * may enter the live structured path.
      */
-
     if (
       structured.success &&
       structured.realtimeVerified &&
@@ -297,22 +254,14 @@ export async function retrieveMarketData(
       return {
         snapshot:
           structured.snapshot,
-
         evidence: [],
-
         verified: true,
-
         sourceCount:
           structured.sourceCount,
-
         independentDomains: 1,
-
         primarySourceFound: true,
-
         structuredDataAvailable: true,
-
         structuredDataVerified: true,
-
         provider:
           createStructuredProviderStatus(
             structured.historicalVerified,
@@ -322,14 +271,12 @@ export async function retrieveMarketData(
           ),
       };
     }
-
     /*
      * Historical data is retained only as a secondary
      * analytical layer.
      *
      * It is never promoted to liveQuoteAvailable.
      */
-
     if (
       structured.historicalVerified &&
       structured.snapshot.bars &&
@@ -338,7 +285,6 @@ export async function retrieveMarketData(
       structuredHistoricalSnapshot =
         structured.snapshot;
     }
-
     structuredError =
       structured.error ??
       (
@@ -352,53 +298,40 @@ export async function retrieveMarketData(
         ? error.message
         : "Structured provider failed.";
   }
-
   /*
    * =========================================================
    * WEB INTELLIGENCE FALLBACK
    * =========================================================
    */
-
   const marketName =
     instrument.market === "us"
       ? "US stock market"
       : instrument.market === "hk"
         ? "Hong Kong stock market"
         : "China A-share market";
-
   const query = [
     instrument.normalizedSymbol,
-
     marketName,
-
     "company",
-
     "financial results",
-
     "valuation",
-
     "stock price",
   ].join(" ");
-
   try {
     const webResult =
       await retrieveWebEvidence(
         query,
       );
-
     const evidence =
       buildEvidence(
         webResult,
       );
-
     const normalized =
       normalizeMarketEvidence(
         evidence,
       );
-
     let snapshot =
       normalized.snapshot;
-
     /*
      * Historical AllTick bars may still be useful
      * even when the live path is unavailable.
@@ -409,29 +342,21 @@ export async function retrieveMarketData(
     ) {
       snapshot = {
         ...snapshot,
-
         bars:
           structuredHistoricalSnapshot.bars,
-
         historicalQuality:
           "historical",
       };
     }
-
     const priceIntegrity =
       guardMarketPriceIntegrity(
         snapshot,
-
         instrument.normalizedSymbol,
-
         instrument.market,
-
         evidence,
       );
-
     snapshot =
       priceIntegrity.snapshot;
-
     /*
      * =========================================================
      * HARD SAFETY BOUNDARY
@@ -439,18 +364,14 @@ export async function retrieveMarketData(
      * Web evidence NEVER becomes realtime quote data.
      * =========================================================
      */
-
     snapshot.dataQuality =
       snapshot.price !== null
         ? "web-evidence"
         : "insufficient";
-
     snapshot.liveQuoteAvailable =
       false;
-
     snapshot.quoteQuality =
       "web-evidence";
-
     if (
       !structuredHistoricalSnapshot?.bars ||
       structuredHistoricalSnapshot.bars.length === 0
@@ -458,7 +379,6 @@ export async function retrieveMarketData(
       snapshot.historicalQuality =
         "web-evidence";
     }
-
     const domains =
       new Set(
         evidence.map((item) =>
@@ -467,25 +387,20 @@ export async function retrieveMarketData(
             .replace(/^www\./, ""),
         ),
       );
-
     const verified =
       webResult.verification
         ?.verified ?? false;
-
     const primarySourceFound =
       webResult.verification
         ?.primarySourceFound ?? false;
-
     let providerReason:
       | string
       | undefined;
-
     if (
       priceIntegrity.priceRejected
     ) {
       providerReason = [
         "Price integrity guard rejected a ticker-derived value.",
-
         priceIntegrity.reason,
       ]
         .filter(Boolean)
@@ -495,28 +410,19 @@ export async function retrieveMarketData(
     ) {
       providerReason = [
         "AllTick realtime structured verification was unavailable.",
-
         "Web Intelligence fallback used.",
-
         structuredError,
       ].join(" ");
     }
-
     return {
       snapshot,
-
       evidence,
-
       verified,
-
       sourceCount:
         webResult.sourceCount,
-
       independentDomains:
         domains.size,
-
       primarySourceFound,
-
       /*
        * Only historical structured bars count
        * as structured data here.
@@ -525,22 +431,18 @@ export async function retrieveMarketData(
         Boolean(
           structuredHistoricalSnapshot,
         ),
-
       structuredDataVerified:
         false,
-
       provider:
         createWebProviderStatus(
           providerReason,
         ),
-
       error: [
         webResult.success
           ? priceIntegrity.priceRejected
             ? priceIntegrity.reason
             : undefined
           : webResult.error,
-
         structuredError,
       ]
         .filter(Boolean)
@@ -551,40 +453,29 @@ export async function retrieveMarketData(
       error instanceof Error
         ? error.message
         : "Market evidence retrieval failed.";
-
     return {
       snapshot:
         structuredHistoricalSnapshot ??
         emptySnapshot(),
-
       evidence: [],
-
       verified: false,
-
       sourceCount: 0,
-
       independentDomains: 0,
-
       primarySourceFound: false,
-
       structuredDataAvailable:
         Boolean(
           structuredHistoricalSnapshot,
         ),
-
       structuredDataVerified:
         false,
-
       provider:
         createWebProviderStatus(
           structuredError
             ? `${structuredError}; ${message}`
             : message,
         ),
-
       error: [
         structuredError,
-
         message,
       ]
         .filter(Boolean)
@@ -592,7 +483,6 @@ export async function retrieveMarketData(
     };
   }
 }
-
 export function normalizeMarketSymbol(
   symbol: string,
   market: MarketInstrument["market"],
