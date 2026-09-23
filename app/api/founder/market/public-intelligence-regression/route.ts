@@ -59,8 +59,10 @@ export async function GET(
 
   try {
     /*
-     * Real public boundary test:
-     * no Founder auth is forwarded.
+     * IMPORTANT:
+     *
+     * This request intentionally does NOT
+     * forward Founder authentication.
      */
     const response =
       await fetch(
@@ -71,10 +73,12 @@ export async function GET(
         {
           method:
             "POST",
+
           headers: {
             "Content-Type":
               "application/json",
           },
+
           body:
             JSON.stringify({
               symbol:
@@ -82,6 +86,7 @@ export async function GET(
               market:
                 "us",
             }),
+
           cache:
             "no-store",
         },
@@ -112,16 +117,30 @@ export async function GET(
         verification.freshness,
       );
 
+    const providerReason =
+      typeof provider.reason ===
+      "string"
+        ? provider.reason
+        : "none";
+
+    const runtimeError =
+      typeof data.error ===
+      "string"
+        ? data.error
+        : "none";
+
     const checks:
       RegressionCheck[] = [
         {
           name:
             "PUBLIC_HTTP_ACCESS",
+
           passed:
             response.status !==
               401 &&
             response.status !==
               403,
+
           detail:
             `Public endpoint returned HTTP ${response.status} without Founder headers.`,
         },
@@ -129,9 +148,11 @@ export async function GET(
         {
           name:
             "REAL_MARKET_RUNTIME",
+
           passed:
             data.success ===
               true,
+
           detail:
             `success=${String(
               data.success,
@@ -141,6 +162,7 @@ export async function GET(
         {
           name:
             "STRUCTURED_PROVIDER",
+
           passed:
             provider.provider ===
               "alltick" &&
@@ -152,19 +174,37 @@ export async function GET(
               true &&
             verification.structuredDataVerified ===
               true,
+
           detail:
-            `provider=${String(
-              provider.provider,
-            )}; structuredAvailable=${String(
-              verification.structuredDataAvailable,
-            )}; structuredVerified=${String(
-              verification.structuredDataVerified,
-            )}.`,
+            [
+              `provider=${String(
+                provider.provider,
+              )}`,
+
+              `configured=${String(
+                provider.configured,
+              )}`,
+
+              `available=${String(
+                provider.available,
+              )}`,
+
+              `structuredAvailable=${String(
+                verification.structuredDataAvailable,
+              )}`,
+
+              `structuredVerified=${String(
+                verification.structuredDataVerified,
+              )}`,
+
+              `reason=${providerReason}`,
+            ].join("; "),
         },
 
         {
           name:
             "LIVE_QUOTE_AVAILABLE",
+
           passed:
             snapshot.liveQuoteAvailable ===
               true &&
@@ -172,6 +212,7 @@ export async function GET(
               "live" &&
             snapshot.quoteQuality ===
               "live",
+
           detail:
             `liveQuoteAvailable=${String(
               snapshot.liveQuoteAvailable,
@@ -185,6 +226,7 @@ export async function GET(
         {
           name:
             "AS_OF_TIMESTAMP",
+
           passed:
             typeof snapshot.asOf ===
               "string" &&
@@ -195,6 +237,7 @@ export async function GET(
                 ),
               ).getTime(),
             ),
+
           detail:
             `asOf=${String(
               snapshot.asOf ??
@@ -205,6 +248,7 @@ export async function GET(
         {
           name:
             "FRESHNESS_METADATA",
+
           passed:
             typeof freshness.freshness ===
               "string" &&
@@ -212,6 +256,7 @@ export async function GET(
               "string" &&
             typeof freshness.ageMinutes ===
               "number",
+
           detail:
             `freshness=${String(
               freshness.freshness,
@@ -223,6 +268,7 @@ export async function GET(
         {
           name:
             "MARKET_COVERAGE",
+
           passed:
             Array.isArray(
               provider.supportsMarkets,
@@ -233,6 +279,7 @@ export async function GET(
                   provider.supportsMarkets as unknown[]
                 ).includes(market),
             ),
+
           detail:
             `supportsMarkets=${JSON.stringify(
               provider.supportsMarkets ??
@@ -243,6 +290,7 @@ export async function GET(
         {
           name:
             "HISTORICAL_OHLCV",
+
           passed:
             Array.isArray(
               snapshot.bars,
@@ -252,6 +300,7 @@ export async function GET(
             ).length > 0 &&
             snapshot.historicalQuality ===
               "historical",
+
           detail:
             `bars=${String(
               Array.isArray(
@@ -267,9 +316,11 @@ export async function GET(
         {
           name:
             "EVIDENCE_RUNTIME_CODE",
+
           passed:
             data.code ===
               "C147_2_STRUCTURED_MARKET_DATA_PASS",
+
           detail:
             `Runtime code=${String(
               data.code ??
@@ -280,9 +331,11 @@ export async function GET(
         {
           name:
             "PUBLIC_BOUNDARY",
+
           passed:
             data.publicBoundary ===
               "C147.21",
+
           detail:
             `publicBoundary=${String(
               data.publicBoundary ??
@@ -293,11 +346,13 @@ export async function GET(
         {
           name:
             "IDENTITY_NOT_EXPOSED",
+
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
               "userId",
             ),
+
           detail:
             "Internal anonymous userId is not returned to the public client.",
         },
@@ -305,6 +360,7 @@ export async function GET(
         {
           name:
             "NO_AUTOMATED_EXECUTION",
+
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
@@ -318,6 +374,7 @@ export async function GET(
               data,
               "tradingExecuted",
             ),
+
           detail:
             "Public response exposes no automated execution, Planner or trading result.",
         },
@@ -325,12 +382,14 @@ export async function GET(
         {
           name:
             "IDENTITY_COOKIE",
+
           passed:
             Boolean(
               response.headers.get(
                 "set-cookie",
               ),
             ),
+
           detail:
             "Anonymous Alpha identity cookie was issued server-side.",
         },
@@ -366,31 +425,82 @@ export async function GET(
 
         checks,
 
+        /*
+         * NEW:
+         *
+         * Diagnostic information is intentionally
+         * safe for Founder Console.
+         *
+         * API key is NEVER returned.
+         */
+        structuredProviderDiagnostics: {
+          provider:
+            provider.provider ??
+            null,
+
+          configured:
+            provider.configured ??
+            false,
+
+          available:
+            provider.available ??
+            false,
+
+          supportsQuote:
+            provider.supportsQuote ??
+            false,
+
+          supportsRealtime:
+            provider.supportsRealtime ??
+            false,
+
+          supportsHistorical:
+            provider.supportsHistorical ??
+            false,
+
+          supportsMarkets:
+            provider.supportsMarkets ??
+            [],
+
+          reason:
+            providerReason,
+
+          runtimeError,
+        },
+
         liveMarketVerification: {
           provider:
             provider.provider ??
             null,
+
           liveQuoteAvailable:
             snapshot.liveQuoteAvailable ??
             false,
+
           dataQuality:
             snapshot.dataQuality ??
             "insufficient",
+
           quoteQuality:
             snapshot.quoteQuality ??
             null,
+
           historicalQuality:
             snapshot.historicalQuality ??
             null,
+
           asOf:
             snapshot.asOf ??
             null,
+
           freshness:
             freshness.freshness ??
             "unknown",
+
           ageMinutes:
             freshness.ageMinutes ??
             null,
+
           supportsMarkets:
             provider.supportsMarkets ??
             [],
@@ -399,10 +509,13 @@ export async function GET(
         safetyBoundary: {
           founderAuthRequired:
             false,
+
           humanReviewMutation:
             false,
+
           plannerDispatched:
             false,
+
           tradingExecuted:
             false,
         },
@@ -410,12 +523,16 @@ export async function GET(
         runtime: {
           name:
             "public-market-intelligence-regression-runtime",
+
           version:
             "C147.21.1",
+
           upstream:
             "C147.21+C147.2+C147.22",
+
           generatedAt:
             new Date().toISOString(),
+
           latencyMs:
             Date.now() -
             startedAt,
@@ -443,10 +560,13 @@ export async function GET(
       {
         success:
           false,
+
         code:
           "C147_21_1_PUBLIC_MARKET_INTELLIGENCE_REGRESSION_ERROR",
+
         stage:
           "C147.21.1",
+
         error:
           error instanceof Error
             ? error.message
