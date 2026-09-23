@@ -4,6 +4,10 @@ import {
   useState,
 } from "react";
 
+import {
+  useLanguage,
+} from "@/components/i18n/LanguageProvider";
+
 type MarketResult = {
   success?: boolean;
   verified?: boolean;
@@ -99,6 +103,362 @@ type MarketResult = {
   latencyMs?: number;
 };
 
+type Locale =
+  | "en"
+  | "zh-CN"
+  | "ja";
+
+const copy: Record<
+  Locale,
+  {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    research: string;
+    symbolPlaceholder: string;
+    usMarket: string;
+    hkMarket: string;
+    cnMarket: string;
+    analyze: string;
+    researching: string;
+    requestError: string;
+    requestFailed: string;
+    researchStatus: string;
+    runtimePass: string;
+    runtimeFailed: string;
+    verified: string;
+    notVerified: string;
+    structuredVerified: string;
+    webEvidence: string;
+    sources: string;
+    independentDomains: string;
+    primarySource: string;
+    yes: string;
+    no: string;
+    marketSnapshot: string;
+    symbol: string;
+    market: string;
+    price: string;
+    pe: string;
+    dataQuality: string;
+    liveQuote: string;
+    source: string;
+    asOf: string;
+    industry: string;
+    company: string;
+    fundamentals: string;
+    valuation: string;
+    risk: string;
+    riskLevel: string;
+    decisionSupport: string;
+    supportingEvidence: string;
+    invalidation: string;
+    watchMetrics: string;
+    strengths: string;
+    risks: string;
+    evidence: string;
+    noStructured: string;
+    disclaimer: string;
+  }
+> = {
+  en: {
+    eyebrow:
+      "AIOS MARKET INTELLIGENCE",
+    title:
+      "Market Intelligence",
+    subtitle:
+      "Research · Evidence · Risk",
+    research:
+      "Research",
+    symbolPlaceholder:
+      "AAPL / 0700.HK / 600519.SH",
+    usMarket:
+      "US Market",
+    hkMarket:
+      "Hong Kong Market",
+    cnMarket:
+      "China A-share",
+    analyze:
+      "Analyze Market Intelligence",
+    researching:
+      "Researching…",
+    requestError:
+      "Request Error",
+    requestFailed:
+      "Market Intelligence request failed.",
+    researchStatus:
+      "Research Status",
+    runtimePass:
+      "Runtime PASS",
+    runtimeFailed:
+      "Runtime FAILED",
+    verified:
+      "Verified",
+    notVerified:
+      "Not verified",
+    structuredVerified:
+      "Structured data verified",
+    webEvidence:
+      "Web evidence / non-structured",
+    sources:
+      "Sources",
+    independentDomains:
+      "Independent domains",
+    primarySource:
+      "Primary source",
+    yes:
+      "YES",
+    no:
+      "NO",
+    marketSnapshot:
+      "Market Snapshot",
+    symbol:
+      "Symbol",
+    market:
+      "Market",
+    price:
+      "Price",
+    pe:
+      "P/E",
+    dataQuality:
+      "Data quality",
+    liveQuote:
+      "Live quote",
+    source:
+      "Source",
+    asOf:
+      "As of",
+    industry:
+      "Industry",
+    company:
+      "Company",
+    fundamentals:
+      "Fundamentals",
+    valuation:
+      "Valuation",
+    risk:
+      "Risk",
+    riskLevel:
+      "Risk level",
+    decisionSupport:
+      "Decision Support",
+    supportingEvidence:
+      "Supporting evidence",
+    invalidation:
+      "What could invalidate it",
+    watchMetrics:
+      "Watch metrics",
+    strengths:
+      "Strengths",
+    risks:
+      "Risks",
+    evidence:
+      "Evidence",
+    noStructured:
+      "No structured information.",
+    disclaimer:
+      "AIOS provides market research, evidence and risk-review support. It does not provide personalized investment advice, rank securities, or execute trades automatically.",
+  },
+
+  "zh-CN": {
+    eyebrow:
+      "AIOS 市场情报",
+    title:
+      "市场情报",
+    subtitle:
+      "研究 · 证据 · 风险",
+    research:
+      "研究",
+    symbolPlaceholder:
+      "AAPL / 0700.HK / 600519.SH",
+    usMarket:
+      "美国市场",
+    hkMarket:
+      "香港市场",
+    cnMarket:
+      "中国 A 股",
+    analyze:
+      "分析市场情报",
+    researching:
+      "研究中…",
+    requestError:
+      "请求错误",
+    requestFailed:
+      "市场情报请求失败。",
+    researchStatus:
+      "研究状态",
+    runtimePass:
+      "Runtime 正常",
+    runtimeFailed:
+      "Runtime 失败",
+    verified:
+      "已验证",
+    notVerified:
+      "未验证",
+    structuredVerified:
+      "结构化数据已验证",
+    webEvidence:
+      "Web 证据 / 非结构化",
+    sources:
+      "来源数量",
+    independentDomains:
+      "独立域名",
+    primarySource:
+      "主要来源",
+    yes:
+      "是",
+    no:
+      "否",
+    marketSnapshot:
+      "市场快照",
+    symbol:
+      "代码",
+    market:
+      "市场",
+    price:
+      "价格",
+    pe:
+      "市盈率",
+    dataQuality:
+      "数据质量",
+    liveQuote:
+      "实时行情",
+    source:
+      "来源",
+    asOf:
+      "数据时间",
+    industry:
+      "行业",
+    company:
+      "公司",
+    fundamentals:
+      "基本面",
+    valuation:
+      "估值",
+    risk:
+      "风险",
+    riskLevel:
+      "风险等级",
+    decisionSupport:
+      "决策支持",
+    supportingEvidence:
+      "支持性证据",
+    invalidation:
+      "可能使当前判断失效的因素",
+    watchMetrics:
+      "持续观察指标",
+    strengths:
+      "优势",
+    risks:
+      "风险因素",
+    evidence:
+      "证据",
+    noStructured:
+      "暂无结构化信息。",
+    disclaimer:
+      "AIOS 提供市场研究、证据与风险审查支持，不提供个性化投资建议、不对证券进行排名，也不会自动执行交易。",
+  },
+
+  ja: {
+    eyebrow:
+      "AIOS 市場インテリジェンス",
+    title:
+      "市場インテリジェンス",
+    subtitle:
+      "リサーチ · エビデンス · リスク",
+    research:
+      "リサーチ",
+    symbolPlaceholder:
+      "AAPL / 0700.HK / 600519.SH",
+    usMarket:
+      "米国市場",
+    hkMarket:
+      "香港市場",
+    cnMarket:
+      "中国A株",
+    analyze:
+      "市場インテリジェンスを分析",
+    researching:
+      "分析中…",
+    requestError:
+      "リクエストエラー",
+    requestFailed:
+      "市場インテリジェンスのリクエストに失敗しました。",
+    researchStatus:
+      "リサーチステータス",
+    runtimePass:
+      "Runtime 正常",
+    runtimeFailed:
+      "Runtime 失敗",
+    verified:
+      "検証済み",
+    notVerified:
+      "未検証",
+    structuredVerified:
+      "構造化データ検証済み",
+    webEvidence:
+      "Web エビデンス / 非構造化",
+    sources:
+      "ソース数",
+    independentDomains:
+      "独立ドメイン",
+    primarySource:
+      "主要ソース",
+    yes:
+      "はい",
+    no:
+      "いいえ",
+    marketSnapshot:
+      "マーケットスナップショット",
+    symbol:
+      "銘柄コード",
+    market:
+      "市場",
+    price:
+      "価格",
+    pe:
+      "P/E",
+    dataQuality:
+      "データ品質",
+    liveQuote:
+      "リアルタイム価格",
+    source:
+      "ソース",
+    asOf:
+      "取得時点",
+    industry:
+      "業界",
+    company:
+      "企業",
+    fundamentals:
+      "ファンダメンタルズ",
+    valuation:
+      "バリュエーション",
+    risk:
+      "リスク",
+    riskLevel:
+      "リスクレベル",
+    decisionSupport:
+      "意思決定サポート",
+    supportingEvidence:
+      "支持するエビデンス",
+    invalidation:
+      "判断を無効化する可能性のある要因",
+    watchMetrics:
+      "継続監視指標",
+    strengths:
+      "強み",
+    risks:
+      "リスク要因",
+    evidence:
+      "エビデンス",
+    noStructured:
+      "構造化情報はありません。",
+    disclaimer:
+      "AIOS は市場リサーチ、エビデンス、リスクレビューを支援します。個別の投資助言、銘柄ランキング、自動売買は提供しません。",
+  },
+};
+
 function Section({
   title,
   children,
@@ -135,8 +495,10 @@ function Section({
 
 function List({
   items,
+  emptyText,
 }: {
   items?: string[];
+  emptyText: string;
 }) {
   if (!items?.length) {
     return (
@@ -146,7 +508,7 @@ function List({
           fontSize: 13,
         }}
       >
-        No structured information.
+        {emptyText}
       </div>
     );
   }
@@ -190,7 +552,8 @@ function Badge({
           "inline-block",
         padding:
           "4px 8px",
-        borderRadius: 999,
+        borderRadius:
+          999,
         fontSize: 11,
         background:
           ok
@@ -215,15 +578,17 @@ async function analyzeMarket(
     await fetch(
       "/api/market/intelligence",
       {
-        method: "POST",
+        method:
+          "POST",
         headers: {
           "Content-Type":
             "application/json",
         },
-        body: JSON.stringify({
-          symbol,
-          market,
-        }),
+        body:
+          JSON.stringify({
+            symbol,
+            market,
+          }),
         cache:
           "no-store",
       },
@@ -245,6 +610,13 @@ async function analyzeMarket(
 }
 
 export default function MarketIntelligencePage() {
+  const {
+    locale,
+  } = useLanguage();
+
+  const ui =
+    copy[locale];
+
   const [
     symbol,
     setSymbol,
@@ -292,7 +664,7 @@ export default function MarketIntelligencePage() {
         requestError instanceof
           Error
           ? requestError.message
-          : "Market Intelligence request failed.",
+          : ui.requestFailed,
       );
     } finally {
       setLoading(false);
@@ -346,7 +718,7 @@ export default function MarketIntelligencePage() {
                 7,
             }}
           >
-            AIOS MARKET INTELLIGENCE
+            {ui.eyebrow}
           </div>
 
           <h1
@@ -355,7 +727,7 @@ export default function MarketIntelligencePage() {
               fontSize: 28,
             }}
           >
-            Market Intelligence
+            {ui.title}
           </h1>
 
           <p
@@ -367,11 +739,13 @@ export default function MarketIntelligencePage() {
               fontSize: 14,
             }}
           >
-            Research · Evidence · Risk
+            {ui.subtitle}
           </p>
         </div>
 
-        <Section title="Research">
+        <Section
+          title={ui.research}
+        >
           <div
             style={{
               display:
@@ -390,7 +764,9 @@ export default function MarketIntelligencePage() {
                   event.target.value.toUpperCase(),
                 )
               }
-              placeholder="AAPL / 0700.HK / 600519.SH"
+              placeholder={
+                ui.symbolPlaceholder
+              }
               style={{
                 width:
                   "100%",
@@ -442,15 +818,15 @@ export default function MarketIntelligencePage() {
               }}
             >
               <option value="us">
-                US Market
+                {ui.usMarket}
               </option>
 
               <option value="hk">
-                Hong Kong Market
+                {ui.hkMarket}
               </option>
 
               <option value="cn">
-                China A-share
+                {ui.cnMarket}
               </option>
             </select>
 
@@ -489,14 +865,18 @@ export default function MarketIntelligencePage() {
               }}
             >
               {loading
-                ? "Researching…"
-                : "Analyze Market Intelligence"}
+                ? ui.researching
+                : ui.analyze}
             </button>
           </div>
         </Section>
 
         {error && (
-          <Section title="Request Error">
+          <Section
+            title={
+              ui.requestError
+            }
+          >
             <div
               style={{
                 color:
@@ -514,7 +894,11 @@ export default function MarketIntelligencePage() {
 
         {result && (
           <>
-            <Section title="Research Status">
+            <Section
+              title={
+                ui.researchStatus
+              }
+            >
               <div
                 style={{
                   display:
@@ -530,8 +914,8 @@ export default function MarketIntelligencePage() {
                   )}
                 >
                   {result.success
-                    ? "Runtime PASS"
-                    : "Runtime FAILED"}
+                    ? ui.runtimePass
+                    : ui.runtimeFailed}
                 </Badge>
 
                 <Badge
@@ -540,8 +924,8 @@ export default function MarketIntelligencePage() {
                   )}
                 >
                   {result.verified
-                    ? "Verified"
-                    : "Not verified"}
+                    ? ui.verified
+                    : ui.notVerified}
                 </Badge>
 
                 <Badge
@@ -550,8 +934,8 @@ export default function MarketIntelligencePage() {
                   )}
                 >
                   {verification?.structuredDataVerified
-                    ? "Structured data verified"
-                    : "Web evidence / non-structured"}
+                    ? ui.structuredVerified
+                    : ui.webEvidence}
                 </Badge>
               </div>
 
@@ -567,27 +951,31 @@ export default function MarketIntelligencePage() {
                     0.72,
                 }}
               >
-                Sources:{" "}
+                {ui.sources}:{" "}
                 {verification?.sourceCount ??
                   0}
 
                 <br />
 
-                Independent domains:{" "}
+                {ui.independentDomains}:{" "}
                 {verification?.independentDomains ??
                   0}
 
                 <br />
 
-                Primary source:{" "}
+                {ui.primarySource}:{" "}
                 {verification?.primarySourceFound
-                  ? "YES"
-                  : "NO"}
+                  ? ui.yes
+                  : ui.no}
               </div>
             </Section>
 
             {snapshot && (
-              <Section title="Market Snapshot">
+              <Section
+                title={
+                  ui.marketSnapshot
+                }
+              >
                 <div
                   style={{
                     display:
@@ -606,7 +994,7 @@ export default function MarketIntelligencePage() {
                           11,
                       }}
                     >
-                      Symbol
+                      {ui.symbol}
                     </div>
 
                     <strong>
@@ -627,7 +1015,7 @@ export default function MarketIntelligencePage() {
                           11,
                       }}
                     >
-                      Market
+                      {ui.market}
                     </div>
 
                     <strong>
@@ -646,7 +1034,7 @@ export default function MarketIntelligencePage() {
                           11,
                       }}
                     >
-                      Price
+                      {ui.price}
                     </div>
 
                     <strong>
@@ -664,7 +1052,7 @@ export default function MarketIntelligencePage() {
                           11,
                       }}
                     >
-                      P/E
+                      {ui.pe}
                     </div>
 
                     <strong>
@@ -686,26 +1074,26 @@ export default function MarketIntelligencePage() {
                       1.6,
                   }}
                 >
-                  Data quality:{" "}
+                  {ui.dataQuality}:{" "}
                   {snapshot.dataQuality ??
                     "N/A"}
 
                   <br />
 
-                  Live quote:{" "}
+                  {ui.liveQuote}:{" "}
                   {snapshot.liveQuoteAvailable
-                    ? "YES"
-                    : "NO"}
+                    ? ui.yes
+                    : ui.no}
 
                   <br />
 
-                  Source:{" "}
+                  {ui.source}:{" "}
                   {snapshot.source ??
                     "N/A"}
 
                   <br />
 
-                  As of:{" "}
+                  {ui.asOf}:{" "}
                   {snapshot.asOf ??
                     "N/A"}
                 </div>
@@ -713,7 +1101,11 @@ export default function MarketIntelligencePage() {
             )}
 
             {analysis?.industry && (
-              <Section title="Industry">
+              <Section
+                title={
+                  ui.industry
+                }
+              >
                 <p
                   style={{
                     lineHeight:
@@ -735,12 +1127,19 @@ export default function MarketIntelligencePage() {
                       .industry
                       .evidence
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
               </Section>
             )}
 
             {analysis?.company && (
-              <Section title="Company">
+              <Section
+                title={
+                  ui.company
+                }
+              >
                 <p
                   style={{
                     lineHeight:
@@ -762,7 +1161,7 @@ export default function MarketIntelligencePage() {
                       13,
                   }}
                 >
-                  Strengths
+                  {ui.strengths}
                 </h3>
 
                 <List
@@ -770,6 +1169,9 @@ export default function MarketIntelligencePage() {
                     analysis
                       .company
                       .strengths
+                  }
+                  emptyText={
+                    ui.noStructured
                   }
                 />
 
@@ -779,7 +1181,7 @@ export default function MarketIntelligencePage() {
                       13,
                   }}
                 >
-                  Risks
+                  {ui.risks}
                 </h3>
 
                 <List
@@ -788,12 +1190,19 @@ export default function MarketIntelligencePage() {
                       .company
                       .risks
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
               </Section>
             )}
 
             {analysis?.fundamentals && (
-              <Section title="Fundamentals">
+              <Section
+                title={
+                  ui.fundamentals
+                }
+              >
                 <p
                   style={{
                     fontSize:
@@ -814,13 +1223,20 @@ export default function MarketIntelligencePage() {
                     analysis
                       .fundamentals
                       .signals
+                  }
+                  emptyText={
+                    ui.noStructured
                   }
                 />
               </Section>
             )}
 
             {analysis?.valuation && (
-              <Section title="Valuation">
+              <Section
+                title={
+                  ui.valuation
+                }
+              >
                 <p
                   style={{
                     fontSize:
@@ -842,19 +1258,26 @@ export default function MarketIntelligencePage() {
                       .valuation
                       .signals
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
               </Section>
             )}
 
             {analysis?.risk && (
-              <Section title="Risk">
+              <Section
+                title={
+                  ui.risk
+                }
+              >
                 <p
                   style={{
                     fontSize:
                       13,
                   }}
                 >
-                  Risk level:{" "}
+                  {ui.riskLevel}:{" "}
                   <strong>
                     {analysis
                       .risk
@@ -869,12 +1292,19 @@ export default function MarketIntelligencePage() {
                       .risk
                       .factors
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
               </Section>
             )}
 
             {analysis?.decisionSupport && (
-              <Section title="Decision Support">
+              <Section
+                title={
+                  ui.decisionSupport
+                }
+              >
                 <p
                   style={{
                     fontSize:
@@ -896,7 +1326,7 @@ export default function MarketIntelligencePage() {
                       13,
                   }}
                 >
-                  Supporting evidence
+                  {ui.supportingEvidence}
                 </h3>
 
                 <List
@@ -905,6 +1335,9 @@ export default function MarketIntelligencePage() {
                       .decisionSupport
                       .supportingFactors
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
 
                 <h3
@@ -913,7 +1346,7 @@ export default function MarketIntelligencePage() {
                       13,
                   }}
                 >
-                  What could invalidate it
+                  {ui.invalidation}
                 </h3>
 
                 <List
@@ -922,6 +1355,9 @@ export default function MarketIntelligencePage() {
                       .decisionSupport
                       .invalidationConditions
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
 
                 <h3
@@ -930,7 +1366,7 @@ export default function MarketIntelligencePage() {
                       13,
                   }}
                 >
-                  Watch metrics
+                  {ui.watchMetrics}
                 </h3>
 
                 <List
@@ -939,12 +1375,19 @@ export default function MarketIntelligencePage() {
                       .decisionSupport
                       .watchMetrics
                   }
+                  emptyText={
+                    ui.noStructured
+                  }
                 />
               </Section>
             )}
 
             {result.evidence?.length ? (
-              <Section title="Evidence">
+              <Section
+                title={
+                  ui.evidence
+                }
+              >
                 {result.evidence.map(
                   (
                     item,
@@ -1013,7 +1456,7 @@ export default function MarketIntelligencePage() {
             >
               {result.metadata
                 ?.disclaimer ??
-                "AIOS provides market research, evidence and risk-review support. It does not provide personalized investment advice, rank securities, or execute trades automatically."}
+                ui.disclaimer}
             </div>
           </>
         )}
