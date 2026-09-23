@@ -162,17 +162,23 @@ export async function POST(
 
   try {
     /*
-     * C147.21 public boundary:
+     * C147.21 public runtime boundary.
      *
-     * - Reuse the existing Market Runtime.
-     * - Do not expose Founder authentication.
-     * - Do not expose persistent human-review mutation.
-     * - Do not dispatch Planner.
-     * - Do not execute trading.
+     * Public requests may:
+     * - research a security
+     * - retrieve external evidence
+     * - analyze evidence
+     * - expose verification/freshness metadata
      *
-     * Public requests are limited to the
-     * research-oriented market intelligence
-     * runtime.
+     * Public requests may not:
+     * - use Founder authentication
+     * - create human-review Tasks
+     * - persist market decisions
+     * - dispatch Planner
+     * - execute trading
+     *
+     * The public route reuses the existing
+     * read-only Market Runtime.
      */
     const result =
       await analyzeMarketRequest({
@@ -190,17 +196,17 @@ export async function POST(
       NextResponse.json(
         {
           ...result,
+
           publicBoundary:
             "C147.21",
-          identityMode:
-            "anonymous-alpha",
+
           dataIsolated:
             true,
-          userId:
-            identity.userId,
+
           latencyMs:
             Date.now() -
             startedAt,
+
           timestamp:
             Date.now(),
         },
@@ -209,11 +215,18 @@ export async function POST(
             result.success
               ? 200
               : 502,
+
           headers:
             headers(),
         },
       );
 
+    /*
+     * The identity cookie is retained for
+     * future user-scoped features, but the
+     * internal userId is deliberately NOT
+     * returned in the public response.
+     */
     return applyIdentityCookie(
       response,
       identity.userId,
@@ -223,26 +236,30 @@ export async function POST(
       NextResponse.json(
         {
           success: false,
+
           verified: false,
+
           code:
             "C147_21_MARKET_INTELLIGENCE_ERROR",
+
           message:
             "Market Intelligence is temporarily unavailable.",
+
           error:
             error instanceof Error
               ? error.message
               : "Unknown market intelligence error.",
+
           publicBoundary:
             "C147.21",
-          identityMode:
-            "anonymous-alpha",
+
           dataIsolated:
             true,
-          userId:
-            identity.userId,
+
           latencyMs:
             Date.now() -
             startedAt,
+
           timestamp:
             Date.now(),
         },
