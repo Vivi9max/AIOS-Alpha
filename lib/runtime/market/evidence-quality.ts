@@ -22,19 +22,14 @@ function qualityThresholdMinutes(
   switch (quality) {
     case "live":
       return 15;
-
     case "delayed":
       return 24 * 60;
-
     case "historical":
       return 24 * 60;
-
     case "web-evidence":
       return 24 * 60;
-
     case "insufficient":
       return null;
-
     default:
       return null;
   }
@@ -55,9 +50,8 @@ export function assessMarketFreshness(
     };
   }
 
-  const referenceMs = new Date(
-    snapshot.asOf,
-  ).getTime();
+  const referenceMs =
+    new Date(snapshot.asOf).getTime();
 
   if (!Number.isFinite(referenceMs)) {
     return {
@@ -123,6 +117,8 @@ export function buildMarketDataQualitySummary(
 ): {
   dataQuality: MarketDataQuality;
   liveQuoteAvailable: boolean;
+  quoteQuality: MarketDataQuality;
+  historicalQuality: MarketDataQuality;
   freshness: MarketFreshness;
   ageMinutes: number | null;
   ageHours: number | null;
@@ -131,9 +127,7 @@ export function buildMarketDataQualitySummary(
   dataset: string | null;
 } {
   const freshness =
-    assessMarketFreshness(
-      snapshot,
-    );
+    assessMarketFreshness(snapshot);
 
   return {
     dataQuality:
@@ -141,6 +135,14 @@ export function buildMarketDataQualitySummary(
 
     liveQuoteAvailable:
       snapshot.liveQuoteAvailable,
+
+    quoteQuality:
+      snapshot.quoteQuality ??
+      snapshot.dataQuality,
+
+    historicalQuality:
+      snapshot.historicalQuality ??
+      snapshot.dataQuality,
 
     freshness:
       freshness.freshness,
@@ -160,4 +162,32 @@ export function buildMarketDataQualitySummary(
     dataset:
       snapshot.dataset ?? null,
   };
+}
+
+/*
+ * Safety invariant:
+ * web evidence can never claim a live quote.
+ */
+export function assertMarketQualityIntegrity(
+  snapshot: MarketSnapshot,
+): void {
+  if (
+    snapshot.dataQuality ===
+      "web-evidence" &&
+    snapshot.liveQuoteAvailable
+  ) {
+    throw new Error(
+      "Market quality integrity violation: web-evidence cannot claim liveQuoteAvailable=true.",
+    );
+  }
+
+  if (
+    snapshot.quoteQuality ===
+      "live" &&
+    !snapshot.liveQuoteAvailable
+  ) {
+    throw new Error(
+      "Market quality integrity violation: quoteQuality=live requires liveQuoteAvailable=true.",
+    );
+  }
 }
