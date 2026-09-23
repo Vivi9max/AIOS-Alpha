@@ -33,7 +33,7 @@ const menus = [
   {
     icon: "🧭",
     label:
-      "Market Intelligence",
+      "Market Research",
     href:
       "/market-intelligence",
   },
@@ -45,7 +45,8 @@ const menus = [
   },
   {
     icon: "💳",
-    label: "Plans",
+    label:
+      "Plans",
     href: "/billing",
   },
   {
@@ -56,13 +57,13 @@ const menus = [
   },
 ];
 
-const marketIntelligenceLabels = {
+const marketResearchLabels = {
   en:
-    "Market Intelligence",
+    "Market Research",
   "zh-CN":
-    "市场情报",
+    "市场研究",
   ja:
-    "市場インテリジェンス",
+    "市場リサーチ",
 } as const;
 
 function isProjectActive(
@@ -291,7 +292,7 @@ export default function Sidebar() {
             const label =
               item.href ===
               "/market-intelligence"
-                ? marketIntelligenceLabels[
+                ? marketResearchLabels[
                     locale
                   ]
                 : typeof item.label ===
