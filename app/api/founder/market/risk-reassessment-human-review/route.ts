@@ -20,14 +20,18 @@ export const runtime =
 function unauthorized() {
   return NextResponse.json(
     {
-      success: false,
+      success:
+        false,
+
       code:
         "FOUNDER_AUTH_REQUIRED",
+
       error:
         "Founder authentication required.",
     },
     {
-      status: 401,
+      status:
+        401,
     },
   );
 }
@@ -61,25 +65,34 @@ export async function POST(
             : 422,
       },
     );
-  } catch (error) {
+  } catch (
+    error
+  ) {
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         code:
           "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_ERROR",
+
         error:
           error instanceof Error
             ? error.message
             : "C147.19 human-review runtime failed.",
+
         automatedExecutionStarted:
           false,
+
         plannerDispatched:
           false,
+
         tradingExecuted:
           false,
       },
       {
-        status: 500,
+        status:
+          500,
       },
     );
   }
