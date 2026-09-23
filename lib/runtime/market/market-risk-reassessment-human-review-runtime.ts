@@ -88,7 +88,7 @@ function basePrinciples(): string[] {
     "A material reassessment creates an explicit persistent human-review Task.",
     "The runtime never infers a human decision.",
     "The runtime never converts silence into approval.",
-    "An explicit decision is persisted only through the existing C147.15 runtime.",
+    "An explicit decision is persisted only through C147.15.",
     "Existing C147.15 review records remain immutable.",
     "C147.16 remains the read-only history layer.",
     "No Planner development dispatch occurs.",
@@ -99,8 +99,11 @@ function basePrinciples(): string[] {
 }
 
 export async function runMarketRiskReassessmentHumanReview(
-  request: MarketRiskReassessmentHumanReviewRequest,
-): Promise<MarketRiskReassessmentHumanReviewResult> {
+  request:
+    MarketRiskReassessmentHumanReviewRequest,
+): Promise<
+  MarketRiskReassessmentHumanReviewResult
+> {
   const startedAt =
     Date.now();
 
@@ -131,31 +134,43 @@ export async function runMarketRiskReassessmentHumanReview(
     symbol,
     market,
     bridge,
+
     reassessmentRequired:
       bridge.reassessmentRequired,
+
     humanDecisionRequired:
       true as const,
+
     automatedExecutionStarted:
       false as const,
+
     plannerDispatched:
       false as const,
+
     tradingExecuted:
       false as const,
+
     runtime: {
       name:
         "market-risk-reassessment-human-review-runtime" as const,
+
       version:
         "C147.19" as const,
+
       upstream:
         "C147.18+C147.15" as const,
+
       generatedAt:
         new Date().toISOString(),
+
       latencyMs:
         Date.now() -
         startedAt,
     },
+
     principles:
       basePrinciples(),
+
     disclaimer:
       "C147.19 connects risk reassessment to persistent human review. It does not rank securities, predict returns, provide personalized investment advice, or execute trades.",
   };
@@ -165,22 +180,32 @@ export async function runMarketRiskReassessmentHumanReview(
     !bridge.success
   ) {
     return {
-      success: false,
+      success:
+        false,
+
       code:
         "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_INSUFFICIENT",
+
       action:
         "insufficient-evidence",
+
       taskId:
         null,
+
       review:
         null,
+
       existingReview:
         null,
+
       mutationPerformed:
         false,
+
       ...base,
+
       runtime: {
         ...base.runtime,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -192,22 +217,32 @@ export async function runMarketRiskReassessmentHumanReview(
     !bridge.reassessmentRequired
   ) {
     return {
-      success: true,
+      success:
+        true,
+
       code:
         "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_BLOCKED",
+
       action:
         "review-blocked",
+
       taskId:
         null,
+
       review:
         null,
+
       existingReview:
         null,
+
       mutationPerformed:
         false,
+
       ...base,
+
       runtime: {
         ...base.runtime,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -221,15 +256,23 @@ export async function runMarketRiskReassessmentHumanReview(
       200,
     ) || null;
 
-  if (!taskId) {
+  if (
+    !taskId
+  ) {
     const reassessmentId =
-      bridge.reassessment?.reassessmentId ??
+      bridge.reassessment
+        ?.reassessmentId ??
       `C14719-${Date.now()}`;
 
+    /*
+     * C147.17 exposes risks[].
+     * MarketRiskItem exposes id.
+     * Do not use the non-existent riskItems/riskId fields.
+     */
     const eventId =
       bridge.riskControl
-        .riskItems?.[0]
-        ?.riskId ??
+        .risks[0]
+        ?.id ??
       null;
 
     const task =
@@ -251,28 +294,36 @@ export async function runMarketRiskReassessmentHumanReview(
       task.id;
   }
 
-  const existing =
-    await getMarketHumanReview(
-      taskId,
-    );
-
-  if (existing) {
+  if (
+    !taskId
+  ) {
     return {
-      success: true,
+      success:
+        false,
+
       code:
-        "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_ALREADY_RECORDED",
+        "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_BLOCKED",
+
       action:
-        "review-already-recorded",
-      taskId,
+        "review-blocked",
+
+      taskId:
+        null,
+
       review:
-        existing,
+        null,
+
       existingReview:
-        existing,
+        null,
+
       mutationPerformed:
         false,
+
       ...base,
+
       runtime: {
         ...base.runtime,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -280,27 +331,86 @@ export async function runMarketRiskReassessmentHumanReview(
     };
   }
 
+  const existing =
+    await getMarketHumanReview(
+      taskId,
+    );
+
+  if (
+    existing
+  ) {
+    return {
+      success:
+        true,
+
+      code:
+        "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_ALREADY_RECORDED",
+
+      action:
+        "review-already-recorded",
+
+      taskId,
+
+      review:
+        existing,
+
+      existingReview:
+        existing,
+
+      mutationPerformed:
+        false,
+
+      ...base,
+
+      runtime: {
+        ...base.runtime,
+
+        latencyMs:
+          Date.now() -
+          startedAt,
+      },
+    };
+  }
+
+  /*
+   * No decision means:
+   *
+   * Task exists
+   * Human decision is still pending
+   * No review record is created
+   * No downstream execution occurs
+   */
   if (
     !isDecision(
       request.decision,
     )
   ) {
     return {
-      success: true,
+      success:
+        true,
+
       code:
         "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_TASK_CREATED",
+
       action:
         "review-task-created",
+
       taskId,
+
       review:
         null,
+
       existingReview:
         null,
+
       mutationPerformed:
         true,
+
       ...base,
+
       runtime: {
         ...base.runtime,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -308,11 +418,17 @@ export async function runMarketRiskReassessmentHumanReview(
     };
   }
 
+  /*
+   * C147.15 remains the only persistence path
+   * for an explicit human decision.
+   */
   const review =
     await runMarketHumanReview({
       taskId,
+
       decision:
         request.decision,
+
       reviewerNote:
         request.reviewerNote ??
         null,
@@ -322,21 +438,31 @@ export async function runMarketRiskReassessmentHumanReview(
     !review.success
   ) {
     return {
-      success: false,
+      success:
+        false,
+
       code:
         "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_BLOCKED",
+
       action:
         "review-blocked",
+
       taskId,
+
       review:
         null,
+
       existingReview:
         review.existingReview,
+
       mutationPerformed:
         false,
+
       ...base,
+
       runtime: {
         ...base.runtime,
+
         latencyMs:
           Date.now() -
           startedAt,
@@ -345,21 +471,31 @@ export async function runMarketRiskReassessmentHumanReview(
   }
 
   return {
-    success: true,
+    success:
+      true,
+
     code:
       "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_RECORDED",
+
     action:
       "review-recorded",
+
     taskId,
+
     review:
       review.review,
+
     existingReview:
       null,
+
     mutationPerformed:
       true,
+
     ...base,
+
     runtime: {
       ...base.runtime,
+
       latencyMs:
         Date.now() -
         startedAt,
