@@ -114,17 +114,14 @@ export interface MarketSemanticSnapshot {
   high: MarketSemanticValue;
   low: MarketSemanticValue;
   volume: MarketSemanticValue;
-
   afterHoursPrice: MarketSemanticValue;
   preMarketPrice: MarketSemanticValue;
-
   marketCap: MarketSemanticValue;
   pe: MarketSemanticValue;
   pb: MarketSemanticValue;
   eps: MarketSemanticValue;
   revenue: MarketSemanticValue;
   revenueGrowth: MarketSemanticValue;
-
   regularSessionPrice: MarketSemanticValue;
 }
 
@@ -132,24 +129,25 @@ export interface MarketSnapshot {
   price?: number | null;
   previousClose?: number | null;
   changePercent?: number | null;
-
   open?: number | null;
   high?: number | null;
   low?: number | null;
   volume?: number | null;
-
   marketCap?: number | null;
   pe?: number | null;
   pb?: number | null;
   eps?: number | null;
   revenue?: number | null;
   revenueGrowth?: number | null;
-
   afterHoursPrice?: number | null;
   preMarketPrice?: number | null;
 
   dataQuality: MarketDataQuality;
   liveQuoteAvailable: boolean;
+
+  /* Explicit semantic quality labels. */
+  quoteQuality?: MarketDataQuality;
+  historicalQuality?: MarketDataQuality;
 
   asOf?: string | null;
   source?: string | null;
@@ -181,6 +179,7 @@ export interface MarketDataProviderStatus {
   configured: boolean;
   available: boolean;
   supportsQuote: boolean;
+  supportsRealtime?: boolean;
   supportsHistorical: boolean;
   supportsFundamentals: boolean;
   supportsMarkets: MarketRegion[];
@@ -192,44 +191,36 @@ export interface MarketAnalysis {
     summary: string;
     evidence: string[];
   };
-
   company: {
     summary: string;
     strengths: string[];
     risks: string[];
   };
-
   fundamentals: {
     assessment: string;
     signals: string[];
   };
-
   valuation: {
     assessment: string;
     signals: string[];
   };
-
   trend: {
     assessment: string;
     signals: string[];
   };
-
   risk: {
     level:
       | "low"
       | "medium"
       | "high"
       | "unknown";
-
     factors: string[];
   };
-
   decisionSupport: {
     currentState: string;
     supportingFactors: string[];
     invalidationConditions: string[];
     watchMetrics: string[];
-
     scenarios: Array<{
       name: string;
       condition: string;
@@ -256,13 +247,9 @@ export interface MarketFreshnessVerification {
 export interface MarketAnalysisResult {
   success: boolean;
   code: string;
-
   instrument: MarketInstrument;
-
   snapshot: MarketSnapshot;
-
   analysis: MarketAnalysis;
-
   evidence: MarketEvidence[];
 
   verification: {
@@ -270,10 +257,8 @@ export interface MarketAnalysisResult {
     sourceCount: number;
     independentDomains: number;
     primarySourceFound: boolean;
-
     structuredDataAvailable: boolean;
     structuredDataVerified: boolean;
-
     freshness: MarketFreshnessVerification;
   };
 
@@ -289,7 +274,6 @@ export interface MarketAnalysisResult {
 
     analysisMode: MarketAnalysisMode;
     generatedAt: string;
-
     disclaimer: string;
   };
 
