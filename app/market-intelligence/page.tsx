@@ -2,6 +2,7 @@
 
 import {
   useState,
+  type ReactNode,
 } from "react";
 
 import {
@@ -110,86 +111,94 @@ type MarketResult = {
     disclaimer?: string;
   };
 
+  publicBoundary?: string;
+  dataIsolated?: boolean;
   latencyMs?: number;
+};
+
+type Copy = {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+
+  research: string;
+  symbolPlaceholder: string;
+
+  usMarket: string;
+  hkMarket: string;
+  cnMarket: string;
+
+  analyze: string;
+  researching: string;
+
+  requestError: string;
+  requestFailed: string;
+
+  researchStatus: string;
+  runtimePass: string;
+  runtimeFailed: string;
+
+  verified: string;
+  notVerified: string;
+
+  structuredVerified: string;
+  webEvidence: string;
+
+  sources: string;
+  independentDomains: string;
+  primarySource: string;
+
+  yes: string;
+  no: string;
+
+  marketSnapshot: string;
+  symbol: string;
+  market: string;
+  price: string;
+  pe: string;
+
+  dataQuality: string;
+  liveQuote: string;
+  source: string;
+  asOf: string;
+
+  industry: string;
+  company: string;
+  fundamentals: string;
+  valuation: string;
+  trend: string;
+  risk: string;
+
+  riskLevel: string;
+  decisionSupport: string;
+
+  supportingEvidence: string;
+  invalidation: string;
+  watchMetrics: string;
+
+  strengths: string;
+  risks: string;
+
+  evidence: string;
+  originalEvidence: string;
+  openOriginalEvidence: string;
+
+  noStructured: string;
+  noEvidence: string;
+
+  disclaimer: string;
 };
 
 const copy: Record<
   Locale,
-  {
-    eyebrow: string;
-    title: string;
-    subtitle: string;
-    research: string;
-    symbolPlaceholder: string;
-
-    usMarket: string;
-    hkMarket: string;
-    cnMarket: string;
-
-    analyze: string;
-    researching: string;
-
-    requestError: string;
-    requestFailed: string;
-
-    researchStatus: string;
-    runtimePass: string;
-    runtimeFailed: string;
-    verified: string;
-    notVerified: string;
-    structuredVerified: string;
-    webEvidence: string;
-
-    sources: string;
-    independentDomains: string;
-    primarySource: string;
-
-    yes: string;
-    no: string;
-
-    marketSnapshot: string;
-    symbol: string;
-    market: string;
-    price: string;
-    pe: string;
-
-    dataQuality: string;
-    liveQuote: string;
-    source: string;
-    asOf: string;
-
-    industry: string;
-    company: string;
-    fundamentals: string;
-    valuation: string;
-    trend: string;
-    risk: string;
-
-    riskLevel: string;
-    decisionSupport: string;
-    supportingEvidence: string;
-    invalidation: string;
-    watchMetrics: string;
-
-    strengths: string;
-    risks: string;
-
-    evidence: string;
-    originalEvidence: string;
-    openOriginalEvidence: string;
-
-    noStructured: string;
-    noEvidence: string;
-
-    disclaimer: string;
-  }
+  Copy
 > = {
   en: {
     eyebrow:
-      "AIOS MARKET INTELLIGENCE",
+      "AIOS MARKET RESEARCH",
 
     title:
-      "Market Intelligence",
+      "Market Research",
 
     subtitle:
       "Research · Evidence · Risk",
@@ -210,7 +219,7 @@ const copy: Record<
       "China A-share",
 
     analyze:
-      "Analyze Market Intelligence",
+      "Analyze Market Research",
 
     researching:
       "Researching…",
@@ -219,7 +228,7 @@ const copy: Record<
       "Request Error",
 
     requestFailed:
-      "Market Intelligence request failed.",
+      "Market Research request failed.",
 
     researchStatus:
       "Research Status",
@@ -344,10 +353,10 @@ const copy: Record<
 
   "zh-CN": {
     eyebrow:
-      "AIOS 市场情报",
+      "AIOS 市场研究",
 
     title:
-      "市场情报",
+      "市场研究",
 
     subtitle:
       "研究 · 证据 · 风险",
@@ -368,7 +377,7 @@ const copy: Record<
       "中国 A 股",
 
     analyze:
-      "分析市场情报",
+      "分析市场研究",
 
     researching:
       "研究中…",
@@ -377,7 +386,7 @@ const copy: Record<
       "请求错误",
 
     requestFailed:
-      "市场情报请求失败。",
+      "市场研究请求失败。",
 
     researchStatus:
       "研究状态",
@@ -502,10 +511,10 @@ const copy: Record<
 
   ja: {
     eyebrow:
-      "AIOS 市場インテリジェンス",
+      "AIOS 市場リサーチ",
 
     title:
-      "市場インテリジェンス",
+      "市場リサーチ",
 
     subtitle:
       "リサーチ · エビデンス · リスク",
@@ -526,7 +535,7 @@ const copy: Record<
       "中国A株",
 
     analyze:
-      "市場インテリジェンスを分析",
+      "市場リサーチを分析",
 
     researching:
       "分析中…",
@@ -535,7 +544,7 @@ const copy: Record<
       "リクエストエラー",
 
     requestFailed:
-      "市場インテリジェンスのリクエストに失敗しました。",
+      "市場リサーチのリクエストに失敗しました。",
 
     researchStatus:
       "リサーチステータス",
@@ -664,13 +673,13 @@ function Section({
   children,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section
       style={{
         marginTop: 14,
-        padding: 18,
+        padding: 16,
         border:
           "1px solid rgba(255,255,255,0.09)",
         borderRadius: 14,
@@ -683,6 +692,7 @@ function Section({
           margin:
             "0 0 12px",
           fontSize: 16,
+          fontWeight: 800,
         }}
       >
         {title}
@@ -696,9 +706,11 @@ function Section({
 function List({
   items,
   emptyText,
+  locale,
 }: {
   items?: string[];
   emptyText: string;
+  locale: Locale;
 }) {
   if (!items?.length) {
     return (
@@ -730,7 +742,10 @@ function List({
           <li
             key={`${item}-${index}`}
           >
-            {item}
+            {translateRuntimeText(
+              locale,
+              item,
+            )}
           </li>
         ),
       )}
@@ -743,7 +758,7 @@ function Badge({
   children,
 }: {
   ok: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <span
@@ -773,12 +788,14 @@ function Badge({
 function marketLabel(
   locale: Locale,
   market?: string,
-): string {
+) {
   if (locale === "zh-CN") {
     if (market === "us")
       return "美国";
+
     if (market === "hk")
       return "香港";
+
     if (market === "cn")
       return "中国A股";
   }
@@ -786,8 +803,10 @@ function marketLabel(
   if (locale === "ja") {
     if (market === "us")
       return "米国";
+
     if (market === "hk")
       return "香港";
+
     if (market === "cn")
       return "中国A株";
   }
@@ -807,16 +826,20 @@ function marketLabel(
 function dataQualityLabel(
   locale: Locale,
   value?: string,
-): string {
+) {
   if (locale === "zh-CN") {
     if (value === "web-evidence")
       return "Web 证据";
+
     if (value === "live")
       return "实时数据";
+
     if (value === "delayed")
       return "延迟数据";
+
     if (value === "historical")
       return "历史数据";
+
     if (value === "insufficient")
       return "数据不足";
   }
@@ -824,12 +847,16 @@ function dataQualityLabel(
   if (locale === "ja") {
     if (value === "web-evidence")
       return "Web エビデンス";
+
     if (value === "live")
       return "リアルタイムデータ";
+
     if (value === "delayed")
       return "遅延データ";
+
     if (value === "historical")
       return "過去データ";
+
     if (value === "insufficient")
       return "データ不足";
   }
@@ -840,31 +867,37 @@ function dataQualityLabel(
 function riskLevelLabel(
   locale: Locale,
   value?: string,
-): string {
+) {
   if (locale === "zh-CN") {
     if (value === "low")
       return "低";
+
     if (value === "medium")
       return "中";
+
     if (value === "high")
       return "高";
+
     return "未知";
   }
 
   if (locale === "ja") {
     if (value === "low")
       return "低";
+
     if (value === "medium")
       return "中";
+
     if (value === "high")
       return "高";
+
     return "不明";
   }
 
   return value ?? "unknown";
 }
 
-function generatedText(
+function translateRuntimeText(
   locale: Locale,
   value?: string,
 ): string {
@@ -874,93 +907,206 @@ function generatedText(
   if (locale === "en")
     return value;
 
-  if (locale === "zh-CN") {
-    const exact: Record<
-      string,
+  const exact: Record<
+    string,
+    Record<
+      "zh-CN" | "ja",
       string
-    > = {
-      "Company-level context was collected from external evidence and should be reviewed against primary filings.":
+    >
+  > = {
+    "Company-level context was collected from external evidence and should be reviewed against primary filings.": {
+      "zh-CN":
         "已从外部证据收集公司层面信息，应结合公司主要申报文件进一步核验。",
+      ja:
+        "外部エビデンスから企業レベルの情報を収集しました。主要開示資料との照合が必要です。",
+    },
 
-      "Insufficient company-level evidence.":
+    "Insufficient company-level evidence.": {
+      "zh-CN":
         "公司层面证据不足。",
+      ja:
+        "企業レベルのエビデンスが不足しています。",
+    },
 
-      "Fundamental operating signals were detected.":
+    "Fundamental operating signals were detected.": {
+      "zh-CN":
         "检测到基本面经营信号。",
+      ja:
+        "ファンダメンタルズ上の事業シグナルが検出されました。",
+    },
 
-      "Multiple external sources were retrieved.":
+    "Multiple external sources were retrieved.": {
+      "zh-CN":
         "已获取多个外部来源。",
+      ja:
+        "複数の外部ソースを取得しました。",
+    },
 
-      "Some fundamental indicators were detected and should be validated against company filings.":
+    "Some fundamental indicators were detected and should be validated against company filings.": {
+      "zh-CN":
         "检测到部分基本面指标，应结合公司披露文件进一步验证。",
+      ja:
+        "一部のファンダメンタル指標が検出されました。企業開示資料との照合が必要です。",
+    },
 
-      "Insufficient structured fundamental data.":
+    "Insufficient structured fundamental data.": {
+      "zh-CN":
         "结构化基本面数据不足。",
+      ja:
+        "構造化されたファンダメンタルデータが不足しています。",
+    },
 
-      "Valuation indicators were detected but no peer-based valuation conclusion is made automatically.":
+    "Valuation indicators were detected but no peer-based valuation conclusion is made automatically.": {
+      "zh-CN":
         "检测到估值指标，但系统不会自动形成基于同行比较的估值结论。",
+      ja:
+        "バリュエーション指標が検出されましたが、比較企業に基づく結論を自動生成していません。",
+    },
 
-      "Insufficient valuation data.":
+    "Insufficient valuation data.": {
+      "zh-CN":
         "估值数据不足。",
+      ja:
+        "バリュエーションデータが不足しています。",
+    },
 
-      "Market-movement signals were detected from external evidence.":
+    "Market-movement signals were detected from external evidence.": {
+      "zh-CN":
         "从外部证据中检测到市场波动信号。",
+      ja:
+        "外部エビデンスから市場変動シグナルが検出されました。",
+    },
 
-      "No reliable trend signal was extracted.":
+    "No reliable trend signal was extracted.": {
+      "zh-CN":
         "没有提取到可靠的趋势信号。",
+      ja:
+        "信頼できるトレンドシグナルは抽出されませんでした。",
+    },
 
-      "The current snapshot is not a verified exchange real-time quote.":
+    "The current snapshot is not a verified exchange real-time quote.": {
+      "zh-CN":
         "当前快照不是经过验证的交易所实时行情。",
+      ja:
+        "現在のスナップショットは、検証済みの取引所リアルタイム価格ではありません。",
+    },
 
-      "Evidence breadth is limited; additional independent sources should be checked before making a decision.":
+    "Evidence breadth is limited; additional independent sources should be checked before making a decision.": {
+      "zh-CN":
         "证据覆盖范围有限，在作出判断前应继续检查更多独立来源。",
+      ja:
+        "エビデンスの範囲が限定されています。判断前に追加の独立ソースを確認する必要があります。",
+    },
 
-      "Valuation metrics were not reliably extracted from the available evidence.":
+    "Valuation metrics were not reliably extracted from the available evidence.": {
+      "zh-CN":
         "无法从现有证据中可靠提取估值指标。",
+      ja:
+        "利用可能なエビデンスから信頼できるバリュエーション指標を抽出できませんでした。",
+    },
 
-      "Live market data is available.":
+    "Live market data is available.": {
+      "zh-CN":
         "当前有实时市场数据。",
+      ja:
+        "リアルタイム市場データが利用可能です。",
+    },
 
-      "Current state is evidence-based rather than verified real-time market data.":
+    "Current state is evidence-based rather than verified real-time market data.": {
+      "zh-CN":
         "当前状态基于外部证据，而不是经过验证的实时市场数据。",
+      ja:
+        "現在の状態は、検証済みリアルタイム市場データではなく、エビデンスに基づいています。",
+    },
 
-      "Key financial assumptions deteriorate materially.":
+    "Key financial assumptions deteriorate materially.": {
+      "zh-CN":
         "关键财务假设发生重大恶化。",
+      ja:
+        "主要な財務前提が大幅に悪化します。",
+    },
 
-      "New regulatory, competitive, or company-specific evidence invalidates the current thesis.":
+    "New regulatory, competitive, or company-specific evidence invalidates the current thesis.": {
+      "zh-CN":
         "新的监管、竞争或公司层面证据使当前判断失效。",
+      ja:
+        "新たな規制、競争環境、企業固有のエビデンスにより現在の判断が無効になります。",
+    },
 
-      "A verified live market-data source contradicts the currently observed price information.":
+    "A verified live market-data source contradicts the currently observed price information.": {
+      "zh-CN":
         "经过验证的实时市场数据与当前观察到的价格信息出现冲突。",
+      ja:
+        "検証済みリアルタイム市場データが現在観測されている価格情報と矛盾します。",
+    },
 
-      "Revenue growth":
+    "Revenue growth": {
+      "zh-CN":
         "营收增长",
+      ja:
+        "売上高成長率",
+    },
 
-      "EPS / profitability":
+    "EPS / profitability": {
+      "zh-CN":
         "EPS / 盈利能力",
+      ja:
+        "EPS / 収益性",
+    },
 
-      "Free cash flow":
+    "Free cash flow": {
+      "zh-CN":
         "自由现金流",
+      ja:
+        "フリーキャッシュフロー",
+    },
 
-      "P/E and P/B relative to comparable companies":
+    "P/E and P/B relative to comparable companies": {
+      "zh-CN":
         "相对于可比公司的 P/E 与 P/B",
+      ja:
+        "比較企業に対する P/E と P/B",
+    },
 
-      "Debt and liquidity":
+    "Debt and liquidity": {
+      "zh-CN":
         "债务与流动性",
+      ja:
+        "負債と流動性",
+    },
 
-      "Industry growth":
+    "Industry growth": {
+      "zh-CN":
         "行业增长",
+      ja:
+        "業界成長率",
+    },
 
-      "Material company or regulatory news":
+    "Material company or regulatory news": {
+      "zh-CN":
         "重大公司或监管新闻",
+      ja:
+        "重要な企業・規制ニュース",
+    },
 
-      "Verified market price and volume":
+    "Verified market price and volume": {
+      "zh-CN":
         "经过验证的市场价格与成交量",
-    };
+      ja:
+        "検証済み市場価格と出来高",
+    },
+  };
 
-    if (exact[value])
-      return exact[value];
+  if (
+    locale !== "en" &&
+    exact[value]
+  ) {
+    return exact[value][
+      locale
+    ];
+  }
 
+  if (locale === "zh-CN") {
     const revenue =
       value.match(
         /^Reported revenue-growth signal is positive at approximately (.+)%\.$/,
@@ -1021,9 +1167,6 @@ function generatedText(
       );
 
     if (industry) {
-      const industryName =
-        industry[1];
-
       const mapped: Record<
         string,
         string
@@ -1043,8 +1186,8 @@ function generatedText(
       };
 
       return `检测到的行业背景：${
-        mapped[industryName] ??
-        industryName
+        mapped[industry[1]] ??
+        industry[1]
       }。`;
     }
 
@@ -1058,92 +1201,6 @@ function generatedText(
   }
 
   if (locale === "ja") {
-    const exact: Record<
-      string,
-      string
-    > = {
-      "Company-level context was collected from external evidence and should be reviewed against primary filings.":
-        "外部エビデンスから企業レベルの情報を収集しました。主要開示資料との照合が必要です。",
-
-      "Insufficient company-level evidence.":
-        "企業レベルのエビデンスが不足しています。",
-
-      "Fundamental operating signals were detected.":
-        "ファンダメンタルズ上の事業シグナルが検出されました。",
-
-      "Multiple external sources were retrieved.":
-        "複数の外部ソースを取得しました。",
-
-      "Some fundamental indicators were detected and should be validated against company filings.":
-        "一部のファンダメンタル指標が検出されました。企業開示資料との照合が必要です。",
-
-      "Insufficient structured fundamental data.":
-        "構造化されたファンダメンタルデータが不足しています。",
-
-      "Valuation indicators were detected but no peer-based valuation conclusion is made automatically.":
-        "バリュエーション指標が検出されましたが、比較企業に基づく結論を自動生成していません。",
-
-      "Insufficient valuation data.":
-        "バリュエーションデータが不足しています。",
-
-      "Market-movement signals were detected from external evidence.":
-        "外部エビデンスから市場変動シグナルが検出されました。",
-
-      "No reliable trend signal was extracted.":
-        "信頼できるトレンドシグナルは抽出されませんでした。",
-
-      "The current snapshot is not a verified exchange real-time quote.":
-        "現在のスナップショットは、検証済みの取引所リアルタイム価格ではありません。",
-
-      "Evidence breadth is limited; additional independent sources should be checked before making a decision.":
-        "エビデンスの範囲が限定されています。判断前に追加の独立ソースを確認する必要があります。",
-
-      "Valuation metrics were not reliably extracted from the available evidence.":
-        "利用可能なエビデンスから信頼できるバリュエーション指標を抽出できませんでした。",
-
-      "Live market data is available.":
-        "リアルタイム市場データが利用可能です。",
-
-      "Current state is evidence-based rather than verified real-time market data.":
-        "現在の状態は、検証済みリアルタイム市場データではなく、エビデンスに基づいています。",
-
-      "Key financial assumptions deteriorate materially.":
-        "主要な財務前提が大幅に悪化します。",
-
-      "New regulatory, competitive, or company-specific evidence invalidates the current thesis.":
-        "新たな規制、競争環境、企業固有のエビデンスにより現在の判断が無効になります。",
-
-      "A verified live market-data source contradicts the currently observed price information.":
-        "検証済みリアルタイム市場データが現在観測されている価格情報と矛盾します。",
-
-      "Revenue growth":
-        "売上高成長率",
-
-      "EPS / profitability":
-        "EPS / 収益性",
-
-      "Free cash flow":
-        "フリーキャッシュフロー",
-
-      "P/E and P/B relative to comparable companies":
-        "比較企業に対する P/E と P/B",
-
-      "Debt and liquidity":
-        "負債と流動性",
-
-      "Industry growth":
-        "業界成長率",
-
-      "Material company or regulatory news":
-        "重要な企業・規制ニュース",
-
-      "Verified market price and volume":
-        "検証済み市場価格と出来高",
-    };
-
-    if (exact[value])
-      return exact[value];
-
     const revenue =
       value.match(
         /^Reported revenue-growth signal is positive at approximately (.+)%\.$/,
@@ -1243,7 +1300,7 @@ function generatedText(
 async function analyzeMarket(
   symbol: string,
   market: string,
-): Promise<MarketResult> {
+) {
   const response =
     await fetch(
       "/api/market/intelligence",
@@ -1265,21 +1322,20 @@ async function analyzeMarket(
     );
 
   const data =
-    (await response.json()) as
-      MarketResult;
+    (await response.json()) as MarketResult;
 
   if (!response.ok) {
     throw new Error(
       data.message ??
         data.error ??
-        "Market Intelligence request failed.",
+        "Market Research request failed.",
     );
   }
 
   return data;
 }
 
-export default function MarketIntelligencePage() {
+export default function MarketResearchPage() {
   const {
     locale,
   } = useLanguage();
@@ -1290,17 +1346,23 @@ export default function MarketIntelligencePage() {
   const [
     symbol,
     setSymbol,
-  ] = useState("AAPL");
+  ] = useState(
+    "AAPL",
+  );
 
   const [
     market,
     setMarket,
-  ] = useState("us");
+  ] = useState(
+    "us",
+  );
 
   const [
     loading,
     setLoading,
-  ] = useState(false);
+  ] = useState(
+    false,
+  );
 
   const [
     result,
@@ -1312,12 +1374,22 @@ export default function MarketIntelligencePage() {
   const [
     error,
     setError,
-  ] = useState("");
+  ] = useState(
+    "",
+  );
 
   async function runAnalysis() {
-    setLoading(true);
-    setError("");
-    setResult(null);
+    setLoading(
+      true,
+    );
+
+    setError(
+      "",
+    );
+
+    setResult(
+      null,
+    );
 
     try {
       const data =
@@ -1326,7 +1398,9 @@ export default function MarketIntelligencePage() {
           market,
         );
 
-      setResult(data);
+      setResult(
+        data,
+      );
     } catch (
       requestError
     ) {
@@ -1337,7 +1411,9 @@ export default function MarketIntelligencePage() {
           : ui.requestFailed,
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false,
+      );
     }
   }
 
@@ -1367,12 +1443,13 @@ export default function MarketIntelligencePage() {
     >
       <div
         style={{
-          maxWidth: 760,
+          maxWidth:
+            760,
           margin:
             "0 auto",
         }}
       >
-        <div
+        <header
           style={{
             marginBottom:
               20,
@@ -1380,10 +1457,12 @@ export default function MarketIntelligencePage() {
         >
           <div
             style={{
-              fontSize: 11,
+              fontSize:
+                11,
               letterSpacing:
                 "0.12em",
-              opacity: 0.5,
+              opacity:
+                0.5,
               marginBottom:
                 7,
             }}
@@ -1393,8 +1472,12 @@ export default function MarketIntelligencePage() {
 
           <h1
             style={{
-              margin: 0,
-              fontSize: 28,
+              margin:
+                0,
+              fontSize:
+                28,
+              fontWeight:
+                850,
             }}
           >
             {ui.title}
@@ -1404,23 +1487,29 @@ export default function MarketIntelligencePage() {
             style={{
               margin:
                 "8px 0 0",
-              opacity: 0.62,
-              lineHeight: 1.55,
-              fontSize: 14,
+              opacity:
+                0.62,
+              lineHeight:
+                1.55,
+              fontSize:
+                14,
             }}
           >
             {ui.subtitle}
           </p>
-        </div>
+        </header>
 
         <Section
-          title={ui.research}
+          title={
+            ui.research
+          }
         >
           <div
             style={{
               display:
                 "grid",
-              gap: 10,
+              gap:
+                10,
             }}
           >
             <input
@@ -1434,6 +1523,16 @@ export default function MarketIntelligencePage() {
                   event.target.value.toUpperCase(),
                 )
               }
+              onKeyDown={(
+                event,
+              ) => {
+                if (
+                  event.key ===
+                  "Enter"
+                ) {
+                  void runAnalysis();
+                }
+              }}
               placeholder={
                 ui.symbolPlaceholder
               }
@@ -1502,8 +1601,8 @@ export default function MarketIntelligencePage() {
 
             <button
               type="button"
-              onClick={
-                runAnalysis
+              onClick={() =>
+                void runAnalysis()
               }
               disabled={
                 loading ||
@@ -1575,13 +1674,16 @@ export default function MarketIntelligencePage() {
                     "flex",
                   flexWrap:
                     "wrap",
-                  gap: 8,
+                  gap:
+                    8,
                 }}
               >
                 <Badge
-                  ok={Boolean(
-                    result.success,
-                  )}
+                  ok={
+                    Boolean(
+                      result.success,
+                    )
+                  }
                 >
                   {result.success
                     ? ui.runtimePass
@@ -1589,9 +1691,11 @@ export default function MarketIntelligencePage() {
                 </Badge>
 
                 <Badge
-                  ok={Boolean(
-                    result.verified,
-                  )}
+                  ok={
+                    Boolean(
+                      result.verified,
+                    )
+                  }
                 >
                   {result.verified
                     ? ui.verified
@@ -1599,9 +1703,11 @@ export default function MarketIntelligencePage() {
                 </Badge>
 
                 <Badge
-                  ok={Boolean(
-                    verification?.structuredDataVerified,
-                  )}
+                  ok={
+                    Boolean(
+                      verification?.structuredDataVerified,
+                    )
+                  }
                 >
                   {verification?.structuredDataVerified
                     ? ui.structuredVerified
@@ -1652,87 +1758,54 @@ export default function MarketIntelligencePage() {
                       "grid",
                     gridTemplateColumns:
                       "repeat(2, minmax(0, 1fr))",
-                    gap: 12,
+                    gap:
+                      12,
                   }}
                 >
-                  <div>
-                    <div
-                      style={{
-                        opacity:
-                          0.5,
-                        fontSize:
-                          11,
-                      }}
-                    >
-                      {ui.symbol}
-                    </div>
-
-                    <strong>
-                      {result.instrument
+                  <Metric
+                    label={
+                      ui.symbol
+                    }
+                    value={
+                      result.instrument
                         ?.normalizedSymbol ??
-                        result.instrument
-                          ?.symbol ??
-                        symbol}
-                    </strong>
-                  </div>
+                      result.instrument
+                        ?.symbol ??
+                      symbol
+                    }
+                  />
 
-                  <div>
-                    <div
-                      style={{
-                        opacity:
-                          0.5,
-                        fontSize:
-                          11,
-                      }}
-                    >
-                      {ui.market}
-                    </div>
+                  <Metric
+                    label={
+                      ui.market
+                    }
+                    value={marketLabel(
+                      locale,
+                      result.instrument
+                        ?.market ??
+                        market,
+                    )}
+                  />
 
-                    <strong>
-                      {marketLabel(
-                        locale,
-                        result.instrument
-                          ?.market ??
-                          market,
-                      )}
-                    </strong>
-                  </div>
+                  <Metric
+                    label={
+                      ui.price
+                    }
+                    value={
+                      snapshot.price ??
+                      "N/A"
+                    }
+                  />
 
-                  <div>
-                    <div
-                      style={{
-                        opacity:
-                          0.5,
-                        fontSize:
-                          11,
-                      }}
-                    >
-                      {ui.price}
-                    </div>
-
-                    <strong>
-                      {snapshot.price ??
-                        "N/A"}
-                    </strong>
-                  </div>
-
-                  <div>
-                    <div
-                      style={{
-                        opacity:
-                          0.5,
-                        fontSize:
-                          11,
-                      }}
-                    >
-                      {ui.pe}
-                    </div>
-
-                    <strong>
-                      {snapshot.pe ??
-                        "N/A"}
-                    </strong>
-                  </div>
+                  <Metric
+                    label={
+                      ui.pe
+                    }
+                    value={
+                      snapshot.pe ??
+                      "N/A"
+                    }
+                  />
                 </div>
 
                 <div
@@ -1744,7 +1817,7 @@ export default function MarketIntelligencePage() {
                     opacity:
                       0.58,
                     lineHeight:
-                      1.6,
+                      1.65,
                   }}
                 >
                   {ui.dataQuality}:{" "}
@@ -1781,23 +1854,21 @@ export default function MarketIntelligencePage() {
                   ui.industry
                 }
               >
-                <p
-                  style={{
-                    lineHeight:
-                      1.6,
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .industry
-                      .summary,
-                  )}
-                </p>
+                      .summary
+                  }
+                />
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .industry
@@ -1816,68 +1887,49 @@ export default function MarketIntelligencePage() {
                   ui.company
                 }
               >
-                <p
-                  style={{
-                    lineHeight:
-                      1.6,
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .company
-                      .summary,
-                  )}
-                </p>
+                      .summary
+                  }
+                />
 
-                <h3
-                  style={{
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.strengths}
-                </h3>
+                <Subheading>
+                  {
+                    ui.strengths
+                  }
+                </Subheading>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .company
-                      .strengths?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .strengths
                   }
                   emptyText={
                     ui.noStructured
                   }
                 />
 
-                <h3
-                  style={{
-                    fontSize:
-                      13,
-                  }}
-                >
+                <Subheading>
                   {ui.risks}
-                </h3>
+                </Subheading>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .company
-                      .risks?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .risks
                   }
                   emptyText={
                     ui.noStructured
@@ -1892,33 +1944,25 @@ export default function MarketIntelligencePage() {
                   ui.fundamentals
                 }
               >
-                <p
-                  style={{
-                    fontSize:
-                      13,
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .fundamentals
-                      .assessment,
-                  )}
-                </p>
+                      .assessment
+                  }
+                />
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .fundamentals
-                      .signals?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .signals
                   }
                   emptyText={
                     ui.noStructured
@@ -1933,33 +1977,25 @@ export default function MarketIntelligencePage() {
                   ui.valuation
                 }
               >
-                <p
-                  style={{
-                    fontSize:
-                      13,
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .valuation
-                      .assessment,
-                  )}
-                </p>
+                      .assessment
+                  }
+                />
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .valuation
-                      .signals?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .signals
                   }
                   emptyText={
                     ui.noStructured
@@ -1974,33 +2010,25 @@ export default function MarketIntelligencePage() {
                   ui.trend
                 }
               >
-                <p
-                  style={{
-                    fontSize:
-                      13,
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .trend
-                      .assessment,
-                  )}
-                </p>
+                      .assessment
+                  }
+                />
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .trend
-                      .signals?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .signals
                   }
                   emptyText={
                     ui.noStructured
@@ -2015,8 +2043,10 @@ export default function MarketIntelligencePage() {
                   ui.risk
                 }
               >
-                <p
+                <div
                   style={{
+                    marginBottom:
+                      12,
                     fontSize:
                       13,
                   }}
@@ -2030,19 +2060,16 @@ export default function MarketIntelligencePage() {
                         .level,
                     )}
                   </strong>
-                </p>
+                </div>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .risk
-                      .factors?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .factors
                   }
                   emptyText={
                     ui.noStructured
@@ -2057,94 +2084,71 @@ export default function MarketIntelligencePage() {
                   ui.decisionSupport
                 }
               >
-                <p
-                  style={{
-                    fontSize:
-                      13,
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  {generatedText(
-                    locale,
+                <TextBlock
+                  locale={
+                    locale
+                  }
+                  value={
                     analysis
                       .decisionSupport
-                      .currentState,
-                  )}
-                </p>
+                      .currentState
+                  }
+                />
 
-                <h3
-                  style={{
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.supportingEvidence}
-                </h3>
+                <Subheading>
+                  {
+                    ui.supportingEvidence
+                  }
+                </Subheading>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .decisionSupport
-                      .supportingFactors?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .supportingFactors
                   }
                   emptyText={
                     ui.noStructured
                   }
                 />
 
-                <h3
-                  style={{
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.invalidation}
-                </h3>
+                <Subheading>
+                  {
+                    ui.invalidation
+                  }
+                </Subheading>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .decisionSupport
-                      .invalidationConditions?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .invalidationConditions
                   }
                   emptyText={
                     ui.noStructured
                   }
                 />
 
-                <h3
-                  style={{
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.watchMetrics}
-                </h3>
+                <Subheading>
+                  {
+                    ui.watchMetrics
+                  }
+                </Subheading>
 
                 <List
+                  locale={
+                    locale
+                  }
                   items={
                     analysis
                       .decisionSupport
-                      .watchMetrics?.map(
-                        (item) =>
-                          generatedText(
-                            locale,
-                            item,
-                          ),
-                      )
+                      .watchMetrics
                   }
                   emptyText={
                     ui.noStructured
@@ -2184,7 +2188,7 @@ export default function MarketIntelligencePage() {
                       index,
                     ) => (
                       <details
-                        key={`${item.url}-${index}`}
+                        key={`${item.url ?? "source"}-${index}`}
                         style={{
                           border:
                             "1px solid rgba(255,255,255,0.07)",
@@ -2219,7 +2223,9 @@ export default function MarketIntelligencePage() {
                                 3,
                             }}
                           >
-                            {ui.openOriginalEvidence}
+                            {
+                              ui.openOriginalEvidence
+                            }
                           </span>
                         </summary>
 
@@ -2240,7 +2246,9 @@ export default function MarketIntelligencePage() {
                           }}
                         >
                           <div>
-                            {ui.originalEvidence}
+                            {
+                              ui.originalEvidence
+                            }
                           </div>
 
                           <div
@@ -2315,5 +2323,84 @@ export default function MarketIntelligencePage() {
         )}
       </div>
     </main>
+  );
+}
+
+function Metric({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          opacity:
+            0.5,
+          fontSize:
+            11,
+          marginBottom:
+            3,
+        }}
+      >
+        {label}
+      </div>
+
+      <strong>
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function Subheading({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <h3
+      style={{
+        margin:
+          "16px 0 7px",
+        fontSize:
+          13,
+        fontWeight:
+          750,
+      }}
+    >
+      {children}
+    </h3>
+  );
+}
+
+function TextBlock({
+  locale,
+  value,
+}: {
+  locale: Locale;
+  value?: string;
+}) {
+  if (!value)
+    return null;
+
+  return (
+    <p
+      style={{
+        margin:
+          "0 0 12px",
+        fontSize:
+          13,
+        lineHeight:
+          1.65,
+      }}
+    >
+      {translateRuntimeText(
+        locale,
+        value,
+      )}
+    </p>
   );
 }
