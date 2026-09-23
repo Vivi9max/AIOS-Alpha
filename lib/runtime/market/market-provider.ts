@@ -142,7 +142,9 @@ function createWebProviderStatus(
     supportsRealtime: false,
     supportsHistorical: false,
     supportsFundamentals: true,
-    supportsMarkets: [instrument.market],
+    supportsMarkets: [
+      instrument.market,
+    ],
     reason:
       reason ??
       "Web Intelligence evidence fallback is active; it is not a realtime structured quote provider.",
@@ -176,20 +178,10 @@ export async function retrieveMarketData(
     | undefined;
 
   /*
-   * ============================================================
    * C147.22
    *
    * REALTIME STRUCTURED FIRST
-   *
-   * AllTick:
-   *   trade-tick -> realtime quote
-   *   kline      -> historical OHLCV
-   *
-   * Historical-only data is NOT considered a realtime
-   * structured verification.
-   * ============================================================
    */
-
   try {
     const structured =
       await retrieveStructuredMarketData(
@@ -200,13 +192,6 @@ export async function retrieveMarketData(
       structured.success &&
       structured.snapshot
     ) {
-      /*
-       * Preserve historical structured data even when
-       * realtime quote is unavailable.
-       *
-       * This allows the fallback path to retain verified
-       * OHLCV information without falsely claiming realtime.
-       */
       if (
         structured.historicalVerified &&
         structured.snapshot.bars &&
@@ -217,11 +202,7 @@ export async function retrieveMarketData(
       }
 
       /*
-       * STRICT realtime success condition.
-       *
-       * Do NOT use structured.verified here.
-       * A historical-only response is not a realtime
-       * structured provider PASS.
+       * STRICT realtime PASS.
        */
       if (
         structured.realtimeVerified &&
@@ -275,12 +256,6 @@ export async function retrieveMarketData(
         };
       }
 
-      /*
-       * Structured provider responded, but realtime
-       * verification was not achieved.
-       *
-       * Fall through to Web Intelligence.
-       */
       structuredError =
         structured.error ??
         (
@@ -301,17 +276,7 @@ export async function retrieveMarketData(
   }
 
   /*
-   * ============================================================
    * WEB INTELLIGENCE FALLBACK
-   *
-   * Web evidence may provide current/recent evidence,
-   * but it can NEVER upgrade itself to:
-   *
-   *   liveQuoteAvailable = true
-   *   quoteQuality = live
-   *
-   * This boundary is intentional.
-   * ============================================================
    */
 
   const marketName =
@@ -343,16 +308,8 @@ export async function retrieveMarketData(
     let snapshot =
       normalized.snapshot;
 
-    /*
-     * If structured historical bars were available,
-     * preserve them in the fallback result.
-     *
-     * The price itself still comes from the web-evidence
-     * path unless the web layer provides no usable price.
-     */
     if (
-      structuredHistoricalSnapshot
-        ?.bars &&
+      structuredHistoricalSnapshot?.bars &&
       structuredHistoricalSnapshot.bars.length > 0
     ) {
       snapshot = {
@@ -378,25 +335,25 @@ export async function retrieveMarketData(
       priceIntegrity.snapshot;
 
     /*
-     * Explicit safety boundary:
+     * HARD SAFETY BOUNDARY:
      *
-     * Web evidence is never realtime structured data.
+     * Web evidence can never become
+     * a realtime structured quote.
      */
     snapshot.dataQuality =
       snapshot.price !== null
         ? "web-evidence"
         : "insufficient";
 
-    snapshot.liveQuoteAvailable = false;
+    snapshot.liveQuoteAvailable =
+      false;
 
     snapshot.quoteQuality =
       "web-evidence";
 
     if (
-      !structuredHistoricalSnapshot
-        ?.bars ||
-      structuredHistoricalSnapshot.bars
-        .length === 0
+      !structuredHistoricalSnapshot?.bars ||
+      structuredHistoricalSnapshot.bars.length === 0
     ) {
       snapshot.historicalQuality =
         "web-evidence";
@@ -423,21 +380,21 @@ export async function retrieveMarketData(
       | string
       | undefined;
 
-    if (priceIntegrity.priceRejected) {
-      providerReason =
-        [
-          "Price integrity guard rejected a ticker-derived value.",
-          priceIntegrity.reason,
-        ]
-          .filter(Boolean)
-          .join(" ");
+    if (
+      priceIntegrity.priceRejected
+    ) {
+      providerReason = [
+        "Price integrity guard rejected a ticker-derived value.",
+        priceIntegrity.reason,
+      ]
+        .filter(Boolean)
+        .join(" ");
     } else if (structuredError) {
-      providerReason =
-        [
-          "AllTick realtime structured verification was unavailable.",
-          "Web Intelligence fallback used.",
-          structuredError,
-        ].join(" ");
+      providerReason = [
+        "AllTick realtime structured verification was unavailable.",
+        "Web Intelligence fallback used.",
+        structuredError,
+      ].join(" ");
     }
 
     return {
@@ -455,16 +412,13 @@ export async function retrieveMarketData(
 
       primarySourceFound,
 
-      /*
-       * Web fallback does NOT count as structured
-       * realtime data.
-       */
       structuredDataAvailable:
         Boolean(
           structuredHistoricalSnapshot,
         ),
 
-      structuredDataVerified: false,
+      structuredDataVerified:
+        false,
 
       provider:
         createWebProviderStatus(
@@ -472,14 +426,17 @@ export async function retrieveMarketData(
           providerReason,
         ),
 
-      error:
+      error: [
         webResult.success
           ? priceIntegrity.priceRejected
-            ? priceIntegrity.reason ??
-              undefined
+            ? priceIntegrity.reason
             : undefined
-          : webResult.error ??
-            structuredError,
+          : webResult.error,
+
+        structuredError,
+      ]
+        .filter(Boolean)
+        .join(" | ") || undefined,
     };
   } catch (error) {
     const message =
@@ -507,7 +464,8 @@ export async function retrieveMarketData(
           structuredHistoricalSnapshot,
         ),
 
-      structuredDataVerified: false,
+      structuredDataVerified:
+        false,
 
       provider:
         createWebProviderStatus(
@@ -517,7 +475,12 @@ export async function retrieveMarketData(
             : message,
         ),
 
-      error: message,
+      error: [
+        structuredError,
+        message,
+      ]
+        .filter(Boolean)
+        .join(" | "),
     };
   }
 }
