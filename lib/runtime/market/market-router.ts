@@ -9,6 +9,7 @@ import {
 
 import {
   assessMarketFreshness,
+  assertMarketQualityIntegrity,
 } from "./evidence-quality";
 
 import type {
@@ -41,10 +42,7 @@ function buildInstrument(
             .replace(/^SH:/i, "")
             .replace(/^SZ:/i, "")
             .replace(/^SS:/i, "")
-            .replace(
-              /\.(SH|SZ)$/i,
-              "",
-            )
+            .replace(/\.(SH|SZ)$/i, "")
             .toUpperCase()
         : rawSymbol
             .replace(
@@ -54,14 +52,9 @@ function buildInstrument(
             .toUpperCase();
 
   return {
-    symbol:
-      rawSymbol,
-
-    normalizedSymbol:
-      normalized,
-
+    symbol: rawSymbol,
+    normalizedSymbol: normalized,
     market,
-
     exchange:
       market === "hk"
         ? "HKEX"
@@ -73,7 +66,6 @@ function buildInstrument(
               ? "SZSE"
               : "CN"
           : "US",
-
     currency:
       market === "hk"
         ? "HKD"
@@ -85,29 +77,21 @@ function buildInstrument(
 
 function buildFreshnessVerification(
   snapshot: Awaited<
-    ReturnType<
-      typeof retrieveMarketData
-    >
+    ReturnType<typeof retrieveMarketData>
   >["snapshot"],
 ): MarketFreshnessVerification {
   const assessment =
-    assessMarketFreshness(
-      snapshot,
-    );
+    assessMarketFreshness(snapshot);
 
   return {
     freshness:
       assessment.freshness,
-
     ageMinutes:
       assessment.ageMinutes,
-
     ageHours:
       assessment.ageHours,
-
     referenceTime:
       assessment.referenceTime,
-
     reason:
       assessment.reason,
   };
@@ -142,6 +126,14 @@ export async function analyzeMarketRequest(
       instrument,
     );
 
+  /*
+   * Enforce the quality boundary before
+   * analysis reaches the public response.
+   */
+  assertMarketQualityIntegrity(
+    data.snapshot,
+  );
+
   const analysis =
     analyzeMarket(
       data.snapshot,
@@ -149,9 +141,7 @@ export async function analyzeMarketRequest(
     );
 
   const mode =
-    resolveMode(
-      request.mode,
-    );
+    resolveMode(request.mode);
 
   const freshness =
     buildFreshnessVerification(
@@ -176,14 +166,10 @@ export async function analyzeMarketRequest(
     | "C147_2_WEB_EVIDENCE_FALLBACK"
     | "C147_2_MARKET_EVIDENCE_INSUFFICIENT";
 
-  if (
-    structuredDataVerified
-  ) {
+  if (structuredDataVerified) {
     code =
       "C147_2_STRUCTURED_MARKET_DATA_PASS";
-  } else if (
-    webEvidenceAvailable
-  ) {
+  } else if (webEvidenceAvailable) {
     code =
       "C147_2_WEB_EVIDENCE_FALLBACK";
   } else {
@@ -192,64 +178,44 @@ export async function analyzeMarketRequest(
   }
 
   const verification:
-    MarketAnalysisResult["verification"] =
-    {
+    MarketAnalysisResult["verification"] = {
       verified:
         data.verified,
-
       sourceCount:
         data.sourceCount,
-
       independentDomains:
         data.independentDomains,
-
       primarySourceFound:
         data.primarySourceFound,
-
       structuredDataAvailable,
-
       structuredDataVerified,
-
       freshness,
     };
 
   return {
     success,
-
     code,
-
     instrument,
-
     snapshot:
       data.snapshot,
-
     analysis,
-
     evidence:
       data.evidence,
-
     verification,
-
     provider:
       data.provider,
-
     metadata: {
       runtime:
         "aios-alpha",
-
       stage:
         "C147.2.7",
-
       analysisMode:
         mode,
-
       generatedAt:
         new Date().toISOString(),
-
       disclaimer:
         "AIOS provides market research and decision-support information, not personalized investment advice or automatic buy/sell instructions.",
     },
-
     error:
       data.error,
   };
