@@ -1097,10 +1097,7 @@ function translateRuntimeText(
     },
   };
 
-  if (
-    locale !== "en" &&
-    exact[value]
-  ) {
+  if (exact[value]) {
     return exact[value][
       locale
     ];
