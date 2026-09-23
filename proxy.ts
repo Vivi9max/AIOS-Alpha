@@ -66,6 +66,32 @@ const PUBLIC_PATHS = [
 
   "/founder/commerce-reality",
   "/api/founder/commerce/reality",
+
+  /**
+   * C147.21
+   *
+   * Public Market Intelligence.
+   *
+   * These routes intentionally bypass
+   * the normal Alpha access cookie gate.
+   *
+   * The API itself is read-only and does not
+   * perform human-review mutation, Planner
+   * dispatch or trading execution.
+   */
+  "/market-intelligence",
+  "/api/market/intelligence",
+
+  /**
+   * C147.21.1
+   *
+   * Founder-only regression page/API.
+   *
+   * The routing layer allows the request through;
+   * the API performs Founder authentication itself.
+   */
+  "/founder/market/public-intelligence-regression",
+  "/api/founder/market/public-intelligence-regression",
 ];
 
 function isPublicPath(
