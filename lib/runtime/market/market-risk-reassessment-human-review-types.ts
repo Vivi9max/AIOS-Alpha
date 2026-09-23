@@ -11,6 +11,10 @@ import type {
   MarketRiskReassessmentBridgeResult,
 } from "./market-risk-reassessment-bridge-types";
 
+import type {
+  MarketDecisionRecord,
+} from "./market-decision-record-types";
+
 export type MarketRiskReassessmentHumanReviewAction =
   | "review-task-created"
   | "review-recorded"
@@ -20,16 +24,25 @@ export type MarketRiskReassessmentHumanReviewAction =
 
 export interface MarketRiskReassessmentHumanReviewRequest {
   symbol: string;
+
   market: MarketRegion;
 
   query?: string | null;
 
-  previousRecord?: import("./market-decision-record-types").MarketDecisionRecord | null;
-  currentRecord?: import("./market-decision-record-types").MarketDecisionRecord | null;
+  previousRecord?:
+    | MarketDecisionRecord
+    | null;
+
+  currentRecord?:
+    | MarketDecisionRecord
+    | null;
 
   taskId?: string | null;
 
-  decision?: MarketHumanReviewDecision | null;
+  decision?:
+    | MarketHumanReviewDecision
+    | null;
+
   reviewerNote?: string | null;
 }
 
@@ -43,14 +56,18 @@ export interface MarketRiskReassessmentHumanReviewResult {
     | "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_INSUFFICIENT"
     | "C147_19_RISK_REASSESSMENT_HUMAN_REVIEW_BLOCKED";
 
-  action: MarketRiskReassessmentHumanReviewAction;
+  action:
+    MarketRiskReassessmentHumanReviewAction;
 
   symbol: string;
+
   market: MarketRegion;
 
-  bridge: MarketRiskReassessmentBridgeResult;
+  bridge:
+    MarketRiskReassessmentBridgeResult;
 
-  taskId: string | null;
+  taskId:
+    string | null;
 
   review:
     MarketHumanReviewRecord | null;
@@ -58,28 +75,44 @@ export interface MarketRiskReassessmentHumanReviewResult {
   existingReview:
     MarketHumanReviewRecord | null;
 
-  reassessmentRequired: boolean;
+  reassessmentRequired:
+    boolean;
 
-  humanDecisionRequired: true;
+  humanDecisionRequired:
+    true;
 
-  mutationPerformed: boolean;
+  mutationPerformed:
+    boolean;
 
-  automatedExecutionStarted: false;
-  plannerDispatched: false;
-  tradingExecuted: false;
+  automatedExecutionStarted:
+    false;
+
+  plannerDispatched:
+    false;
+
+  tradingExecuted:
+    false;
 
   runtime: {
     name:
       "market-risk-reassessment-human-review-runtime";
+
     version:
       "C147.19";
+
     upstream:
       "C147.18+C147.15";
-    generatedAt: string;
-    latencyMs: number;
+
+    generatedAt:
+      string;
+
+    latencyMs:
+      number;
   };
 
-  principles: string[];
+  principles:
+    string[];
 
-  disclaimer: string;
+  disclaimer:
+    string;
 }
