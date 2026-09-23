@@ -14,16 +14,33 @@ export interface StructuredMarketResult {
   error?: string;
 }
 
-interface NasdaqDatatableResponse {
-  datatable?: {
-    data?: unknown[][];
-    columns?: Array<{
-      name?: string;
-      type?: string;
-    }>;
+interface AllTickTrade {
+  code?: string;
+  tick_time?: string | number;
+  price?: string | number;
+  volume?: string | number;
+}
+
+interface AllTickKline {
+  code?: string;
+  kline_type?: number;
+  kline_data?: Array<{
+    timestamp?: string | number;
+    open_price?: string | number;
+    close_price?: string | number;
+    high_price?: string | number;
+    low_price?: string | number;
+    volume?: string | number;
+  }>;
+}
+
+interface AllTickResponse {
+  ret?: number;
+  msg?: string;
+  data?: {
+    tick_list?: AllTickTrade[];
+    kline_list?: AllTickKline[];
   };
-  message?: string;
-  errors?: string[];
 }
 
 function env(name: string): string {
@@ -31,40 +48,34 @@ function env(name: string): string {
 }
 
 function parseNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
   }
 
   if (typeof value !== "string") {
     return null;
   }
 
-  const normalized = value
-    .replace(/,/g, "")
-    .replace(/%/g, "")
-    .trim();
-
-  if (!normalized) {
-    return null;
-  }
-
-  const parsed = Number(normalized);
-
+  const parsed = Number(value.replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeDate(value: unknown): string | null {
+function normalizeTimestamp(value: unknown): string | null {
   if (typeof value !== "string" && typeof value !== "number") {
     return null;
   }
 
-  const parsed = new Date(String(value));
+  const raw = String(value);
+  const numeric = Number(raw);
 
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
+  if (Number.isFinite(numeric) && raw.length >= 10) {
+    const ms = raw.length <= 10 ? numeric * 1000 : numeric;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
-  return parsed.toISOString();
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function emptySnapshot(): MarketSnapshot {
@@ -72,246 +83,131 @@ function emptySnapshot(): MarketSnapshot {
     price: null,
     previousClose: null,
     changePercent: null,
-
     open: null,
     high: null,
     low: null,
     volume: null,
-
     marketCap: null,
     pe: null,
     pb: null,
     eps: null,
     revenue: null,
     revenueGrowth: null,
-
+    afterHoursPrice: null,
+    preMarketPrice: null,
     dataQuality: "insufficient",
     liveQuoteAvailable: false,
-
+    quoteQuality: "insufficient",
+    historicalQuality: "insufficient",
     asOf: null,
     source: null,
     dataset: null,
-
     bars: [],
   };
 }
 
-function configured(): boolean {
-  return Boolean(
-    env("NASDAQ_DATA_LINK_API_KEY") &&
-      env("NASDAQ_DATA_LINK_PRICE_TABLE"),
-  );
-}
+function toAllTickCode(instrument: MarketInstrument): string {
+  const symbol = instrument.normalizedSymbol
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
 
-function getColumn(
-  row: unknown[],
-  columns: string[],
-  name: string,
-): unknown {
-  const index = columns.indexOf(name);
-
-  if (index < 0) {
-    return null;
+  if (instrument.market === "hk") {
+    return `${symbol.replace(/^0+(?=\d)/, "").padStart(4, "0")}.HK`;
   }
 
-  return row[index];
+  if (instrument.market === "cn") {
+    const clean = symbol.replace(/\.(SH|SZ)$/i, "");
+    const suffix = clean.startsWith("6") ? "SH" : "SZ";
+    return `${clean}.${suffix}`;
+  }
+
+  return `${symbol.replace(/\.US$/i, "")}.US`;
 }
 
-function buildColumns(): string[] {
-  const ticker =
-    env("NASDAQ_DATA_LINK_TICKER_COLUMN") || "ticker";
-
-  const date =
-    env("NASDAQ_DATA_LINK_DATE_COLUMN") || "date";
-
-  const open =
-    env("NASDAQ_DATA_LINK_OPEN_COLUMN") || "open";
-
-  const high =
-    env("NASDAQ_DATA_LINK_HIGH_COLUMN") || "high";
-
-  const low =
-    env("NASDAQ_DATA_LINK_LOW_COLUMN") || "low";
-
-  const close =
-    env("NASDAQ_DATA_LINK_CLOSE_COLUMN") || "close";
-
-  const volume =
-    env("NASDAQ_DATA_LINK_VOLUME_COLUMN") || "volume";
-
-  return [
-    ticker,
-    date,
-    open,
-    high,
-    low,
-    close,
-    volume,
-  ];
+function configured(): boolean {
+  return Boolean(env("ALLTICK_API_KEY"));
 }
 
-/**
- * Convert Nasdaq Data Link rows into strictly typed MarketBar[].
- *
- * This intentionally uses an explicit accumulator rather than
- * map(...).filter(...) so TypeScript can never infer
- * `(MarketBar | null)[]` here.
- */
-function buildBars(
-  payload: NasdaqDatatableResponse,
-): MarketBar[] {
-  const columns = buildColumns();
-  const rows = payload.datatable?.data ?? [];
+function buildQuery(
+  code: string,
+  data: Record<string, unknown>,
+): string {
+  return JSON.stringify({
+    trace: `aios-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
+    data: {
+      symbol_list: [{ code }],
+      ...data,
+    },
+  });
+}
 
-  const dateColumn = columns[1];
-  const openColumn = columns[2];
-  const highColumn = columns[3];
-  const lowColumn = columns[4];
-  const closeColumn = columns[5];
-  const volumeColumn = columns[6];
+async function requestAllTick(
+  endpoint: "trade-tick" | "kline",
+  query: string,
+): Promise<AllTickResponse> {
+  const url = new URL(
+    `https://quote.alltick.co/quote-stock-b-api/${endpoint}`,
+  );
+
+  url.searchParams.set("token", env("ALLTICK_API_KEY"));
+  url.searchParams.set("query", query);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as AllTickResponse;
+
+  if (!response.ok || payload.ret !== 200) {
+    throw new Error(
+      payload.msg ||
+        `AllTick ${endpoint} returned HTTP ${response.status}.`,
+    );
+  }
+
+  return payload;
+}
+
+function buildBars(payload: AllTickResponse): MarketBar[] {
+  const data =
+    payload.data?.kline_list?.[0]?.kline_data ?? [];
 
   const bars: MarketBar[] = [];
 
-  for (const row of rows) {
-    if (!Array.isArray(row)) {
+  for (const row of data) {
+    const timestamp = normalizeTimestamp(row.timestamp);
+    const close = parseNumber(row.close_price);
+
+    if (!timestamp || close === null) {
       continue;
     }
 
-    const timestamp = normalizeDate(
-      getColumn(
-        row,
-        columns,
-        dateColumn,
-      ),
-    );
-
-    if (!timestamp) {
-      continue;
-    }
-
-    const bar: MarketBar = {
+    bars.push({
       timestamp,
-
-      open: parseNumber(
-        getColumn(
-          row,
-          columns,
-          openColumn,
-        ),
-      ),
-
-      high: parseNumber(
-        getColumn(
-          row,
-          columns,
-          highColumn,
-        ),
-      ),
-
-      low: parseNumber(
-        getColumn(
-          row,
-          columns,
-          lowColumn,
-        ),
-      ),
-
-      close: parseNumber(
-        getColumn(
-          row,
-          columns,
-          closeColumn,
-        ),
-      ),
-
-      volume: parseNumber(
-        getColumn(
-          row,
-          columns,
-          volumeColumn,
-        ),
-      ),
-    };
-
-    bars.push(bar);
+      open: parseNumber(row.open_price),
+      high: parseNumber(row.high_price),
+      low: parseNumber(row.low_price),
+      close,
+      volume: parseNumber(row.volume),
+    });
   }
 
-  bars.sort(
+  return bars.sort(
     (a, b) =>
       new Date(a.timestamp).getTime() -
       new Date(b.timestamp).getTime(),
   );
-
-  return bars;
 }
 
-function buildUrl(
-  instrument: MarketInstrument,
-): string {
-  const apiKey =
-    env("NASDAQ_DATA_LINK_API_KEY");
-
-  const table =
-    env("NASDAQ_DATA_LINK_PRICE_TABLE");
-
-  const tickerColumn =
-    env("NASDAQ_DATA_LINK_TICKER_COLUMN") ||
-    "ticker";
-
-  const dateColumn =
-    env("NASDAQ_DATA_LINK_DATE_COLUMN") ||
-    "date";
-
-  const columns = buildColumns();
-
-  const url = new URL(
-    `https://data.nasdaq.com/api/v3/datatables/${table}.json`,
-  );
-
-  url.searchParams.set(
-    tickerColumn,
-    instrument.normalizedSymbol,
-  );
-
-  url.searchParams.set(
-    "qopts.columns",
-    columns.join(","),
-  );
-
-  url.searchParams.set(
-    "qopts.per_page",
-    "100",
-  );
-
-  /*
-   * Historical window only.
-   *
-   * This provider must not claim real-time
-   * market data unless the underlying dataset
-   * actually provides it.
-   */
-  const since = new Date(
-    Date.now() -
-      1000 *
-        60 *
-        60 *
-        24 *
-        90,
-  )
-    .toISOString()
-    .slice(0, 10);
-
-  url.searchParams.set(
-    `${dateColumn}.gte`,
-    since,
-  );
-
-  url.searchParams.set(
-    "api_key",
-    apiKey,
-  );
-
-  return url.toString();
+export function isAllTickConfigured(): boolean {
+  return configured();
 }
 
 export async function retrieveStructuredMarketData(
@@ -319,158 +215,117 @@ export async function retrieveStructuredMarketData(
 ): Promise<StructuredMarketResult> {
   const empty = emptySnapshot();
 
-  const dataset =
-    env("NASDAQ_DATA_LINK_PRICE_TABLE") ||
-    null;
-
   if (!configured()) {
     return {
       success: false,
       verified: false,
-
-      provider:
-        "nasdaq-data-link",
-
-      dataset,
-
+      provider: "alltick",
+      dataset: null,
       snapshot: empty,
-
       sourceCount: 0,
-
-      error:
-        "NASDAQ_DATA_LINK_API_KEY or NASDAQ_DATA_LINK_PRICE_TABLE is not configured.",
+      error: "ALLTICK_API_KEY is not configured.",
     };
   }
 
-  /*
-   * C147.2 structured provider currently
-   * targets US equities.
-   *
-   * HK/CN intentionally remain on the
-   * Web Intelligence path until a
-   * configured structured provider exists.
-   */
-  if (instrument.market !== "us") {
-    return {
-      success: false,
-      verified: false,
-
-      provider:
-        "nasdaq-data-link",
-
-      dataset,
-
-      snapshot: empty,
-
-      sourceCount: 0,
-
-      error:
-        "Nasdaq Data Link structured provider is currently enabled for US equities only.",
-    };
-  }
-
-  const url = buildUrl(instrument);
+  const code = toAllTickCode(instrument);
+  const dataset = "alltick:trade-tick+kline";
 
   try {
-    const response = await fetch(
-      url,
-      {
-        method: "GET",
+    const [tradePayload, klinePayload] =
+      await Promise.all([
+        requestAllTick(
+          "trade-tick",
+          buildQuery(code, {}),
+        ),
+        requestAllTick(
+          "kline",
+          buildQuery(code, {
+            kline_type: Number(
+              env("ALLTICK_KLINE_TYPE") || "8",
+            ),
+            kline_timestamp_end: 0,
+            query_kline_num: Math.min(
+              500,
+              Math.max(
+                2,
+                Number(
+                  env("ALLTICK_KLINE_COUNT") || "100",
+                ),
+              ),
+            ),
+            adjust_type: Number(
+              env("ALLTICK_ADJUST_TYPE") || "0",
+            ),
+          }),
+        ),
+      ]);
 
-        headers: {
-          Accept: "application/json",
-        },
+    const bars = buildBars(klinePayload);
+    const tick = tradePayload.data?.tick_list?.[0];
 
-        cache: "no-store",
-      },
-    );
+    const livePrice = parseNumber(tick?.price);
+    const liveAsOf = normalizeTimestamp(tick?.tick_time);
 
-    const payload =
-      (await response.json()) as
-        NasdaqDatatableResponse;
-
-    if (!response.ok) {
-      const message =
-        payload.message ||
-        payload.errors?.join("; ") ||
-        `Nasdaq Data Link returned HTTP ${response.status}.`;
-
-      return {
-        success: false,
-        verified: false,
-
-        provider:
-          "nasdaq-data-link",
-
-        dataset,
-
-        snapshot: empty,
-
-        sourceCount: 0,
-
-        error: message,
-      };
-    }
-
-    const bars = buildBars(payload);
-
-    if (bars.length === 0) {
-      return {
-        success: false,
-        verified: false,
-
-        provider:
-          "nasdaq-data-link",
-
-        dataset,
-
-        snapshot: empty,
-
-        sourceCount: 0,
-
-        error:
-          "Structured provider returned no usable OHLCV rows for the requested symbol.",
-      };
-    }
-
-    const latest =
-      bars[bars.length - 1];
-
-    const previous =
+    const latestBar = bars[bars.length - 1];
+    const previousBar =
       bars.length > 1
         ? bars[bars.length - 2]
-        : null;
-
-    const latestClose =
-      latest.close ?? null;
+        : undefined;
 
     const previousClose =
-      previous?.close ?? null;
+      previousBar?.close ?? null;
 
     const changePercent =
-      latestClose !== null &&
+      livePrice !== null &&
       previousClose !== null &&
       previousClose !== 0
-        ? ((latestClose -
-            previousClose) /
+        ? ((livePrice - previousClose) /
             previousClose) *
           100
         : null;
 
+    const hasLiveQuote =
+      livePrice !== null &&
+      liveAsOf !== null;
+
+    if (!hasLiveQuote && !latestBar) {
+      return {
+        success: false,
+        verified: false,
+        provider: "alltick",
+        dataset,
+        snapshot: empty,
+        sourceCount: 0,
+        error:
+          "AllTick returned no usable realtime tick or historical K-line.",
+      };
+    }
+
     const snapshot: MarketSnapshot = {
-      price: latestClose,
+      price:
+        livePrice ??
+        latestBar?.close ??
+        null,
 
       previousClose,
 
       changePercent,
 
-      open: latest.open ?? null,
+      open:
+        latestBar?.open ??
+        null,
 
-      high: latest.high ?? null,
+      high:
+        latestBar?.high ??
+        null,
 
-      low: latest.low ?? null,
+      low:
+        latestBar?.low ??
+        null,
 
-      volume: latest.volume ?? null,
+      volume:
+        latestBar?.volume ??
+        null,
 
       marketCap: null,
       pe: null,
@@ -479,62 +334,61 @@ export async function retrieveStructuredMarketData(
       revenue: null,
       revenueGrowth: null,
 
-      /*
-       * Deliberately historical.
-       */
+      afterHoursPrice: null,
+      preMarketPrice: null,
+
       dataQuality:
-        "historical",
+        hasLiveQuote
+          ? "live"
+          : "historical",
 
       liveQuoteAvailable:
-        false,
+        hasLiveQuote,
+
+      quoteQuality:
+        hasLiveQuote
+          ? "live"
+          : "historical",
+
+      historicalQuality:
+        bars.length > 0
+          ? "historical"
+          : "insufficient",
 
       asOf:
-        latest.timestamp,
+        liveAsOf ??
+        latestBar?.timestamp ??
+        null,
 
-      source:
-        "Nasdaq Data Link",
+      source: "AllTick",
 
       dataset,
 
       bars,
     };
 
-    const verified =
-      bars.length > 0 &&
-      latestClose !== null;
-
     return {
       success: true,
-
-      verified,
-
-      provider:
-        "nasdaq-data-link",
-
+      verified:
+        hasLiveQuote ||
+        bars.length > 0,
+      provider: "alltick",
       dataset,
-
       snapshot,
-
       sourceCount: 1,
     };
   } catch (error) {
     return {
       success: false,
       verified: false,
-
-      provider:
-        "nasdaq-data-link",
-
+      provider: "alltick",
       dataset,
-
       snapshot: empty,
-
       sourceCount: 0,
-
       error:
         error instanceof Error
           ? error.message
-          : "Structured market provider request failed.",
+          : "AllTick structured provider request failed.",
     };
   }
 }
