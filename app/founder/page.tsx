@@ -134,6 +134,9 @@ const copy: Record<
     mediaExecutionDetail: string;
     mediaExecutionDescription: string;
 
+    publicMarketIntelligence: string;
+    publicMarketIntelligenceDetail: string;
+
     enterKey: string;
     loginDescription: string;
     keyPlaceholder: string;
@@ -295,6 +298,12 @@ const copy: Record<
     mediaExecutionDescription:
       "Runtime → Google Veo → real media operation",
 
+    publicMarketIntelligence:
+      "C147.21.1 Public Market Intelligence",
+
+    publicMarketIntelligenceDetail:
+      "Open the public Market Intelligence boundary and regression verification",
+
     enterKey:
       "Founder access required",
 
@@ -320,20 +329,11 @@ const copy: Record<
       "No written feedback was provided.",
 
     category: {
-      great:
-        "Great",
-
-      good:
-        "Good",
-
-      neutral:
-        "Neutral",
-
-      bad:
-        "Needs improvement",
-
-      bug:
-        "Bug",
+      great: "Great",
+      good: "Good",
+      neutral: "Neutral",
+      bad: "Needs improvement",
+      bug: "Bug",
     },
 
     localeDate:
@@ -494,6 +494,12 @@ const copy: Record<
     mediaExecutionDescription:
       "Runtime → Google Veo → 真实媒体 Operation",
 
+    publicMarketIntelligence:
+      "C147.21.1 Public Market Intelligence",
+
+    publicMarketIntelligenceDetail:
+      "打开 Public Market Intelligence 公共边界并执行 Regression 验证",
+
     enterKey:
       "请输入 Founder Access Key",
 
@@ -519,20 +525,11 @@ const copy: Record<
       "用户未填写文字反馈。",
 
     category: {
-      great:
-        "很满意",
-
-      good:
-        "满意",
-
-      neutral:
-        "一般",
-
-      bad:
-        "不满意",
-
-      bug:
-        "Bug",
+      great: "很满意",
+      good: "满意",
+      neutral: "一般",
+      bad: "不满意",
+      bug: "Bug",
     },
 
     localeDate:
@@ -693,6 +690,12 @@ const copy: Record<
     mediaExecutionDescription:
       "Runtime → Google Veo → 実際の Media Operation",
 
+    publicMarketIntelligence:
+      "C147.21.1 Public Market Intelligence",
+
+    publicMarketIntelligenceDetail:
+      "Public Market Intelligence の公開境界と Regression を確認",
+
     enterKey:
       "Founder Access Key が必要です",
 
@@ -718,20 +721,11 @@ const copy: Record<
       "文字フィードバックはありません。",
 
     category: {
-      great:
-        "非常に満足",
-
-      good:
-        "満足",
-
-      neutral:
-        "普通",
-
-      bad:
-        "改善が必要",
-
-      bug:
-        "Bug",
+      great: "非常に満足",
+      good: "満足",
+      neutral: "普通",
+      bad: "改善が必要",
+      bug: "Bug",
     },
 
     localeDate:
@@ -990,10 +984,14 @@ export default function FounderPage() {
     <main
       style={{
         minHeight: "100vh",
-        padding: "24px 18px 60px",
-        boxSizing: "border-box",
-        background: "#f4f6fb",
-        color: "#0f172a",
+        padding:
+          "24px 18px 60px",
+        boxSizing:
+          "border-box",
+        background:
+          "#f4f6fb",
+        color:
+          "#0f172a",
       }}
     >
       <div
@@ -1006,7 +1004,8 @@ export default function FounderPage() {
         <header
           style={{
             display: "flex",
-            alignItems: "flex-start",
+            alignItems:
+              "flex-start",
             justifyContent:
               "space-between",
             gap: 16,
@@ -1040,7 +1039,8 @@ export default function FounderPage() {
               style={{
                 margin:
                   "9px 0 0",
-                color: "#64748b",
+                color:
+                  "#64748b",
                 lineHeight: 1.5,
               }}
             >
@@ -1087,7 +1087,9 @@ export default function FounderPage() {
               overview?.feedback
                 ?.bugs ?? 0
             }
-            detail={t.bugsDetail}
+            detail={
+              t.bugsDetail
+            }
           />
 
           <MetricLink
@@ -1124,7 +1126,9 @@ export default function FounderPage() {
               overview?.feedback
                 ?.uniqueUsers ?? 0
             }
-            detail={t.usersDetail}
+            detail={
+              t.usersDetail
+            }
           />
 
           <MetricLink
@@ -1135,7 +1139,9 @@ export default function FounderPage() {
               overview?.feedback
                 ?.averageRating ?? 0
             }
-            detail={t.averageDetail}
+            detail={
+              t.averageDetail
+            }
           />
         </section>
 
@@ -1153,7 +1159,9 @@ export default function FounderPage() {
             icon="⚡"
             title={t.runtime}
             value={t.online}
-            detail={t.runtimeDetail}
+            detail={
+              t.runtimeDetail
+            }
           />
 
           <SystemCard
@@ -1161,7 +1169,8 @@ export default function FounderPage() {
             title={t.storage}
             value={
               overview?.storage
-                ?.mode ?? "unknown"
+                ?.mode ??
+              "unknown"
             }
             detail={
               overview?.storage
@@ -1173,7 +1182,9 @@ export default function FounderPage() {
           <SystemCard
             icon="🧠"
             title={t.dashboard}
-            value={t.dashboardValue}
+            value={
+              t.dashboardValue
+            }
             detail={
               t.dashboardDetail
             }
@@ -1182,7 +1193,9 @@ export default function FounderPage() {
           <SystemCard
             icon="📋"
             title={t.planner}
-            value={t.plannerValue}
+            value={
+              t.plannerValue
+            }
             detail={
               t.plannerDetail
             }
@@ -1201,9 +1214,7 @@ export default function FounderPage() {
           <SystemCard
             icon="🚀"
             title={t.deploy}
-            value={
-              release
-            }
+            value={release}
             detail={
               overview?.deployment
                 ?.url ??
@@ -1257,8 +1268,10 @@ export default function FounderPage() {
             marginTop: 18,
             padding: 20,
             borderRadius: 22,
-            background: "#0f172a",
-            color: "#ffffff",
+            background:
+              "#0f172a",
+            color:
+              "#ffffff",
           }}
         >
           <div
@@ -1268,27 +1281,30 @@ export default function FounderPage() {
                 "flex-start",
               justifyContent:
                 "space-between",
-              gap: 16,
+              gap: 14,
             }}
           >
             <div>
               <div
                 style={{
+                  color:
+                    "#93c5fd",
                   fontSize: 12,
-                  fontWeight: 900,
+                  fontWeight: 950,
                   letterSpacing:
                     "0.12em",
-                  color: "#94a3b8",
+                  textTransform:
+                    "uppercase",
                 }}
               >
-                C146.18.3
+                Founder Runtime
               </div>
 
               <h2
                 style={{
                   margin:
-                    "7px 0 0",
-                  fontSize: 22,
+                    "8px 0 0",
+                  fontSize: 21,
                 }}
               >
                 {t.mediaExecution}
@@ -1298,7 +1314,8 @@ export default function FounderPage() {
                 style={{
                   margin:
                     "8px 0 0",
-                  color: "#cbd5e1",
+                  color:
+                    "#cbd5e1",
                   fontSize: 13,
                   lineHeight: 1.6,
                 }}
@@ -1334,7 +1351,8 @@ export default function FounderPage() {
             style={{
               margin:
                 "16px 0 0",
-              color: "#94a3b8",
+              color:
+                "#94a3b8",
               fontSize: 13,
               lineHeight: 1.6,
             }}
@@ -1348,7 +1366,8 @@ export default function FounderPage() {
             href="/founder/media-chat-regression"
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems:
+                "center",
               justifyContent:
                 "space-between",
               gap: 12,
@@ -1370,6 +1389,131 @@ export default function FounderPage() {
           >
             <span>
               ▶ Open Real Media Execution
+            </span>
+
+            <span>
+              →
+            </span>
+          </Link>
+        </section>
+
+        <section
+          style={{
+            marginTop: 18,
+            padding: 20,
+            borderRadius: 22,
+            background:
+              "#0b1220",
+            color:
+              "#ffffff",
+            border:
+              "1px solid #1e3a5f",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems:
+                "flex-start",
+              justifyContent:
+                "space-between",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  color:
+                    "#60a5fa",
+                  fontSize: 12,
+                  fontWeight: 950,
+                  letterSpacing:
+                    "0.12em",
+                }}
+              >
+                C147.21.1
+              </div>
+
+              <h2
+                style={{
+                  margin:
+                    "8px 0 0",
+                  fontSize: 21,
+                }}
+              >
+                {
+                  t.publicMarketIntelligence
+                }
+              </h2>
+
+              <p
+                style={{
+                  margin:
+                    "8px 0 0",
+                  color:
+                    "#cbd5e1",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                {
+                  t.publicMarketIntelligenceDetail
+                }
+              </p>
+            </div>
+
+            <div
+              style={{
+                flex:
+                  "0 0 auto",
+                width: 48,
+                height: 48,
+                display: "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                borderRadius: 15,
+                background:
+                  "#172554",
+                fontSize: 24,
+              }}
+            >
+              📈
+            </div>
+          </div>
+
+          <Link
+            href="/founder/market/public-intelligence-regression"
+            style={{
+              display: "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
+              gap: 12,
+              minHeight: 52,
+              marginTop: 18,
+              padding:
+                "0 17px",
+              boxSizing:
+                "border-box",
+              borderRadius: 15,
+              background:
+                "#ffffff",
+              color:
+                "#0f172a",
+              textDecoration:
+                "none",
+              fontWeight: 950,
+            }}
+          >
+            <span>
+              ▶ Open Public Market Intelligence
             </span>
 
             <span>
@@ -1536,7 +1680,8 @@ export default function FounderPage() {
                           color:
                             "#f59e0b",
                           fontSize: 13,
-                          letterSpacing: 1,
+                          letterSpacing:
+                            1,
                         }}
                       >
                         {"★".repeat(
@@ -1665,6 +1810,17 @@ export default function FounderPage() {
               t.feedbackCenterDetail
             }
           />
+
+          <ActionLink
+            href="/founder/market/public-intelligence-regression"
+            icon="📈"
+            title={
+              t.publicMarketIntelligence
+            }
+            detail={
+              t.publicMarketIntelligenceDetail
+            }
+          />
         </section>
 
         <div
@@ -1719,13 +1875,17 @@ function FounderLogin({
       style={{
         minHeight: "100vh",
         display: "flex",
-        alignItems: "center",
+        alignItems:
+          "center",
         justifyContent:
           "center",
         padding: 20,
-        boxSizing: "border-box",
-        background: "#f4f6fb",
-        color: "#0f172a",
+        boxSizing:
+          "border-box",
+        background:
+          "#f4f6fb",
+        color:
+          "#0f172a",
       }}
     >
       <section
@@ -1733,11 +1893,13 @@ function FounderLogin({
           width: "100%",
           maxWidth: 440,
           padding: 28,
-          boxSizing: "border-box",
+          boxSizing:
+            "border-box",
           border:
             "1px solid #e2e8f0",
           borderRadius: 24,
-          background: "#ffffff",
+          background:
+            "#ffffff",
           boxShadow:
             "0 24px 70px rgba(15, 23, 42, 0.12)",
         }}
@@ -1754,7 +1916,8 @@ function FounderLogin({
             borderRadius: 16,
             background:
               "#0f172a",
-            color: "#ffffff",
+            color:
+              "#ffffff",
             fontSize: 26,
           }}
         >
@@ -1821,8 +1984,10 @@ function FounderLogin({
               "#ffffff",
             color:
               "#0f172a",
-            font: "inherit",
-            outline: "none",
+            font:
+              "inherit",
+            outline:
+              "none",
           }}
         />
 
@@ -1855,7 +2020,8 @@ function FounderLogin({
               loading
                 ? "#94a3b8"
                 : "#0f172a",
-            color: "#ffffff",
+            color:
+              "#ffffff",
             fontSize: 15,
             fontWeight: 900,
             cursor:
@@ -1907,7 +2073,8 @@ function MetricLink({
     >
       <div
         style={{
-          display: "flex",
+          display:
+            "flex",
           alignItems:
             "center",
           justifyContent:
@@ -1947,7 +2114,8 @@ function MetricLink({
 
       <div
         style={{
-          display: "flex",
+          display:
+            "flex",
           alignItems:
             "center",
           justifyContent:
@@ -1993,14 +2161,16 @@ function SystemLink({
         borderRadius: 18,
         background:
           "#0f172a",
-        color: "#ffffff",
+        color:
+          "#ffffff",
         textDecoration:
           "none",
       }}
     >
       <div
         style={{
-          display: "flex",
+          display:
+            "flex",
           alignItems:
             "center",
           justifyContent:
@@ -2088,7 +2258,8 @@ function SystemCard({
         borderRadius: 18,
         background:
           "#0f172a",
-        color: "#ffffff",
+        color:
+          "#ffffff",
       }}
     >
       <div
