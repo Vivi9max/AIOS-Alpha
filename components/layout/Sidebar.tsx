@@ -1,35 +1,46 @@
 "use client";
+
 import Link from "next/link";
+
 import {
   usePathname,
 } from "next/navigation";
+
 import {
   APP_NAME,
   APP_VERSION_LABEL,
 } from "@/lib/config/app";
+
 import {
   projects,
 } from "@/lib/project/store";
+
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
+
 import type {
   MessageKey,
 } from "@/lib/i18n";
+
 const menus = [
   {
     icon: "💬",
-    label: "nav.chat" as MessageKey,
+    label:
+      "nav.chat" as MessageKey,
     href: "/workspace",
   },
   {
     icon: "🧭",
-    label: "Market Intelligence",
-    href: "/founder/market-intelligence",
+    label:
+      "Market Intelligence",
+    href:
+      "/market-intelligence",
   },
   {
     icon: "✅",
-    label: "nav.tasks" as MessageKey,
+    label:
+      "nav.tasks" as MessageKey,
     href: "/tasks",
   },
   {
@@ -39,10 +50,12 @@ const menus = [
   },
   {
     icon: "⚙️",
-    label: "nav.settings" as MessageKey,
+    label:
+      "nav.settings" as MessageKey,
     href: "/settings",
   },
 ];
+
 function isProjectActive(
   pathname: string,
   projectId: string,
@@ -55,23 +68,33 @@ function isProjectActive(
     )
   );
 }
+
 export default function Sidebar() {
-  const { t } =
-    useLanguage();
+  const {
+    t,
+  } = useLanguage();
+
   const pathname =
     usePathname();
+
   return (
     <aside
       style={{
         width: 250,
-        minHeight: "100%",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        background: "#ffffff",
+        minHeight:
+          "100%",
+        boxSizing:
+          "border-box",
+        display:
+          "flex",
+        flexDirection:
+          "column",
+        background:
+          "#ffffff",
         borderRight:
           "1px solid #e5e7eb",
-        color: "#111827",
+        color:
+          "#111827",
       }}
     >
       <div
@@ -88,26 +111,33 @@ export default function Sidebar() {
           style={{
             display:
               "inline-block",
-            color: "#111827",
+            color:
+              "#111827",
             textDecoration:
               "none",
-            fontSize: 25,
-            fontWeight: 800,
+            fontSize:
+              25,
+            fontWeight:
+              800,
           }}
         >
           {APP_NAME}
         </Link>
+
         <p
           style={{
             margin:
               "5px 0 0",
-            color: "#9ca3af",
-            fontSize: 12,
+            color:
+              "#9ca3af",
+            fontSize:
+              12,
           }}
         >
           {APP_VERSION_LABEL}
         </p>
       </div>
+
       {projects.length > 0 && (
         <div
           style={{
@@ -119,9 +149,12 @@ export default function Sidebar() {
             style={{
               margin:
                 "0 4px 10px",
-              color: "#9ca3af",
-              fontSize: 11,
-              fontWeight: 800,
+              color:
+                "#9ca3af",
+              fontSize:
+                11,
+              fontWeight:
+                800,
               letterSpacing:
                 "0.08em",
               textTransform:
@@ -132,10 +165,13 @@ export default function Sidebar() {
               "nav.projects",
             )}
           </p>
+
           <div
             style={{
-              display: "grid",
-              gap: 7,
+              display:
+                "grid",
+              gap:
+                7,
             }}
           >
             {projects
@@ -149,19 +185,23 @@ export default function Sidebar() {
                       pathname,
                       project.id,
                     );
+
                   return (
                     <Link
                       key={
                         project.id
                       }
                       href={`/projects/${project.id}`}
-                      prefetch={false}
+                      prefetch={
+                        false
+                      }
                       style={{
                         display:
                           "flex",
                         alignItems:
                           "center",
-                        gap: 8,
+                        gap:
+                          8,
                         padding:
                           "10px 12px",
                         borderRadius:
@@ -176,8 +216,10 @@ export default function Sidebar() {
                             : "#374151",
                         textDecoration:
                           "none",
-                        fontSize: 13,
-                        fontWeight: 700,
+                        fontSize:
+                          13,
+                        fontWeight:
+                          700,
                       }}
                     >
                       <span
@@ -187,6 +229,7 @@ export default function Sidebar() {
                           project.icon
                         }
                       </span>
+
                       <span
                         style={{
                           overflow:
@@ -208,16 +251,21 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+
       <nav
         style={{
-          display: "grid",
-          gap: 5,
+          display:
+            "grid",
+          gap:
+            5,
           padding:
             "12px 14px",
         }}
       >
         {menus.map(
-          (item) => {
+          (
+            item,
+          ) => {
             const active =
               pathname ===
                 item.href ||
@@ -229,11 +277,18 @@ export default function Sidebar() {
                   "/workspace" &&
                 pathname === "/"
               );
+
             return (
               <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
+                key={
+                  item.href
+                }
+                href={
+                  item.href
+                }
+                prefetch={
+                  false
+                }
                 style={{
                   display:
                     "block",
@@ -251,7 +306,8 @@ export default function Sidebar() {
                       : "#374151",
                   textDecoration:
                     "none",
-                  fontSize: 14,
+                  fontSize:
+                    14,
                   fontWeight:
                     active
                       ? 800
@@ -273,15 +329,19 @@ export default function Sidebar() {
           },
         )}
       </nav>
+
       <div
         style={{
           marginTop:
             "auto",
-          padding: 16,
+          padding:
+            16,
           borderTop:
             "1px solid #e5e7eb",
-          color: "#9ca3af",
-          fontSize: 12,
+          color:
+            "#9ca3af",
+          fontSize:
+            12,
         }}
       >
         {APP_NAME} ·{" "}
