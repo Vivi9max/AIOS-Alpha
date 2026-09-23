@@ -4,32 +4,76 @@ import type {
   MarketSnapshot,
 } from "./market-types";
 
+export type StructuredProviderFailureCode =
+  | "NOT_CONFIGURED"
+  | "AUTH_DENIED"
+  | "RATE_LIMITED"
+  | "TOKEN_LEVEL_NOT_ENOUGH"
+  | "INVALID_REQUEST"
+  | "SYMBOL_INVALID"
+  | "NO_DATA"
+  | "NETWORK_ERROR"
+  | "UNKNOWN";
+
 export interface StructuredProviderDiagnostics {
   configured: boolean;
+
   endpoint?: string;
+
   httpStatus?: number;
+
   httpOk?: boolean;
+
   ret?: number;
+
   msg?: string;
+
+  failureCode?: StructuredProviderFailureCode;
+
+  requestedCode?: string;
+
+  tradeTickAttempted: boolean;
+
+  klineAttempted: boolean;
+
   tickListCount: number;
+
   klineListCount: number;
+
   klineRowCount: number;
+
   realtimePayloadReceived: boolean;
+
   historicalPayloadReceived: boolean;
+
   realtimeVerified: boolean;
+
   historicalVerified: boolean;
+
+  klineEnabled: boolean;
+
+  klineSkippedReason?: string;
 }
 
 export interface StructuredMarketResult {
   success: boolean;
+
   verified: boolean;
+
   realtimeVerified: boolean;
+
   historicalVerified: boolean;
+
   provider: string;
+
   dataset: string | null;
+
   snapshot: MarketSnapshot;
+
   sourceCount: number;
+
   error?: string;
+
   diagnostics: StructuredProviderDiagnostics;
 }
 
@@ -51,12 +95,17 @@ interface AllTickKlineRow {
 
 interface AllTickResponse {
   ret?: number;
+
   msg?: string;
+
   data?: {
     tick_list?: AllTickTrade[];
+
     kline_list?: Array<{
       code?: string;
+
       kline_type?: number;
+
       kline_data?: AllTickKlineRow[];
     }>;
   };
@@ -64,7 +113,9 @@ interface AllTickResponse {
 
 type AllTickRequestResult = {
   payload: AllTickResponse;
+
   httpStatus: number;
+
   httpOk: boolean;
 };
 
@@ -72,9 +123,29 @@ function env(name: string): string {
   return process.env[name]?.trim() ?? "";
 }
 
-function parseNumber(value: unknown): number | null {
+function parseBoolean(
+  value: string,
+  fallback: boolean,
+): boolean {
+  if (!value) {
+    return fallback;
+  }
+
+  return [
+    "1",
+    "true",
+    "yes",
+    "on",
+  ].includes(value.toLowerCase());
+}
+
+function parseNumber(
+  value: unknown,
+): number | null {
   if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
+    return Number.isFinite(value)
+      ? value
+      : null;
   }
 
   if (typeof value !== "string") {
@@ -85,7 +156,9 @@ function parseNumber(value: unknown): number | null {
     value.replace(/,/g, "").trim(),
   );
 
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
 }
 
 function normalizeTimestamp(
@@ -130,27 +203,49 @@ function normalizeTimestamp(
 function emptySnapshot(): MarketSnapshot {
   return {
     price: null,
+
     previousClose: null,
+
     changePercent: null,
+
     open: null,
+
     high: null,
+
     low: null,
+
     volume: null,
+
     marketCap: null,
+
     pe: null,
+
     pb: null,
+
     eps: null,
+
     revenue: null,
+
     revenueGrowth: null,
+
     afterHoursPrice: null,
+
     preMarketPrice: null,
+
     dataQuality: "insufficient",
+
     liveQuoteAvailable: false,
+
     quoteQuality: "insufficient",
+
     historicalQuality: "insufficient",
+
     asOf: null,
+
     source: null,
+
     dataset: null,
+
     bars: [],
   };
 }
@@ -158,10 +253,11 @@ function emptySnapshot(): MarketSnapshot {
 function toAllTickCode(
   instrument: MarketInstrument,
 ): string {
-  const symbol = instrument.normalizedSymbol
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "");
+  const symbol =
+    instrument.normalizedSymbol
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
 
   if (instrument.market === "hk") {
     const clean = symbol
@@ -179,9 +275,10 @@ function toAllTickCode(
       .replace(/^SS:/i, "")
       .replace(/\.(SH|SZ)$/i, "");
 
-    const suffix = clean.startsWith("6")
-      ? "SH"
-      : "SZ";
+    const suffix =
+      clean.startsWith("6")
+        ? "SH"
+        : "SZ";
 
     return `${clean}.${suffix}`;
   }
@@ -199,13 +296,22 @@ function configured(): boolean {
   );
 }
 
+function klineEnabled(): boolean {
+  return parseBoolean(
+    env("ALLTICK_ENABLE_KLINE"),
+    false,
+  );
+}
+
 function buildTradeTickQuery(
   code: string,
 ): string {
   return JSON.stringify({
-    trace: `aios-trade-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`,
+    trace:
+      `aios-trade-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+
     data: {
       symbol_list: [
         {
@@ -240,7 +346,10 @@ function buildKlineQuery(
     Number.isFinite(configuredCount)
       ? Math.min(
           500,
-          Math.max(2, configuredCount),
+          Math.max(
+            2,
+            configuredCount,
+          ),
         )
       : 100;
 
@@ -250,21 +359,30 @@ function buildKlineQuery(
       : 0;
 
   return JSON.stringify({
-    trace: `aios-kline-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`,
+    trace:
+      `aios-kline-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+
     data: {
       code,
+
       kline_type: klineType,
+
       kline_timestamp_end: 0,
+
       query_kline_num: klineCount,
+
       adjust_type: adjustType,
     },
   });
 }
 
 async function requestAllTick(
-  endpoint: "trade-tick" | "kline",
+  endpoint:
+    | "trade-tick"
+    | "kline",
+
   query: string,
 ): Promise<AllTickRequestResult> {
   const url = new URL(
@@ -285,9 +403,11 @@ async function requestAllTick(
     url,
     {
       method: "GET",
+
       headers: {
         Accept: "application/json",
       },
+
       cache: "no-store",
     },
   );
@@ -305,8 +425,139 @@ async function requestAllTick(
 
   return {
     payload,
-    httpStatus: response.status,
-    httpOk: response.ok,
+
+    httpStatus:
+      response.status,
+
+    httpOk:
+      response.ok,
+  };
+}
+
+function classifyFailure(
+  httpStatus?: number,
+  ret?: number,
+  msg?: string,
+): StructuredProviderFailureCode {
+  const normalized =
+    (msg ?? "").toLowerCase();
+
+  if (
+    httpStatus === 401 ||
+    ret === 401 ||
+    normalized.includes(
+      "token invalid",
+    ) ||
+    normalized.includes(
+      "unauthorized",
+    )
+  ) {
+    return "AUTH_DENIED";
+  }
+
+  if (
+    httpStatus === 429 ||
+    ret === 429 ||
+    normalized.includes(
+      "rate limit",
+    ) ||
+    normalized.includes(
+      "too many requests",
+    )
+  ) {
+    return "RATE_LIMITED";
+  }
+
+  if (
+    ret === 603 ||
+    normalized.includes(
+      "token level not enough",
+    ) ||
+    normalized.includes(
+      "level not enough",
+    )
+  ) {
+    return "TOKEN_LEVEL_NOT_ENOUGH";
+  }
+
+  if (
+    ret === 604 ||
+    normalized.includes(
+      "code unauthorized",
+    )
+  ) {
+    return "AUTH_DENIED";
+  }
+
+  if (
+    ret === 600 ||
+    normalized.includes(
+      "code invalid",
+    )
+  ) {
+    return "SYMBOL_INVALID";
+  }
+
+  if (
+    httpStatus === 400 ||
+    ret === 402 ||
+    normalized.includes(
+      "request data param invalid",
+    ) ||
+    normalized.includes(
+      "request header param invalid",
+    ) ||
+    normalized.includes(
+      "query invalid",
+    )
+  ) {
+    return "INVALID_REQUEST";
+  }
+
+  if (
+    normalized.includes(
+      "network",
+    ) ||
+    normalized.includes(
+      "fetch failed",
+    ) ||
+    normalized.includes(
+      "timeout",
+    )
+  ) {
+    return "NETWORK_ERROR";
+  }
+
+  return "UNKNOWN";
+}
+
+function diagnosticsFrom(
+  configuredValue: boolean,
+): StructuredProviderDiagnostics {
+  return {
+    configured:
+      configuredValue,
+
+    tickListCount: 0,
+
+    klineListCount: 0,
+
+    klineRowCount: 0,
+
+    realtimePayloadReceived: false,
+
+    historicalPayloadReceived: false,
+
+    realtimeVerified: false,
+
+    historicalVerified: false,
+
+    tradeTickAttempted: false,
+
+    klineAttempted: false,
+
+    klineEnabled:
+      klineEnabled(),
   };
 }
 
@@ -321,10 +572,14 @@ function buildBars(
 
   for (const row of rows) {
     const timestamp =
-      normalizeTimestamp(row.timestamp);
+      normalizeTimestamp(
+        row.timestamp,
+      );
 
     const close =
-      parseNumber(row.close_price);
+      parseNumber(
+        row.close_price,
+      );
 
     if (
       !timestamp ||
@@ -335,42 +590,40 @@ function buildBars(
 
     bars.push({
       timestamp,
-      open: parseNumber(
-        row.open_price,
-      ),
-      high: parseNumber(
-        row.high_price,
-      ),
-      low: parseNumber(
-        row.low_price,
-      ),
+
+      open:
+        parseNumber(
+          row.open_price,
+        ),
+
+      high:
+        parseNumber(
+          row.high_price,
+        ),
+
+      low:
+        parseNumber(
+          row.low_price,
+        ),
+
       close,
-      volume: parseNumber(
-        row.volume,
-      ),
+
+      volume:
+        parseNumber(
+          row.volume,
+        ),
     });
   }
 
   return bars.sort(
     (a, b) =>
-      new Date(a.timestamp).getTime() -
-      new Date(b.timestamp).getTime(),
+      new Date(
+        a.timestamp,
+      ).getTime() -
+      new Date(
+        b.timestamp,
+      ).getTime(),
   );
-}
-
-function diagnosticsFrom(
-  configuredValue: boolean,
-): StructuredProviderDiagnostics {
-  return {
-    configured: configuredValue,
-    tickListCount: 0,
-    klineListCount: 0,
-    klineRowCount: 0,
-    realtimePayloadReceived: false,
-    historicalPayloadReceived: false,
-    realtimeVerified: false,
-    historicalVerified: false,
-  };
 }
 
 export function isAllTickConfigured(): boolean {
@@ -380,9 +633,11 @@ export function isAllTickConfigured(): boolean {
 export async function retrieveStructuredMarketData(
   instrument: MarketInstrument,
 ): Promise<StructuredMarketResult> {
-  const empty = emptySnapshot();
+  const empty =
+    emptySnapshot();
 
-  const configuredValue = configured();
+  const configuredValue =
+    configured();
 
   const diagnostics =
     diagnosticsFrom(
@@ -390,29 +645,56 @@ export async function retrieveStructuredMarketData(
     );
 
   if (!configuredValue) {
+    diagnostics.failureCode =
+      "NOT_CONFIGURED";
+
     return {
       success: false,
+
       verified: false,
+
       realtimeVerified: false,
+
       historicalVerified: false,
+
       provider: "alltick",
+
       dataset: null,
+
       snapshot: empty,
+
       sourceCount: 0,
+
       error:
         "ALLTICK_API_KEY is not configured.",
+
       diagnostics,
     };
   }
 
   const code =
-    toAllTickCode(instrument);
+    toAllTickCode(
+      instrument,
+    );
 
-  const dataset =
-    "alltick:trade-tick+kline";
+  diagnostics.requestedCode =
+    code;
 
   diagnostics.endpoint =
     "https://quote.alltick.co/quote-stock-b-api";
+
+  /*
+   * =========================================================
+   * C147.22.2
+   *
+   * REALTIME FIRST
+   *
+   * Trade Tick is the authoritative realtime path.
+   * =========================================================
+   */
+
+  diagnostics.tradeTickAttempted =
+    true;
 
   let tradeResult:
     | AllTickRequestResult
@@ -426,7 +708,9 @@ export async function retrieveStructuredMarketData(
     tradeResult =
       await requestAllTick(
         "trade-tick",
-        buildTradeTickQuery(code),
+        buildTradeTickQuery(
+          code,
+        ),
       );
 
     const payload =
@@ -454,12 +738,26 @@ export async function retrieveStructuredMarketData(
     if (
       !tradeResult.httpOk
     ) {
+      diagnostics.failureCode =
+        classifyFailure(
+          tradeResult.httpStatus,
+          payload.ret,
+          payload.msg,
+        );
+
       tradeError =
         payload.msg ||
         `AllTick trade-tick returned HTTP ${tradeResult.httpStatus}.`;
     } else if (
       payload.ret !== 200
     ) {
+      diagnostics.failureCode =
+        classifyFailure(
+          tradeResult.httpStatus,
+          payload.ret,
+          payload.msg,
+        );
+
       tradeError =
         payload.msg ||
         `AllTick trade-tick returned ret=${String(
@@ -467,107 +765,225 @@ export async function retrieveStructuredMarketData(
         )}.`;
     }
   } catch (error) {
+    diagnostics.failureCode =
+      "NETWORK_ERROR";
+
     tradeError =
       error instanceof Error
         ? error.message
         : "AllTick trade-tick request failed.";
   }
 
-  let klineResult:
-    | AllTickRequestResult
-    | null = null;
-
-  let klineError:
-    | string
-    | undefined;
-
-  try {
-    klineResult =
-      await requestAllTick(
-        "kline",
-        buildKlineQuery(code),
-      );
-
-    const payload =
-      klineResult.payload;
-
-    if (
-      diagnostics.httpStatus ===
-      undefined
-    ) {
-      diagnostics.httpStatus =
-        klineResult.httpStatus;
-    }
-
-    if (
-      diagnostics.httpOk ===
-      undefined
-    ) {
-      diagnostics.httpOk =
-        klineResult.httpOk;
-    }
-
-    diagnostics.klineListCount =
-      payload.data?.kline_list
-        ?.length ?? 0;
-
-    diagnostics.klineRowCount =
-      payload.data?.kline_list
-        ?.reduce(
-          (sum, item) =>
-            sum +
-            (item.kline_data
-              ?.length ?? 0),
-          0,
-        ) ?? 0;
-
-    diagnostics.historicalPayloadReceived =
-      diagnostics.klineListCount > 0 &&
-      diagnostics.klineRowCount > 0;
-
-    if (
-      !klineResult.httpOk
-    ) {
-      klineError =
-        payload.msg ||
-        `AllTick kline returned HTTP ${klineResult.httpStatus}.`;
-    } else if (
-      payload.ret !== 200
-    ) {
-      klineError =
-        payload.msg ||
-        `AllTick kline returned ret=${String(
-          payload.ret,
-        )}.`;
-    }
-  } catch (error) {
-    klineError =
-      error instanceof Error
-        ? error.message
-        : "AllTick kline request failed.";
-  }
-
-  const bars = klineResult
-    ? buildBars(
-        klineResult.payload,
-      )
-    : [];
-
   const tick =
     tradeResult?.payload.data
       ?.tick_list?.[0];
 
   const livePrice =
-    parseNumber(tick?.price);
+    parseNumber(
+      tick?.price,
+    );
 
   const liveAsOf =
     normalizeTimestamp(
       tick?.tick_time,
     );
 
-  const hasLiveQuote =
+  const realtimeVerified =
     livePrice !== null &&
     liveAsOf !== null;
+
+  diagnostics.realtimeVerified =
+    realtimeVerified;
+
+  /*
+   * =========================================================
+   * HARD BOUNDARY
+   *
+   * If realtime access failed, DO NOT spend another
+   * AllTick request on K-line.
+   *
+   * This prevents:
+   *   604 -> unauthorized
+   *   followed by unnecessary 429
+   *
+   * and protects low-tier API quotas.
+   * =========================================================
+   */
+
+  if (!realtimeVerified) {
+    diagnostics.klineAttempted =
+      false;
+
+    diagnostics.klineSkippedReason =
+      tradeError
+        ? `Trade Tick unavailable: ${tradeError}`
+        : "Trade Tick returned no verified realtime price.";
+
+    const failureCode =
+      diagnostics.failureCode ??
+      "NO_DATA";
+
+    diagnostics.failureCode =
+      failureCode;
+
+    return {
+      success: false,
+
+      verified: false,
+
+      realtimeVerified: false,
+
+      historicalVerified: false,
+
+      provider: "alltick",
+
+      dataset:
+        "alltick:trade-tick",
+
+      snapshot: empty,
+
+      sourceCount: 0,
+
+      error: [
+        `code=${failureCode}`,
+
+        tradeError ??
+          "AllTick returned no verified realtime tick.",
+
+        `symbol=${code}`,
+
+        "K-line skipped because realtime Trade Tick was not verified.",
+      ].join(" | "),
+
+      diagnostics,
+    };
+  }
+
+  /*
+   * =========================================================
+   * REALTIME SNAPSHOT
+   * =========================================================
+   */
+
+  let bars: MarketBar[] = [];
+
+  let klineError:
+    | string
+    | undefined;
+
+  /*
+   * =========================================================
+   * OPTIONAL HISTORICAL PATH
+   *
+   * Disabled by default.
+   *
+   * Enable explicitly:
+   *
+   * ALLTICK_ENABLE_KLINE=true
+   *
+   * =========================================================
+   */
+
+  if (
+    klineEnabled()
+  ) {
+    diagnostics.klineAttempted =
+      true;
+
+    try {
+      const klineResult =
+        await requestAllTick(
+          "kline",
+          buildKlineQuery(
+            code,
+          ),
+        );
+
+      const payload =
+        klineResult.payload;
+
+      diagnostics.klineListCount =
+        payload.data?.kline_list
+          ?.length ?? 0;
+
+      diagnostics.klineRowCount =
+        payload.data?.kline_list
+          ?.reduce(
+            (sum, item) =>
+              sum +
+              (
+                item.kline_data
+                  ?.length ?? 0
+              ),
+            0,
+          ) ?? 0;
+
+      diagnostics.historicalPayloadReceived =
+        diagnostics.klineListCount > 0 &&
+        diagnostics.klineRowCount > 0;
+
+      if (
+        !klineResult.httpOk
+      ) {
+        klineError =
+          payload.msg ||
+          `AllTick kline returned HTTP ${klineResult.httpStatus}.`;
+
+        if (
+          !diagnostics.failureCode
+        ) {
+          diagnostics.failureCode =
+            classifyFailure(
+              klineResult.httpStatus,
+              payload.ret,
+              payload.msg,
+            );
+        }
+      } else if (
+        payload.ret !== 200
+      ) {
+        klineError =
+          payload.msg ||
+          `AllTick kline returned ret=${String(
+            payload.ret,
+          )}.`;
+
+        if (
+          !diagnostics.failureCode
+        ) {
+          diagnostics.failureCode =
+            classifyFailure(
+              klineResult.httpStatus,
+              payload.ret,
+              payload.msg,
+            );
+        }
+      } else {
+        bars =
+          buildBars(
+            payload,
+          );
+      }
+    } catch (error) {
+      klineError =
+        error instanceof Error
+          ? error.message
+          : "AllTick kline request failed.";
+
+      if (
+        !diagnostics.failureCode
+      ) {
+        diagnostics.failureCode =
+          "NETWORK_ERROR";
+      }
+    }
+  } else {
+    diagnostics.klineAttempted =
+      false;
+
+    diagnostics.klineSkippedReason =
+      "K-line disabled for realtime-first runtime.";
+  }
 
   const latestBar =
     bars.length > 0
@@ -583,67 +999,33 @@ export async function retrieveStructuredMarketData(
     previousBar?.close ??
     null;
 
-  const fallbackPreviousClose =
+  const effectivePreviousClose =
+    previousClose ??
     latestBar?.close ??
     null;
 
-  const effectivePreviousClose =
-    previousClose ??
-    fallbackPreviousClose;
-
   const changePercent =
-    hasLiveQuote &&
     effectivePreviousClose !== null &&
     effectivePreviousClose !== 0
-      ? ((livePrice! -
-          effectivePreviousClose) /
-          effectivePreviousClose) *
+      ? (
+          (
+            livePrice -
+            effectivePreviousClose
+          ) /
+          effectivePreviousClose
+        ) *
         100
       : null;
 
   const historicalVerified =
     bars.length > 0;
 
-  const realtimeVerified =
-    hasLiveQuote;
-
-  diagnostics.realtimeVerified =
-    realtimeVerified;
-
   diagnostics.historicalVerified =
     historicalVerified;
 
-  if (
-    !realtimeVerified &&
-    !historicalVerified
-  ) {
-    const errors = [
-      tradeError,
-      klineError,
-    ].filter(Boolean);
-
-    return {
-      success: false,
-      verified: false,
-      realtimeVerified: false,
-      historicalVerified: false,
-      provider: "alltick",
-      dataset,
-      snapshot: empty,
-      sourceCount: 0,
-      error:
-        errors.length > 0
-          ? errors.join(" | ")
-          : "AllTick returned no usable realtime tick or historical K-line.",
-      diagnostics,
-    };
-  }
-
   const snapshot: MarketSnapshot = {
     price:
-      livePrice ??
-      latestBar?.close ??
-      null,
+      livePrice,
 
     previousClose,
 
@@ -663,32 +1045,34 @@ export async function retrieveStructuredMarketData(
 
     volume:
       latestBar?.volume ??
-      null,
+      parseNumber(
+        tick?.volume,
+      ),
 
     marketCap: null,
+
     pe: null,
+
     pb: null,
+
     eps: null,
+
     revenue: null,
+
     revenueGrowth: null,
 
     afterHoursPrice: null,
+
     preMarketPrice: null,
 
     dataQuality:
-      realtimeVerified
-        ? "live"
-        : "historical",
+      "live",
 
     liveQuoteAvailable:
-      realtimeVerified,
+      true,
 
     quoteQuality:
-      realtimeVerified
-        ? "live"
-        : historicalVerified
-          ? "historical"
-          : "insufficient",
+      "live",
 
     historicalQuality:
       historicalVerified
@@ -696,36 +1080,38 @@ export async function retrieveStructuredMarketData(
         : "insufficient",
 
     asOf:
-      liveAsOf ??
-      latestBar?.timestamp ??
-      null,
+      liveAsOf,
 
-    source: "AllTick",
+    source:
+      "AllTick",
 
-    dataset,
+    dataset:
+      klineEnabled()
+        ? "alltick:trade-tick+kline"
+        : "alltick:trade-tick",
 
     bars,
   };
 
   const errorMessages = [
-    tradeError,
     klineError,
   ].filter(Boolean);
 
   return {
     success: true,
 
-    verified:
-      realtimeVerified ||
-      historicalVerified,
+    verified: true,
 
-    realtimeVerified,
+    realtimeVerified: true,
 
     historicalVerified,
 
     provider: "alltick",
 
-    dataset,
+    dataset:
+      klineEnabled()
+        ? "alltick:trade-tick+kline"
+        : "alltick:trade-tick",
 
     snapshot,
 
