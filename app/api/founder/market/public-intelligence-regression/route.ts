@@ -2,23 +2,21 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
-
+import {
+  probeStructuredMarketCapabilities,
+} from "@/lib/runtime/market/market-provider";
 export const dynamic =
   "force-dynamic";
-
 export const runtime =
   "nodejs";
-
 type RegressionCheck = {
   name: string;
   passed: boolean;
   detail: string;
 };
-
 function unauthorized() {
   return NextResponse.json(
     {
@@ -33,7 +31,6 @@ function unauthorized() {
     },
   );
 }
-
 function asRecord(
   value: unknown,
 ): Record<string, unknown> {
@@ -42,7 +39,50 @@ function asRecord(
     ? (value as Record<string, unknown>)
     : {};
 }
-
+function asString(
+  value: unknown,
+  fallback = "none",
+): string {
+  return typeof value === "string"
+    ? value
+    : fallback;
+}
+function asBoolean(
+  value: unknown,
+  fallback = false,
+): boolean {
+  return typeof value === "boolean"
+    ? value
+    : fallback;
+}
+function capabilityDetail(
+  capability: unknown,
+): string {
+  const record =
+    asRecord(capability);
+  return [
+    `technicalSupport=${String(
+      record.technicalSupport,
+    )}`,
+    `accountEntitled=${String(
+      record.accountEntitled,
+    )}`,
+    `realtimeVerified=${String(
+      record.realtimeVerified,
+    )}`,
+    `probeSymbol=${asString(
+      record.probeSymbol,
+    )}`,
+    `failureCode=${asString(
+      record.failureCode,
+      "none",
+    )}`,
+    `reason=${asString(
+      record.reason,
+      "none",
+    )}`,
+  ].join("; ");
+}
 export async function GET(
   request: NextRequest,
 ) {
@@ -53,16 +93,20 @@ export async function GET(
   ) {
     return unauthorized();
   }
-
   const startedAt =
     Date.now();
-
   try {
     /*
+     * =========================================================
+     * C147.21.1
+     *
+     * PUBLIC MARKET INTELLIGENCE
+     *
      * IMPORTANT:
      *
-     * This request intentionally does NOT
-     * forward Founder authentication.
+     * Founder authentication is intentionally NOT forwarded
+     * to the public endpoint.
+     * =========================================================
      */
     const response =
       await fetch(
@@ -73,12 +117,10 @@ export async function GET(
         {
           method:
             "POST",
-
           headers: {
             "Content-Type":
               "application/json",
           },
-
           body:
             JSON.stringify({
               symbol:
@@ -86,83 +128,139 @@ export async function GET(
               market:
                 "us",
             }),
-
           cache:
             "no-store",
         },
       );
-
     const data =
       asRecord(
         await response.json(),
       );
-
     const snapshot =
       asRecord(
         data.snapshot,
       );
-
     const verification =
       asRecord(
         data.verification,
       );
-
     const provider =
       asRecord(
         data.provider,
       );
-
     const freshness =
       asRecord(
         verification.freshness,
       );
-
     const providerReason =
       typeof provider.reason ===
       "string"
         ? provider.reason
         : "none";
-
     const runtimeError =
       typeof data.error ===
       "string"
         ? data.error
         : "none";
-
+    /*
+     * =========================================================
+     * C147.22.3
+     *
+     * CAPABILITY PROBE
+     *
+     * This is intentionally executed ONLY inside this
+     * Founder regression endpoint.
+     *
+     * It is NOT part of the normal public market request.
+     *
+     * Probe order:
+     * US → HK → CN
+     *
+     * The probe implementation itself is sequential.
+     * =========================================================
+     */
+    let capabilityProbe:
+      | Record<string, unknown>
+      | null = null;
+    let capabilityProbeError:
+      | string
+      | undefined;
+    try {
+      const probe =
+        await probeStructuredMarketCapabilities();
+      capabilityProbe =
+        asRecord(probe);
+    } catch (error) {
+      capabilityProbeError =
+        error instanceof Error
+          ? error.message
+          : "Capability probe failed.";
+    }
+    const technicalMarkets =
+      Array.isArray(
+        capabilityProbe?.technicalMarkets,
+      )
+        ? capabilityProbe
+            ?.technicalMarkets as unknown[]
+        : [];
+    const entitledMarkets =
+      Array.isArray(
+        capabilityProbe?.entitledMarkets,
+      )
+        ? capabilityProbe
+            ?.entitledMarkets as unknown[]
+        : [];
+    const realtimeVerifiedMarkets =
+      Array.isArray(
+        capabilityProbe?.realtimeVerifiedMarkets,
+      )
+        ? capabilityProbe
+            ?.realtimeVerifiedMarkets as unknown[]
+        : [];
+    const marketCapabilities =
+      asRecord(
+        capabilityProbe
+          ?.marketCapabilities,
+      );
+    const usCapability =
+      asRecord(
+        marketCapabilities.us,
+      );
+    const hkCapability =
+      asRecord(
+        marketCapabilities.hk,
+      );
+    const cnCapability =
+      asRecord(
+        marketCapabilities.cn,
+      );
     const checks:
       RegressionCheck[] = [
         {
           name:
             "PUBLIC_HTTP_ACCESS",
-
           passed:
             response.status !==
               401 &&
             response.status !==
               403,
-
           detail:
             `Public endpoint returned HTTP ${response.status} without Founder headers.`,
         },
-
         {
           name:
             "REAL_MARKET_RUNTIME",
-
           passed:
             data.success ===
               true,
-
           detail:
             `success=${String(
               data.success,
             )}.`,
         },
-
         {
           name:
             "STRUCTURED_PROVIDER",
-
           passed:
             provider.provider ===
               "alltick" &&
@@ -174,37 +272,29 @@ export async function GET(
               true &&
             verification.structuredDataVerified ===
               true,
-
           detail:
             [
               `provider=${String(
                 provider.provider,
               )}`,
-
               `configured=${String(
                 provider.configured,
               )}`,
-
               `available=${String(
                 provider.available,
               )}`,
-
               `structuredAvailable=${String(
                 verification.structuredDataAvailable,
               )}`,
-
               `structuredVerified=${String(
                 verification.structuredDataVerified,
               )}`,
-
               `reason=${providerReason}`,
             ].join("; "),
         },
-
         {
           name:
             "LIVE_QUOTE_AVAILABLE",
-
           passed:
             snapshot.liveQuoteAvailable ===
               true &&
@@ -212,7 +302,6 @@ export async function GET(
               "live" &&
             snapshot.quoteQuality ===
               "live",
-
           detail:
             `liveQuoteAvailable=${String(
               snapshot.liveQuoteAvailable,
@@ -222,11 +311,9 @@ export async function GET(
               snapshot.quoteQuality,
             )}.`,
         },
-
         {
           name:
             "AS_OF_TIMESTAMP",
-
           passed:
             typeof snapshot.asOf ===
               "string" &&
@@ -237,18 +324,15 @@ export async function GET(
                 ),
               ).getTime(),
             ),
-
           detail:
             `asOf=${String(
               snapshot.asOf ??
                 "none",
             )}.`,
         },
-
         {
           name:
             "FRESHNESS_METADATA",
-
           passed:
             typeof freshness.freshness ===
               "string" &&
@@ -256,7 +340,6 @@ export async function GET(
               "string" &&
             typeof freshness.ageMinutes ===
               "number",
-
           detail:
             `freshness=${String(
               freshness.freshness,
@@ -264,33 +347,27 @@ export async function GET(
               freshness.ageMinutes,
             )}.`,
         },
-
         {
           name:
             "MARKET_COVERAGE",
-
           passed:
-            Array.isArray(
-              provider.supportsMarkets,
+            technicalMarkets.includes(
+              "us",
             ) &&
-            ["us", "hk", "cn"].every(
-              (market) =>
-                (
-                  provider.supportsMarkets as unknown[]
-                ).includes(market),
+            technicalMarkets.includes(
+              "hk",
+            ) &&
+            technicalMarkets.includes(
+              "cn",
             ),
-
           detail:
-            `supportsMarkets=${JSON.stringify(
-              provider.supportsMarkets ??
-                [],
+            `technicalMarkets=${JSON.stringify(
+              technicalMarkets,
             )}.`,
         },
-
         {
           name:
             "HISTORICAL_OHLCV",
-
           passed:
             Array.isArray(
               snapshot.bars,
@@ -300,7 +377,6 @@ export async function GET(
             ).length > 0 &&
             snapshot.historicalQuality ===
               "historical",
-
           detail:
             `bars=${String(
               Array.isArray(
@@ -312,55 +388,44 @@ export async function GET(
               snapshot.historicalQuality,
             )}.`,
         },
-
         {
           name:
             "EVIDENCE_RUNTIME_CODE",
-
           passed:
             data.code ===
               "C147_2_STRUCTURED_MARKET_DATA_PASS",
-
           detail:
             `Runtime code=${String(
               data.code ??
                 "none",
             )}.`,
         },
-
         {
           name:
             "PUBLIC_BOUNDARY",
-
           passed:
             data.publicBoundary ===
               "C147.21",
-
           detail:
             `publicBoundary=${String(
               data.publicBoundary ??
                 "none",
             )}.`,
         },
-
         {
           name:
             "IDENTITY_NOT_EXPOSED",
-
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
               "userId",
             ),
-
           detail:
             "Internal anonymous userId is not returned to the public client.",
         },
-
         {
           name:
             "NO_AUTOMATED_EXECUTION",
-
           passed:
             !Object.prototype.hasOwnProperty.call(
               data,
@@ -374,183 +439,321 @@ export async function GET(
               data,
               "tradingExecuted",
             ),
-
           detail:
             "Public response exposes no automated execution, Planner or trading result.",
         },
-
         {
           name:
             "IDENTITY_COOKIE",
-
           passed:
             Boolean(
               response.headers.get(
                 "set-cookie",
               ),
             ),
-
           detail:
             "Anonymous Alpha identity cookie was issued server-side.",
         },
+        /*
+         * =====================================================
+         * C147.22.3 CAPABILITY PROBE CHECKS
+         * =====================================================
+         */
+        {
+          name:
+            "CAPABILITY_PROBE_EXECUTED",
+          passed:
+            capabilityProbe !==
+              null &&
+            capabilityProbeError ===
+              undefined,
+          detail:
+            capabilityProbeError
+              ? `Capability probe error=${capabilityProbeError}.`
+              : [
+                  `technicalMarkets=${JSON.stringify(
+                    technicalMarkets,
+                  )}`,
+                  `entitledMarkets=${JSON.stringify(
+                    entitledMarkets,
+                  )}`,
+                  `realtimeVerifiedMarkets=${JSON.stringify(
+                    realtimeVerifiedMarkets,
+                  )}`,
+                ].join("; "),
+        },
+        {
+          name:
+            "US_MARKET_CAPABILITY",
+          passed:
+            asBoolean(
+              usCapability.technicalSupport,
+            ) &&
+            asBoolean(
+              usCapability.realtimeVerified,
+            ),
+          detail:
+            capabilityDetail(
+              usCapability,
+            ),
+        },
+        {
+          name:
+            "HK_MARKET_CAPABILITY",
+          passed:
+            asBoolean(
+              hkCapability.technicalSupport,
+            ) &&
+            asBoolean(
+              hkCapability.realtimeVerified,
+            ),
+          detail:
+            capabilityDetail(
+              hkCapability,
+            ),
+        },
+        {
+          name:
+            "CN_MARKET_CAPABILITY",
+          passed:
+            asBoolean(
+              cnCapability.technicalSupport,
+            ) &&
+            asBoolean(
+              cnCapability.realtimeVerified,
+            ),
+          detail:
+            capabilityDetail(
+              cnCapability,
+            ),
+        },
       ];
-
     const failed =
       checks.filter(
         (check) =>
           !check.passed,
       ).length;
-
+    /*
+     * C147.22.3
+     *
+     * Capability information is diagnostic.
+     *
+     * A failed market capability MUST remain
+     * visible as a failed/unknown condition.
+     *
+     * It must never be converted into a fake
+     * live market success.
+     */
     return NextResponse.json(
       {
         success:
           failed === 0,
-
         code:
           failed === 0
             ? "C147_21_1_PUBLIC_MARKET_INTELLIGENCE_REGRESSION_PASS"
             : "C147_21_1_PUBLIC_MARKET_INTELLIGENCE_REGRESSION_PARTIAL",
-
         stage:
           "C147.21.1",
-
         passed:
           checks.length -
           failed,
-
         failed,
-
         total:
           checks.length,
-
         checks,
-
         /*
-         * NEW:
-         *
-         * Diagnostic information is intentionally
-         * safe for Founder Console.
-         *
-         * API key is NEVER returned.
+         * =====================================================
+         * STRUCTURED PROVIDER DIAGNOSTICS
+         * =====================================================
          */
         structuredProviderDiagnostics: {
           provider:
             provider.provider ??
             null,
-
           configured:
             provider.configured ??
             false,
-
           available:
             provider.available ??
             false,
-
           supportsQuote:
             provider.supportsQuote ??
             false,
-
           supportsRealtime:
             provider.supportsRealtime ??
             false,
-
           supportsHistorical:
             provider.supportsHistorical ??
             false,
-
           supportsMarkets:
             provider.supportsMarkets ??
             [],
-
           reason:
             providerReason,
-
           runtimeError,
+          technicalMarkets,
+          entitledMarkets,
+          realtimeVerifiedMarkets,
+          capabilityProbeExecuted:
+            capabilityProbe !==
+              null,
+          capabilityProbeError:
+            capabilityProbeError ??
+            null,
+          marketCapabilities:
+            capabilityProbe
+              ?.marketCapabilities ??
+            {},
         },
-
+        /*
+         * =====================================================
+         * LIVE MARKET VERIFICATION
+         * =====================================================
+         */
         liveMarketVerification: {
           provider:
             provider.provider ??
             null,
-
           liveQuoteAvailable:
             snapshot.liveQuoteAvailable ??
             false,
-
           dataQuality:
             snapshot.dataQuality ??
             "insufficient",
-
           quoteQuality:
             snapshot.quoteQuality ??
             null,
-
           historicalQuality:
             snapshot.historicalQuality ??
             null,
-
           asOf:
             snapshot.asOf ??
             null,
-
           freshness:
             freshness.freshness ??
             "unknown",
-
           ageMinutes:
             freshness.ageMinutes ??
             null,
-
           supportsMarkets:
             provider.supportsMarkets ??
             [],
+          technicalMarkets,
+          entitledMarkets,
+          realtimeVerifiedMarkets,
         },
-
+        /*
+         * =====================================================
+         * CAPABILITY MATRIX
+         * =====================================================
+         */
+        capabilityMatrix: {
+          us: {
+            technicalSupport:
+              usCapability.technicalSupport ??
+              false,
+            accountEntitled:
+              usCapability.accountEntitled ??
+              false,
+            realtimeVerified:
+              usCapability.realtimeVerified ??
+              false,
+            probeSymbol:
+              usCapability.probeSymbol ??
+              "AAPL.US",
+            failureCode:
+              usCapability.failureCode ??
+              null,
+            reason:
+              usCapability.reason ??
+              null,
+          },
+          hk: {
+            technicalSupport:
+              hkCapability.technicalSupport ??
+              false,
+            accountEntitled:
+              hkCapability.accountEntitled ??
+              false,
+            realtimeVerified:
+              hkCapability.realtimeVerified ??
+              false,
+            probeSymbol:
+              hkCapability.probeSymbol ??
+              "0700.HK",
+            failureCode:
+              hkCapability.failureCode ??
+              null,
+            reason:
+              hkCapability.reason ??
+              null,
+          },
+          cn: {
+            technicalSupport:
+              cnCapability.technicalSupport ??
+              false,
+            accountEntitled:
+              cnCapability.accountEntitled ??
+              false,
+            realtimeVerified:
+              cnCapability.realtimeVerified ??
+              false,
+            probeSymbol:
+              cnCapability.probeSymbol ??
+              "600519.SH",
+            failureCode:
+              cnCapability.failureCode ??
+              null,
+            reason:
+              cnCapability.reason ??
+              null,
+          },
+        },
+        /*
+         * =====================================================
+         * SAFETY BOUNDARY
+         * =====================================================
+         */
         safetyBoundary: {
           founderAuthRequired:
             false,
-
           humanReviewMutation:
             false,
-
           plannerDispatched:
             false,
-
           tradingExecuted:
             false,
+          capabilityProbeMutation:
+            false,
         },
-
         runtime: {
           name:
             "public-market-intelligence-regression-runtime",
-
           version:
             "C147.21.1",
-
           upstream:
-            "C147.21+C147.2+C147.22",
-
+            "C147.21+C147.2+C147.22.3",
           generatedAt:
             new Date().toISOString(),
-
           latencyMs:
             Date.now() -
             startedAt,
         },
-
         principles: [
           "Public Market Intelligence uses the read-only Market Runtime.",
           "AllTick is the structured realtime-first provider.",
           "Web Intelligence is fallback evidence and cannot claim live quotes.",
+          "Technical market capability is distinct from account entitlement.",
+          "Account entitlement is distinct from realtime verification.",
+          "Capability Probe is Founder diagnostic-only.",
           "Internal anonymous identity is maintained by an HttpOnly cookie.",
           "Internal userId is not returned to the public client.",
           "No Planner dispatch occurs.",
           "No automated trading occurs.",
           "Human-review persistence remains outside the public boundary.",
         ],
-
         disclaimer:
-          "C147.21.1 validates the public Market Intelligence boundary. It does not rank securities, predict returns, provide personalized investment advice, or execute trades.",
+          "C147.21.1 validates the public Market Intelligence boundary and C147.22.3 validates structured-provider capability diagnostics. It does not rank securities, predict returns, provide personalized investment advice, or execute trades.",
       },
     );
   } catch (
@@ -560,13 +763,10 @@ export async function GET(
       {
         success:
           false,
-
         code:
           "C147_21_1_PUBLIC_MARKET_INTELLIGENCE_REGRESSION_ERROR",
-
         stage:
           "C147.21.1",
-
         error:
           error instanceof Error
             ? error.message
