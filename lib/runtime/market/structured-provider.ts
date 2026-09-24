@@ -16,97 +16,67 @@ export type StructuredProviderFailureCode =
   | "NETWORK_ERROR"
   | "UNKNOWN";
 
+export type AllTickEntitlementStatus =
+  | "verified"
+  | "denied"
+  | "unknown";
+
 export interface StructuredProviderDiagnostics {
   configured: boolean;
-
   endpoint?: string;
-
   httpStatus?: number;
-
   httpOk?: boolean;
-
   ret?: number;
-
   msg?: string;
-
   failureCode?: StructuredProviderFailureCode;
-
   requestedCode?: string;
-
   tradeTickAttempted: boolean;
-
   klineAttempted: boolean;
-
   tickListCount: number;
-
   klineListCount: number;
-
   klineRowCount: number;
-
   realtimePayloadReceived: boolean;
-
   historicalPayloadReceived: boolean;
-
   realtimeVerified: boolean;
-
   historicalVerified: boolean;
-
   klineEnabled: boolean;
-
   klineSkippedReason?: string;
 }
 
 export interface StructuredMarketResult {
   success: boolean;
-
   verified: boolean;
-
   realtimeVerified: boolean;
-
   historicalVerified: boolean;
-
   provider: string;
-
   dataset: string | null;
-
   snapshot: MarketSnapshot;
-
   sourceCount: number;
-
   error?: string;
-
   diagnostics: StructuredProviderDiagnostics;
 }
 
 export interface AllTickMarketCapability {
   market: MarketRegion;
-
   technicalSupport: boolean;
-
-  accountEntitled: boolean;
-
+  accountEntitled:
+    | "verified"
+    | "denied"
+    | "unknown";
   realtimeVerified: boolean;
-
   probeSymbol: string;
-
   failureCode:
     | StructuredProviderFailureCode
     | null;
-
   reason: string | null;
 }
 
 export interface AllTickCapabilityProbeResult {
   provider: "alltick";
-
   configured: boolean;
-
   technicalMarkets: MarketRegion[];
-
   entitledMarkets: MarketRegion[];
-
   realtimeVerifiedMarkets: MarketRegion[];
-
   marketCapabilities: Partial<
     Record<
       MarketRegion,
@@ -133,17 +103,12 @@ interface AllTickKlineRow {
 
 interface AllTickResponse {
   ret?: number;
-
   msg?: string;
-
   data?: {
     tick_list?: AllTickTrade[];
-
     kline_list?: Array<{
       code?: string;
-
       kline_type?: number;
-
       kline_data?: AllTickKlineRow[];
     }>;
   };
@@ -151,9 +116,7 @@ interface AllTickResponse {
 
 type AllTickRequestResult = {
   payload: AllTickResponse;
-
   httpStatus: number;
-
   httpOk: boolean;
 };
 
@@ -170,11 +133,9 @@ const DEFAULT_PROBE_SYMBOLS: Record<
   us:
     process.env.ALLTICK_PROBE_US_SYMBOL?.trim() ||
     "AAPL.US",
-
   hk:
     process.env.ALLTICK_PROBE_HK_SYMBOL?.trim() ||
     "0700.HK",
-
   cn:
     process.env.ALLTICK_PROBE_CN_SYMBOL?.trim() ||
     "600519.SH",
@@ -188,9 +149,7 @@ function parseBoolean(
   value: string,
   fallback: boolean,
 ): boolean {
-  if (!value) {
-    return fallback;
-  }
+  if (!value) return fallback;
 
   return [
     "1",
@@ -236,9 +195,7 @@ function normalizeTimestamp(
 
   const raw = String(value).trim();
 
-  if (!raw) {
-    return null;
-  }
+  if (!raw) return null;
 
   const numeric = Number(raw);
 
@@ -273,53 +230,31 @@ function normalizeTimestamp(
 function emptySnapshot(): MarketSnapshot {
   return {
     price: null,
-
     previousClose: null,
-
     changePercent: null,
-
     open: null,
-
     high: null,
-
     low: null,
-
     volume: null,
-
     marketCap: null,
-
     pe: null,
-
     pb: null,
-
     eps: null,
-
     revenue: null,
-
     revenueGrowth: null,
-
     afterHoursPrice: null,
-
     preMarketPrice: null,
-
     dataQuality:
       "insufficient",
-
     liveQuoteAvailable:
       false,
-
     quoteQuality:
       "insufficient",
-
     historicalQuality:
       "insufficient",
-
     asOf: null,
-
     source: null,
-
     dataset: null,
-
     bars: [],
   };
 }
@@ -334,8 +269,7 @@ function toAllTickCode(
       .replace(/\s+/g, "");
 
   if (
-    instrument.market ===
-    "hk"
+    instrument.market === "hk"
   ) {
     const clean =
       symbol
@@ -359,8 +293,7 @@ function toAllTickCode(
   }
 
   if (
-    instrument.market ===
-    "cn"
+    instrument.market === "cn"
   ) {
     const clean =
       symbol
@@ -416,9 +349,7 @@ function configured(): boolean {
 
 function klineEnabled(): boolean {
   return parseBoolean(
-    env(
-      "ALLTICK_ENABLE_KLINE",
-    ),
+    env("ALLTICK_ENABLE_KLINE"),
     false,
   );
 }
@@ -431,12 +362,9 @@ function buildTradeTickQuery(
       `aios-trade-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
-
     data: {
       symbol_list: [
-        {
-          code,
-        },
+        { code },
       ],
     },
   });
@@ -498,19 +426,14 @@ function buildKlineQuery(
       `aios-kline-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
-
     data: {
       code,
-
       kline_type:
         klineType,
-
       kline_timestamp_end:
         0,
-
       query_kline_num:
         klineCount,
-
       adjust_type:
         adjustType,
     },
@@ -521,7 +444,6 @@ async function requestAllTick(
   endpoint:
     | "trade-tick"
     | "kline",
-
   query: string,
 ): Promise<AllTickRequestResult> {
   const url = new URL(
@@ -543,12 +465,10 @@ async function requestAllTick(
       url,
       {
         method: "GET",
-
         headers: {
           Accept:
             "application/json",
         },
-
         cache: "no-store",
       },
     );
@@ -567,10 +487,8 @@ async function requestAllTick(
 
   return {
     payload,
-
     httpStatus:
       response.status,
-
     httpOk:
       response.ok,
   };
@@ -679,31 +597,21 @@ function diagnosticsFrom(
   return {
     configured:
       configuredValue,
-
     tickListCount: 0,
-
     klineListCount: 0,
-
     klineRowCount: 0,
-
     realtimePayloadReceived:
       false,
-
     historicalPayloadReceived:
       false,
-
     realtimeVerified:
       false,
-
     historicalVerified:
       false,
-
     tradeTickAttempted:
       false,
-
     klineAttempted:
       false,
-
     klineEnabled:
       klineEnabled(),
   };
@@ -742,24 +650,19 @@ function buildBars(
 
     bars.push({
       timestamp,
-
       open:
         parseNumber(
           row.open_price,
         ),
-
       high:
         parseNumber(
           row.high_price,
         ),
-
       low:
         parseNumber(
           row.low_price,
         ),
-
       close,
-
       volume:
         parseNumber(
           row.volume,
@@ -788,8 +691,7 @@ function probeSymbol(
   return (
     DEFAULT_PROBE_SYMBOLS[
       market
-    ] ??
-    ""
+    ] ?? ""
   )
     .trim()
     .toUpperCase();
@@ -803,63 +705,33 @@ function capabilityFromFailure(
     | null,
   reason: string | null,
 ): AllTickMarketCapability {
-  /*
-   * Technical support comes from AllTick's
-   * known stock gateway capability.
-   *
-   * It is intentionally NOT inferred from
-   * the current API key.
-   */
   const technicalSupport =
     ALLTICK_TECHNICAL_MARKETS.includes(
       market,
     );
 
-  /*
-   * AUTH_DENIED and TOKEN_LEVEL_NOT_ENOUGH
-   * explicitly indicate that the current
-   * account/key cannot access this request.
-   *
-   * SYMBOL_INVALID / INVALID_REQUEST are
-   * not treated as entitlement proof.
-   */
-  const accountEntitled =
-    failureCode !==
-      "AUTH_DENIED" &&
-    failureCode !==
-      "TOKEN_LEVEL_NOT_ENOUGH";
+  const accountEntitled:
+    AllTickEntitlementStatus =
+    failureCode ===
+      "AUTH_DENIED" ||
+    failureCode ===
+      "TOKEN_LEVEL_NOT_ENOUGH"
+      ? "denied"
+      : "unknown";
 
   return {
     market,
-
     technicalSupport,
-
     accountEntitled,
-
     realtimeVerified:
       false,
-
     probeSymbol:
       symbol,
-
     failureCode,
-
     reason,
   };
 }
 
-/**
- * C147.22.3
- *
- * Probe current AllTick account capability
- * independently for US / HK / CN.
- *
- * This is diagnostic-only.
- *
- * It never changes the normal market request,
- * never enables K-line, never dispatches Planner,
- * and never executes trades.
- */
 export async function probeAllTickCapabilities(): Promise<
   AllTickCapabilityProbeResult
 > {
@@ -890,19 +762,11 @@ export async function probeAllTickCapabilities(): Promise<
     return {
       provider:
         "alltick",
-
-      configured:
-        false,
-
+      configured: false,
       technicalMarkets:
         [...ALLTICK_TECHNICAL_MARKETS],
-
-      entitledMarkets:
-        [],
-
-      realtimeVerifiedMarkets:
-        [],
-
+      entitledMarkets: [],
+      realtimeVerifiedMarkets: [],
       marketCapabilities,
     };
   }
@@ -915,14 +779,6 @@ export async function probeAllTickCapabilities(): Promise<
       >
     > = {};
 
-  /*
-   * Sequential execution is intentional.
-   *
-   * The user's current AllTick plan may have
-   * low request-per-minute limits. Parallel
-   * probing would unnecessarily increase the
-   * probability of HTTP 429.
-   */
   for (
     const market of
     ALLTICK_TECHNICAL_MARKETS
@@ -969,22 +825,16 @@ export async function probeAllTickCapabilities(): Promise<
           market
         ] = {
           market,
-
           technicalSupport:
             true,
-
           accountEntitled:
-            true,
-
+            "verified",
           realtimeVerified:
             true,
-
           probeSymbol:
             symbol,
-
           failureCode:
             null,
-
           reason:
             "AllTick Trade Tick returned a verified realtime quote.",
         };
@@ -1034,7 +884,8 @@ export async function probeAllTickCapabilities(): Promise<
       (market) =>
         marketCapabilities[
           market
-        ]?.accountEntitled === true,
+        ]?.accountEntitled ===
+        "verified",
     );
 
   const realtimeVerifiedMarkets =
@@ -1042,23 +893,19 @@ export async function probeAllTickCapabilities(): Promise<
       (market) =>
         marketCapabilities[
           market
-        ]?.realtimeVerified === true,
+        ]?.realtimeVerified ===
+        true,
     );
 
   return {
     provider:
       "alltick",
-
     configured:
       true,
-
     technicalMarkets:
       [...ALLTICK_TECHNICAL_MARKETS],
-
     entitledMarkets,
-
     realtimeVerifiedMarkets,
-
     marketCapabilities,
   };
 }
@@ -1083,29 +930,21 @@ export async function retrieveStructuredMarketData(
 
     return {
       success: false,
-
       verified: false,
-
-      realtimeVerified: false,
-
+      realtimeVerified:
+        false,
       historicalVerified:
         false,
-
       provider:
         "alltick",
-
       dataset:
         null,
-
       snapshot:
         empty,
-
       sourceCount:
         0,
-
       error:
         "ALLTICK_API_KEY is not configured.",
-
       diagnostics,
     };
   }
@@ -1120,16 +959,6 @@ export async function retrieveStructuredMarketData(
 
   diagnostics.endpoint =
     "https://quote.alltick.co/quote-stock-b-api";
-
-  /*
-   * =========================================================
-   * C147.22.2
-   *
-   * REALTIME FIRST
-   *
-   * Trade Tick is the authoritative realtime path.
-   * =========================================================
-   */
 
   diagnostics.tradeTickAttempted =
     true;
@@ -1237,17 +1066,6 @@ export async function retrieveStructuredMarketData(
   diagnostics.realtimeVerified =
     realtimeVerified;
 
-  /*
-   * =========================================================
-   * HARD BOUNDARY
-   *
-   * If realtime access failed, DO NOT spend another
-   * AllTick request on K-line.
-   *
-   * This protects low-tier API quotas.
-   * =========================================================
-   */
-
   if (
     !realtimeVerified
   ) {
@@ -1268,38 +1086,26 @@ export async function retrieveStructuredMarketData(
 
     return {
       success: false,
-
       verified: false,
-
       realtimeVerified:
         false,
-
       historicalVerified:
         false,
-
       provider:
         "alltick",
-
       dataset:
         "alltick:trade-tick",
-
       snapshot:
         empty,
-
       sourceCount:
         0,
-
       error: [
         `code=${failureCode}`,
-
         tradeError ??
           "AllTick returned no verified realtime tick.",
-
         `symbol=${code}`,
-
         "K-line skipped because realtime Trade Tick was not verified.",
       ].join(" | "),
-
       diagnostics,
     };
   }
@@ -1310,16 +1116,6 @@ export async function retrieveStructuredMarketData(
   let klineError:
     | string
     | undefined;
-
-  /*
-   * =========================================================
-   * OPTIONAL HISTORICAL PATH
-   *
-   * Disabled by default.
-   *
-   * ALLTICK_ENABLE_KLINE=true
-   * =========================================================
-   */
 
   if (
     klineEnabled()
@@ -1480,78 +1276,56 @@ export async function retrieveStructuredMarketData(
     MarketSnapshot = {
     price:
       livePrice,
-
     previousClose,
-
     changePercent,
-
     open:
       latestBar?.open ??
       null,
-
     high:
       latestBar?.high ??
       null,
-
     low:
       latestBar?.low ??
       null,
-
     volume:
       latestBar?.volume ??
       parseNumber(
         tick?.volume,
       ),
-
     marketCap:
       null,
-
     pe:
       null,
-
     pb:
       null,
-
     eps:
       null,
-
     revenue:
       null,
-
     revenueGrowth:
       null,
-
     afterHoursPrice:
       null,
-
     preMarketPrice:
       null,
-
     dataQuality:
       "live",
-
     liveQuoteAvailable:
       true,
-
     quoteQuality:
       "live",
-
     historicalQuality:
       historicalVerified
         ? "historical"
         : "insufficient",
-
     asOf:
       liveAsOf,
-
     source:
       "AllTick",
-
     dataset:
       klineEnabled()
         ? "alltick:trade-tick+kline"
         : "alltick:trade-tick",
-
     bars,
   };
 
@@ -1563,35 +1337,26 @@ export async function retrieveStructuredMarketData(
   return {
     success:
       true,
-
     verified:
       true,
-
     realtimeVerified:
       true,
-
     historicalVerified,
-
     provider:
       "alltick",
-
     dataset:
       klineEnabled()
         ? "alltick:trade-tick+kline"
         : "alltick:trade-tick",
-
     snapshot,
-
     sourceCount:
       1,
-
     error:
       errorMessages.length > 0
         ? errorMessages.join(
             " | ",
           )
         : undefined,
-
     diagnostics,
   };
 }
