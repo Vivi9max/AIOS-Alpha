@@ -183,41 +183,21 @@ export interface MarketDataProviderStatus {
   supportsHistorical: boolean;
   supportsFundamentals: boolean;
 
-  /*
-   * Technical capability:
-   * markets the provider itself supports.
-   */
   supportsMarkets: MarketRegion[];
 
-  /*
-   * C147.22.3
-   *
-   * Account entitlement verified by an actual
-   * provider request. This MUST NOT be inferred
-   * from technical provider capability.
-   */
   entitledMarkets?: MarketRegion[];
 
-  /*
-   * C147.22.3
-   *
-   * Markets that have successfully returned a
-   * verified realtime Trade Tick during the
-   * capability probe.
-   */
   realtimeVerifiedMarkets?: MarketRegion[];
 
-  /*
-   * C147.22.3
-   *
-   * Per-market capability diagnostics.
-   */
   marketCapabilities?: Partial<
     Record<
       MarketRegion,
       {
         technicalSupport: boolean;
-        accountEntitled: boolean;
+        accountEntitled:
+          | "verified"
+          | "denied"
+          | "unknown";
         realtimeVerified: boolean;
         probeSymbol: string;
         failureCode?: string | null;
