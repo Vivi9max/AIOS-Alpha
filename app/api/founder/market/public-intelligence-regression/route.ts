@@ -81,6 +81,9 @@ function capabilityDetail(
     `realtimeVerified=${String(
       record.realtimeVerified,
     )}`,
+    `providerHealth=${String(
+      record.providerHealth,
+    )}`,
     `probeSymbol=${asString(
       record.probeSymbol,
     )}`,
@@ -201,6 +204,14 @@ export async function GET(
             ?.technicalMarkets as unknown[]
         : [];
 
+    const probeMarkets =
+      Array.isArray(
+        capabilityProbe?.probeMarkets,
+      )
+        ? capabilityProbe
+            ?.probeMarkets as unknown[]
+        : [];
+
     const entitledMarkets =
       Array.isArray(
         capabilityProbe?.entitledMarkets,
@@ -237,6 +248,34 @@ export async function GET(
       asRecord(
         marketCapabilities.cn,
       );
+
+    const providerHealth =
+      asString(
+        capabilityProbe
+          ?.providerHealth,
+        "unknown",
+      );
+
+    const cacheHit =
+      asBoolean(
+        capabilityProbe?.cacheHit,
+      );
+
+    const cacheAgeMs =
+      typeof capabilityProbe
+        ?.cacheAgeMs ===
+      "number"
+        ? capabilityProbe
+            .cacheAgeMs
+        : null;
+
+    const cacheTtlMs =
+      typeof capabilityProbe
+        ?.cacheTtlMs ===
+      "number"
+        ? capabilityProbe
+            .cacheTtlMs
+        : null;
 
     const checks:
       RegressionCheck[] = [
@@ -373,6 +412,8 @@ export async function GET(
           detail:
             `technicalMarkets=${JSON.stringify(
               technicalMarkets,
+            )}; probeMarkets=${JSON.stringify(
+              probeMarkets,
             )}.`,
         },
 
@@ -486,11 +527,18 @@ export async function GET(
                   `technicalMarkets=${JSON.stringify(
                     technicalMarkets,
                   )}`,
+                  `probeMarkets=${JSON.stringify(
+                    probeMarkets,
+                  )}`,
                   `entitledMarkets=${JSON.stringify(
                     entitledMarkets,
                   )}`,
                   `realtimeVerifiedMarkets=${JSON.stringify(
                     realtimeVerifiedMarkets,
+                  )}`,
+                  `providerHealth=${providerHealth}`,
+                  `cacheHit=${String(
+                    cacheHit,
                   )}`,
                 ].join("; "),
         },
@@ -610,9 +658,13 @@ export async function GET(
 
           technicalMarkets,
 
+          probeMarkets,
+
           entitledMarkets,
 
           realtimeVerifiedMarkets,
+
+          providerHealth,
 
           capabilityProbeExecuted:
             capabilityProbe !==
@@ -621,6 +673,17 @@ export async function GET(
           capabilityProbeError:
             capabilityProbeError ??
             null,
+
+          cache: {
+            hit:
+              cacheHit,
+
+            ageMs:
+              cacheAgeMs,
+
+            ttlMs:
+              cacheTtlMs,
+          },
 
           marketCapabilities:
             capabilityProbe
@@ -667,6 +730,8 @@ export async function GET(
 
           technicalMarkets,
 
+          probeMarkets,
+
           entitledMarkets,
 
           realtimeVerifiedMarkets,
@@ -685,6 +750,10 @@ export async function GET(
             realtimeVerified:
               usCapability.realtimeVerified ??
               false,
+
+            providerHealth:
+              usCapability.providerHealth ??
+              "unknown",
 
             probeSymbol:
               usCapability.probeSymbol ??
@@ -712,6 +781,10 @@ export async function GET(
               hkCapability.realtimeVerified ??
               false,
 
+            providerHealth:
+              hkCapability.providerHealth ??
+              "unknown",
+
             probeSymbol:
               hkCapability.probeSymbol ??
               "0700.HK",
@@ -737,6 +810,10 @@ export async function GET(
             realtimeVerified:
               cnCapability.realtimeVerified ??
               false,
+
+            providerHealth:
+              cnCapability.providerHealth ??
+              "unknown",
 
             probeSymbol:
               cnCapability.probeSymbol ??
@@ -777,7 +854,7 @@ export async function GET(
             "C147.21.1",
 
           upstream:
-            "C147.21+C147.2+C147.22.4",
+            "C147.21+C147.2+C147.22.5",
 
           generatedAt:
             new Date().toISOString(),
@@ -793,7 +870,10 @@ export async function GET(
           "Web Intelligence is fallback evidence and cannot claim live quotes.",
           "Technical market capability is distinct from account entitlement.",
           "Account entitlement is distinct from realtime verification.",
+          "Provider health is reported independently from account entitlement.",
           "Capability Probe is Founder diagnostic-only.",
+          "Capability Probe results are cached to reduce repeated provider pressure.",
+          "Capability Probe market scope is configurable and never changes technical support claims.",
           "Internal anonymous identity is maintained by an HttpOnly cookie.",
           "Internal userId is not returned to the public client.",
           "No Planner dispatch occurs.",
@@ -802,7 +882,7 @@ export async function GET(
         ],
 
         disclaimer:
-          "C147.21.1 validates the public Market Intelligence boundary and C147.22.4 validates structured-provider entitlement semantics. It does not rank securities, predict returns, provide personalized investment advice, or execute trades.",
+          "C147.21.1 validates the public Market Intelligence boundary and C147.22.5 separates provider health, account entitlement, realtime verification, and capability-probe caching. It does not rank securities, predict returns, provide personalized investment advice, or execute trades.",
       },
     );
   } catch (
