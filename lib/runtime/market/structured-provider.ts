@@ -21,6 +21,14 @@ export type AllTickEntitlementStatus =
   | "denied"
   | "unknown";
 
+export type AllTickProviderHealth =
+  | "healthy"
+  | "rate_limited"
+  | "auth_denied"
+  | "entitlement_denied"
+  | "unavailable"
+  | "unknown";
+
 export interface StructuredProviderDiagnostics {
   configured: boolean;
   endpoint?: string;
@@ -59,24 +67,27 @@ export interface StructuredMarketResult {
 export interface AllTickMarketCapability {
   market: MarketRegion;
   technicalSupport: boolean;
-  accountEntitled:
-    | "verified"
-    | "denied"
-    | "unknown";
+  accountEntitled: AllTickEntitlementStatus;
   realtimeVerified: boolean;
   probeSymbol: string;
   failureCode:
     | StructuredProviderFailureCode
     | null;
   reason: string | null;
+  providerHealth: AllTickProviderHealth;
 }
 
 export interface AllTickCapabilityProbeResult {
   provider: "alltick";
   configured: boolean;
   technicalMarkets: MarketRegion[];
+  probeMarkets: MarketRegion[];
   entitledMarkets: MarketRegion[];
   realtimeVerifiedMarkets: MarketRegion[];
+  providerHealth: AllTickProviderHealth;
+  cacheHit: boolean;
+  cacheAgeMs: number | null;
+  cacheTtlMs: number;
   marketCapabilities: Partial<
     Record<
       MarketRegion,
@@ -141,6 +152,18 @@ const DEFAULT_PROBE_SYMBOLS: Record<
     "600519.SH",
 };
 
+const DEFAULT_CAPABILITY_CACHE_TTL_MS =
+  60_000;
+
+type CapabilityCache = {
+  createdAt: number;
+  result: AllTickCapabilityProbeResult;
+};
+
+let capabilityCache:
+  | CapabilityCache
+  | null = null;
+
 function env(name: string): string {
   return process.env[name]?.trim() ?? "";
 }
@@ -158,6 +181,69 @@ function parseBoolean(
     "on",
   ].includes(
     value.toLowerCase(),
+  );
+}
+
+function parsePositiveInteger(
+  value: string,
+  fallback: number,
+): number {
+  const parsed = Number(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < 0
+  ) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+function capabilityCacheTtlMs(): number {
+  return parsePositiveInteger(
+    env(
+      "ALLTICK_CAPABILITY_PROBE_CACHE_MS",
+    ),
+    DEFAULT_CAPABILITY_CACHE_TTL_MS,
+  );
+}
+
+function configuredProbeMarkets(): MarketRegion[] {
+  const raw =
+    env(
+      "ALLTICK_CAPABILITY_PROBE_MARKETS",
+    );
+
+  if (!raw) {
+    return [
+      ...ALLTICK_TECHNICAL_MARKETS,
+    ];
+  }
+
+  const allowed =
+    new Set<MarketRegion>(
+      ALLTICK_TECHNICAL_MARKETS,
+    );
+
+  const values =
+    raw
+      .split(",")
+      .map(
+        (item) =>
+          item
+            .trim()
+            .toLowerCase(),
+      )
+      .filter(
+        (item): item is MarketRegion =>
+          allowed.has(
+            item as MarketRegion,
+          ),
+      );
+
+  return Array.from(
+    new Set(values),
   );
 }
 
@@ -193,23 +279,27 @@ function normalizeTimestamp(
     return null;
   }
 
-  const raw = String(value).trim();
+  const raw =
+    String(value).trim();
 
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
 
-  const numeric = Number(raw);
+  const numeric =
+    Number(raw);
 
   if (Number.isFinite(numeric)) {
-    let milliseconds = numeric;
+    let milliseconds =
+      numeric;
 
     if (raw.length <= 10) {
       milliseconds =
         numeric * 1000;
     }
 
-    const date = new Date(
-      milliseconds,
-    );
+    const date =
+      new Date(milliseconds);
 
     return Number.isNaN(
       date.getTime(),
@@ -218,7 +308,8 @@ function normalizeTimestamp(
       : date.toISOString();
   }
 
-  const date = new Date(raw);
+  const date =
+    new Date(raw);
 
   return Number.isNaN(
     date.getTime(),
@@ -446,9 +537,10 @@ async function requestAllTick(
     | "kline",
   query: string,
 ): Promise<AllTickRequestResult> {
-  const url = new URL(
-    `https://quote.alltick.co/quote-stock-b-api/${endpoint}`,
-  );
+  const url =
+    new URL(
+      `https://quote.alltick.co/quote-stock-b-api/${endpoint}`,
+    );
 
   url.searchParams.set(
     "token",
@@ -591,6 +683,77 @@ function classifyFailure(
   return "UNKNOWN";
 }
 
+function healthFromFailure(
+  failureCode:
+    | StructuredProviderFailureCode
+    | null,
+): AllTickProviderHealth {
+  switch (failureCode) {
+    case "RATE_LIMITED":
+      return "rate_limited";
+
+    case "AUTH_DENIED":
+      return "auth_denied";
+
+    case "TOKEN_LEVEL_NOT_ENOUGH":
+      return "entitlement_denied";
+
+    case "NOT_CONFIGURED":
+    case "INVALID_REQUEST":
+    case "SYMBOL_INVALID":
+    case "NO_DATA":
+    case "NETWORK_ERROR":
+      return "unavailable";
+
+    default:
+      return "unknown";
+  }
+}
+
+function mergeProviderHealth(
+  values: AllTickProviderHealth[],
+): AllTickProviderHealth {
+  if (
+    values.includes("healthy")
+  ) {
+    return "healthy";
+  }
+
+  if (
+    values.includes(
+      "auth_denied",
+    )
+  ) {
+    return "auth_denied";
+  }
+
+  if (
+    values.includes(
+      "entitlement_denied",
+    )
+  ) {
+    return "entitlement_denied";
+  }
+
+  if (
+    values.includes(
+      "rate_limited",
+    )
+  ) {
+    return "rate_limited";
+  }
+
+  if (
+    values.includes(
+      "unavailable",
+    )
+  ) {
+    return "unavailable";
+  }
+
+  return "unknown";
+}
+
 function diagnosticsFrom(
   configuredValue: boolean,
 ): StructuredProviderDiagnostics {
@@ -729,21 +892,115 @@ function capabilityFromFailure(
       symbol,
     failureCode,
     reason,
+    providerHealth:
+      healthFromFailure(
+        failureCode,
+      ),
+  };
+}
+
+function capabilityResult(
+  marketCapabilities: Partial<
+    Record<
+      MarketRegion,
+      AllTickMarketCapability
+    >
+  >,
+  probeMarkets: MarketRegion[],
+  cacheHit: boolean,
+  cacheAgeMs: number | null,
+  cacheTtlMs: number,
+): AllTickCapabilityProbeResult {
+  const entitledMarkets =
+    probeMarkets.filter(
+      (market) =>
+        marketCapabilities[
+          market
+        ]?.accountEntitled ===
+        "verified",
+    );
+
+  const realtimeVerifiedMarkets =
+    probeMarkets.filter(
+      (market) =>
+        marketCapabilities[
+          market
+        ]?.realtimeVerified ===
+        true,
+    );
+
+  const healthValues =
+    probeMarkets
+      .map(
+        (market) =>
+          marketCapabilities[
+            market
+          ]?.providerHealth ??
+          "unknown",
+      );
+
+  return {
+    provider:
+      "alltick",
+    configured:
+      configured(),
+    technicalMarkets:
+      [
+        ...ALLTICK_TECHNICAL_MARKETS,
+      ],
+    probeMarkets,
+    entitledMarkets,
+    realtimeVerifiedMarkets,
+    providerHealth:
+      mergeProviderHealth(
+        healthValues,
+      ),
+    cacheHit,
+    cacheAgeMs,
+    cacheTtlMs,
+    marketCapabilities,
   };
 }
 
 export async function probeAllTickCapabilities(): Promise<
   AllTickCapabilityProbeResult
 > {
-  if (!configured()) {
-    const marketCapabilities:
-      Partial<
-        Record<
-          MarketRegion,
-          AllTickMarketCapability
-        >
-      > = {};
+  const cacheTtlMs =
+    capabilityCacheTtlMs();
 
+  if (
+    capabilityCache &&
+    cacheTtlMs > 0
+  ) {
+    const ageMs =
+      Date.now() -
+      capabilityCache.createdAt;
+
+    if (
+      ageMs >= 0 &&
+      ageMs < cacheTtlMs
+    ) {
+      return {
+        ...capabilityCache.result,
+        cacheHit: true,
+        cacheAgeMs: ageMs,
+        cacheTtlMs,
+      };
+    }
+  }
+
+  const probeMarkets =
+    configuredProbeMarkets();
+
+  const marketCapabilities:
+    Partial<
+      Record<
+        MarketRegion,
+        AllTickMarketCapability
+      >
+    > = {};
+
+  if (!configured()) {
     for (
       const market of
       ALLTICK_TECHNICAL_MARKETS
@@ -759,29 +1016,44 @@ export async function probeAllTickCapabilities(): Promise<
         );
     }
 
-    return {
-      provider:
-        "alltick",
-      configured: false,
-      technicalMarkets:
-        [...ALLTICK_TECHNICAL_MARKETS],
-      entitledMarkets: [],
-      realtimeVerifiedMarkets: [],
-      marketCapabilities,
-    };
+    const result =
+      capabilityResult(
+        marketCapabilities,
+        probeMarkets,
+        false,
+        null,
+        cacheTtlMs,
+      );
+
+    if (cacheTtlMs > 0) {
+      capabilityCache = {
+        createdAt:
+          Date.now(),
+        result,
+      };
+    }
+
+    return result;
   }
 
-  const marketCapabilities:
-    Partial<
-      Record<
-        MarketRegion,
-        AllTickMarketCapability
-      >
-    > = {};
+  if (
+    probeMarkets.length === 0
+  ) {
+    const result =
+      capabilityResult(
+        marketCapabilities,
+        probeMarkets,
+        false,
+        null,
+        cacheTtlMs,
+      );
+
+    return result;
+  }
 
   for (
     const market of
-    ALLTICK_TECHNICAL_MARKETS
+    probeMarkets
   ) {
     const symbol =
       probeSymbol(market);
@@ -837,6 +1109,8 @@ export async function probeAllTickCapabilities(): Promise<
             null,
           reason:
             "AllTick Trade Tick returned a verified realtime quote.",
+          providerHealth:
+            "healthy",
         };
 
         continue;
@@ -879,35 +1153,24 @@ export async function probeAllTickCapabilities(): Promise<
     }
   }
 
-  const entitledMarkets =
-    ALLTICK_TECHNICAL_MARKETS.filter(
-      (market) =>
-        marketCapabilities[
-          market
-        ]?.accountEntitled ===
-        "verified",
+  const result =
+    capabilityResult(
+      marketCapabilities,
+      probeMarkets,
+      false,
+      null,
+      cacheTtlMs,
     );
 
-  const realtimeVerifiedMarkets =
-    ALLTICK_TECHNICAL_MARKETS.filter(
-      (market) =>
-        marketCapabilities[
-          market
-        ]?.realtimeVerified ===
-        true,
-    );
+  if (cacheTtlMs > 0) {
+    capabilityCache = {
+      createdAt:
+        Date.now(),
+      result,
+    };
+  }
 
-  return {
-    provider:
-      "alltick",
-    configured:
-      true,
-    technicalMarkets:
-      [...ALLTICK_TECHNICAL_MARKETS],
-    entitledMarkets,
-    realtimeVerifiedMarkets,
-    marketCapabilities,
-  };
+  return result;
 }
 
 export async function retrieveStructuredMarketData(
@@ -1060,6 +1323,10 @@ export async function retrieveStructuredMarketData(
     );
 
   const realtimeVerified =
+    tradeResult !== null &&
+    tradeResult.httpOk &&
+    tradeResult.payload.ret ===
+      200 &&
     livePrice !== null &&
     liveAsOf !== null;
 
