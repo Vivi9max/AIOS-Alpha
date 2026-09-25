@@ -16,6 +16,20 @@ import type {
   MarketValuationScenario,
 } from "./valuation-types";
 
+interface NormalizedValuationAssumptions {
+  peLow: number;
+  peBase: number;
+  peHigh: number;
+
+  pbLow: number;
+  pbBase: number;
+  pbHigh: number;
+
+  revenueGrowthLow: number;
+  revenueGrowthBase: number;
+  revenueGrowthHigh: number;
+}
+
 function clamp(
   value: number,
   min: number,
@@ -23,7 +37,10 @@ function clamp(
 ): number {
   return Math.max(
     min,
-    Math.min(max, value),
+    Math.min(
+      max,
+      value,
+    ),
   );
 }
 
@@ -51,71 +68,97 @@ function positiveOrNull(
 
 function normalizeAssumptions(
   assumptions?: MarketValuationAssumptions | null,
-): Required<MarketValuationAssumptions> {
+): NormalizedValuationAssumptions {
+  const peLow =
+    positiveOrNull(
+      assumptions?.peLow,
+    );
+
+  const peBase =
+    positiveOrNull(
+      assumptions?.peBase,
+    );
+
+  const peHigh =
+    positiveOrNull(
+      assumptions?.peHigh,
+    );
+
+  const pbLow =
+    positiveOrNull(
+      assumptions?.pbLow,
+    );
+
+  const pbBase =
+    positiveOrNull(
+      assumptions?.pbBase,
+    );
+
+  const pbHigh =
+    positiveOrNull(
+      assumptions?.pbHigh,
+    );
+
+  const revenueGrowthLow =
+    typeof assumptions?.revenueGrowthLow ===
+      "number" &&
+    Number.isFinite(
+      assumptions.revenueGrowthLow,
+    )
+      ? assumptions.revenueGrowthLow
+      : -0.05;
+
+  const revenueGrowthBase =
+    typeof assumptions?.revenueGrowthBase ===
+      "number" &&
+    Number.isFinite(
+      assumptions.revenueGrowthBase,
+    )
+      ? assumptions.revenueGrowthBase
+      : 0.05;
+
+  const revenueGrowthHigh =
+    typeof assumptions?.revenueGrowthHigh ===
+      "number" &&
+    Number.isFinite(
+      assumptions.revenueGrowthHigh,
+    )
+      ? assumptions.revenueGrowthHigh
+      : 0.15;
+
   return {
     peLow:
-      positiveOrNull(
-        assumptions?.peLow,
-      ) ?? 10,
+      peLow ?? 10,
 
     peBase:
-      positiveOrNull(
-        assumptions?.peBase,
-      ) ?? 15,
+      peBase ?? 15,
 
     peHigh:
-      positiveOrNull(
-        assumptions?.peHigh,
-      ) ?? 20,
+      peHigh ?? 20,
 
     pbLow:
-      positiveOrNull(
-        assumptions?.pbLow,
-      ) ?? 0.8,
+      pbLow ?? 0.8,
 
     pbBase:
-      positiveOrNull(
-        assumptions?.pbBase,
-      ) ?? 1.5,
+      pbBase ?? 1.5,
 
     pbHigh:
-      positiveOrNull(
-        assumptions?.pbHigh,
-      ) ?? 2.5,
+      pbHigh ?? 2.5,
 
-    revenueGrowthLow:
-      typeof assumptions?.revenueGrowthLow ===
-        "number" &&
-      Number.isFinite(
-        assumptions.revenueGrowthLow,
-      )
-        ? assumptions.revenueGrowthLow
-        : -0.05,
-
-    revenueGrowthBase:
-      typeof assumptions?.revenueGrowthBase ===
-        "number" &&
-      Number.isFinite(
-        assumptions.revenueGrowthBase,
-      )
-        ? assumptions.revenueGrowthBase
-        : 0.05,
-
-    revenueGrowthHigh:
-      typeof assumptions?.revenueGrowthHigh ===
-        "number" &&
-      Number.isFinite(
-        assumptions.revenueGrowthHigh,
-      )
-        ? assumptions.revenueGrowthHigh
-        : 0.15,
+    revenueGrowthLow,
+    revenueGrowthBase,
+    revenueGrowthHigh,
   };
 }
 
 function assessMultiple(
   value: number | null,
   referenceBase: number,
-): "low" | "moderate" | "high" | "unavailable" {
+):
+  | "low"
+  | "moderate"
+  | "high"
+  | "unavailable" {
   if (
     value === null ||
     !Number.isFinite(value) ||
@@ -193,7 +236,9 @@ function buildMetrics(
     ];
 
   return fields.map(
-    (field) => {
+    (
+      field,
+    ) => {
       const value =
         result.snapshot[field] ??
         null;
@@ -201,7 +246,9 @@ function buildMetrics(
       const available =
         typeof value ===
           "number" &&
-        Number.isFinite(value);
+        Number.isFinite(
+          value,
+        );
 
       let interpretation =
         "Data unavailable.";
@@ -241,7 +288,8 @@ function buildMetrics(
       }
 
       return {
-        metric: field,
+        metric:
+          field,
         value,
         available,
         quality:
@@ -257,7 +305,7 @@ function buildMetrics(
 
 function buildScenario(
   result: MarketAnalysisResult,
-  assumptions: Required<MarketValuationAssumptions>,
+  assumptions: NormalizedValuationAssumptions,
   name:
     | "low"
     | "base"
@@ -278,14 +326,14 @@ function buildScenario(
       result.snapshot.pb,
     );
 
-  const peReference =
+  const peReference: number =
     name === "low"
       ? assumptions.peLow
       : name === "base"
         ? assumptions.peBase
         : assumptions.peHigh;
 
-  const pbReference =
+  const pbReference: number =
     name === "low"
       ? assumptions.pbLow
       : name === "base"
@@ -319,7 +367,9 @@ function buildScenario(
     ): value is number =>
       typeof value ===
         "number" &&
-      Number.isFinite(value),
+      Number.isFinite(
+        value,
+      ),
   );
 
   const combinedImpliedPrice =
@@ -347,7 +397,8 @@ function buildScenario(
           ? "pb"
           : "unavailable";
 
-  const caveats: string[] = [];
+  const caveats: string[] =
+    [];
 
   if (
     eps === null
@@ -409,10 +460,12 @@ function buildCandidate(
   industry: string,
   input: MarketValuationCandidateInput,
   result: MarketAnalysisResult,
-  assumptions: Required<MarketValuationAssumptions>,
+  assumptions: NormalizedValuationAssumptions,
 ): MarketValuationCandidateResult {
   const metrics =
-    buildMetrics(result);
+    buildMetrics(
+      result,
+    );
 
   const pe =
     positiveOrNull(
@@ -444,7 +497,9 @@ function buildCandidate(
 
   const availableMethods =
     scenarios.filter(
-      (scenario) =>
+      (
+        scenario,
+      ) =>
         scenario.combinedImpliedPrice !==
           null ||
         scenario.peImpliedPrice !==
@@ -460,7 +515,8 @@ function buildCandidate(
         ? "partial"
         : "insufficient";
 
-  const strengths: string[] = [];
+  const strengths: string[] =
+    [];
 
   if (
     pe !== null
@@ -498,12 +554,15 @@ function buildCandidate(
     );
   }
 
-  const risks: string[] = [
-    ...result.analysis.risk.factors,
-  ];
+  const risks: string[] =
+    [
+      ...result.analysis.risk
+        .factors,
+    ];
 
   if (
-    result.snapshot.dataQuality !==
+    result.snapshot
+      .dataQuality !==
     "live"
   ) {
     risks.push(
@@ -521,12 +580,13 @@ function buildCandidate(
     );
   }
 
-  const methodologyWarnings: string[] = [
-    "Relative multiples are not a substitute for a complete intrinsic-value model.",
-    "Industry-specific normal valuation ranges should be supplied or validated before using the scenarios.",
-    "Historical growth and current multiples do not guarantee future returns.",
-    `Requested industry context: ${industry}.`,
-  ];
+  const methodologyWarnings:
+    string[] = [
+      "Relative multiples are not a substitute for a complete intrinsic-value model.",
+      "Industry-specific normal valuation ranges should be supplied or validated before using the scenarios.",
+      "Historical growth and current multiples do not guarantee future returns.",
+      `Requested industry context: ${industry}.`,
+    ];
 
   let resultCode:
     | "C149_VALUATION_PASS"
@@ -591,25 +651,27 @@ async function evaluateCandidate(
   industry: string,
   input: MarketValuationCandidateInput,
   request: MarketValuationRequest,
-  assumptions: Required<MarketValuationAssumptions>,
+  assumptions: NormalizedValuationAssumptions,
 ): Promise<MarketValuationCandidateResult> {
   const result =
-    await analyzeMarketRequest({
-      symbol:
-        input.symbol,
-      market:
-        input.market,
-      mode:
-        "valuation",
-      query: [
-        industry,
-        request.query ??
-          "",
-        "company fundamentals earnings valuation P/E P/B revenue growth financial results",
-      ]
-        .filter(Boolean)
-        .join(" "),
-    });
+    await analyzeMarketRequest(
+      {
+        symbol:
+          input.symbol,
+        market:
+          input.market,
+        mode:
+          "valuation",
+        query: [
+          industry,
+          request.query ??
+            "",
+          "company fundamentals earnings valuation P/E P/B revenue growth financial results",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      },
+    );
 
   return buildCandidate(
     industry,
@@ -649,28 +711,27 @@ export async function valueMarketCandidates(
   const uniqueCandidates =
     Array.from(
       new Map(
-        request.candidates
-          .map(
-            (
-              candidate,
-            ) => [
-              `${
-                candidate.market ??
-                "auto"
-              }:${
+        request.candidates.map(
+          (
+            candidate,
+          ) => [
+            `${
+              candidate.market ??
+              "auto"
+            }:${
+              candidate.symbol
+                .trim()
+                .toUpperCase()
+            }`,
+            {
+              ...candidate,
+              symbol:
                 candidate.symbol
                   .trim()
-                  .toUpperCase()
-              }`,
-              {
-                ...candidate,
-                symbol:
-                  candidate.symbol
-                    .trim()
-                    .toUpperCase(),
-              },
-            ],
-          ),
+                  .toUpperCase(),
+            },
+          ],
+        ),
       ).values(),
     ).slice(
       0,
@@ -686,11 +747,13 @@ export async function valueMarketCandidates(
     );
   }
 
-  const candidates: MarketValuationCandidateResult[] =
+  const candidates:
+    MarketValuationCandidateResult[] =
     [];
 
   for (
-    const candidate of uniqueCandidates
+    const candidate of
+      uniqueCandidates
   ) {
     try {
       const result =
