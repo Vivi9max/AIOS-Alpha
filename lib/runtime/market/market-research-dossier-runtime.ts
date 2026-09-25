@@ -76,6 +76,30 @@ function mapStageStatus(
   return "blocked";
 }
 
+function normalizeDataQuality(
+  value: string | null | undefined,
+): MarketResearchDossierItem["evidence"]["dataQuality"] {
+  switch (value) {
+    case "live":
+      return "live";
+
+    case "delayed":
+      return "delayed";
+
+    case "historical":
+      return "historical";
+
+    case "web-evidence":
+      return "web-evidence";
+
+    case "insufficient":
+      return "insufficient";
+
+    default:
+      return "insufficient";
+  }
+}
+
 function findRadarItem(
   result: Awaited<
     ReturnType<
@@ -333,8 +357,9 @@ function buildItem(
         0,
 
       dataQuality:
-        evidenceItem?.dataQuality ??
-        "insufficient",
+        normalizeDataQuality(
+          evidenceItem?.dataQuality,
+        ),
 
       freshness:
         evidenceItem?.freshness
@@ -529,6 +554,7 @@ export async function runMarketResearchDossier(
   ) {
     return {
       success: false,
+
       code:
         "C156_MARKET_RESEARCH_DOSSIER_INSUFFICIENT",
 
@@ -569,12 +595,16 @@ export async function runMarketResearchDossier(
 
       mutationPerformed:
         false,
+
       taskCreated:
         false,
+
       plannerDispatched:
         false,
+
       tradingExecuted:
         false,
+
       humanDecisionRequired:
         true,
 
@@ -635,6 +665,7 @@ export async function runMarketResearchDossier(
     await valueMarketCandidates({
       industry:
         "Market research",
+
       candidates:
         universe.map(
           (item) => ({
@@ -644,8 +675,10 @@ export async function runMarketResearchDossier(
               item.market,
           }),
         ),
+
       maxCandidates:
         universe.length,
+
       query:
         request.query ??
         "Research dossier fundamentals valuation P/E P/B revenue growth",
@@ -658,8 +691,10 @@ export async function runMarketResearchDossier(
           runMarketRiskControl({
             symbol:
               item.symbol,
+
             market:
               item.market,
+
             query:
               request.query ??
               "Research dossier risk control",
