@@ -246,7 +246,9 @@ function buildItem(
     selectionStages.map(
       (stage) => ({
         stage:
-          stage.stage,
+          stage.stage === "human-review"
+            ? "human-decision"
+            : stage.stage,
         status:
           mapStageStatus(
             stage.passed,
