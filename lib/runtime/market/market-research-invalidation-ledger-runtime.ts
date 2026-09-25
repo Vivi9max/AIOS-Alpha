@@ -151,24 +151,99 @@ function createLedgerId(
   ].join(":");
 }
 
-function buildBoundary() {
+/**
+ * Boundary stored inside the persistent C161.1 Ledger.
+ *
+ * This intentionally follows the Record type from
+ * market-research-invalidation-ledger-types.ts.
+ */
+function buildLedgerBoundary(): MarketResearchInvalidationLedgerRecord["boundary"] {
   return {
     automaticInvalidationEvaluation:
-      false as const,
+      false,
+    recommendationGenerated:
+      false,
     decisionAutomaticallyGenerated:
-      false as const,
+      false,
     decisionRecorded:
-      false as const,
+      false,
     taskCreated:
-      false as const,
+      false,
     plannerDispatched:
-      false as const,
+      false,
     brokerConnected:
-      false as const,
+      false,
     liveOrderPlaced:
-      false as const,
+      false,
     tradingExecuted:
-      false as const,
+      false,
+  };
+}
+
+/**
+ * Boundary exposed by the C161.1 Runtime Result.
+ *
+ * The Result interface intentionally has a narrower
+ * boundary than the persistent Ledger Record.
+ *
+ * Keep this mapping explicit so TypeScript cannot
+ * accidentally couple the two contracts.
+ */
+function buildResultBoundary(): MarketResearchInvalidationLedgerResult["boundary"] {
+  return {
+    automaticInvalidationEvaluation:
+      false,
+    decisionAutomaticallyGenerated:
+      false,
+    decisionRecorded:
+      false,
+    taskCreated:
+      false,
+    plannerDispatched:
+      false,
+    brokerConnected:
+      false,
+    liveOrderPlaced:
+      false,
+    tradingExecuted:
+      false,
+  };
+}
+
+/**
+ * Convert the persistent Ledger boundary into the
+ * public Runtime Result boundary.
+ *
+ * This explicit mapping is intentional.
+ * Do not return existing.boundary directly.
+ */
+function toResultBoundary(
+  boundary: MarketResearchInvalidationLedgerRecord["boundary"],
+): MarketResearchInvalidationLedgerResult["boundary"] {
+  return {
+    automaticInvalidationEvaluation:
+      boundary.automaticInvalidationEvaluation,
+
+    decisionAutomaticallyGenerated:
+      boundary.decisionAutomaticallyGenerated,
+
+    decisionRecorded:
+      boundary.decisionRecorded,
+
+    taskCreated:
+      boundary.taskCreated,
+
+    plannerDispatched:
+      boundary.plannerDispatched,
+
+    brokerConnected:
+      boundary.brokerConnected,
+
+    liveOrderPlaced:
+      boundary.liveOrderPlaced,
+
+    tradingExecuted:
+      boundary.tradingExecuted,
   };
 }
 
@@ -195,36 +270,57 @@ function insufficientResult(
 ): MarketResearchInvalidationLedgerResult {
   return {
     success: false,
+
     code:
       "C161_1_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT",
-    action: "ledger-blocked",
+
+    action:
+      "ledger-blocked",
+
     ledger: null,
-    mutationPerformed: false,
-    humanReviewRequired: true,
-    boundary: buildBoundary(),
+
+    mutationPerformed:
+      false,
+
+    humanReviewRequired:
+      true,
+
+    boundary:
+      buildResultBoundary(),
+
     runtime: {
       name:
         "market-research-invalidation-ledger-runtime",
-      version: "C161.1",
-      upstream: "C160",
+
+      version:
+        "C161.1",
+
+      upstream:
+        "C160",
+
       generatedAt:
         new Date().toISOString(),
+
       latencyMs:
         Date.now() - startedAt,
     },
+
     principles: [
       "C161.1 requires a valid C160 reconciliation result.",
       "Incomplete reconciliation is not converted into an invalidation ledger.",
       reason,
     ],
-    disclaimer: DISCLAIMER,
+
+    disclaimer:
+      DISCLAIMER,
   };
 }
 
 export async function runMarketResearchInvalidationLedger(
   request: MarketResearchInvalidationLedgerRequest,
 ): Promise<MarketResearchInvalidationLedgerResult> {
-  const startedAt = Date.now();
+  const startedAt =
+    Date.now();
 
   const reconciliation =
     request?.reconciliation;
@@ -263,7 +359,9 @@ export async function runMarketResearchInvalidationLedger(
       )
       .filter(Boolean);
 
-  if (conditions.length === 0) {
+  if (
+    conditions.length === 0
+  ) {
     return insufficientResult(
       "C160 did not provide an invalidation condition to preserve.",
       startedAt,
@@ -280,45 +378,82 @@ export async function runMarketResearchInvalidationLedger(
       storageKey(ledgerId),
     );
 
+  /**
+   * Existing ledger:
+   *
+   * - no mutation
+   * - no duplicate ledger
+   * - no automatic decision
+   * - return a Result-compatible boundary
+   */
   if (existing) {
     return {
       success: true,
+
       code:
         "C161_1_RESEARCH_INVALIDATION_LEDGER_ALREADY_EXISTS",
+
       action:
         "ledger-already-exists",
-      ledger: existing,
-      mutationPerformed: false,
-      humanReviewRequired: true,
-      boundary: existing.boundary,
+
+      ledger:
+        existing,
+
+      mutationPerformed:
+        false,
+
+      humanReviewRequired:
+        true,
+
+      boundary:
+        toResultBoundary(
+          existing.boundary,
+        ),
+
       runtime: {
         name:
           "market-research-invalidation-ledger-runtime",
-        version: "C161.1",
-        upstream: "C160",
+
+        version:
+          "C161.1",
+
+        upstream:
+          "C160",
+
         generatedAt:
           new Date().toISOString(),
+
         latencyMs:
           Date.now() - startedAt,
       },
+
       principles:
         buildPrinciples(),
-      disclaimer: DISCLAIMER,
+
+      disclaimer:
+        DISCLAIMER,
     };
   }
 
   const now =
     new Date().toISOString();
 
-  const ledger: MarketResearchInvalidationLedgerRecord =
+  const ledgerBoundary =
+    buildLedgerBoundary();
+
+  const ledger:
+    MarketResearchInvalidationLedgerRecord =
     {
       ledgerId,
 
-      source: "C160",
+      source:
+        "C160",
+
       sourceCode:
         reconciliation.code,
 
       symbol,
+
       market:
         reconciliation.market,
 
@@ -389,17 +524,27 @@ export async function runMarketResearchInvalidationLedger(
         reconciliation.generatedAt,
 
       humanReview: {
-        required: true,
-        status: "pending",
-        decisionRecorded: false,
-        decision: null,
+        required:
+          true,
+
+        status:
+          "pending",
+
+        decisionRecorded:
+          false,
+
+        decision:
+          null,
       },
 
       boundary:
-        buildBoundary(),
+        ledgerBoundary,
 
-      createdAt: now,
-      updatedAt: now,
+      createdAt:
+        now,
+
+      updatedAt:
+        now,
     };
 
   await storage.set(
@@ -408,26 +553,50 @@ export async function runMarketResearchInvalidationLedger(
   );
 
   return {
-    success: true,
+    success:
+      true,
+
     code:
       "C161_1_RESEARCH_INVALIDATION_LEDGER_PASS",
-    action: "ledger-created",
+
+    action:
+      "ledger-created",
+
     ledger,
-    mutationPerformed: true,
-    humanReviewRequired: true,
-    boundary: buildBoundary(),
+
+    mutationPerformed:
+      true,
+
+    humanReviewRequired:
+      true,
+
+    boundary:
+      toResultBoundary(
+        ledgerBoundary,
+      ),
+
     runtime: {
       name:
         "market-research-invalidation-ledger-runtime",
-      version: "C161.1",
-      upstream: "C160",
-      generatedAt: now,
+
+      version:
+        "C161.1",
+
+      upstream:
+        "C160",
+
+      generatedAt:
+        now,
+
       latencyMs:
         Date.now() - startedAt,
     },
+
     principles:
       buildPrinciples(),
-    disclaimer: DISCLAIMER,
+
+    disclaimer:
+      DISCLAIMER,
   };
 }
 
