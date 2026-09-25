@@ -165,9 +165,6 @@ function buildSignal(
     humanDecisionRequired:
       true,
 
-    humanReviewRequired:
-      true,
-
     detectedAt:
       event.createdAt,
   };
@@ -391,9 +388,6 @@ export async function runMarketRadarRuntime(
       false,
 
     humanDecisionRequired:
-      true,
-
-    humanReviewRequired:
       true,
 
     runtime: {
