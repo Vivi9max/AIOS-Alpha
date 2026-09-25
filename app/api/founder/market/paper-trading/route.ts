@@ -16,6 +16,12 @@ import type {
   MarketRegion,
 } from "@/lib/runtime/market/market-types";
 
+import type {
+  PaperOrderSide,
+  PaperTradingCandidateInput,
+  PaperTradingOrderInput,
+} from "@/lib/runtime/market/paper-trading-types";
+
 export const dynamic =
   "force-dynamic";
 
@@ -145,7 +151,7 @@ function isObject(
 
 function normalizeCandidates(
   value: unknown,
-) {
+): PaperTradingCandidateInput[] {
   if (
     !Array.isArray(value)
   ) {
@@ -186,7 +192,7 @@ function normalizeCandidates(
 
 function normalizeOrders(
   value: unknown,
-) {
+): PaperTradingOrderInput[] {
   if (
     !Array.isArray(value)
   ) {
@@ -215,50 +221,54 @@ function normalizeOrders(
         item.quantity > 0,
     )
     .map(
-      (item) => ({
-        symbol:
-          String(
-            item.symbol,
-          )
-            .trim()
-            .toUpperCase(),
-
-        market:
-          normalizeMarket(
-            item.market,
-          ),
-
-        side:
+      (item) => {
+        const side: PaperOrderSide =
           item.side ===
           "sell"
             ? "sell"
-            : "buy",
+            : "buy";
 
-        quantity:
-          item.quantity,
+        return {
+          symbol:
+            String(
+              item.symbol,
+            )
+              .trim()
+              .toUpperCase(),
 
-        price:
-          typeof item.price ===
-            "number" &&
-          Number.isFinite(
-            item.price,
-          ) &&
-          item.price > 0
-            ? item.price
-            : null,
+          market:
+            normalizeMarket(
+              item.market,
+            ),
 
-        timestamp:
-          typeof item.timestamp ===
-            "string"
-            ? item.timestamp
-            : null,
+          side,
 
-        reason:
-          typeof item.reason ===
-            "string"
-            ? item.reason.trim()
-            : null,
-      }),
+          quantity:
+            item.quantity as number,
+
+          price:
+            typeof item.price ===
+              "number" &&
+            Number.isFinite(
+              item.price,
+            ) &&
+            item.price > 0
+              ? item.price
+              : null,
+
+          timestamp:
+            typeof item.timestamp ===
+              "string"
+              ? item.timestamp
+              : null,
+
+          reason:
+            typeof item.reason ===
+              "string"
+              ? item.reason.trim()
+              : null,
+        };
+      },
     );
 }
 
