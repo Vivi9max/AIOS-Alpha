@@ -71,6 +71,20 @@ function normalizeNumber(
   return value;
 }
 
+function optionalNumber(
+  value: unknown,
+): number | undefined {
+  const normalized =
+    normalizeNumber(
+      value,
+    );
+
+  return normalized ===
+    null
+    ? undefined
+    : normalized;
+}
+
 export async function POST(
   request: NextRequest,
 ) {
@@ -229,18 +243,27 @@ export async function POST(
       order.price,
     );
 
-  const rawInitialCapital =
-    normalizeNumber(
+  /*
+   * C158 request types use optional numbers:
+   * number | undefined.
+   *
+   * normalizeNumber intentionally returns
+   * number | null for validation, therefore
+   * convert null to undefined before passing
+   * the request into the C158 runtime.
+   */
+  const initialCapital =
+    optionalNumber(
       body.initialCapital,
     );
 
-  const rawFeeBps =
-    normalizeNumber(
+  const feeBps =
+    optionalNumber(
       body.feeBps,
     );
 
-  const rawSlippageBps =
-    normalizeNumber(
+  const slippageBps =
+    optionalNumber(
       body.slippageBps,
     );
 
@@ -282,14 +305,11 @@ export async function POST(
               : null,
         },
 
-        initialCapital:
-          rawInitialCapital,
+        initialCapital,
 
-        feeBps:
-          rawFeeBps,
+        feeBps,
 
-        slippageBps:
-          rawSlippageBps,
+        slippageBps,
 
         query:
           typeof body.query ===
