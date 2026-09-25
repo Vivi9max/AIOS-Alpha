@@ -1,67 +1,96 @@
 import type { MarketRegion } from "./market-types";
-import type { MarketResearchOutcomeReconciliationResult } from "./market-research-outcome-reconciliation-types";
+import type {
+  MarketResearchOutcomeReconciliationResult,
+} from "./market-research-outcome-reconciliation-types";
 
-export type MarketResearchInvalidationLedgerState =
-  | "ledger-ready"
-  | "review-required"
-  | "insufficient";
+export type MarketResearchInvalidationLedgerStatus =
+  | "pending-human-review";
 
-export type MarketResearchInvalidationLedgerItemType =
-  | "invalidation-condition"
-  | "evidence-gap"
-  | "outcome-observation"
-  | "boundary-observation";
+export interface MarketResearchInvalidationLedgerRecord {
+  ledgerId: string;
 
-export interface MarketResearchInvalidationLedgerItem {
-  id: string;
-  type: MarketResearchInvalidationLedgerItemType;
-  title: string;
-  observation: string;
-  source: "C160.1";
-  status: "preserved-for-human-review";
-  automaticEvaluation: false;
-  requiresHumanReview: true;
+  source: "C160";
+  sourceCode:
+    | "C160_MARKET_RESEARCH_OUTCOME_RECONCILIATION_PASS"
+    | "C160_MARKET_RESEARCH_OUTCOME_RECONCILIATION_PARTIAL";
+
+  symbol: string;
+  market: MarketRegion;
+
+  status: MarketResearchInvalidationLedgerStatus;
+
+  invalidationConditions: string[];
+
+  findings: MarketResearchOutcomeReconciliationResult["findings"];
+
+  reconciliation: {
+    decisionState: MarketResearchOutcomeReconciliationResult["reconciliation"]["decisionState"];
+    decisionReviewStatus: MarketResearchOutcomeReconciliationResult["reconciliation"]["decisionReviewStatus"];
+    materialChange: boolean;
+    evidenceVerified: boolean;
+
+    paperTradingState: MarketResearchOutcomeReconciliationResult["reconciliation"]["paperTradingState"];
+    paperTradingSuccess: boolean;
+
+    netProfit: number;
+    totalReturnPercent: number;
+    maxDrawdown: number;
+    maxDrawdownPercent: number;
+
+    filledOrders: number;
+    rejectedOrders: number;
+    openPositions: number;
+  };
+
+  sourceGeneratedAt: string;
+
+  humanReview: {
+    required: true;
+    status: "pending";
+    decisionRecorded: false;
+    decision: null;
+  };
+
+  boundary: {
+    automaticInvalidationEvaluation: false;
+    recommendationGenerated: false;
+    decisionAutomaticallyGenerated: false;
+    taskCreated: false;
+    plannerDispatched: false;
+    brokerConnected: false;
+    liveOrderPlaced: false;
+    tradingExecuted: false;
+  };
+
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MarketResearchInvalidationLedgerRequest {
-  symbol: string;
-  market: MarketRegion;
   reconciliation: MarketResearchOutcomeReconciliationResult;
-  query?: string | null;
 }
 
 export interface MarketResearchInvalidationLedgerResult {
   success: boolean;
+
   code:
-    | "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_PASS"
-    | "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_PARTIAL"
-    | "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT";
-  state: MarketResearchInvalidationLedgerState;
-  symbol: string;
-  market: MarketRegion;
-  ledger: {
-    itemCount: number;
-    invalidationConditionCount: number;
-    evidenceGapCount: number;
-    outcomeObservationCount: number;
-    boundaryObservationCount: number;
-    items: MarketResearchInvalidationLedgerItem[];
-  };
-  source: {
-    reconciliationCode: MarketResearchOutcomeReconciliationResult["code"];
-    reconciliationState: MarketResearchOutcomeReconciliationResult["state"];
-    historicalOnly: true;
-  };
-  methodology: {
-    source: "C160.1";
-    ledgerConstructionOnly: true;
-    automaticInvalidationEvaluation: false;
-    thesisValidation: false;
-    futurePerformancePrediction: false;
-    recommendationGenerated: false;
-  };
+    | "C161_1_RESEARCH_INVALIDATION_LEDGER_PASS"
+    | "C161_1_RESEARCH_INVALIDATION_LEDGER_ALREADY_EXISTS"
+    | "C161_1_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT";
+
+  action:
+    | "ledger-created"
+    | "ledger-already-exists"
+    | "ledger-blocked";
+
+  ledger: MarketResearchInvalidationLedgerRecord | null;
+
+  mutationPerformed: boolean;
+
+  humanReviewRequired: true;
+
   boundary: {
-    humanDecisionRequired: true;
+    automaticInvalidationEvaluation: false;
     decisionAutomaticallyGenerated: false;
     decisionRecorded: false;
     taskCreated: false;
@@ -70,16 +99,15 @@ export interface MarketResearchInvalidationLedgerResult {
     liveOrderPlaced: false;
     tradingExecuted: false;
   };
-  upstream: {
-    reconciliation: "C160.1";
-    performanceReview: "C159.1";
-    decisionWorkspace: "C157.1";
-    paperTrading: "C151";
-    liveTradingBoundary: "C152";
+
+  runtime: {
+    name: "market-research-invalidation-ledger-runtime";
+    version: "C161.1";
+    upstream: "C160";
+    generatedAt: string;
+    latencyMs: number;
   };
-  pipeline: string[];
+
   principles: string[];
   disclaimer: string;
-  generatedAt: string;
-  latencyMs: number;
 }
