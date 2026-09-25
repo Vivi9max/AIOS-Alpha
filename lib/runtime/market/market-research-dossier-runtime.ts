@@ -100,6 +100,24 @@ function normalizeDataQuality(
   }
 }
 
+function normalizeFreshness(
+  value: string | null | undefined,
+): MarketResearchDossierItem["evidence"]["freshness"] {
+  switch (value) {
+    case "fresh":
+      return "fresh";
+
+    case "stale":
+      return "stale";
+
+    case "unknown":
+      return "unknown";
+
+    default:
+      return "unknown";
+  }
+}
+
 function findRadarItem(
   result: Awaited<
     ReturnType<
@@ -362,13 +380,14 @@ function buildItem(
         ),
 
       freshness:
-        evidenceItem?.freshness
-          .status ??
-        "unknown",
+        normalizeFreshness(
+          evidenceItem?.freshness
+            ?.status,
+        ),
 
       asOf:
         evidenceItem?.freshness
-          .asOf ??
+          ?.asOf ??
         null,
 
       conflictCount,
