@@ -14,6 +14,16 @@ interface RegressionCheck {
   detail: string;
 }
 
+interface RegressionPosition {
+  symbol: string;
+  quantity: number;
+  averageEntryPrice: number;
+  lastPrice: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+}
+
 interface RegressionResponse {
   success: boolean;
   code: string;
@@ -32,15 +42,9 @@ interface RegressionResponse {
   initialCapital: number;
   finalCash: number;
   finalEquity: number;
-  remainingPosition: {
-    symbol: string;
-    quantity: number;
-    averageEntryPrice: number;
-    lastPrice: number;
-    realizedPnl: number;
-    unrealizedPnl: number;
-    totalPnl: number;
-  } | null;
+  remainingPosition:
+    | RegressionPosition
+    | null;
   totalFees: number;
   totalSlippage: number;
   equityCurvePoints: number;
@@ -70,10 +74,9 @@ function Status({
   return (
     <strong
       style={{
-        color:
-          passed
-            ? "#86efac"
-            : "#fca5a5",
+        color: passed
+          ? "#86efac"
+          : "#fca5a5",
       }}
     >
       {passed
@@ -95,8 +98,10 @@ function CheckCard({
           "9px 0",
         borderTop:
           "1px solid rgba(255,255,255,0.06)",
-        fontSize: 12,
-        lineHeight: 1.6,
+        fontSize:
+          12,
+        lineHeight:
+          1.6,
       }}
     >
       <div>
@@ -110,8 +115,10 @@ function CheckCard({
 
       <div
         style={{
-          marginTop: 3,
-          opacity: 0.65,
+          marginTop:
+            3,
+          opacity:
+            0.65,
         }}
       >
         {item.detail}
@@ -130,8 +137,10 @@ function Metric({
   return (
     <div
       style={{
-        padding: 12,
-        borderRadius: 10,
+        padding:
+          12,
+        borderRadius:
+          10,
         border:
           "1px solid rgba(255,255,255,0.08)",
         background:
@@ -140,8 +149,10 @@ function Metric({
     >
       <div
         style={{
-          fontSize: 11,
-          opacity: 0.5,
+          fontSize:
+            11,
+          opacity:
+            0.5,
         }}
       >
         {label}
@@ -149,9 +160,12 @@ function Metric({
 
       <div
         style={{
-          marginTop: 5,
-          fontSize: 16,
-          fontWeight: 700,
+          marginTop:
+            5,
+          fontSize:
+            16,
+          fontWeight:
+            700,
         }}
       >
         {value}
@@ -515,8 +529,7 @@ export default function PaperTradingRegressionPage() {
                 <Status
                   passed={
                     response.verified
-                  }{" "}
-                />
+                  } />
 
                 {" "}
 
@@ -679,43 +692,71 @@ export default function PaperTradingRegressionPage() {
                 >
                   Symbol:
                   {" "}
-                  {response.remainingPosition.symbol}
+                  {
+                    response
+                      .remainingPosition
+                      .symbol
+                  }
 
                   <br />
 
                   Quantity:
                   {" "}
-                  {response.remainingPosition.quantity}
+                  {
+                    response
+                      .remainingPosition
+                      .quantity
+                  }
 
                   <br />
 
                   Average Entry:
                   {" "}
-                  {response.remainingPosition.averageEntryPrice}
+                  {
+                    response
+                      .remainingPosition
+                      .averageEntryPrice
+                  }
 
                   <br />
 
                   Last Price:
                   {" "}
-                  {response.remainingPosition.lastPrice}
+                  {
+                    response
+                      .remainingPosition
+                      .lastPrice
+                  }
 
                   <br />
 
                   Realized P&L:
                   {" "}
-                  {response.remainingPosition.realizedPnl}
+                  {
+                    response
+                      .remainingPosition
+                      .realizedPnl
+                  }
 
                   <br />
 
                   Unrealized P&L:
                   {" "}
-                  {response.remainingPosition.unrealizedPnl}
+                  {
+                    response
+                      .remainingPosition
+                      .unrealizedPnl
+                  }
 
                   <br />
 
                   Total P&L:
                   {" "}
-                  {response.remainingPosition.totalPnl}
+                  {
+                    response
+                      .remainingPosition
+                      .totalPnl
+                  }
                 </div>
               </section>
             )}
@@ -808,7 +849,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.founderOnly
+                    response
+                      .safetyBoundary
+                      .founderOnly
                   }
                 />
 
@@ -818,7 +861,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.simulationOnly
+                    response
+                      .safetyBoundary
+                      .simulationOnly
                   }
                 />
 
@@ -828,7 +873,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.brokerConnected ===
+                    response
+                      .safetyBoundary
+                      .brokerConnected ===
                     false
                   }
                 />
@@ -839,7 +886,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.tradingExecuted ===
+                    response
+                      .safetyBoundary
+                      .tradingExecuted ===
                     false
                   }
                 />
@@ -850,7 +899,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.liveOrderPlaced ===
+                    response
+                      .safetyBoundary
+                      .liveOrderPlaced ===
                     false
                   }
                 />
@@ -861,7 +912,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.plannerDispatched ===
+                    response
+                      .safetyBoundary
+                      .plannerDispatched ===
                     false
                   }
                 />
@@ -872,7 +925,9 @@ export default function PaperTradingRegressionPage() {
                 {" "}
                 <Status
                   passed={
-                    response.safetyBoundary.humanReviewRequiredBeforeLiveTrading
+                    response
+                      .safetyBoundary
+                      .humanReviewRequiredBeforeLiveTrading
                   }
                 />
               </div>
