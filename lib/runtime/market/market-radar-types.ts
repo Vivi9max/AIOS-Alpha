@@ -52,7 +52,21 @@ export interface MarketRadarSignal {
 
   sourceVersion: string;
 
+  /**
+   * Canonical C154 review boundary.
+   *
+   * C154 identifies information that requires
+   * human review before any interpretation or action.
+   */
   humanDecisionRequired: true;
+
+  /**
+   * Compatibility field for earlier C154 runtime builds.
+   *
+   * This remains true and does not create an
+   * autonomous decision or execution capability.
+   */
+  humanReviewRequired: true;
 
   detectedAt: string;
 }
@@ -114,6 +128,8 @@ export interface MarketRadarRuntimeResult {
   tradingExecuted: false;
 
   humanDecisionRequired: true;
+
+  humanReviewRequired: true;
 
   runtime: {
     name:
