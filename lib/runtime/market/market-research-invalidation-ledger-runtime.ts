@@ -152,70 +152,108 @@ function createLedgerId(
 }
 
 /**
- * Boundary stored inside the persistent C161.1 Ledger.
+ * Persistent Ledger Boundary.
  *
- * This intentionally follows the Record type from
- * market-research-invalidation-ledger-types.ts.
+ * IMPORTANT:
+ * This boundary intentionally follows the exact
+ * MarketResearchInvalidationLedgerRecord contract.
+ *
+ * It does NOT contain decisionRecorded because
+ * decisionRecorded belongs to the human-review result
+ * boundary, not the persisted record boundary contract.
  */
 function buildLedgerBoundary(): MarketResearchInvalidationLedgerRecord["boundary"] {
   return {
     automaticInvalidationEvaluation:
       false,
+
     recommendationGenerated:
       false,
+
     decisionAutomaticallyGenerated:
       false,
-    decisionRecorded:
-      false,
+
     taskCreated:
       false,
+
     plannerDispatched:
       false,
+
     brokerConnected:
       false,
+
     liveOrderPlaced:
       false,
+
     tradingExecuted:
       false,
   };
 }
 
 /**
- * Boundary exposed by the C161.1 Runtime Result.
+ * Runtime Result Boundary.
  *
- * The Result interface intentionally has a narrower
- * boundary than the persistent Ledger Record.
+ * This intentionally follows the exact
+ * MarketResearchInvalidationLedgerResult contract.
  *
- * Keep this mapping explicit so TypeScript cannot
- * accidentally couple the two contracts.
+ * It is NOT the same object as the persistent
+ * Ledger Boundary.
  */
 function buildResultBoundary(): MarketResearchInvalidationLedgerResult["boundary"] {
   return {
     automaticInvalidationEvaluation:
       false,
+
     decisionAutomaticallyGenerated:
       false,
+
     decisionRecorded:
       false,
+
     taskCreated:
       false,
+
     plannerDispatched:
       false,
+
     brokerConnected:
       false,
+
     liveOrderPlaced:
       false,
+
     tradingExecuted:
       false,
   };
 }
 
 /**
- * Convert the persistent Ledger boundary into the
- * public Runtime Result boundary.
+ * Explicitly map the persisted Ledger Boundary
+ * into the public Runtime Result Boundary.
  *
- * This explicit mapping is intentional.
- * Do not return existing.boundary directly.
+ * Do not return the persisted boundary directly.
+ *
+ * The two contracts intentionally differ:
+ *
+ * Ledger:
+ * - automaticInvalidationEvaluation
+ * - recommendationGenerated
+ * - decisionAutomaticallyGenerated
+ * - taskCreated
+ * - plannerDispatched
+ * - brokerConnected
+ * - liveOrderPlaced
+ * - tradingExecuted
+ *
+ * Runtime Result:
+ * - automaticInvalidationEvaluation
+ * - decisionAutomaticallyGenerated
+ * - decisionRecorded
+ * - taskCreated
+ * - plannerDispatched
+ * - brokerConnected
+ * - liveOrderPlaced
+ * - tradingExecuted
  */
 function toResultBoundary(
   boundary: MarketResearchInvalidationLedgerRecord["boundary"],
@@ -227,8 +265,15 @@ function toResultBoundary(
     decisionAutomaticallyGenerated:
       boundary.decisionAutomaticallyGenerated,
 
+    /**
+     * decisionRecorded is deliberately hard-coded false.
+     *
+     * C161.1 never records a human decision.
+     * The persisted Ledger Boundary does not own
+     * this field, so it must not be read from it.
+     */
     decisionRecorded:
-      boundary.decisionRecorded,
+      false,
 
     taskCreated:
       boundary.taskCreated,
@@ -269,7 +314,8 @@ function insufficientResult(
   startedAt: number,
 ): MarketResearchInvalidationLedgerResult {
   return {
-    success: false,
+    success:
+      false,
 
     code:
       "C161_1_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT",
@@ -277,7 +323,8 @@ function insufficientResult(
     action:
       "ledger-blocked",
 
-    ledger: null,
+    ledger:
+      null,
 
     mutationPerformed:
       false,
@@ -379,16 +426,19 @@ export async function runMarketResearchInvalidationLedger(
     );
 
   /**
-   * Existing ledger:
+   * Existing Ledger:
    *
    * - no mutation
    * - no duplicate ledger
    * - no automatic decision
-   * - return a Result-compatible boundary
+   * - no human decision recording
+   * - no Planner dispatch
+   * - no trading execution
    */
   if (existing) {
     return {
-      success: true,
+      success:
+        true,
 
       code:
         "C161_1_RESEARCH_INVALIDATION_LEDGER_ALREADY_EXISTS",
