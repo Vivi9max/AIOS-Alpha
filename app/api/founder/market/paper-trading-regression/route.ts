@@ -68,9 +68,18 @@ export async function GET(
      * 2. Sell 40 AAPL at 110.
      * 3. Attempt to sell 100 AAPL at 110.
      *
-     * The third order must be rejected because
+     * The third order MUST be rejected because
      * only 60 shares remain.
+     *
+     * Therefore the underlying C151 engine may
+     * correctly report PARTIAL when an intentionally
+     * rejected order is present.
+     *
+     * C151.1.1 verifies that the expected partial
+     * execution occurred correctly rather than
+     * requiring every submitted order to fill.
      */
+
     const result =
       await paperTradeMarket({
         candidates: [
@@ -223,11 +232,6 @@ export async function GET(
       result.account.equity !==
         result.account.initialCapital;
 
-    /*
-     * Array.find() returns T | undefined.
-     * Optional chaining keeps the check type-safe
-     * while preserving the actual verification.
-     */
     const positionQuantityCorrect =
       position?.quantity ===
       60;
@@ -253,6 +257,18 @@ export async function GET(
 
     const safety =
       result.safetyBoundary;
+
+    /*
+     * C151.1.1 intentionally expects one rejected
+     * order. Therefore C151 engine PARTIAL is valid
+     * for this regression.
+     */
+    const expectedExecutionState =
+      result.success &&
+      result.filledOrders ===
+        2 &&
+      result.rejectedOrders ===
+        1;
 
     checks.push(
       check(
@@ -319,6 +335,14 @@ export async function GET(
         "TRADE_STATE_INTEGRITY",
         allSimulationTrades,
         "All generated trades remain within the virtual filled/rejected state model.",
+      ),
+    );
+
+    checks.push(
+      check(
+        "EXPECTED_ENGINE_EXECUTION_STATE",
+        expectedExecutionState,
+        `Engine success=${String(result.success)}; engineCode=${result.code}; expected 2 filled + 1 intentionally rejected.`,
       ),
     );
 
@@ -409,11 +433,23 @@ export async function GET(
       checks.length -
       passed;
 
+    /*
+     * IMPORTANT:
+     *
+     * Do NOT require:
+     *
+     * result.code ===
+     * "C151_PAPER_TRADING_PASS"
+     *
+     * because this regression intentionally contains
+     * one rejected order.
+     *
+     * C151_PAPER_TRADING_PARTIAL is the correct engine
+     * state for 2 filled + 1 rejected.
+     */
     const verified =
       failed === 0 &&
-      result.success &&
-      result.code ===
-        "C151_PAPER_TRADING_PASS";
+      expectedExecutionState;
 
     return NextResponse.json(
       {
@@ -532,7 +568,7 @@ export async function GET(
           },
 
         principle:
-          "C151 is a virtual execution environment only. A passing regression proves simulation accounting and safety boundaries, not broker connectivity or live trading readiness.",
+          "C151.1.1 verifies deterministic virtual execution, including an intentionally rejected insufficient-position order. C151 engine PARTIAL is valid when expected orders are filled and an expected constraint rejection occurs. This regression does not prove broker connectivity or live trading readiness.",
 
         nextStage:
           "C152",
