@@ -14,7 +14,7 @@ import type {
 } from "./market-radar-types";
 
 const DISCLAIMER =
-  "C154 Market Radar continuously organizes verified market-change events into a research-monitoring layer. It does not generate buy, sell, hold, target-price, probability, personalized investment advice, autonomous portfolio actions, or trading execution.";
+  "C154 Market Radar is a research-monitoring layer built on the existing C147 market intelligence runtime. It detects and organizes market-change events but does not generate buy, sell, hold, target-price, personalized investment advice, autonomous portfolio actions, Planner work, or trading execution.";
 
 function normalizeSymbol(
   symbol: string,
@@ -24,7 +24,7 @@ function normalizeSymbol(
     .toUpperCase();
 }
 
-function priorityForEvent(
+function getPriority(
   event: MarketChangeEvent,
 ): MarketRadarPriority {
   if (
@@ -50,50 +50,77 @@ function priorityForEvent(
   return "normal";
 }
 
-function signalTitle(
+function getSignalType(
+  event: MarketChangeEvent,
+) {
+  if (
+    event.eventType ===
+    "market-decision-blocked"
+  ) {
+    return "risk-review" as const;
+  }
+
+  if (
+    event.eventType ===
+    "market-decision-no-history"
+  ) {
+    return "data-quality" as const;
+  }
+
+  if (
+    event.eventType ===
+    "market-decision-reassessment-required"
+  ) {
+    return "market-change" as const;
+  }
+
+  return "event-review" as const;
+}
+
+function getTitle(
   event: MarketChangeEvent,
 ): string {
   switch (
     event.eventType
   ) {
     case "market-decision-reassessment-required":
-      return "Material market change requires review";
+      return "Material market change detected";
+
+    case "market-decision-changed":
+      return "Market observation changed";
 
     case "market-decision-no-change":
-      return "No material market change detected";
+      return "No material market change";
 
     case "market-decision-no-history":
-      return "Market history unavailable";
+      return "Insufficient market history";
 
     case "market-decision-blocked":
-      return "Market decision state blocked";
+      return "Market decision blocked";
 
     default:
-      return "Market change detected";
+      return "Market event detected";
   }
 }
 
-function signalDescription(
+function getDescription(
   event: MarketChangeEvent,
 ): string {
-  const changed =
+  const changes =
     event.whatChanged.length > 0
       ? event.whatChanged.join(
-          " | ",
+          " · ",
         )
-      : "No detailed change description available.";
+      : "No detailed observation change was supplied.";
 
-  const why =
+  const implications =
     event.whyItMatters.length > 0
       ? event.whyItMatters.join(
-          " | ",
+          " · ",
         )
       : "Human review is required before interpretation.";
 
-  return [
-    changed,
-    why,
-  ].join(" ");
+  return `${changes} ${implications}`;
 }
 
 function buildSignal(
@@ -101,20 +128,7 @@ function buildSignal(
 ): MarketRadarSignal {
   return {
     signalId:
-      `radar-${event.eventId}`,
-
-    type:
-      event.materialChange
-        ? "market-change"
-        : event.eventType ===
-            "market-decision-blocked"
-          ? "risk-review"
-          : "event-review",
-
-    priority:
-      priorityForEvent(
-        event,
-      ),
+      `c154-radar-${event.eventId}`,
 
     symbol:
       normalizeSymbol(
@@ -124,19 +138,23 @@ function buildSignal(
     market:
       event.market,
 
+    type:
+      getSignalType(event),
+
+    priority:
+      getPriority(event),
+
     title:
-      signalTitle(event),
+      getTitle(event),
 
     description:
-      signalDescription(
-        event,
-      ),
+      getDescription(event),
 
     materialChange:
       event.materialChange,
 
-    humanReviewRequired:
-      true,
+    observationChanged:
+      event.observationChanged,
 
     sourceEventId:
       event.eventId,
@@ -144,12 +162,15 @@ function buildSignal(
     sourceVersion:
       event.sourceVersion,
 
+    humanDecisionRequired:
+      true,
+
     detectedAt:
       event.createdAt,
   };
 }
 
-function shouldInclude(
+function includeEvent(
   event: MarketChangeEvent,
   request: MarketRadarRuntimeRequest,
 ): boolean {
@@ -180,9 +201,9 @@ function shouldInclude(
   return true;
 }
 
-function determineState(
+function resolveState(
   signals: MarketRadarSignal[],
-): "stable" | "active" | "attention" | "blocked" | "insufficient" {
+): MarketRadarRuntimeResult["radar"]["state"] {
   if (
     signals.length === 0
   ) {
@@ -235,7 +256,7 @@ export async function runMarketRadarRuntime(
       ? request.universe
       : [];
 
-  const eventRuntime =
+  const upstream =
     await runMarketChangeEventRuntime(
       {
         universe,
@@ -253,9 +274,9 @@ export async function runMarketRadarRuntime(
     );
 
   const events =
-    eventRuntime.events.filter(
+    upstream.events.filter(
       (event) =>
-        shouldInclude(
+        includeEvent(
           event,
           request,
         ),
@@ -302,14 +323,14 @@ export async function runMarketRadarRuntime(
         "market-decision-no-history",
     ).length;
 
-  const state =
-    determineState(
-      signals,
-    );
-
   const latencyMs =
     Date.now() -
     startedAt;
+
+  const state =
+    resolveState(
+      signals,
+    );
 
   const code =
     events.length === 0
@@ -328,10 +349,10 @@ export async function runMarketRadarRuntime(
       state,
 
       universeSize:
-        eventRuntime.universeSize,
+        upstream.universeSize,
 
       evaluatedCount:
-        eventRuntime.evaluatedCount,
+        upstream.evaluatedCount,
 
       eventCount:
         events.length,
@@ -386,17 +407,17 @@ export async function runMarketRadarRuntime(
     },
 
     principles: [
-      "C154 consumes the existing C147.13 Market Change Event Runtime.",
+      "C154 consumes C147.13 rather than duplicating market-change detection.",
       "C147.12 remains the source of truth for market change detection.",
       "C147.13 remains the source of truth for structured market-change events.",
-      "C154 does not duplicate market decision detection.",
+      "C154 is read-only.",
       "C154 does not mutate market decision history.",
       "C154 does not create Tasks.",
       "C154 does not dispatch Planner work.",
-      "C154 does not execute trading.",
+      "C154 does not execute trades.",
       "C154 does not rank securities.",
       "C154 does not generate buy, sell, hold, target-price, or probability recommendations.",
-      "Human review remains mandatory.",
+      "Every material signal remains subject to human review.",
     ],
 
     disclaimer:
