@@ -57,13 +57,12 @@ export async function GET(
 
   try {
     /*
-     * C151.1.1 uses explicit deterministic
-     * simulation prices.
+     * C151.1.1 deterministic paper-trading
+     * regression.
      *
-     * This deliberately avoids depending on
-     * AllTick realtime availability.
+     * No realtime market dependency.
      *
-     * Test sequence:
+     * Sequence:
      *
      * 1. Buy 100 AAPL at 100.
      * 2. Sell 40 AAPL at 110.
@@ -224,10 +223,14 @@ export async function GET(
       result.account.equity !==
         result.account.initialCapital;
 
+    /*
+     * Array.find() returns T | undefined.
+     * Optional chaining keeps the check type-safe
+     * while preserving the actual verification.
+     */
     const positionQuantityCorrect =
-      position !== null &&
-      position.quantity ===
-        60;
+      position?.quantity ===
+      60;
 
     const rejectionCorrect =
       rejected.length ===
