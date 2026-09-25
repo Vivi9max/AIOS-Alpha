@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import type { MarketRegion } from "@/lib/runtime/market/market-types";
 import type { MarketDecisionWorkspaceItem } from "@/lib/runtime/market/market-decision-workspace-types";
 import type { MarketPaperTradePerformanceResult } from "@/lib/runtime/market/market-paper-trade-performance-types";
@@ -13,7 +14,7 @@ export default function Page() {
   const [decision, setDecision] = useState("");
   const [performance, setPerformance] = useState("");
   const [result, setResult] = useState<MarketResearchOutcomeReconciliationResult | null>(null);
-  const [regression, setRegression] = useState<string>("");
+  const [regression, setRegression] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -40,13 +41,18 @@ export default function Page() {
 
   async function regressionRun() {
     setError("");
-    const response = await fetch("/api/founder/market/research-outcome-reconciliation?regression=true", { cache: "no-store" });
-    const payload = await response.json();
-    setRegression(`${payload.code} · ${payload.passed}/${payload.total} checks passed`);
+    try {
+      const response = await fetch("/api/founder/market/research-outcome-reconciliation?regression=true", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || payload.code || "C160 regression failed");
+      setRegression(`${payload.code} · ${payload.passed}/${payload.total} checks passed`);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "C160 regression failed.");
+    }
   }
 
-  const box = { marginTop: 18, border: "1px solid #222", borderRadius: 14, padding: 16, background: "#0d0d0d" };
-  const input = { width: "100%", boxSizing: "border-box", border: "1px solid #333", borderRadius: 8, padding: 10, background: "#111", color: "#eee", fontFamily: "monospace", fontSize: 11 };
+  const box: CSSProperties = { marginTop: 18, border: "1px solid #222", borderRadius: 14, padding: 16, background: "#0d0d0d" };
+  const input: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #333", borderRadius: 8, padding: 10, background: "#111", color: "#eee", fontFamily: "monospace", fontSize: 11 };
 
   return (
     <main style={{ minHeight: "100vh", background: "#070707", color: "#eee", padding: "38px 20px" }}>
@@ -66,7 +72,7 @@ export default function Page() {
             </select>
           </div>
           <textarea value={decision} onChange={(e) => setDecision(e.target.value)} placeholder={'Paste actual C157 "workspace item" JSON here.'} rows={8} style={{ ...input, marginTop: 10 }} />
-          <textarea value={performance} onChange={(e) => setPerformance(e.target.value)} placeholder={'Paste actual C159 performance review JSON here.'} rows={8} style={{ ...input, marginTop: 10 }} />
+          <textarea value={performance} onChange={(e) => setPerformance(e.target.value)} placeholder="Paste actual C159 performance review JSON here." rows={8} style={{ ...input, marginTop: 10 }} />
           <button disabled={!session || !decision || !performance} onClick={run} style={{ marginTop: 10, padding: "10px 15px", border: "1px solid #444", borderRadius: 9, background: "#151515", color: "#eee" }}>Run Reconciliation</button>
           {error && <div style={{ marginTop: 10, color: "#fca5a5", fontSize: 12 }}>{error}</div>}
         </section>
