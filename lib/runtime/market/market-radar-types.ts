@@ -13,9 +13,9 @@ export type MarketRadarSignalType =
   | "volume-anomaly"
   | "price-change"
   | "sector-change"
-  | "data-quality"
   | "event-review"
-  | "risk-review";
+  | "risk-review"
+  | "data-quality";
 
 export type MarketRadarState =
   | "stable"
@@ -32,13 +32,13 @@ export interface MarketRadarUniverseItem {
 export interface MarketRadarSignal {
   signalId: string;
 
-  type: MarketRadarSignalType;
-
-  priority: MarketRadarPriority;
-
   symbol: string;
 
   market: MarketRegion;
+
+  type: MarketRadarSignalType;
+
+  priority: MarketRadarPriority;
 
   title: string;
 
@@ -46,11 +46,13 @@ export interface MarketRadarSignal {
 
   materialChange: boolean;
 
-  humanReviewRequired: true;
+  observationChanged: boolean;
 
   sourceEventId: string | null;
 
   sourceVersion: string;
+
+  humanDecisionRequired: true;
 
   detectedAt: string;
 }
