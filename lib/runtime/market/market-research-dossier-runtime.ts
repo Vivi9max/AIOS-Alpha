@@ -242,28 +242,31 @@ function buildItem(
   const selectionStages =
     selectionItem?.stages ?? [];
 
-  const stages =
-    selectionStages.map(
-      (stage) => ({
-        stage:
-          stage.stage,
-        status:
-          mapStageStatus(
-            stage.passed,
-            stage.status,
-          ),
-        reasons:
-          stage.reasons,
-      }),
-    );
+const selectionStages =
+  selectionItem?.stages ?? [];
 
-  stages.push({
-    stage: "human-decision",
-    status: "blocked",
-    reasons: [
-      "Human decision remains mandatory before any investment or trading action.",
-    ],
-  });
+const stages: MarketResearchDossierItem["stages"] =
+  selectionStages.map(
+    (stage) => ({
+      stage:
+        stage.stage,
+      status:
+        mapStageStatus(
+          stage.passed,
+          stage.status,
+        ),
+      reasons:
+        stage.reasons,
+    }),
+  );
+
+stages.push({
+  stage: "human-decision",
+  status: "blocked",
+  reasons: [
+    "Human decision remains mandatory before any investment or trading action.",
+  ],
+});
 
   return {
     dossierId:
