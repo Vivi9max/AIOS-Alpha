@@ -11,37 +11,7 @@ import {
   runMarketRadarRuntime,
 } from "@/lib/runtime/market/market-radar-runtime";
 
-type Check = {
-  name: string;
-  passed: boolean;
-  detail: string;
-};
-
-type RegressionResult = {
-  success: boolean;
-
-  code: string;
-
-  stage: string;
-
-  passed: number;
-
-  failed: number;
-
-  total: number;
-
-  checks: Check[];
-
-  runtimeMs: number;
-};
-
-export const dynamic =
-  "force-dynamic";
-
-export const runtime =
-  "nodejs";
-
-const universe = [
+const TEST_UNIVERSE = [
   {
     symbol: "NVDA",
     market: "us" as const,
@@ -58,19 +28,53 @@ const universe = [
   },
 ];
 
-async function runRegression(): Promise<RegressionResult> {
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
+export async function GET(
+  request: NextRequest,
+) {
   const startedAt =
     Date.now();
 
-  const checks: Check[] = [];
+  if (
+    !isFounderRequest(
+      request,
+    )
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
 
-  let result;
+        verified: false,
+
+        code:
+          "FOUNDER_AUTH_REQUIRED",
+
+        message:
+          "Founder authentication is required.",
+      },
+      {
+        status: 401,
+      },
+    );
+  }
+
+  const checks: Array<{
+    name: string;
+    passed: boolean;
+    detail: string;
+  }> = [];
 
   try {
-    result =
+    const result =
       await runMarketRadarRuntime(
         {
-          universe,
+          universe:
+            TEST_UNIVERSE,
 
           includeNoChange:
             true,
@@ -80,15 +84,12 @@ async function runRegression(): Promise<RegressionResult> {
 
           includeBlocked:
             true,
-
-          query:
-            null,
         },
       );
 
     checks.push({
       name:
-        "RADAR_RUNTIME_COMPLETED",
+        "RUNTIME_COMPLETED",
 
       passed:
         result.success === true ||
@@ -96,38 +97,75 @@ async function runRegression(): Promise<RegressionResult> {
           "C154_MARKET_RADAR_INSUFFICIENT",
 
       detail:
-        `C154 code=${result.code}.`,
+        `Runtime code: ${result.code}`,
     });
 
     checks.push({
       name:
-        "UNIVERSE_EVALUATED",
+        "THREE_MARKET_UNIVERSE",
 
       passed:
         result.radar
-          .universeSize ===
-        universe.length,
+          .universeSize === 3,
 
       detail:
-        `Universe=${result.radar.universeSize}; expected=${universe.length}.`,
+        `Universe=${result.radar.universeSize}`,
     });
 
     checks.push({
       name:
-        "SIGNALS_STRUCTURED",
+        "US_MARKET_PRESENT",
 
       passed:
-        Array.isArray(
-          result.radar.signals,
+        result.radar.signals.some(
+          (signal) =>
+            signal.symbol ===
+              "NVDA" &&
+            signal.market ===
+              "us",
         ),
 
       detail:
-        `Signals=${result.radar.signals.length}.`,
+        "NVDA / US signal trace exists when upstream produces an event.",
     });
 
     checks.push({
       name:
-        "SOURCE_VERSION_ALIGNED",
+        "HK_MARKET_PRESENT",
+
+      passed:
+        result.radar.signals.some(
+          (signal) =>
+            signal.symbol ===
+              "0700.HK" &&
+            signal.market ===
+              "hk",
+        ),
+
+      detail:
+        "0700.HK / HK signal trace exists when upstream produces an event.",
+    });
+
+    checks.push({
+      name:
+        "CN_MARKET_PRESENT",
+
+      passed:
+        result.radar.signals.some(
+          (signal) =>
+            signal.symbol ===
+              "600519.SH" &&
+            signal.market ===
+              "cn",
+        ),
+
+      detail:
+        "600519.SH / CN signal trace exists when upstream produces an event.",
+    });
+
+    checks.push({
+      name:
+        "UPSTREAM_TRACEABILITY",
 
       passed:
         result.radar.signals.every(
@@ -137,21 +175,7 @@ async function runRegression(): Promise<RegressionResult> {
         ),
 
       detail:
-        "Radar signals remain traceable to the existing market change-detection source.",
-    });
-
-    checks.push({
-      name:
-        "NO_TRADING_EXECUTION",
-
-      passed:
-        result.tradingExecuted ===
-          false &&
-        result.plannerDispatched ===
-          false,
-
-      detail:
-        "C154 does not dispatch Planner or trading execution.",
+        "Every emitted signal remains traceable to C147.12.",
     });
 
     checks.push({
@@ -163,24 +187,60 @@ async function runRegression(): Promise<RegressionResult> {
         false,
 
       detail:
-        "C154 remains read-only.",
+        "Market decision history was not mutated.",
     });
 
     checks.push({
       name:
-        "HUMAN_REVIEW_BOUNDARY",
+        "NO_TASK",
+
+      passed:
+        result.taskCreated ===
+        false,
+
+      detail:
+        "No Task was created.",
+    });
+
+    checks.push({
+      name:
+        "NO_PLANNER",
+
+      passed:
+        result.plannerDispatched ===
+        false,
+
+      detail:
+        "Planner was not dispatched.",
+    });
+
+    checks.push({
+      name:
+        "NO_TRADING",
+
+      passed:
+        result.tradingExecuted ===
+        false,
+
+      detail:
+        "Trading was not executed.",
+    });
+
+    checks.push({
+      name:
+        "HUMAN_REVIEW",
 
       passed:
         result.humanDecisionRequired ===
         true,
 
       detail:
-        "Human decision remains required.",
+        "Human decision remains mandatory.",
     });
 
     checks.push({
       name:
-        "NO_INVESTMENT_RECOMMENDATION",
+        "RESEARCH_BOUNDARY",
 
       passed:
         result.disclaimer.includes(
@@ -188,107 +248,82 @@ async function runRegression(): Promise<RegressionResult> {
         ),
 
       detail:
-        "Radar disclaimer preserves the decision-support boundary.",
+        "Investment recommendation boundary is preserved.",
     });
-  } catch (error) {
-    checks.push({
-      name:
-        "RADAR_RUNTIME_EXCEPTION",
 
-      passed:
-        false,
+    const passed =
+      checks.filter(
+        (check) =>
+          check.passed,
+      ).length;
 
-      detail:
-        error instanceof Error
-          ? error.message
-          : "Unknown runtime exception.",
-    });
-  }
+    const failed =
+      checks.length -
+      passed;
 
-  const passed =
-    checks.filter(
-      (check) =>
-        check.passed,
-    ).length;
-
-  const failed =
-    checks.length -
-    passed;
-
-  return {
-    success:
-      failed === 0,
-
-    code:
-      failed === 0
-        ? "C154_MARKET_RADAR_REGRESSION_PASS"
-        : "C154_MARKET_RADAR_REGRESSION_PARTIAL",
-
-    stage:
-      "C154.1.1",
-
-    passed,
-
-    failed,
-
-    total:
-      checks.length,
-
-    checks,
-
-    runtimeMs:
-      Date.now() -
-      startedAt,
-  };
-}
-
-export async function GET(
-  request: NextRequest,
-) {
-  if (
-    !isFounderRequest(
-      request,
-    )
-  ) {
     return NextResponse.json(
       {
-        success: false,
+        success:
+          failed === 0,
+
+        verified:
+          failed === 0,
+
         code:
-          "FOUNDER_AUTH_REQUIRED",
-        error:
-          "Founder authentication required.",
-      },
-      {
-        status: 401,
-      },
-    );
-  }
+          failed === 0
+            ? "C154_MARKET_RADAR_REGRESSION_PASS"
+            : "C154_MARKET_RADAR_REGRESSION_PARTIAL",
 
-  try {
-    const result =
-      await runRegression();
+        stage:
+          "C154.1.1",
 
-    return NextResponse.json(
-      result,
+        total:
+          checks.length,
+
+        passed,
+
+        failed,
+
+        checks,
+
+        runtimeMs:
+          Date.now() -
+          startedAt,
+
+        upstream:
+          "C147.13",
+
+        generatedAt:
+          new Date().toISOString(),
+      },
       {
         status:
-          result.success
+          failed === 0
             ? 200
-            : 422,
+            : 207,
       },
     );
   } catch (error) {
     return NextResponse.json(
       {
         success: false,
+
+        verified: false,
 
         code:
           "C154_MARKET_RADAR_REGRESSION_ERROR",
 
+        stage:
+          "C154.1.1",
+
         error:
           error instanceof Error
             ? error.message
-            : "C154 regression failed.",
+            : "Unknown regression error.",
+
+        runtimeMs:
+          Date.now() -
+          startedAt,
       },
       {
         status: 500,
