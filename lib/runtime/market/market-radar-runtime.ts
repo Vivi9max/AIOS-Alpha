@@ -52,29 +52,29 @@ function getPriority(
 
 function getSignalType(
   event: MarketChangeEvent,
-) {
+): MarketRadarSignal["type"] {
   if (
     event.eventType ===
     "market-decision-blocked"
   ) {
-    return "risk-review" as const;
+    return "risk-review";
   }
 
   if (
     event.eventType ===
     "market-decision-no-history"
   ) {
-    return "data-quality" as const;
+    return "data-quality";
   }
 
   if (
     event.eventType ===
     "market-decision-reassessment-required"
   ) {
-    return "market-change" as const;
+    return "market-change";
   }
 
-  return "event-review" as const;
+  return "event-review";
 }
 
 function getTitle(
@@ -163,6 +163,9 @@ function buildSignal(
       event.sourceVersion,
 
     humanDecisionRequired:
+      true,
+
+    humanReviewRequired:
       true,
 
     detectedAt:
@@ -388,6 +391,9 @@ export async function runMarketRadarRuntime(
       false,
 
     humanDecisionRequired:
+      true,
+
+    humanReviewRequired:
       true,
 
     runtime: {
