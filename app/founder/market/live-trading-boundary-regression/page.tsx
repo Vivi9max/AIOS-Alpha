@@ -1,63 +1,45 @@
 "use client";
 
 import {
+  useEffect,
   useState,
 } from "react";
 
+const STORAGE_KEY =
+  "aios-founder-access-key";
+
 interface Check {
   name: string;
-
   passed: boolean;
-
   detail: string;
 }
 
 interface RegressionResponse {
   success: boolean;
-
   verified: boolean;
-
   code: string;
-
   stage: string;
-
   upstream: string;
-
   mode: string;
-
   latencyMs: number;
-
   passed: number;
-
   failed: number;
-
   total: number;
-
   checks: Check[];
-
   safetyBoundary: {
     founderOnly: boolean;
-
     simulationRequiredBeforeLive: boolean;
-
     humanReviewRequired: boolean;
-
     brokerConnected: boolean;
-
     tradingExecuted: boolean;
-
     liveOrderPlaced: boolean;
-
     plannerDispatched: boolean;
-
     automaticExecutionAllowed: boolean;
   };
-
   principle: string;
-
   nextStage: string;
-
   generatedAt: string;
+  error?: string;
 }
 
 function Status({
@@ -66,52 +48,59 @@ function Status({
   passed: boolean;
 }) {
   return (
-    <span
+    <strong
       style={{
-        fontWeight:
-          700,
-
-        color:
-          passed
-            ? "#15803d"
-            : "#b91c1c",
+        color: passed
+          ? "#15803d"
+          : "#b91c1c",
       }}
     >
-      {passed
-        ? "PASS"
-        : "FAIL"}
-    </span>
+      {passed ? "PASS" : "FAIL"}
+    </strong>
   );
 }
 
 export default function LiveTradingBoundaryRegressionPage() {
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
+  const [founderReady, setFounderReady] =
+    useState(false);
 
-  const [
-    response,
-    setResponse,
-  ] =
-    useState<RegressionResponse | null>(
-      null,
-    );
+  const [loading, setLoading] =
+    useState(false);
 
-  const [
-    error,
-    setError,
-  ] =
-    useState<string | null>(
-      null,
+  const [response, setResponse] =
+    useState<RegressionResponse | null>(null);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    const key =
+      window.sessionStorage.getItem(
+        STORAGE_KEY,
+      );
+
+    setFounderReady(
+      Boolean(key),
     );
+  }, []);
 
   async function runRegression() {
     setLoading(true);
-
     setError(null);
+    setResponse(null);
 
     try {
+      const key =
+        window.sessionStorage.getItem(
+          STORAGE_KEY,
+        );
+
+      if (!key) {
+        throw new Error(
+          "Founder Session not found. Open Founder Console first.",
+        );
+      }
+
       const result =
         await fetch(
           "/api/founder/market/live-trading-boundary-regression",
@@ -121,36 +110,38 @@ export default function LiveTradingBoundaryRegressionPage() {
 
             cache:
               "no-store",
+
+            headers: {
+              Authorization:
+                `Bearer ${key}`,
+
+              "x-founder-access-key":
+                key,
+            },
           },
         );
 
       const data =
-        (await result.json()) as
-          RegressionResponse;
+        (await result.json()) as RegressionResponse;
 
       setResponse(
         data,
       );
 
-      if (
-        !result.ok
-      ) {
+      if (!result.ok) {
         setError(
-          `HTTP ${result.status}`,
+          data.error ||
+            `HTTP ${result.status}`,
         );
       }
-    } catch (
-      err
-    ) {
+    } catch (caught) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Regression request failed.",
+        caught instanceof Error
+          ? caught.message
+          : "C152.1.1 regression request failed.",
       );
     } finally {
-      setLoading(
-        false,
-      );
+      setLoading(false);
     }
   }
 
@@ -203,7 +194,11 @@ export default function LiveTradingBoundaryRegressionPage() {
           <strong>
             Founder Session:
           </strong>{" "}
-          PASS
+          <Status
+            passed={
+              founderReady
+            }
+          />
         </p>
 
         <p>
@@ -247,7 +242,8 @@ export default function LiveTradingBoundaryRegressionPage() {
             runRegression
           }
           disabled={
-            loading
+            loading ||
+            !founderReady
           }
           style={{
             padding:
@@ -260,11 +256,15 @@ export default function LiveTradingBoundaryRegressionPage() {
               "1px solid #888",
 
             background:
-              "#fff",
+              loading ||
+              !founderReady
+                ? "#e5e5e5"
+                : "#fff",
 
             cursor:
-              loading
-                ? "wait"
+              loading ||
+              !founderReady
+                ? "not-allowed"
                 : "pointer",
           }}
         >
@@ -275,12 +275,29 @@ export default function LiveTradingBoundaryRegressionPage() {
       </section>
 
       {error && (
-        <p>
+        <section
+          style={{
+            padding:
+              16,
+
+            border:
+              "1px solid #fecaca",
+
+            borderRadius:
+              12,
+
+            marginBottom:
+              20,
+
+            color:
+              "#b91c1c",
+          }}
+        >
           <strong>
             Error:
           </strong>{" "}
           {error}
-        </p>
+        </section>
       )}
 
       {response && (
@@ -314,30 +331,34 @@ export default function LiveTradingBoundaryRegressionPage() {
             </p>
 
             <p>
-              Passed:{" "}
-              {response.passed}{" "}
-              · Failed:{" "}
-              {response.failed}{" "}
-              · Total:{" "}
+              Passed:
+              {" "}
+              {response.passed}
+              {" · Failed: "}
+              {response.failed}
+              {" · Total: "}
               {response.total}
             </p>
 
             <p>
-              Stage:{" "}
-              {response.stage}{" "}
-              · Upstream:{" "}
+              Stage:
+              {" "}
+              {response.stage}
+              {" · Upstream: "}
               {response.upstream}
             </p>
 
             <p>
-              Mode:{" "}
+              Mode:
+              {" "}
               {response.mode}
             </p>
 
             <p>
-              Latency:{" "}
-              {response.latencyMs}{" "}
-              ms
+              Latency:
+              {" "}
+              {response.latencyMs}
+              {" ms"}
             </p>
           </section>
 
@@ -422,75 +443,99 @@ export default function LiveTradingBoundaryRegressionPage() {
             </h3>
 
             <p>
-              Founder Only:{" "}
-              {response
-                .safetyBoundary
-                .founderOnly
-                ? "PASS"
-                : "FAIL"}
+              Founder Only:
+              {" "}
+              <Status
+                passed={
+                  response
+                    .safetyBoundary
+                    .founderOnly
+                }
+              />
             </p>
 
             <p>
-              Simulation Required Before Live:{" "}
-              {response
-                .safetyBoundary
-                .simulationRequiredBeforeLive
-                ? "PASS"
-                : "FAIL"}
+              Simulation Required Before Live:
+              {" "}
+              <Status
+                passed={
+                  response
+                    .safetyBoundary
+                    .simulationRequiredBeforeLive
+                }
+              />
             </p>
 
             <p>
-              Human Review Required:{" "}
-              {response
-                .safetyBoundary
-                .humanReviewRequired
-                ? "PASS"
-                : "FAIL"}
+              Human Review Required:
+              {" "}
+              <Status
+                passed={
+                  response
+                    .safetyBoundary
+                    .humanReviewRequired
+                }
+              />
             </p>
 
             <p>
-              Broker Connected:{" "}
-              {response
-                .safetyBoundary
-                .brokerConnected
-                ? "FAIL"
-                : "PASS"}
+              Broker Connected:
+              {" "}
+              <Status
+                passed={
+                  !response
+                    .safetyBoundary
+                    .brokerConnected
+                }
+              />
             </p>
 
             <p>
-              Trading Executed:{" "}
-              {response
-                .safetyBoundary
-                .tradingExecuted
-                ? "FAIL"
-                : "PASS"}
+              Trading Executed:
+              {" "}
+              <Status
+                passed={
+                  !response
+                    .safetyBoundary
+                    .tradingExecuted
+                }
+              />
             </p>
 
             <p>
-              Live Order Placed:{" "}
-              {response
-                .safetyBoundary
-                .liveOrderPlaced
-                ? "FAIL"
-                : "PASS"}
+              Live Order Placed:
+              {" "}
+              <Status
+                passed={
+                  !response
+                    .safetyBoundary
+                    .liveOrderPlaced
+                }
+              />
             </p>
 
             <p>
-              Planner Dispatched:{" "}
-              {response
-                .safetyBoundary
-                .plannerDispatched
-                ? "FAIL"
-                : "PASS"}
+              Planner Dispatched:
+              {" "}
+              <Status
+                passed={
+                  !response
+                    .safetyBoundary
+                    .plannerDispatched
+                }
+              />
             </p>
 
             <p>
-              Automatic Execution Allowed:{" "}
-              {response
-                .safetyBoundary
-                .automaticExecutionAllowed
-                ? "FAIL"
-                : "PASS"}
+              Automatic Execution Allowed:
+              {" "}
+              <Status
+                passed={
+                  !response
+                    .safetyBoundary
+                    .automaticExecutionAllowed
+                }
+              />
             </p>
           </section>
 
@@ -517,7 +562,8 @@ export default function LiveTradingBoundaryRegressionPage() {
             </p>
 
             <p>
-              Next Stage:{" "}
+              Next Stage:
+              {" "}
               <strong>
                 {
                   response.nextStage
@@ -526,7 +572,8 @@ export default function LiveTradingBoundaryRegressionPage() {
             </p>
 
             <p>
-              Generated:{" "}
+              Generated:
+              {" "}
               {
                 response.generatedAt
               }
