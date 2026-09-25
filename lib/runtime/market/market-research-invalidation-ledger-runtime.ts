@@ -1,102 +1,223 @@
+import { createHash } from "node:crypto";
+
+import { storage } from "@/lib/server-storage";
+
 import type {
-  MarketResearchInvalidationLedgerItem,
+  MarketResearchOutcomeReconciliationResult,
+} from "./market-research-outcome-reconciliation-types";
+
+import type {
+  MarketResearchInvalidationLedgerRecord,
   MarketResearchInvalidationLedgerRequest,
   MarketResearchInvalidationLedgerResult,
 } from "./market-research-invalidation-ledger-types";
 
-function normalizeSymbol(value: string): string {
-  return value.trim().toUpperCase();
+const STORAGE_PREFIX =
+  "aios:market:research-invalidation-ledger:v1:";
+
+const DISCLAIMER =
+  "C161.1 preserves C160 invalidation conditions for explicit human review. It does not automatically evaluate invalidation, generate recommendations, record decisions, dispatch Planner work, or execute trading.";
+
+function normalizeText(
+  value: unknown,
+  maxLength: number,
+): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .trim()
+    .slice(0, maxLength);
 }
 
-function insufficientResult(
-  request: MarketResearchInvalidationLedgerRequest,
-  reason: string,
-  startedAt: number,
-): MarketResearchInvalidationLedgerResult {
-  const symbol = normalizeSymbol(request.symbol);
+function normalizeSymbol(
+  value: unknown,
+): string {
+  return normalizeText(
+    value,
+    32,
+  ).toUpperCase();
+}
+
+function isValidReconciliation(
+  value: unknown,
+): value is MarketResearchOutcomeReconciliationResult {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const item =
+    value as Record<string, unknown>;
+
+  if (item.success !== true) {
+    return false;
+  }
+
+  if (
+    item.code !==
+      "C160_MARKET_RESEARCH_OUTCOME_RECONCILIATION_PASS" &&
+    item.code !==
+      "C160_MARKET_RESEARCH_OUTCOME_RECONCILIATION_PARTIAL"
+  ) {
+    return false;
+  }
+
+  if (
+    item.state !== "reconciled" &&
+    item.state !== "review-required"
+  ) {
+    return false;
+  }
+
+  if (
+    typeof item.symbol !== "string" ||
+    typeof item.market !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    !item.reconciliation ||
+    typeof item.reconciliation !== "object"
+  ) {
+    return false;
+  }
+
+  if (!Array.isArray(item.conditionReviews)) {
+    return false;
+  }
+
+  if (!Array.isArray(item.findings)) {
+    return false;
+  }
+
+  if (
+    !item.boundary ||
+    typeof item.boundary !== "object"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function fingerprint(
+  reconciliation: MarketResearchOutcomeReconciliationResult,
+): string {
+  const canonical = JSON.stringify({
+    symbol: normalizeSymbol(
+      reconciliation.symbol,
+    ),
+    market: reconciliation.market,
+    code: reconciliation.code,
+    state: reconciliation.state,
+    reconciliation:
+      reconciliation.reconciliation,
+    conditionReviews:
+      reconciliation.conditionReviews,
+    findings:
+      reconciliation.findings,
+    generatedAt:
+      reconciliation.generatedAt,
+  });
+
+  return createHash("sha256")
+    .update(canonical)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function storageKey(
+  ledgerId: string,
+): string {
+  return `${STORAGE_PREFIX}${ledgerId}`;
+}
+
+function createLedgerId(
+  reconciliation: MarketResearchOutcomeReconciliationResult,
+): string {
+  return [
+    "C1611",
+    normalizeSymbol(
+      reconciliation.symbol,
+    ),
+    reconciliation.market,
+    fingerprint(reconciliation),
+  ].join(":");
+}
+
+function buildBoundary() {
   return {
-    success: false,
-    code: "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT",
-    state: "insufficient",
-    symbol,
-    market: request.market,
-    ledger: {
-      itemCount: 0,
-      invalidationConditionCount: 0,
-      evidenceGapCount: 0,
-      outcomeObservationCount: 0,
-      boundaryObservationCount: 0,
-      items: [],
-    },
-    source: {
-      reconciliationCode:
-        request.reconciliation?.code ??
-        "C160_MARKET_RESEARCH_OUTCOME_RECONCILIATION_INSUFFICIENT",
-      reconciliationState: request.reconciliation?.state ?? "insufficient",
-      historicalOnly: true,
-    },
-    methodology: {
-      source: "C160.1",
-      ledgerConstructionOnly: true,
-      automaticInvalidationEvaluation: false,
-      thesisValidation: false,
-      futurePerformancePrediction: false,
-      recommendationGenerated: false,
-    },
-    boundary: {
-      humanDecisionRequired: true,
-      decisionAutomaticallyGenerated: false,
-      decisionRecorded: false,
-      taskCreated: false,
-      plannerDispatched: false,
-      brokerConnected: false,
-      liveOrderPlaced: false,
-      tradingExecuted: false,
-    },
-    upstream: {
-      reconciliation: "C160.1",
-      performanceReview: "C159.1",
-      decisionWorkspace: "C157.1",
-      paperTrading: "C151",
-      liveTradingBoundary: "C152",
-    },
-    pipeline: [
-      "C157 Human Decision Workspace",
-      "C158 Human Paper Trade Gate",
-      "C151 Paper Trading",
-      "C159 Performance Review",
-      "C160 Research ↔ Outcome Reconciliation",
-      "C161 Research Invalidation Ledger",
-      "C152 Live Trading Boundary",
-    ],
-    principles: [
-      "C161 preserves research conditions and observations for human review.",
-      "C161 does not automatically decide whether an invalidation condition occurred.",
-      "C161 does not validate or invalidate a research thesis.",
-      "Historical simulation remains descriptive and non-predictive.",
-    ],
-    disclaimer:
-      "C161 constructs a human-review ledger from C160 records. It does not automatically evaluate invalidation conditions or generate trading recommendations.",
-    generatedAt: new Date().toISOString(),
-    latencyMs: Date.now() - startedAt,
+    automaticInvalidationEvaluation:
+      false as const,
+    decisionAutomaticallyGenerated:
+      false as const,
+    decisionRecorded:
+      false as const,
+    taskCreated:
+      false as const,
+    plannerDispatched:
+      false as const,
+    brokerConnected:
+      false as const,
+    liveOrderPlaced:
+      false as const,
+    tradingExecuted:
+      false as const,
   };
 }
 
-function makeItem(
-  index: number,
-  type: MarketResearchInvalidationLedgerItem["type"],
-  title: string,
-  observation: string,
-): MarketResearchInvalidationLedgerItem {
+function buildPrinciples(): string[] {
+  return [
+    "C161.1 consumes an actual C160 reconciliation result.",
+    "C161.1 preserves invalidation conditions without automatically evaluating them.",
+    "Historical paper-trading outcomes remain descriptive evidence.",
+    "The ledger is immutable for duplicate submissions.",
+    "A duplicate C160 reconciliation returns the existing ledger.",
+    "Human review remains mandatory.",
+    "No investment recommendation is generated.",
+    "No decision is automatically recorded.",
+    "No Planner task is created.",
+    "No broker is connected.",
+    "No live order is placed.",
+    "No live trading is executed.",
+  ];
+}
+
+function insufficientResult(
+  reason: string,
+  startedAt: number,
+): MarketResearchInvalidationLedgerResult {
   return {
-    id: `C161:${index + 1}`,
-    type,
-    title,
-    observation,
-    source: "C160.1",
-    status: "preserved-for-human-review",
-    automaticEvaluation: false,
-    requiresHumanReview: true,
+    success: false,
+    code:
+      "C161_1_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT",
+    action: "ledger-blocked",
+    ledger: null,
+    mutationPerformed: false,
+    humanReviewRequired: true,
+    boundary: buildBoundary(),
+    runtime: {
+      name:
+        "market-research-invalidation-ledger-runtime",
+      version: "C161.1",
+      upstream: "C160",
+      generatedAt:
+        new Date().toISOString(),
+      latencyMs:
+        Date.now() - startedAt,
+    },
+    principles: [
+      "C161.1 requires a valid C160 reconciliation result.",
+      "Incomplete reconciliation is not converted into an invalidation ledger.",
+      reason,
+    ],
+    disclaimer: DISCLAIMER,
   };
 }
 
@@ -104,162 +225,246 @@ export async function runMarketResearchInvalidationLedger(
   request: MarketResearchInvalidationLedgerRequest,
 ): Promise<MarketResearchInvalidationLedgerResult> {
   const startedAt = Date.now();
-  const symbol = normalizeSymbol(request.symbol);
-  const reconciliation = request.reconciliation;
 
-  if (!symbol) {
-    return insufficientResult(request, "A valid market symbol is required.", startedAt);
-  }
-
-  if (!reconciliation) {
-    return insufficientResult(request, "A C160 reconciliation result is required.", startedAt);
-  }
+  const reconciliation =
+    request?.reconciliation;
 
   if (
-    normalizeSymbol(reconciliation.symbol) !== symbol ||
-    reconciliation.market !== request.market
+    !isValidReconciliation(
+      reconciliation,
+    )
   ) {
     return insufficientResult(
-      request,
-      "C160 symbol and market must match the ledger request.",
+      "The supplied C160 reconciliation is invalid or incomplete.",
       startedAt,
     );
   }
 
-  const items: MarketResearchInvalidationLedgerItem[] = [];
-  let index = 0;
+  const symbol =
+    normalizeSymbol(
+      reconciliation.symbol,
+    );
 
-  for (const condition of reconciliation.conditionReviews) {
-    if (!condition.condition.trim()) continue;
-    items.push(
-      makeItem(
-        index++,
-        "invalidation-condition",
-        "Research invalidation condition preserved",
-        condition.condition,
-      ),
+  if (!symbol) {
+    return insufficientResult(
+      "A valid market symbol is required.",
+      startedAt,
     );
   }
 
-  for (const finding of reconciliation.findings) {
-    if (finding.category === "data" || finding.category === "gap") {
-      items.push(
-        makeItem(
-          index++,
-          "evidence-gap",
-          finding.title,
-          finding.observation,
-        ),
-      );
-    } else if (finding.category === "boundary") {
-      items.push(
-        makeItem(
-          index++,
-          "boundary-observation",
-          finding.title,
-          finding.observation,
-        ),
-      );
-    } else {
-      items.push(
-        makeItem(
-          index++,
-          "outcome-observation",
-          finding.title,
-          finding.observation,
-        ),
-      );
-    }
+  const conditions =
+    reconciliation.conditionReviews
+      .map(
+        (item) =>
+          normalizeText(
+            item.condition,
+            1000,
+          ),
+      )
+      .filter(Boolean);
+
+  if (conditions.length === 0) {
+    return insufficientResult(
+      "C160 did not provide an invalidation condition to preserve.",
+      startedAt,
+    );
   }
 
-  const invalidationConditionCount = items.filter(
-    (item) => item.type === "invalidation-condition",
-  ).length;
-  const evidenceGapCount = items.filter(
-    (item) => item.type === "evidence-gap",
-  ).length;
-  const outcomeObservationCount = items.filter(
-    (item) => item.type === "outcome-observation",
-  ).length;
-  const boundaryObservationCount = items.filter(
-    (item) => item.type === "boundary-observation",
-  ).length;
+  const ledgerId =
+    createLedgerId(
+      reconciliation,
+    );
 
-  const state =
-    reconciliation.state === "insufficient"
-      ? "review-required"
-      : evidenceGapCount > 0 || boundaryObservationCount > 0
-        ? "review-required"
-        : "ledger-ready";
+  const existing =
+    await storage.get<MarketResearchInvalidationLedgerRecord>(
+      storageKey(ledgerId),
+    );
+
+  if (existing) {
+    return {
+      success: true,
+      code:
+        "C161_1_RESEARCH_INVALIDATION_LEDGER_ALREADY_EXISTS",
+      action:
+        "ledger-already-exists",
+      ledger: existing,
+      mutationPerformed: false,
+      humanReviewRequired: true,
+      boundary: existing.boundary,
+      runtime: {
+        name:
+          "market-research-invalidation-ledger-runtime",
+        version: "C161.1",
+        upstream: "C160",
+        generatedAt:
+          new Date().toISOString(),
+        latencyMs:
+          Date.now() - startedAt,
+      },
+      principles:
+        buildPrinciples(),
+      disclaimer: DISCLAIMER,
+    };
+  }
+
+  const now =
+    new Date().toISOString();
+
+  const ledger: MarketResearchInvalidationLedgerRecord =
+    {
+      ledgerId,
+
+      source: "C160",
+      sourceCode:
+        reconciliation.code,
+
+      symbol,
+      market:
+        reconciliation.market,
+
+      status:
+        "pending-human-review",
+
+      invalidationConditions:
+        conditions,
+
+      findings:
+        reconciliation.findings,
+
+      reconciliation: {
+        decisionState:
+          reconciliation.reconciliation
+            .decisionState,
+
+        decisionReviewStatus:
+          reconciliation.reconciliation
+            .decisionReviewStatus,
+
+        materialChange:
+          reconciliation.reconciliation
+            .materialChange,
+
+        evidenceVerified:
+          reconciliation.reconciliation
+            .evidenceVerified,
+
+        paperTradingState:
+          reconciliation.reconciliation
+            .paperTradingState,
+
+        paperTradingSuccess:
+          reconciliation.reconciliation
+            .paperTradingSuccess,
+
+        netProfit:
+          reconciliation.reconciliation
+            .netProfit,
+
+        totalReturnPercent:
+          reconciliation.reconciliation
+            .totalReturnPercent,
+
+        maxDrawdown:
+          reconciliation.reconciliation
+            .maxDrawdown,
+
+        maxDrawdownPercent:
+          reconciliation.reconciliation
+            .maxDrawdownPercent,
+
+        filledOrders:
+          reconciliation.reconciliation
+            .filledOrders,
+
+        rejectedOrders:
+          reconciliation.reconciliation
+            .rejectedOrders,
+
+        openPositions:
+          reconciliation.reconciliation
+            .openPositions,
+      },
+
+      sourceGeneratedAt:
+        reconciliation.generatedAt,
+
+      humanReview: {
+        required: true,
+        status: "pending",
+        decisionRecorded: false,
+        decision: null,
+      },
+
+      boundary:
+        buildBoundary(),
+
+      createdAt: now,
+      updatedAt: now,
+    };
+
+  await storage.set(
+    storageKey(ledgerId),
+    ledger,
+  );
 
   return {
     success: true,
     code:
-      state === "ledger-ready"
-        ? "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_PASS"
-        : "C161_MARKET_RESEARCH_INVALIDATION_LEDGER_PARTIAL",
-    state,
-    symbol,
-    market: request.market,
-    ledger: {
-      itemCount: items.length,
-      invalidationConditionCount,
-      evidenceGapCount,
-      outcomeObservationCount,
-      boundaryObservationCount,
-      items,
+      "C161_1_RESEARCH_INVALIDATION_LEDGER_PASS",
+    action: "ledger-created",
+    ledger,
+    mutationPerformed: true,
+    humanReviewRequired: true,
+    boundary: buildBoundary(),
+    runtime: {
+      name:
+        "market-research-invalidation-ledger-runtime",
+      version: "C161.1",
+      upstream: "C160",
+      generatedAt: now,
+      latencyMs:
+        Date.now() - startedAt,
     },
-    source: {
-      reconciliationCode: reconciliation.code,
-      reconciliationState: reconciliation.state,
-      historicalOnly: true,
-    },
-    methodology: {
-      source: "C160.1",
-      ledgerConstructionOnly: true,
-      automaticInvalidationEvaluation: false,
-      thesisValidation: false,
-      futurePerformancePrediction: false,
-      recommendationGenerated: false,
-    },
-    boundary: {
-      humanDecisionRequired: true,
-      decisionAutomaticallyGenerated: false,
-      decisionRecorded: false,
-      taskCreated: false,
-      plannerDispatched: false,
-      brokerConnected: false,
-      liveOrderPlaced: false,
-      tradingExecuted: false,
-    },
-    upstream: {
-      reconciliation: "C160.1",
-      performanceReview: "C159.1",
-      decisionWorkspace: "C157.1",
-      paperTrading: "C151",
-      liveTradingBoundary: "C152",
-    },
-    pipeline: [
-      "C157 Human Decision Workspace",
-      "C158 Human Paper Trade Gate",
-      "C151 Paper Trading",
-      "C159 Performance Review",
-      "C160 Research ↔ Outcome Reconciliation",
-      "C161 Research Invalidation Ledger",
-      "C152 Live Trading Boundary",
-    ],
-    principles: [
-      "C161 preserves research conditions and observed outcomes as reviewable records.",
-      "C161 never automatically marks an invalidation condition as triggered.",
-      "C161 separates evidence gaps from historical outcome observations.",
-      "C161 does not turn historical simulation into future performance prediction.",
-      "C161 does not generate investment recommendations.",
-      "C161 does not create tasks or dispatch Planner.",
-      "C161 does not connect a broker or execute live trading.",
-    ],
-    disclaimer:
-      "C161 is a structured human-review ledger derived from C160.1. A ledger item is not an automatic conclusion, thesis validation, or trading instruction.",
-    generatedAt: new Date().toISOString(),
-    latencyMs: Date.now() - startedAt,
+    principles:
+      buildPrinciples(),
+    disclaimer: DISCLAIMER,
   };
+}
+
+export async function getMarketResearchInvalidationLedger(
+  ledgerId: string,
+): Promise<MarketResearchInvalidationLedgerRecord | null> {
+  const normalized =
+    normalizeText(
+      ledgerId,
+      300,
+    );
+
+  if (!normalized) {
+    return null;
+  }
+
+  return (
+    await storage.get<MarketResearchInvalidationLedgerRecord>(
+      storageKey(normalized),
+    )
+  ) ?? null;
+}
+
+export async function deleteMarketResearchInvalidationLedger(
+  ledgerId: string,
+): Promise<void> {
+  const normalized =
+    normalizeText(
+      ledgerId,
+      300,
+    );
+
+  if (!normalized) {
+    return;
+  }
+
+  await storage.delete(
+    storageKey(normalized),
+  );
 }
