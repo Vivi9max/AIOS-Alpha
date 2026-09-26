@@ -26,6 +26,7 @@ import type {
   MarketResearchDossierItem,
   MarketResearchDossierResult,
   MarketResearchDossierRequestItem,
+  MarketResearchDossierValuation,
 } from "./market-research-dossier-types";
 
 function unique(
@@ -115,6 +116,62 @@ function normalizeFreshness(
 
     default:
       return "unknown";
+  }
+}
+
+/**
+ * C156 Dossier intentionally exposes the stable six-metric valuation
+ * contract only.
+ *
+ * C149 may contain additional historical fundamental metrics such as:
+ * - historicalRevenue
+ * - historicalNetIncome
+ * - historicalOperatingCashFlow
+ * - historicalFreeCashFlow
+ *
+ * Those remain available inside the valuation engine but are not part
+ * of the current C156 dossier contract.
+ */
+function isDossierValuationMetric(
+  metric: string,
+): metric is MarketResearchDossierValuation["metric"] {
+  switch (metric) {
+    case "pe":
+    case "pb":
+    case "eps":
+    case "revenue":
+    case "revenueGrowth":
+    case "marketCap":
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+/**
+ * C149 currently supports an additional historical-structured quality
+ * state. C156 deliberately keeps its public metric-quality contract
+ * stable, so only the supported C156 quality states are emitted.
+ */
+function normalizeDossierMetricQuality(
+  quality: string,
+): MarketResearchDossierValuation["metricQuality"][number]["quality"] {
+  switch (quality) {
+    case "verified-structured":
+      return "verified-structured";
+
+    case "web-evidence":
+      return "web-evidence";
+
+    case "missing":
+      return "missing";
+
+    case "historical-structured":
+      return "web-evidence";
+
+    default:
+      return "missing";
   }
 }
 
@@ -309,6 +366,33 @@ function buildItem(
     ],
   });
 
+  /**
+   * C149 may now expose a broader metric set than C156.
+   * Filter at the Dossier boundary rather than weakening the type system.
+   */
+  const dossierMetricQuality =
+    valuationItem?.metrics
+      .filter(
+        (metric) =>
+          isDossierValuationMetric(
+            metric.metric,
+          ),
+      )
+      .map(
+        (metric) => ({
+          metric:
+            metric.metric,
+          value:
+            metric.value,
+          available:
+            metric.available,
+          quality:
+            normalizeDossierMetricQuality(
+              metric.quality,
+            ),
+        }),
+      ) ?? [];
+
   return {
     dossierId:
       buildDossierId(
@@ -468,18 +552,7 @@ function buildItem(
         "insufficient",
 
       metricQuality:
-        valuationItem?.metrics.map(
-          (metric) => ({
-            metric:
-              metric.metric,
-            value:
-              metric.value,
-            available:
-              metric.available,
-            quality:
-              metric.quality,
-          }),
-        ) ?? [],
+        dossierMetricQuality,
 
       methodologyWarnings:
         valuationItem?.methodologyWarnings ??
@@ -513,14 +586,19 @@ function buildItem(
           (item) => ({
             category:
               item.category,
+
             severity:
               item.severity,
+
             status:
               item.status,
+
             title:
               item.title,
+
             description:
               item.description,
+
             invalidationCondition:
               item.invalidationCondition,
           }),
@@ -690,6 +768,7 @@ export async function runMarketResearchDossier(
           (item) => ({
             symbol:
               item.symbol,
+
             market:
               item.market,
           }),
