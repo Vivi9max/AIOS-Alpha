@@ -2190,12 +2190,12 @@ export default function MarketResearchPage() {
 
                   <Badge
                     tone={
-                      result.verified
+                      result.verification.verified
                         ? "positive"
                         : "warning"
                     }
                   >
-                    {result.verified
+                    {result.verification.verified
                       ? ui.verified
                       : ui.notVerified}
                   </Badge>
