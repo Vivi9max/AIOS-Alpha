@@ -15,6 +15,10 @@ import {
   runMarketResearchInvalidationLedgerHistoryRegression,
 } from "@/lib/runtime/market/market-research-invalidation-ledger-history-regression";
 
+import type {
+  MarketRegion,
+} from "@/lib/runtime/market/market-types";
+
 export const dynamic =
   "force-dynamic";
 
@@ -24,7 +28,8 @@ export const runtime =
 function unauthorized() {
   return NextResponse.json(
     {
-      success: false,
+      success:
+        false,
 
       code:
         "FOUNDER_AUTH_REQUIRED",
@@ -33,7 +38,8 @@ function unauthorized() {
         "Founder authentication required.",
     },
     {
-      status: 401,
+      status:
+        401,
     },
   );
 }
@@ -49,7 +55,9 @@ function normalizeLimit(
     Number(value);
 
   if (
-    !Number.isFinite(parsed)
+    !Number.isFinite(
+      parsed,
+    )
   ) {
     return undefined;
   }
@@ -57,10 +65,26 @@ function normalizeLimit(
   return Math.max(
     1,
     Math.min(
-      Math.floor(parsed),
+      Math.floor(
+        parsed,
+      ),
       100,
     ),
   );
+}
+
+function normalizeMarket(
+  value: string | null,
+): MarketRegion | undefined {
+  if (
+    value === "us" ||
+    value === "hk" ||
+    value === "cn"
+  ) {
+    return value;
+  }
+
+  return undefined;
 }
 
 export async function GET(
@@ -104,22 +128,11 @@ export async function GET(
           ) ?? undefined,
 
         market:
-          url.searchParams.get(
-            "market",
-          ) === "us" ||
-          url.searchParams.get(
-            "market",
-          ) === "hk" ||
-          url.searchParams.get(
-            "market",
-          ) === "cn"
-            ? (url.searchParams.get(
-                "market",
-              ) as
-                | "us"
-                | "hk"
-                | "cn")
-            : undefined,
+          normalizeMarket(
+            url.searchParams.get(
+              "market",
+            ),
+          ),
 
         limit:
           normalizeLimit(
