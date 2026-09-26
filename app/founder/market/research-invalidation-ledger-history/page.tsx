@@ -7,6 +7,14 @@ import {
 } from "react";
 
 import type {
+  CSSProperties,
+} from "react";
+
+import type {
+  MarketRegion,
+} from "@/lib/runtime/market/market-types";
+
+import type {
   MarketResearchInvalidationLedgerHistoryResult,
 } from "@/lib/runtime/market/market-research-invalidation-ledger-history-types";
 
@@ -24,7 +32,7 @@ export default function Page() {
     useState("");
 
   const [market, setMarket] =
-    useState("us");
+    useState<MarketRegion>("us");
 
   const [result, setResult] =
     useState<MarketResearchInvalidationLedgerHistoryResult | null>(
@@ -71,16 +79,31 @@ export default function Page() {
   useEffect(() => {
     refreshSession();
 
+    function handleStorage() {
+      refreshSession();
+    }
+
+    window.addEventListener(
+      "storage",
+      handleStorage,
+    );
+
     const interval =
       window.setInterval(
         refreshSession,
         1000,
       );
 
-    return () =>
+    return () => {
+      window.removeEventListener(
+        "storage",
+        handleStorage,
+      );
+
       window.clearInterval(
         interval,
       );
+    };
   }, [refreshSession]);
 
   async function loadHistory() {
@@ -112,14 +135,10 @@ export default function Page() {
         );
       }
 
-      if (
-        market
-      ) {
-        params.set(
-          "market",
-          market,
-        );
-      }
+      params.set(
+        "market",
+        market,
+      );
 
       params.set(
         "limit",
@@ -190,6 +209,9 @@ export default function Page() {
         await fetch(
           `${ENDPOINT}?regression=true`,
           {
+            method:
+              "GET",
+
             headers: {
               Accept:
                 "application/json",
@@ -228,7 +250,7 @@ export default function Page() {
     }
   }
 
-  const box: React.CSSProperties = {
+  const box: CSSProperties = {
     marginTop:
       18,
 
@@ -245,7 +267,7 @@ export default function Page() {
       "#0d0d0d",
   };
 
-  const input: React.CSSProperties = {
+  const input: CSSProperties = {
     width:
       "100%",
 
@@ -426,11 +448,20 @@ export default function Page() {
               }
               onChange={(
                 event,
-              ) =>
-                setMarket(
-                  event.target.value,
-                )
-              }
+              ) => {
+                const value =
+                  event.target.value;
+
+                if (
+                  value === "us" ||
+                  value === "hk" ||
+                  value === "cn"
+                ) {
+                  setMarket(
+                    value,
+                  );
+                }
+              }}
               style={
                 input
               }
@@ -494,6 +525,7 @@ export default function Page() {
 
           {error && (
             <div
+              role="alert"
               style={{
                 marginTop:
                   10,
@@ -503,6 +535,9 @@ export default function Page() {
 
                 fontSize:
                   12,
+
+                whiteSpace:
+                  "pre-wrap",
               }}
             >
               {error}
@@ -741,6 +776,12 @@ export default function Page() {
                 loading
                   ? "#555"
                   : "#ddd",
+
+              cursor:
+                !session ||
+                loading
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             {loading
