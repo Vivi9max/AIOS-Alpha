@@ -12,8 +12,15 @@ import type {
   MarketResearchInvalidationLedgerResult,
 } from "./market-research-invalidation-ledger-types";
 
+import type {
+  MarketResearchInvalidationLedgerIndex,
+} from "./market-research-invalidation-ledger-history-types";
+
 const STORAGE_PREFIX =
   "aios:market:research-invalidation-ledger:v1:";
+
+const INDEX_KEY =
+  "aios:market:research-invalidation-ledger:index:v1";
 
 const DISCLAIMER =
   "C161.1 preserves C160 invalidation conditions for explicit human review. It does not automatically evaluate invalidation, generate recommendations, record decisions, dispatch Planner work, or execute trading.";
@@ -180,14 +187,6 @@ function createLedgerId(
   ].join(":");
 }
 
-/**
- * Persistent Ledger Boundary.
- *
- * This follows the exact
- * MarketResearchInvalidationLedgerRecord contract.
- *
- * It intentionally does not contain decisionRecorded.
- */
 function buildLedgerBoundary(): MarketResearchInvalidationLedgerRecord["boundary"] {
   return {
     automaticInvalidationEvaluation:
@@ -216,12 +215,6 @@ function buildLedgerBoundary(): MarketResearchInvalidationLedgerRecord["boundary
   };
 }
 
-/**
- * Runtime Result Boundary.
- *
- * This follows the exact
- * MarketResearchInvalidationLedgerResult contract.
- */
 function buildResultBoundary(): MarketResearchInvalidationLedgerResult["boundary"] {
   return {
     automaticInvalidationEvaluation:
@@ -250,12 +243,6 @@ function buildResultBoundary(): MarketResearchInvalidationLedgerResult["boundary
   };
 }
 
-/**
- * Explicit mapping between the persisted Ledger Boundary
- * and the public Runtime Result Boundary.
- *
- * These are intentionally different contracts.
- */
 function toResultBoundary(
   boundary: MarketResearchInvalidationLedgerRecord["boundary"],
 ): MarketResearchInvalidationLedgerResult["boundary"] {
@@ -295,6 +282,7 @@ function buildPrinciples(): string[] {
     "Historical paper-trading outcomes remain descriptive evidence.",
     "The ledger is immutable for duplicate submissions.",
     "A duplicate C160 reconciliation returns the existing ledger.",
+    "The ledger index is persisted separately for deterministic history lookup.",
     "Human review remains mandatory.",
     "No investment recommendation is generated.",
     "No decision is automatically recorded.",
@@ -310,8 +298,7 @@ function insufficientResult(
   startedAt: number,
 ): MarketResearchInvalidationLedgerResult {
   return {
-    success:
-      false,
+    success: false,
 
     code:
       "C161_1_RESEARCH_INVALIDATION_LEDGER_INSUFFICIENT",
@@ -319,14 +306,11 @@ function insufficientResult(
     action:
       "ledger-blocked",
 
-    ledger:
-      null,
+    ledger: null,
 
-    mutationPerformed:
-      false,
+    mutationPerformed: false,
 
-    humanReviewRequired:
-      true,
+    humanReviewRequired: true,
 
     boundary:
       buildResultBoundary(),
@@ -345,7 +329,8 @@ function insufficientResult(
         new Date().toISOString(),
 
       latencyMs:
-        Date.now() - startedAt,
+        Date.now() -
+        startedAt,
     },
 
     principles: [
@@ -357,6 +342,65 @@ function insufficientResult(
     disclaimer:
       DISCLAIMER,
   };
+}
+
+async function registerLedgerIndex(
+  ledger: MarketResearchInvalidationLedgerRecord,
+): Promise<void> {
+  const existing =
+    await storage.get<MarketResearchInvalidationLedgerIndex>(
+      INDEX_KEY,
+    );
+
+  const current =
+    existing ?? {
+      version: 1 as const,
+      entries: [],
+      updatedAt:
+        new Date().toISOString(),
+    };
+
+  const duplicate =
+    current.entries.some(
+      (entry) =>
+        entry.ledgerId ===
+        ledger.ledgerId,
+    );
+
+  if (duplicate) {
+    return;
+  }
+
+  const nextEntries = [
+    ...current.entries,
+    {
+      ledgerId:
+        ledger.ledgerId,
+      symbol:
+        ledger.symbol,
+      market:
+        ledger.market,
+      status:
+        ledger.status,
+      sourceGeneratedAt:
+        ledger.sourceGeneratedAt,
+      createdAt:
+        ledger.createdAt,
+      updatedAt:
+        ledger.updatedAt,
+    },
+  ].slice(-500);
+
+  await storage.set(
+    INDEX_KEY,
+    {
+      version: 1 as const,
+      entries:
+        nextEntries,
+      updatedAt:
+        new Date().toISOString(),
+    },
+  );
 }
 
 export async function runMarketResearchInvalidationLedger(
@@ -379,15 +423,6 @@ export async function runMarketResearchInvalidationLedger(
     );
   }
 
-  /**
-   * TypeScript cannot infer the nested literal narrowing
-   * performed inside isValidReconciliation().
-   *
-   * Therefore the accepted C160 source code is narrowed
-   * explicitly at the runtime boundary.
-   *
-   * C160 INSUFFICIENT is never persisted.
-   */
   const reconciliationCode =
     reconciliation.code;
 
@@ -402,7 +437,8 @@ export async function runMarketResearchInvalidationLedger(
     );
   }
 
-  const sourceCode: AcceptedC160SourceCode =
+  const sourceCode:
+    AcceptedC160SourceCode =
     reconciliationCode;
 
   const symbol =
@@ -449,20 +485,13 @@ export async function runMarketResearchInvalidationLedger(
       ),
     );
 
-  /**
-   * Existing Ledger:
-   *
-   * - no mutation
-   * - no duplicate ledger
-   * - no automatic decision
-   * - no human decision recording
-   * - no Planner dispatch
-   * - no trading execution
-   */
   if (existing) {
+    await registerLedgerIndex(
+      existing,
+    );
+
     return {
-      success:
-        true,
+      success: true,
 
       code:
         "C161_1_RESEARCH_INVALIDATION_LEDGER_ALREADY_EXISTS",
@@ -498,7 +527,8 @@ export async function runMarketResearchInvalidationLedger(
           new Date().toISOString(),
 
         latencyMs:
-          Date.now() - startedAt,
+          Date.now() -
+          startedAt,
       },
 
       principles:
@@ -541,55 +571,68 @@ export async function runMarketResearchInvalidationLedger(
 
       reconciliation: {
         decisionState:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .decisionState,
 
         decisionReviewStatus:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .decisionReviewStatus,
 
         materialChange:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .materialChange,
 
         evidenceVerified:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .evidenceVerified,
 
         paperTradingState:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .paperTradingState,
 
         paperTradingSuccess:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .paperTradingSuccess,
 
         netProfit:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .netProfit,
 
         totalReturnPercent:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .totalReturnPercent,
 
         maxDrawdown:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .maxDrawdown,
 
         maxDrawdownPercent:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .maxDrawdownPercent,
 
         filledOrders:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .filledOrders,
 
         rejectedOrders:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .rejectedOrders,
 
         openPositions:
-          reconciliation.reconciliation
+          reconciliation
+            .reconciliation
             .openPositions,
       },
 
@@ -627,9 +670,12 @@ export async function runMarketResearchInvalidationLedger(
     ledger,
   );
 
+  await registerLedgerIndex(
+    ledger,
+  );
+
   return {
-    success:
-      true,
+    success: true,
 
     code:
       "C161_1_RESEARCH_INVALIDATION_LEDGER_PASS",
@@ -664,7 +710,8 @@ export async function runMarketResearchInvalidationLedger(
         now,
 
       latencyMs:
-        Date.now() - startedAt,
+        Date.now() -
+        startedAt,
     },
 
     principles:
@@ -697,6 +744,19 @@ export async function getMarketResearchInvalidationLedger(
   ) ?? null;
 }
 
+export async function getMarketResearchInvalidationLedgerIndex(): Promise<MarketResearchInvalidationLedgerIndex> {
+  return (
+    await storage.get<MarketResearchInvalidationLedgerIndex>(
+      INDEX_KEY,
+    )
+  ) ?? {
+    version: 1,
+    entries: [],
+    updatedAt:
+      new Date(0).toISOString(),
+  };
+}
+
 export async function deleteMarketResearchInvalidationLedger(
   ledgerId: string,
 ): Promise<void> {
@@ -714,5 +774,25 @@ export async function deleteMarketResearchInvalidationLedger(
     storageKey(
       normalized,
     ),
+  );
+
+  const index =
+    await getMarketResearchInvalidationLedgerIndex();
+
+  const entries =
+    index.entries.filter(
+      (entry) =>
+        entry.ledgerId !==
+        normalized,
+    );
+
+  await storage.set(
+    INDEX_KEY,
+    {
+      version: 1 as const,
+      entries,
+      updatedAt:
+        new Date().toISOString(),
+    },
   );
 }
