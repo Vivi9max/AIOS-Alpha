@@ -8,6 +8,10 @@ import {
 } from "./market-research-invalidation-ledger-history-runtime";
 
 import type {
+  MarketResearchInvalidationLedgerRecord,
+} from "./market-research-invalidation-ledger-types";
+
+import type {
   MarketResearchOutcomeReconciliationResult,
 } from "./market-research-outcome-reconciliation-types";
 
@@ -188,12 +192,14 @@ function buildFixture(
 }
 
 export async function runMarketResearchInvalidationLedgerHistoryRegression() {
-  const symbols = [
+  const symbols: string[] = [
     "C1612-A",
     "C1612-B",
   ];
 
-  const ledgers = [];
+  const ledgers:
+    MarketResearchInvalidationLedgerRecord[] =
+    [];
 
   for (
     const symbol of symbols
@@ -213,16 +219,20 @@ export async function runMarketResearchInvalidationLedgerHistoryRegression() {
       !result.ledger
     ) {
       return {
-        success: false,
+        success:
+          false,
 
         code:
           "C161_2_RESEARCH_INVALIDATION_LEDGER_HISTORY_REGRESSION_FAIL",
 
-        passed: 0,
+        passed:
+          0,
 
-        total: 8,
+        total:
+          8,
 
-        checks: [],
+        checks:
+          [],
 
         result,
       };
@@ -258,7 +268,7 @@ export async function runMarketResearchInvalidationLedgerHistoryRegression() {
       },
     );
 
-  const checks = [
+  const checks: boolean[] = [
     history.success === true,
 
     history.code ===
