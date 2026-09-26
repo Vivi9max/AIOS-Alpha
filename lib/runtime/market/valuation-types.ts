@@ -3,50 +3,183 @@ import type {
   MarketRegion,
 } from "./market-types";
 
+import type {
+  MarketHistoricalFundamentalSeries,
+} from "./market-historical-fundamental-series-types";
+
 export interface MarketValuationCandidateInput {
   symbol: string;
-  market?: MarketRegion | null;
-  name?: string | null;
+
+  market?:
+    | MarketRegion
+    | null;
+
+  name?:
+    | string
+    | null;
 }
 
 export interface MarketValuationAssumptions {
-  peLow?: number | null;
-  peBase?: number | null;
-  peHigh?: number | null;
+  peLow?:
+    | number
+    | null;
 
-  pbLow?: number | null;
-  pbBase?: number | null;
-  pbHigh?: number | null;
+  peBase?:
+    | number
+    | null;
 
-  revenueGrowthLow?: number | null;
-  revenueGrowthBase?: number | null;
-  revenueGrowthHigh?: number | null;
+  peHigh?:
+    | number
+    | null;
+
+  pbLow?:
+    | number
+    | null;
+
+  pbBase?:
+    | number
+    | null;
+
+  pbHigh?:
+    | number
+    | null;
+
+  revenueGrowthLow?:
+    | number
+    | null;
+
+  revenueGrowthBase?:
+    | number
+    | null;
+
+  revenueGrowthHigh?:
+    | number
+    | null;
 }
 
 export interface MarketValuationRequest {
   industry: string;
-  candidates: MarketValuationCandidateInput[];
-  maxCandidates?: number;
-  query?: string | null;
-  assumptions?: MarketValuationAssumptions | null;
+
+  candidates:
+    MarketValuationCandidateInput[];
+
+  maxCandidates?:
+    number;
+
+  query?:
+    | string
+    | null;
+
+  assumptions?:
+    | MarketValuationAssumptions
+    | null;
+
+  historicalPeriods?:
+    number;
+
+  includeHistoricalFundamentals?:
+    boolean;
 }
+
+export type MarketValuationMetricName =
+  | "pe"
+  | "pb"
+  | "eps"
+  | "revenue"
+  | "revenueGrowth"
+  | "marketCap"
+  | "historicalRevenue"
+  | "historicalNetIncome"
+  | "historicalOperatingCashFlow"
+  | "historicalFreeCashFlow";
+
+export type MarketValuationMetricQuality =
+  | "verified-structured"
+  | "web-evidence"
+  | "historical-structured"
+  | "missing";
 
 export interface MarketValuationMetric {
   metric:
-    | "pe"
-    | "pb"
-    | "eps"
-    | "revenue"
-    | "revenueGrowth"
-    | "marketCap";
+    MarketValuationMetricName;
 
-  value: number | null;
-  available: boolean;
+  value:
+    number | null;
+
+  available:
+    boolean;
+
   quality:
-    | "verified-structured"
-    | "web-evidence"
-    | "missing";
-  interpretation: string;
+    MarketValuationMetricQuality;
+
+  interpretation:
+    string;
+}
+
+export interface MarketValuationHistoricalContext {
+  available:
+    boolean;
+
+  provider:
+    string;
+
+  observationCount:
+    number;
+
+  annualObservationCount:
+    number;
+
+  quarterlyObservationCount:
+    number;
+
+  latestPeriodEnd:
+    string | null;
+
+  earliestPeriodEnd:
+    string | null;
+
+  revenueLatest:
+    number | null;
+
+  revenuePrevious:
+    number | null;
+
+  revenueGrowth:
+    number | null;
+
+  netIncomeLatest:
+    number | null;
+
+  netIncomePrevious:
+    number | null;
+
+  netIncomeGrowth:
+    number | null;
+
+  operatingCashFlowLatest:
+    number | null;
+
+  operatingCashFlowPrevious:
+    number | null;
+
+  freeCashFlowLatest:
+    number | null;
+
+  freeCashFlowPrevious:
+    number | null;
+
+  series:
+    MarketHistoricalFundamentalSeries | null;
+
+  quality:
+    | "structured-verified"
+    | "insufficient";
+
+  limitations:
+    string[];
+
+  humanVerificationRequired:
+    true;
 }
 
 export interface MarketValuationScenario {
@@ -61,40 +194,70 @@ export interface MarketValuationScenario {
     | "combined"
     | "unavailable";
 
-  referenceMultiple: number | null;
+  referenceMultiple:
+    number | null;
 
-  peReference: number | null;
-  pbReference: number | null;
+  peReference:
+    number | null;
 
-  peImpliedPrice: number | null;
-  pbImpliedPrice: number | null;
+  pbReference:
+    number | null;
 
-  combinedImpliedPrice: number | null;
+  peImpliedPrice:
+    number | null;
 
-  revenueGrowthReference: number | null;
+  pbImpliedPrice:
+    number | null;
 
-  caveats: string[];
+  combinedImpliedPrice:
+    number | null;
+
+  revenueGrowthReference:
+    number | null;
+
+  historicalRevenueGrowth:
+    number | null;
+
+  historicalNetIncomeGrowth:
+    number | null;
+
+  historicalFreeCashFlowGrowth:
+    number | null;
+
+  caveats:
+    string[];
 }
 
 export interface MarketValuationCandidateResult {
-  rank: number;
+  rank:
+    number;
 
-  input: MarketValuationCandidateInput;
+  input:
+    MarketValuationCandidateInput;
 
-  normalizedSymbol: string;
+  normalizedSymbol:
+    string;
 
-  currentPrice: number | null;
+  currentPrice:
+    number | null;
 
   currency:
     | "USD"
     | "HKD"
     | "CNY";
 
-  metrics: MarketValuationMetric[];
+  metrics:
+    MarketValuationMetric[];
+
+  historicalFundamentals:
+    MarketValuationHistoricalContext;
 
   currentValuation: {
-    pe: number | null;
-    pb: number | null;
+    pe:
+      number | null;
+
+    pb:
+      number | null;
 
     peAssessment:
       | "low"
@@ -109,20 +272,25 @@ export interface MarketValuationCandidateResult {
       | "unavailable";
   };
 
-  scenarios: MarketValuationScenario[];
+  scenarios:
+    MarketValuationScenario[];
 
   valuationStatus:
     | "valuation-ready"
     | "partial"
     | "insufficient";
 
-  strengths: string[];
+  strengths:
+    string[];
 
-  risks: string[];
+  risks:
+    string[];
 
-  methodologyWarnings: string[];
+  methodologyWarnings:
+    string[];
 
-  sourceResult: MarketAnalysisResult;
+  sourceResult:
+    MarketAnalysisResult;
 
   resultCode:
     | "C149_VALUATION_PASS"
@@ -132,46 +300,89 @@ export interface MarketValuationCandidateResult {
 }
 
 export interface MarketValuationResult {
-  success: boolean;
+  success:
+    boolean;
 
   code:
     | "C149_VALUATION_PASS"
     | "C149_VALUATION_PARTIAL"
     | "C149_VALUATION_INSUFFICIENT";
 
-  stage: "C149";
+  stage:
+    "C149";
 
-  industry: string;
+  industry:
+    string;
 
-  requestedCandidates: number;
+  requestedCandidates:
+    number;
 
-  evaluatedCandidates: number;
+  evaluatedCandidates:
+    number;
 
-  candidates: MarketValuationCandidateResult[];
+  candidates:
+    MarketValuationCandidateResult[];
+
+  historicalFundamentalCoverage: {
+    requested:
+      boolean;
+
+    availableCandidates:
+      number;
+
+    structuredCandidates:
+      number;
+
+    unavailableCandidates:
+      number;
+  };
 
   methodology: {
-    purpose: string;
+    purpose:
+      string;
 
-    methods: string[];
+    methods:
+      string[];
 
-    assumptions: MarketValuationAssumptions;
+    assumptions:
+      MarketValuationAssumptions;
 
-    excludedFromDecision: string[];
+    historicalFundamentalRole:
+      string[];
 
-    nextStage: "C150";
+    excludedFromDecision:
+      string[];
+
+    nextStage:
+      "C150";
   };
 
   safetyBoundary: {
-    founderOnly: true;
-    personalizedAdvice: false;
-    returnPrediction: false;
-    automaticBuySellInstruction: false;
-    plannerDispatched: false;
-    tradingExecuted: false;
-    humanReviewRequiredBeforeTrading: true;
+    founderOnly:
+      true;
+
+    personalizedAdvice:
+      false;
+
+    returnPrediction:
+      false;
+
+    automaticBuySellInstruction:
+      false;
+
+    plannerDispatched:
+      false;
+
+    tradingExecuted:
+      false;
+
+    humanReviewRequiredBeforeTrading:
+      true;
   };
 
-  generatedAt: string;
+  generatedAt:
+    string;
 
-  error?: string;
+  error?:
+    string;
 }
