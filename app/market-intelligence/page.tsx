@@ -9,112 +9,29 @@ import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
 
+import type {
+  MarketAnalysisResult,
+  MarketRegion,
+} from "@/lib/runtime/market/market-types";
+
 type Locale =
   | "en"
   | "zh-CN"
   | "ja";
 
-type MarketResult = {
-  success?: boolean;
-  verified?: boolean;
-  code?: string;
-  message?: string;
-  error?: string;
-
-  instrument?: {
-    symbol?: string;
-    normalizedSymbol?: string;
-    market?: string;
-    exchange?: string;
-    currency?: string;
+type PublicMarketResult =
+  MarketAnalysisResult & {
+    publicBoundary?: string;
+    dataIsolated?: boolean;
+    latencyMs?: number;
+    timestamp?: number;
   };
 
-  snapshot?: {
-    price?: number | null;
-    previousClose?: number | null;
-    changePercent?: number | null;
-    marketCap?: number | null;
-    pe?: number | null;
-    pb?: number | null;
-    eps?: number | null;
-    revenue?: number | null;
-    revenueGrowth?: number | null;
-    dataQuality?: string;
-    liveQuoteAvailable?: boolean;
-    asOf?: string | null;
-    source?: string | null;
-    dataset?: string | null;
-  };
-
-  analysis?: {
-    industry?: {
-      summary?: string;
-      evidence?: string[];
-    };
-
-    company?: {
-      summary?: string;
-      strengths?: string[];
-      risks?: string[];
-    };
-
-    fundamentals?: {
-      assessment?: string;
-      signals?: string[];
-    };
-
-    valuation?: {
-      assessment?: string;
-      signals?: string[];
-    };
-
-    trend?: {
-      assessment?: string;
-      signals?: string[];
-    };
-
-    risk?: {
-      level?: string;
-      factors?: string[];
-    };
-
-    decisionSupport?: {
-      currentState?: string;
-      supportingFactors?: string[];
-      invalidationConditions?: string[];
-      watchMetrics?: string[];
-    };
-  };
-
-  evidence?: Array<{
-    title?: string;
-    url?: string;
-    hostname?: string;
-    snippet?: string;
-    confidence?: number;
-  }>;
-
-  verification?: {
-    verified?: boolean;
-    sourceCount?: number;
-    independentDomains?: number;
-    primarySourceFound?: boolean;
-    structuredDataAvailable?: boolean;
-    structuredDataVerified?: boolean;
-  };
-
-  metadata?: {
-    runtime?: string;
-    stage?: string;
-    analysisMode?: string;
-    generatedAt?: string;
-    disclaimer?: string;
-  };
-
-  publicBoundary?: string;
-  dataIsolated?: boolean;
-  latencyMs?: number;
-};
+type Tone =
+  | "positive"
+  | "warning"
+  | "neutral"
+  | "negative";
 
 type Copy = {
   eyebrow: string;
@@ -134,7 +51,7 @@ type Copy = {
   requestError: string;
   requestFailed: string;
 
-  researchStatus: string;
+  runtime: string;
   runtimePass: string;
   runtimeFailed: string;
 
@@ -145,22 +62,28 @@ type Copy = {
   webEvidence: string;
 
   sources: string;
-  independentDomains: string;
+  domains: string;
   primarySource: string;
 
   yes: string;
   no: string;
 
   marketSnapshot: string;
-  symbol: string;
-  market: string;
   price: string;
+  change: string;
+  marketCap: string;
   pe: string;
+  pb: string;
+  eps: string;
+  revenue: string;
 
   dataQuality: string;
   liveQuote: string;
   source: string;
   asOf: string;
+
+  researchConclusion: string;
+  currentState: string;
 
   industry: string;
   company: string;
@@ -168,16 +91,14 @@ type Copy = {
   valuation: string;
   trend: string;
   risk: string;
+  scenarios: string;
 
-  riskLevel: string;
-  decisionSupport: string;
+  strengths: string;
+  risks: string;
 
   supportingEvidence: string;
   invalidation: string;
   watchMetrics: string;
-
-  strengths: string;
-  risks: string;
 
   evidence: string;
   originalEvidence: string;
@@ -185,6 +106,8 @@ type Copy = {
 
   noStructured: string;
   noEvidence: string;
+
+  dataNotice: string;
 
   disclaimer: string;
 };
@@ -219,7 +142,7 @@ const copy: Record<
       "China A-share",
 
     analyze:
-      "Analyze Market Research",
+      "Analyze",
 
     researching:
       "Researching…",
@@ -230,14 +153,14 @@ const copy: Record<
     requestFailed:
       "Market Research request failed.",
 
-    researchStatus:
-      "Research Status",
+    runtime:
+      "Runtime",
 
     runtimePass:
-      "Runtime PASS",
+      "PASS",
 
     runtimeFailed:
-      "Runtime FAILED",
+      "FAILED",
 
     verified:
       "Verified",
@@ -246,16 +169,16 @@ const copy: Record<
       "Not verified",
 
     structuredVerified:
-      "Structured data verified",
+      "Structured verified",
 
     webEvidence:
-      "Web evidence / non-structured",
+      "Web evidence",
 
     sources:
       "Sources",
 
-    independentDomains:
-      "Independent domains",
+    domains:
+      "Domains",
 
     primarySource:
       "Primary source",
@@ -269,17 +192,26 @@ const copy: Record<
     marketSnapshot:
       "Market Snapshot",
 
-    symbol:
-      "Symbol",
-
-    market:
-      "Market",
-
     price:
       "Price",
 
+    change:
+      "Change",
+
+    marketCap:
+      "Market Cap",
+
     pe:
       "P/E",
+
+    pb:
+      "P/B",
+
+    eps:
+      "EPS",
+
+    revenue:
+      "Revenue",
 
     dataQuality:
       "Data quality",
@@ -292,6 +224,12 @@ const copy: Record<
 
     asOf:
       "As of",
+
+    researchConclusion:
+      "Research Conclusion",
+
+    currentState:
+      "Current state",
 
     industry:
       "Industry",
@@ -311,20 +249,8 @@ const copy: Record<
     risk:
       "Risk",
 
-    riskLevel:
-      "Risk level",
-
-    decisionSupport:
-      "Decision Support",
-
-    supportingEvidence:
-      "Supporting evidence",
-
-    invalidation:
-      "What could invalidate it",
-
-    watchMetrics:
-      "Watch metrics",
+    scenarios:
+      "Scenarios",
 
     strengths:
       "Strengths",
@@ -332,20 +258,32 @@ const copy: Record<
     risks:
       "Risks",
 
+    supportingEvidence:
+      "Supporting evidence",
+
+    invalidation:
+      "Invalidation conditions",
+
+    watchMetrics:
+      "Watch metrics",
+
     evidence:
       "Evidence",
 
     originalEvidence:
-      "Original Evidence",
+      "Original evidence",
 
     openOriginalEvidence:
-      "View original source content",
+      "View source",
 
     noStructured:
       "No structured information.",
 
     noEvidence:
       "No external evidence was returned.",
+
+    dataNotice:
+      "Current market values may be based on web evidence rather than a verified exchange real-time feed.",
 
     disclaimer:
       "AIOS provides market research, evidence and risk-review support. It does not provide personalized investment advice, rank securities, or execute trades automatically.",
@@ -377,7 +315,7 @@ const copy: Record<
       "中国 A 股",
 
     analyze:
-      "分析市场研究",
+      "开始分析",
 
     researching:
       "研究中…",
@@ -388,14 +326,14 @@ const copy: Record<
     requestFailed:
       "市场研究请求失败。",
 
-    researchStatus:
-      "研究状态",
+    runtime:
+      "运行状态",
 
     runtimePass:
-      "Runtime 正常",
+      "正常",
 
     runtimeFailed:
-      "Runtime 失败",
+      "失败",
 
     verified:
       "已验证",
@@ -407,12 +345,12 @@ const copy: Record<
       "结构化数据已验证",
 
     webEvidence:
-      "Web 证据 / 非结构化",
+      "Web 证据",
 
     sources:
-      "来源数量",
+      "来源",
 
-    independentDomains:
+    domains:
       "独立域名",
 
     primarySource:
@@ -427,17 +365,26 @@ const copy: Record<
     marketSnapshot:
       "市场快照",
 
-    symbol:
-      "代码",
-
-    market:
-      "市场",
-
     price:
       "价格",
 
+    change:
+      "涨跌",
+
+    marketCap:
+      "市值",
+
     pe:
-      "市盈率",
+      "P/E",
+
+    pb:
+      "P/B",
+
+    eps:
+      "EPS",
+
+    revenue:
+      "营收",
 
     dataQuality:
       "数据质量",
@@ -450,6 +397,12 @@ const copy: Record<
 
     asOf:
       "数据时间",
+
+    researchConclusion:
+      "研究结论",
+
+    currentState:
+      "当前状态",
 
     industry:
       "行业",
@@ -469,11 +422,14 @@ const copy: Record<
     risk:
       "风险",
 
-    riskLevel:
-      "风险等级",
+    scenarios:
+      "情景",
 
-    decisionSupport:
-      "决策支持",
+    strengths:
+      "优势",
+
+    risks:
+      "风险因素",
 
     supportingEvidence:
       "支持性证据",
@@ -484,12 +440,6 @@ const copy: Record<
     watchMetrics:
       "持续观察指标",
 
-    strengths:
-      "优势",
-
-    risks:
-      "风险因素",
-
     evidence:
       "证据",
 
@@ -497,13 +447,16 @@ const copy: Record<
       "原始证据",
 
     openOriginalEvidence:
-      "查看原始来源内容",
+      "查看来源",
 
     noStructured:
       "暂无结构化信息。",
 
     noEvidence:
       "没有返回外部证据。",
+
+    dataNotice:
+      "当前市场数据可能来自 Web 证据，并不等同于经过验证的交易所实时行情。",
 
     disclaimer:
       "AIOS 提供市场研究、证据与风险审查支持，不提供个性化投资建议、不对证券进行排名，也不会自动执行交易。",
@@ -535,7 +488,7 @@ const copy: Record<
       "中国A株",
 
     analyze:
-      "市場リサーチを分析",
+      "分析開始",
 
     researching:
       "分析中…",
@@ -544,16 +497,16 @@ const copy: Record<
       "リクエストエラー",
 
     requestFailed:
-      "市場リサーチのリクエストに失敗しました。",
+      "市場リサーチに失敗しました。",
 
-    researchStatus:
-      "リサーチステータス",
+    runtime:
+      "Runtime",
 
     runtimePass:
-      "Runtime 正常",
+      "正常",
 
     runtimeFailed:
-      "Runtime 失敗",
+      "失敗",
 
     verified:
       "検証済み",
@@ -565,12 +518,12 @@ const copy: Record<
       "構造化データ検証済み",
 
     webEvidence:
-      "Web エビデンス / 非構造化",
+      "Web エビデンス",
 
     sources:
-      "ソース数",
+      "ソース",
 
-    independentDomains:
+    domains:
       "独立ドメイン",
 
     primarySource:
@@ -585,17 +538,26 @@ const copy: Record<
     marketSnapshot:
       "マーケットスナップショット",
 
-    symbol:
-      "銘柄コード",
-
-    market:
-      "市場",
-
     price:
       "価格",
 
+    change:
+      "変化率",
+
+    marketCap:
+      "時価総額",
+
     pe:
       "P/E",
+
+    pb:
+      "P/B",
+
+    eps:
+      "EPS",
+
+    revenue:
+      "売上高",
 
     dataQuality:
       "データ品質",
@@ -608,6 +570,12 @@ const copy: Record<
 
     asOf:
       "取得時点",
+
+    researchConclusion:
+      "リサーチ結論",
+
+    currentState:
+      "現在の状態",
 
     industry:
       "業界",
@@ -627,26 +595,23 @@ const copy: Record<
     risk:
       "リスク",
 
-    riskLevel:
-      "リスクレベル",
-
-    decisionSupport:
-      "意思決定サポート",
-
-    supportingEvidence:
-      "支持するエビデンス",
-
-    invalidation:
-      "判断を無効化する可能性のある要因",
-
-    watchMetrics:
-      "継続監視指標",
+    scenarios:
+      "シナリオ",
 
     strengths:
       "強み",
 
     risks:
       "リスク要因",
+
+    supportingEvidence:
+      "支持するエビデンス",
+
+    invalidation:
+      "判断を無効化する条件",
+
+    watchMetrics:
+      "継続監視指標",
 
     evidence:
       "エビデンス",
@@ -655,141 +620,29 @@ const copy: Record<
       "原文エビデンス",
 
     openOriginalEvidence:
-      "原文ソースを表示",
+      "ソースを表示",
 
     noStructured:
       "構造化情報はありません。",
 
     noEvidence:
-      "外部エビデンスは返されませんでした。",
+      "外部エビデンスはありません。",
+
+    dataNotice:
+      "現在の市場データは Web エビデンスに基づく場合があり、検証済みの取引所リアルタイム価格とは異なります。",
 
     disclaimer:
       "AIOS は市場リサーチ、エビデンス、リスクレビューを支援します。個別の投資助言、銘柄ランキング、自動売買は提供しません。",
   },
 };
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      style={{
-        marginTop: 14,
-        padding: 16,
-        border:
-          "1px solid rgba(255,255,255,0.09)",
-        borderRadius: 14,
-        background:
-          "rgba(255,255,255,0.035)",
-      }}
-    >
-      <h2
-        style={{
-          margin:
-            "0 0 12px",
-          fontSize: 16,
-          fontWeight: 800,
-        }}
-      >
-        {title}
-      </h2>
-
-      {children}
-    </section>
-  );
-}
-
-function List({
-  items,
-  emptyText,
-  locale,
-}: {
-  items?: string[];
-  emptyText: string;
-  locale: Locale;
-}) {
-  if (!items?.length) {
-    return (
-      <div
-        style={{
-          opacity: 0.5,
-          fontSize: 13,
-        }}
-      >
-        {emptyText}
-      </div>
-    );
-  }
-
-  return (
-    <ul
-      style={{
-        margin: 0,
-        paddingLeft: 19,
-        lineHeight: 1.65,
-        fontSize: 13,
-      }}
-    >
-      {items.map(
-        (
-          item,
-          index,
-        ) => (
-          <li
-            key={`${item}-${index}`}
-          >
-            {translateRuntimeText(
-              locale,
-              item,
-            )}
-          </li>
-        ),
-      )}
-    </ul>
-  );
-}
-
-function Badge({
-  ok,
-  children,
-}: {
-  ok: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      style={{
-        display:
-          "inline-block",
-        padding:
-          "4px 8px",
-        borderRadius:
-          999,
-        fontSize: 11,
-        background:
-          ok
-            ? "rgba(74,222,128,0.12)"
-            : "rgba(251,191,36,0.12)",
-        color:
-          ok
-            ? "#86efac"
-            : "#fcd34d",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 function marketLabel(
   locale: Locale,
   market?: string,
-) {
-  if (locale === "zh-CN") {
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
     if (market === "us")
       return "美国";
 
@@ -797,10 +650,12 @@ function marketLabel(
       return "香港";
 
     if (market === "cn")
-      return "中国A股";
+      return "中国 A 股";
   }
 
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     if (market === "us")
       return "米国";
 
@@ -808,7 +663,7 @@ function marketLabel(
       return "香港";
 
     if (market === "cn")
-      return "中国A株";
+      return "中国 A 株";
   }
 
   if (market === "us")
@@ -826,9 +681,14 @@ function marketLabel(
 function dataQualityLabel(
   locale: Locale,
   value?: string,
-) {
-  if (locale === "zh-CN") {
-    if (value === "web-evidence")
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
+    if (
+      value ===
+      "web-evidence"
+    )
       return "Web 证据";
 
     if (value === "live")
@@ -837,27 +697,40 @@ function dataQualityLabel(
     if (value === "delayed")
       return "延迟数据";
 
-    if (value === "historical")
+    if (
+      value === "historical"
+    )
       return "历史数据";
 
-    if (value === "insufficient")
+    if (
+      value === "insufficient"
+    )
       return "数据不足";
   }
 
-  if (locale === "ja") {
-    if (value === "web-evidence")
+  if (
+    locale === "ja"
+  ) {
+    if (
+      value ===
+      "web-evidence"
+    )
       return "Web エビデンス";
 
     if (value === "live")
-      return "リアルタイムデータ";
+      return "リアルタイム";
 
     if (value === "delayed")
       return "遅延データ";
 
-    if (value === "historical")
+    if (
+      value === "historical"
+    )
       return "過去データ";
 
-    if (value === "insufficient")
+    if (
+      value === "insufficient"
+    )
       return "データ不足";
   }
 
@@ -867,8 +740,10 @@ function dataQualityLabel(
 function riskLevelLabel(
   locale: Locale,
   value?: string,
-) {
-  if (locale === "zh-CN") {
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
     if (value === "low")
       return "低";
 
@@ -881,7 +756,9 @@ function riskLevelLabel(
     return "未知";
   }
 
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     if (value === "low")
       return "低";
 
@@ -904,7 +781,9 @@ function translateRuntimeText(
   if (!value)
     return "";
 
-  if (locale === "en")
+  if (
+    locale === "en"
+  )
     return value;
 
   const exact: Record<
@@ -1097,13 +976,17 @@ function translateRuntimeText(
     },
   };
 
-  if (exact[value]) {
+  if (
+    exact[value]
+  ) {
     return exact[value][
       locale
     ];
   }
 
-  if (locale === "zh-CN") {
+  if (
+    locale === "zh-CN"
+  ) {
     const revenue =
       value.match(
         /^Reported revenue-growth signal is positive at approximately (.+)%\.$/,
@@ -1183,7 +1066,9 @@ function translateRuntimeText(
       };
 
       return `检测到的行业背景：${
-        mapped[industry[1]] ??
+        mapped[
+          industry[1]
+        ] ??
         industry[1]
       }。`;
     }
@@ -1197,7 +1082,9 @@ function translateRuntimeText(
     }
   }
 
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     const revenue =
       value.match(
         /^Reported revenue-growth signal is positive at approximately (.+)%\.$/,
@@ -1277,7 +1164,9 @@ function translateRuntimeText(
       };
 
       return `検出された業界コンテキスト：${
-        mapped[industry[1]] ??
+        mapped[
+          industry[1]
+        ] ??
         industry[1]
       }。`;
     }
@@ -1294,42 +1183,588 @@ function translateRuntimeText(
   return value;
 }
 
+function formatNumber(
+  value: number | null | undefined,
+  digits = 2,
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits:
+        0,
+      maximumFractionDigits:
+        digits,
+    },
+  ).format(value);
+}
+
+function formatPercent(
+  value: number | null | undefined,
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  const prefix =
+    value > 0
+      ? "+"
+      : "";
+
+  return `${prefix}${formatNumber(
+    value,
+    2,
+  )}%`;
+}
+
+function formatCompactMoney(
+  value: number | null | undefined,
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  const absolute =
+    Math.abs(value);
+
+  if (
+    absolute >=
+    1_000_000_000_000
+  ) {
+    return `${formatNumber(
+      value /
+        1_000_000_000_000,
+      2,
+    )}T`;
+  }
+
+  if (
+    absolute >=
+    1_000_000_000
+  ) {
+    return `${formatNumber(
+      value /
+        1_000_000_000,
+      2,
+    )}B`;
+  }
+
+  if (
+    absolute >=
+    1_000_000
+  ) {
+    return `${formatNumber(
+      value /
+        1_000_000,
+      2,
+    )}M`;
+  }
+
+  return formatNumber(
+    value,
+    0,
+  );
+}
+
+function formatDate(
+  value?: string | null,
+): string {
+  if (!value)
+    return "—";
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleString(
+    undefined,
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  );
+}
+
 async function analyzeMarket(
   symbol: string,
-  market: string,
-) {
+  market: MarketRegion,
+): Promise<PublicMarketResult> {
   const response =
     await fetch(
       "/api/market/intelligence",
       {
-        method:
-          "POST",
+        method: "POST",
+
         headers: {
           "Content-Type":
             "application/json",
         },
-        body:
-          JSON.stringify({
-            symbol,
-            market,
-          }),
+
+        body: JSON.stringify({
+          symbol,
+          market,
+        }),
+
         cache:
           "no-store",
       },
     );
 
   const data =
-    (await response.json()) as MarketResult;
+    (await response.json()) as PublicMarketResult;
 
   if (!response.ok) {
     throw new Error(
-      data.message ??
-        data.error ??
+      data.error ??
         "Market Research request failed.",
     );
   }
 
   return data;
+}
+
+function Panel({
+  children,
+  compact = false,
+}: {
+  children: ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <section
+      style={{
+        marginTop:
+          compact ? 10 : 14,
+        padding:
+          compact ? 13 : 16,
+        border:
+          "1px solid rgba(255,255,255,0.09)",
+        borderRadius: 15,
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025))",
+        boxShadow:
+          "0 8px 30px rgba(0,0,0,0.12)",
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
+function PanelTitle({
+  title,
+  meta,
+}: {
+  title: string;
+  meta?: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "space-between",
+        gap: 10,
+        marginBottom: 12,
+      }}
+    >
+      <h2
+        style={{
+          margin: 0,
+          fontSize: 15,
+          fontWeight: 800,
+          letterSpacing:
+            "-0.01em",
+        }}
+      >
+        {title}
+      </h2>
+
+      {meta && (
+        <div
+          style={{
+            fontSize: 11,
+            opacity: 0.5,
+          }}
+        >
+          {meta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: Tone;
+}) {
+  const styles: Record<
+    Tone,
+    {
+      background: string;
+      color: string;
+      border: string;
+    }
+  > = {
+    positive: {
+      background:
+        "rgba(74,222,128,0.11)",
+      color:
+        "#86efac",
+      border:
+        "rgba(74,222,128,0.20)",
+    },
+
+    warning: {
+      background:
+        "rgba(251,191,36,0.10)",
+      color:
+        "#fcd34d",
+      border:
+        "rgba(251,191,36,0.18)",
+    },
+
+    negative: {
+      background:
+        "rgba(248,113,113,0.10)",
+      color:
+        "#fca5a5",
+      border:
+        "rgba(248,113,113,0.18)",
+    },
+
+    neutral: {
+      background:
+        "rgba(255,255,255,0.055)",
+      color:
+        "#d4d4d8",
+      border:
+        "rgba(255,255,255,0.10)",
+    },
+  };
+
+  const style =
+    styles[tone];
+
+  return (
+    <span
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        minHeight: 24,
+        padding:
+          "3px 8px",
+        borderRadius:
+          999,
+        border:
+          `1px solid ${style.border}`,
+        background:
+          style.background,
+        color:
+          style.color,
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace:
+          "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  sub,
+  emphasis = false,
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        padding:
+          "11px 12px",
+        border:
+          "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 11,
+        background:
+          "rgba(255,255,255,0.025)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          opacity: 0.48,
+          marginBottom: 5,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          fontSize:
+            emphasis ? 22 : 15,
+          fontWeight:
+            emphasis ? 850 : 750,
+          lineHeight: 1.15,
+          overflow:
+            "hidden",
+          textOverflow:
+            "ellipsis",
+          whiteSpace:
+            "nowrap",
+        }}
+      >
+        {value}
+      </div>
+
+      {sub && (
+        <div
+          style={{
+            marginTop: 5,
+            fontSize: 10,
+            opacity: 0.48,
+          }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function List({
+  items,
+  locale,
+  emptyText,
+}: {
+  items?: string[];
+  locale: Locale;
+  emptyText: string;
+}) {
+  if (
+    !items?.length
+  ) {
+    return (
+      <div
+        style={{
+          fontSize: 12,
+          opacity: 0.48,
+        }}
+      >
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <ul
+      style={{
+        margin: 0,
+        paddingLeft: 18,
+        display: "grid",
+        gap: 6,
+        fontSize: 12,
+        lineHeight: 1.55,
+      }}
+    >
+      {items.map(
+        (
+          item,
+          index,
+        ) => (
+          <li
+            key={`${item}-${index}`}
+          >
+            {translateRuntimeText(
+              locale,
+              item,
+            )}
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}
+
+function TextBlock({
+  locale,
+  value,
+}: {
+  locale: Locale;
+  value?: string;
+}) {
+  if (!value)
+    return null;
+
+  return (
+    <p
+      style={{
+        margin:
+          "0 0 10px",
+        fontSize: 13,
+        lineHeight: 1.65,
+        color:
+          "rgba(244,244,245,0.88)",
+      }}
+    >
+      {translateRuntimeText(
+        locale,
+        value,
+      )}
+    </p>
+  );
+}
+
+function Subheading({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        margin:
+          "14px 0 7px",
+        fontSize: 11,
+        fontWeight: 800,
+        letterSpacing:
+          "0.03em",
+        opacity: 0.58,
+        textTransform:
+          "uppercase",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ResearchBlock({
+  title,
+  summary,
+  items,
+  locale,
+}: {
+  title: string;
+  summary?: string;
+  items?: string[];
+  locale: Locale;
+}) {
+  return (
+    <details
+      style={{
+        border:
+          "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 12,
+        background:
+          "rgba(255,255,255,0.025)",
+        overflow:
+          "hidden",
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          listStyle: "none",
+          padding:
+            "12px 13px",
+          fontSize: 13,
+          fontWeight: 750,
+        }}
+      >
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            gap: 8,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius:
+                999,
+              background:
+                "rgba(255,255,255,0.45)",
+            }}
+          />
+
+          {title}
+        </span>
+      </summary>
+
+      <div
+        style={{
+          padding:
+            "0 13px 13px",
+          borderTop:
+            "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <div
+          style={{
+            paddingTop: 11,
+          }}
+        >
+          <TextBlock
+            locale={locale}
+            value={summary}
+          />
+
+          <List
+            locale={locale}
+            items={items}
+            emptyText={
+              "No structured information."
+            }
+          />
+        </div>
+      </div>
+    </details>
+  );
 }
 
 export default function MarketResearchPage() {
@@ -1350,57 +1785,52 @@ export default function MarketResearchPage() {
   const [
     market,
     setMarket,
-  ] = useState(
+  ] = useState<MarketRegion>(
     "us",
   );
 
   const [
     loading,
     setLoading,
-  ] = useState(
-    false,
-  );
+  ] = useState(false);
 
   const [
     result,
     setResult,
-  ] = useState<
-    MarketResult | null
-  >(null);
+  ] = useState<PublicMarketResult | null>(
+    null,
+  );
 
   const [
     error,
     setError,
-  ] = useState(
-    "",
-  );
+  ] = useState("");
 
   async function runAnalysis() {
-    setLoading(
-      true,
-    );
+    const normalizedSymbol =
+      symbol
+        .trim()
+        .toUpperCase();
 
-    setError(
-      "",
-    );
+    if (!normalizedSymbol)
+      return;
 
-    setResult(
-      null,
-    );
+    setLoading(true);
+    setError("");
 
     try {
       const data =
         await analyzeMarket(
-          symbol.trim(),
+          normalizedSymbol,
           market,
         );
 
-      setResult(
-        data,
-      );
+      setResult(data);
     } catch (
       requestError
     ) {
+      setResult(null);
+
       setError(
         requestError instanceof
           Error
@@ -1408,9 +1838,7 @@ export default function MarketResearchPage() {
           : ui.requestFailed,
       );
     } finally {
-      setLoading(
-        false,
-      );
+      setLoading(false);
     }
   }
 
@@ -1423,6 +1851,13 @@ export default function MarketResearchPage() {
   const verification =
     result?.verification;
 
+  const risk =
+    analysis?.risk;
+
+  const isWebEvidence =
+    snapshot?.dataQuality ===
+    "web-evidence";
+
   return (
     <main
       style={{
@@ -1433,35 +1868,34 @@ export default function MarketResearchPage() {
         color:
           "#f4f4f5",
         padding:
-          "28px 16px 60px",
+          "24px 12px 56px",
         fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
       <div
         style={{
+          width:
+            "100%",
           maxWidth:
-            760,
+            820,
           margin:
             "0 auto",
         }}
       >
         <header
           style={{
-            marginBottom:
-              20,
+            padding:
+              "4px 2px 18px",
           }}
         >
           <div
             style={{
-              fontSize:
-                11,
+              fontSize: 10,
               letterSpacing:
-                "0.12em",
-              opacity:
-                0.5,
-              marginBottom:
-                7,
+                "0.14em",
+              opacity: 0.42,
+              marginBottom: 6,
             }}
           >
             {ui.eyebrow}
@@ -1469,12 +1903,13 @@ export default function MarketResearchPage() {
 
           <h1
             style={{
-              margin:
-                0,
+              margin: 0,
               fontSize:
-                28,
-              fontWeight:
-                850,
+                "clamp(25px, 7vw, 34px)",
+              lineHeight: 1.05,
+              letterSpacing:
+                "-0.035em",
+              fontWeight: 900,
             }}
           >
             {ui.title}
@@ -1483,36 +1918,33 @@ export default function MarketResearchPage() {
           <p
             style={{
               margin:
-                "8px 0 0",
-              opacity:
-                0.62,
-              lineHeight:
-                1.55,
-              fontSize:
-                14,
+                "7px 0 0",
+              fontSize: 12,
+              opacity: 0.52,
             }}
           >
             {ui.subtitle}
           </p>
         </header>
 
-        <Section
-          title={
-            ui.research
-          }
-        >
+        <Panel>
+          <PanelTitle
+            title={
+              ui.research
+            }
+          />
+
           <div
             style={{
               display:
                 "grid",
-              gap:
-                10,
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 9,
             }}
           >
             <input
-              value={
-                symbol
-              }
+              value={symbol}
               onChange={(
                 event,
               ) =>
@@ -1533,54 +1965,59 @@ export default function MarketResearchPage() {
               placeholder={
                 ui.symbolPlaceholder
               }
+              aria-label={
+                ui.symbolPlaceholder
+              }
               style={{
                 width:
                   "100%",
+                minWidth: 0,
                 boxSizing:
                   "border-box",
                 padding:
-                  "13px 14px",
+                  "12px 13px",
                 borderRadius:
                   10,
                 border:
-                  "1px solid rgba(255,255,255,0.14)",
+                  "1px solid rgba(255,255,255,0.12)",
                 background:
-                  "#18181b",
+                  "#151518",
                 color:
                   "#fff",
                 outline:
                   "none",
-                fontSize:
-                  15,
+                fontSize: 14,
+                fontWeight: 700,
               }}
             />
 
             <select
-              value={
-                market
-              }
+              value={market}
               onChange={(
                 event,
               ) =>
                 setMarket(
-                  event.target.value,
+                  event.target.value as MarketRegion,
                 )
+              }
+              aria-label={
+                ui.marketSnapshot
               }
               style={{
                 width:
                   "100%",
+                minWidth: 0,
                 padding:
-                  "13px 14px",
+                  "12px 13px",
                 borderRadius:
                   10,
                 border:
-                  "1px solid rgba(255,255,255,0.14)",
+                  "1px solid rgba(255,255,255,0.12)",
                 background:
-                  "#18181b",
+                  "#151518",
                 color:
                   "#fff",
-                fontSize:
-                  15,
+                fontSize: 14,
               }}
             >
               <option value="us">
@@ -1606,24 +2043,22 @@ export default function MarketResearchPage() {
                 !symbol.trim()
               }
               style={{
+                minHeight: 44,
                 padding:
-                  "14px 16px",
-                border:
-                  "none",
+                  "11px 16px",
+                border: "none",
                 borderRadius:
                   10,
                 background:
                   loading
                     ? "#3f3f46"
-                    : "#fff",
+                    : "#f4f4f5",
                 color:
                   loading
-                    ? "#aaa"
+                    ? "#a1a1aa"
                     : "#09090b",
-                fontWeight:
-                  800,
-                fontSize:
-                  14,
+                fontWeight: 850,
+                fontSize: 13,
                 cursor:
                   loading
                     ? "wait"
@@ -1635,683 +2070,878 @@ export default function MarketResearchPage() {
                 : ui.analyze}
             </button>
           </div>
-        </Section>
+        </Panel>
 
         {error && (
-          <Section
-            title={
-              ui.requestError
-            }
-          >
+          <Panel compact>
+            <PanelTitle
+              title={
+                ui.requestError
+              }
+            />
+
             <div
               style={{
                 color:
                   "#fca5a5",
-                fontSize:
-                  13,
-                lineHeight:
-                  1.6,
+                fontSize: 12,
+                lineHeight: 1.55,
               }}
             >
               {error}
             </div>
-          </Section>
+          </Panel>
         )}
 
         {result && (
           <>
-            <Section
-              title={
-                ui.researchStatus
-              }
-            >
+            <Panel>
               <div
                 style={{
                   display:
                     "flex",
                   flexWrap:
                     "wrap",
-                  gap:
-                    8,
+                  alignItems:
+                    "center",
+                  justifyContent:
+                    "space-between",
+                  gap: 10,
                 }}
               >
-                <Badge
-                  ok={
-                    Boolean(
-                      result.success,
-                    )
-                  }
-                >
-                  {result.success
-                    ? ui.runtimePass
-                    : ui.runtimeFailed}
-                </Badge>
+                <div>
+                  <div
+                    style={{
+                      display:
+                        "flex",
+                      alignItems:
+                        "baseline",
+                      gap: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 22,
+                        fontWeight: 900,
+                        letterSpacing:
+                          "-0.025em",
+                      }}
+                    >
+                      {
+                        result.instrument
+                          ?.normalizedSymbol
+                      }
+                    </span>
 
-                <Badge
-                  ok={
-                    Boolean(
-                      result.verified,
-                    )
-                  }
-                >
-                  {result.verified
-                    ? ui.verified
-                    : ui.notVerified}
-                </Badge>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.5,
+                      }}
+                    >
+                      {marketLabel(
+                        locale,
+                        result.instrument
+                          ?.market,
+                      )}
+                    </span>
+                  </div>
 
-                <Badge
-                  ok={
-                    Boolean(
-                      verification?.structuredDataVerified,
-                    )
-                  }
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 11,
+                      opacity: 0.45,
+                    }}
+                  >
+                    {
+                      result.instrument
+                        ?.exchange
+                    }
+                    {" · "}
+                    {
+                      result.instrument
+                        ?.currency
+                    }
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    flexWrap:
+                      "wrap",
+                    gap: 6,
+                  }}
                 >
-                  {verification?.structuredDataVerified
-                    ? ui.structuredVerified
-                    : ui.webEvidence}
-                </Badge>
+                  <Badge
+                    tone={
+                      result.success
+                        ? "positive"
+                        : "negative"
+                    }
+                  >
+                    {ui.runtime}:{" "}
+                    {result.success
+                      ? ui.runtimePass
+                      : ui.runtimeFailed}
+                  </Badge>
+
+                  <Badge
+                    tone={
+                      result.verified
+                        ? "positive"
+                        : "warning"
+                    }
+                  >
+                    {result.verified
+                      ? ui.verified
+                      : ui.notVerified}
+                  </Badge>
+
+                  <Badge
+                    tone={
+                      verification?.structuredDataVerified
+                        ? "positive"
+                        : "warning"
+                    }
+                  >
+                    {verification?.structuredDataVerified
+                      ? ui.structuredVerified
+                      : ui.webEvidence}
+                  </Badge>
+                </div>
               </div>
 
               <div
                 style={{
-                  marginTop:
-                    12,
-                  fontSize:
-                    13,
-                  lineHeight:
-                    1.7,
-                  opacity:
-                    0.72,
+                  marginTop: 14,
+                  display:
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(115px, 1fr))",
+                  gap: 8,
                 }}
               >
-                {ui.sources}:{" "}
-                {verification?.sourceCount ??
-                  0}
+                <Metric
+                  label={
+                    ui.price
+                  }
+                  value={
+                    formatNumber(
+                      snapshot?.price,
+                      2,
+                    )
+                  }
+                  sub={
+                    snapshot?.changePercent !==
+                    null &&
+                    snapshot?.changePercent !==
+                    undefined
+                      ? formatPercent(
+                          snapshot.changePercent,
+                        )
+                      : undefined
+                  }
+                  emphasis
+                />
 
-                <br />
+                <Metric
+                  label={
+                    ui.pe
+                  }
+                  value={
+                    formatNumber(
+                      snapshot?.pe,
+                      2,
+                    )
+                  }
+                />
 
-                {ui.independentDomains}:{" "}
-                {verification?.independentDomains ??
-                  0}
+                <Metric
+                  label={
+                    ui.pb
+                  }
+                  value={
+                    formatNumber(
+                      snapshot?.pb,
+                      2,
+                    )
+                  }
+                />
 
-                <br />
+                <Metric
+                  label={
+                    ui.eps
+                  }
+                  value={
+                    formatNumber(
+                      snapshot?.eps,
+                      2,
+                    )
+                  }
+                />
 
-                {ui.primarySource}:{" "}
-                {verification?.primarySourceFound
-                  ? ui.yes
-                  : ui.no}
+                <Metric
+                  label={
+                    ui.marketCap
+                  }
+                  value={
+                    formatCompactMoney(
+                      snapshot?.marketCap,
+                    )
+                  }
+                />
+
+                <Metric
+                  label={
+                    ui.revenue
+                  }
+                  value={
+                    formatCompactMoney(
+                      snapshot?.revenue,
+                    )
+                  }
+              />
               </div>
-            </Section>
 
-            {snapshot && (
-              <Section
-                title={
-                  ui.marketSnapshot
-                }
+              <div
+                style={{
+                  marginTop: 11,
+                  display:
+                    "flex",
+                  flexWrap:
+                    "wrap",
+                  gap:
+                    "6px 14px",
+                  fontSize: 10,
+                  opacity: 0.48,
+                  lineHeight: 1.5,
+                }}
               >
+                <span>
+                  {ui.dataQuality}:{" "}
+                  {dataQualityLabel(
+                    locale,
+                    snapshot?.dataQuality,
+                  )}
+                </span>
+
+                <span>
+                  {ui.liveQuote}:{" "}
+                  {snapshot?.liveQuoteAvailable
+                    ? ui.yes
+                    : ui.no}
+                </span>
+
+                <span>
+                  {ui.source}:{" "}
+                  {snapshot?.source ??
+                    "—"}
+                </span>
+
+                <span>
+                  {ui.asOf}:{" "}
+                  {formatDate(
+                    snapshot?.asOf,
+                  )}
+                </span>
+              </div>
+
+              {isWebEvidence && (
                 <div
                   style={{
+                    marginTop: 11,
+                    padding:
+                      "9px 10px",
+                    borderRadius:
+                      9,
+                    background:
+                      "rgba(251,191,36,0.07)",
+                    border:
+                      "1px solid rgba(251,191,36,0.12)",
+                    color:
+                      "#fcd34d",
+                    fontSize: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {ui.dataNotice}
+                </div>
+              )}
+            </Panel>
+
+            {analysis?.decisionSupport && (
+              <Panel>
+                <PanelTitle
+                  title={
+                    ui.researchConclusion
+                  }
+                  meta={
+                    risk
+                      ? `${ui.risk}: ${riskLevelLabel(
+                          locale,
+                          risk.level,
+                        )}`
+                      : undefined
+                  }
+                />
+
+                <div
+                  style={{
+                    padding:
+                      "12px 13px",
+                    borderRadius:
+                      11,
+                    background:
+                      "rgba(255,255,255,0.035)",
+                    border:
+                      "1px solid rgba(255,255,255,0.07)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      opacity: 0.45,
+                      marginBottom: 5,
+                    }}
+                  >
+                    {ui.currentState}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1.65,
+                      fontWeight: 650,
+                    }}
+                  >
+                    {translateRuntimeText(
+                      locale,
+                      analysis
+                        .decisionSupport
+                        .currentState,
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 11,
                     display:
                       "grid",
                     gridTemplateColumns:
-                      "repeat(2, minmax(0, 1fr))",
-                    gap:
-                      12,
+                      "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 10,
                   }}
                 >
-                  <Metric
-                    label={
-                      ui.symbol
-                    }
-                    value={
-                      result.instrument
-                        ?.normalizedSymbol ??
-                      result.instrument
-                        ?.symbol ??
-                      symbol
-                    }
-                  />
+                  <div
+                    style={{
+                      padding:
+                        "11px 12px",
+                      borderRadius:
+                        11,
+                      background:
+                        "rgba(255,255,255,0.025)",
+                      border:
+                        "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <Subheading>
+                      {
+                        ui.supportingEvidence
+                      }
+                    </Subheading>
 
-                  <Metric
-                    label={
-                      ui.market
-                    }
-                    value={marketLabel(
-                      locale,
-                      result.instrument
-                        ?.market ??
-                        market,
-                    )}
-                  />
+                    <List
+                      locale={
+                        locale
+                      }
+                      items={
+                        analysis
+                          .decisionSupport
+                          .supportingFactors
+                      }
+                      emptyText={
+                        ui.noStructured
+                      }
+                    />
+                  </div>
 
-                  <Metric
-                    label={
-                      ui.price
-                    }
-                    value={
-                      snapshot.price ??
-                      "N/A"
-                    }
-                  />
+                  <div
+                    style={{
+                      padding:
+                        "11px 12px",
+                      borderRadius:
+                        11,
+                      background:
+                        "rgba(255,255,255,0.025)",
+                      border:
+                        "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <Subheading>
+                      {
+                        ui.watchMetrics
+                      }
+                    </Subheading>
 
-                  <Metric
-                    label={
-                      ui.pe
+                    <List
+                      locale={
+                        locale
+                      }
+                      items={
+                        analysis
+                          .decisionSupport
+                          .watchMetrics
+                      }
+                      emptyText={
+                        ui.noStructured
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 11,
+                  }}
+                >
+                  <Subheading>
+                    {
+                      ui.invalidation
                     }
-                    value={
-                      snapshot.pe ??
-                      "N/A"
+                  </Subheading>
+
+                  <List
+                    locale={
+                      locale
+                    }
+                    items={
+                      analysis
+                        .decisionSupport
+                        .invalidationConditions
+                    }
+                    emptyText={
+                      ui.noStructured
                     }
                   />
                 </div>
+              </Panel>
+            )}
+
+            <Panel>
+              <PanelTitle
+                title={
+                  ui.industry
+                }
+              />
+
+              <div
+                style={{
+                  display:
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(230px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {analysis?.industry && (
+                  <ResearchBlock
+                    title={
+                      ui.industry
+                    }
+                    summary={
+                      analysis
+                        .industry
+                        .summary
+                    }
+                    items={
+                      analysis
+                        .industry
+                        .evidence
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.company && (
+                  <ResearchBlock
+                    title={
+                      ui.company
+                    }
+                    summary={
+                      analysis
+                        .company
+                        .summary
+                    }
+                    items={[
+                      ...(analysis
+                        .company
+                        .strengths ??
+                        []),
+                      ...(analysis
+                        .company
+                        .risks ??
+                        []),
+                    ]}
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.fundamentals && (
+                  <ResearchBlock
+                    title={
+                      ui.fundamentals
+                    }
+                    summary={
+                      analysis
+                        .fundamentals
+                        .assessment
+                    }
+                    items={
+                      analysis
+                        .fundamentals
+                        .signals
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.valuation && (
+                  <ResearchBlock
+                    title={
+                      ui.valuation
+                    }
+                    summary={
+                      analysis
+                        .valuation
+                        .assessment
+                    }
+                    items={
+                      analysis
+                        .valuation
+                        .signals
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.trend && (
+                  <ResearchBlock
+                    title={
+                      ui.trend
+                    }
+                    summary={
+                      analysis
+                        .trend
+                        .assessment
+                    }
+                    items={
+                      analysis
+                        .trend
+                        .signals
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.risk && (
+                  <ResearchBlock
+                    title={
+                      ui.risk
+                    }
+                    summary={`Risk level: ${riskLevelLabel(
+                      locale,
+                      analysis.risk.level,
+                    )}`}
+                    items={
+                      analysis
+                        .risk
+                        .factors
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                )}
+
+                {analysis?.decisionSupport
+                  ?.scenarios
+                  ?.length ? (
+                  <ResearchBlock
+                    title={
+                      ui.scenarios
+                    }
+                    summary={
+                      analysis
+                        .decisionSupport
+                        .scenarios
+                        .map(
+                          (
+                            item,
+                          ) =>
+                            `${item.name}: ${item.condition}`,
+                        )
+                        .join(
+                          " · ",
+                        )
+                    }
+                    items={
+                      analysis
+                        .decisionSupport
+                        .scenarios
+                        .map(
+                          (
+                            item,
+                          ) =>
+                            `${item.name}: ${item.implication}`,
+                        )
+                    }
+                    locale={
+                      locale
+                    }
+                  />
+                ) : null}
+              </div>
+            </Panel>
+
+            <Panel>
+              <details>
+                <summary
+                  style={{
+                    cursor:
+                      "pointer",
+                    listStyle:
+                      "none",
+                    fontSize:
+                      15,
+                    fontWeight:
+                      800,
+                  }}
+                >
+                  {ui.evidence}
+                  <span
+                    style={{
+                      marginLeft:
+                        8,
+                      fontSize:
+                        10,
+                      opacity:
+                        0.42,
+                      fontWeight:
+                        500,
+                    }}
+                  >
+                    {verification?.sourceCount ??
+                      0}{" "}
+                    {ui.sources}
+                  </span>
+                </summary>
 
                 <div
                   style={{
                     marginTop:
-                      14,
-                    fontSize:
                       12,
-                    opacity:
-                      0.58,
-                    lineHeight:
-                      1.65,
-                  }}
-                >
-                  {ui.dataQuality}:{" "}
-                  {dataQualityLabel(
-                    locale,
-                    snapshot.dataQuality,
-                  )}
-
-                  <br />
-
-                  {ui.liveQuote}:{" "}
-                  {snapshot.liveQuoteAvailable
-                    ? ui.yes
-                    : ui.no}
-
-                  <br />
-
-                  {ui.source}:{" "}
-                  {snapshot.source ??
-                    "N/A"}
-
-                  <br />
-
-                  {ui.asOf}:{" "}
-                  {snapshot.asOf ??
-                    "N/A"}
-                </div>
-              </Section>
-            )}
-
-            {analysis?.industry && (
-              <Section
-                title={
-                  ui.industry
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .industry
-                      .summary
-                  }
-                />
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .industry
-                      .evidence
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.company && (
-              <Section
-                title={
-                  ui.company
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .company
-                      .summary
-                  }
-                />
-
-                <Subheading>
-                  {
-                    ui.strengths
-                  }
-                </Subheading>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .company
-                      .strengths
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-
-                <Subheading>
-                  {ui.risks}
-                </Subheading>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .company
-                      .risks
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.fundamentals && (
-              <Section
-                title={
-                  ui.fundamentals
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .fundamentals
-                      .assessment
-                  }
-                />
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .fundamentals
-                      .signals
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.valuation && (
-              <Section
-                title={
-                  ui.valuation
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .valuation
-                      .assessment
-                  }
-                />
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .valuation
-                      .signals
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.trend && (
-              <Section
-                title={
-                  ui.trend
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .trend
-                      .assessment
-                  }
-                />
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .trend
-                      .signals
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.risk && (
-              <Section
-                title={
-                  ui.risk
-                }
-              >
-                <div
-                  style={{
-                    marginBottom:
+                    paddingTop:
                       12,
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.riskLevel}:{" "}
-                  <strong>
-                    {riskLevelLabel(
-                      locale,
-                      analysis
-                        .risk
-                        .level,
-                    )}
-                  </strong>
-                </div>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .risk
-                      .factors
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            {analysis?.decisionSupport && (
-              <Section
-                title={
-                  ui.decisionSupport
-                }
-              >
-                <TextBlock
-                  locale={
-                    locale
-                  }
-                  value={
-                    analysis
-                      .decisionSupport
-                      .currentState
-                  }
-                />
-
-                <Subheading>
-                  {
-                    ui.supportingEvidence
-                  }
-                </Subheading>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .decisionSupport
-                      .supportingFactors
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-
-                <Subheading>
-                  {
-                    ui.invalidation
-                  }
-                </Subheading>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .decisionSupport
-                      .invalidationConditions
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-
-                <Subheading>
-                  {
-                    ui.watchMetrics
-                  }
-                </Subheading>
-
-                <List
-                  locale={
-                    locale
-                  }
-                  items={
-                    analysis
-                      .decisionSupport
-                      .watchMetrics
-                  }
-                  emptyText={
-                    ui.noStructured
-                  }
-                />
-              </Section>
-            )}
-
-            <Section
-              title={
-                ui.evidence
-              }
-            >
-              {!result.evidence?.length ? (
-                <div
-                  style={{
-                    opacity:
-                      0.5,
-                    fontSize:
-                      13,
-                  }}
-                >
-                  {ui.noEvidence}
-                </div>
-              ) : (
-                <div
-                  style={{
+                    borderTop:
+                      "1px solid rgba(255,255,255,0.07)",
                     display:
                       "grid",
-                    gap:
-                      8,
+                    gap: 7,
                   }}
                 >
-                  {result.evidence.map(
-                    (
-                      item,
-                      index,
-                    ) => (
-                      <details
-                        key={`${item.url ?? "source"}-${index}`}
-                        style={{
-                          border:
-                            "1px solid rgba(255,255,255,0.07)",
-                          borderRadius:
-                            10,
-                          padding:
-                            "10px 12px",
-                        }}
-                      >
-                        <summary
+                  {!result.evidence?.length ? (
+                    <div
+                      style={{
+                        opacity:
+                          0.48,
+                        fontSize:
+                          12,
+                      }}
+                    >
+                      {ui.noEvidence}
+                    </div>
+                  ) : (
+                    result.evidence.map(
+                      (
+                        item,
+                        index,
+                      ) => (
+                        <details
+                          key={`${item.url}-${index}`}
                           style={{
-                            cursor:
-                              "pointer",
-                            fontSize:
-                              12,
-                            lineHeight:
-                              1.5,
-                          }}
-                        >
-                          <strong>
-                            {item.hostname ??
-                              "Source"}
-                          </strong>
-
-                          <span
-                            style={{
-                              display:
-                                "block",
-                              opacity:
-                                0.5,
-                              marginTop:
-                                3,
-                            }}
-                          >
-                            {
-                              ui.openOriginalEvidence
-                            }
-                          </span>
-                        </summary>
-
-                        <div
-                          style={{
-                            marginTop:
-                              10,
-                            paddingTop:
-                              10,
-                            borderTop:
+                            border:
                               "1px solid rgba(255,255,255,0.07)",
-                            fontSize:
-                              12,
-                            lineHeight:
-                              1.55,
-                            opacity:
-                              0.72,
+                            borderRadius:
+                              10,
+                            background:
+                              "rgba(255,255,255,0.02)",
                           }}
                         >
-                          <div>
-                            {
-                              ui.originalEvidence
-                            }
-                          </div>
-
-                          <div
+                          <summary
                             style={{
-                              marginTop:
-                                7,
+                              cursor:
+                                "pointer",
+                              padding:
+                                "10px 11px",
+                              fontSize:
+                                11,
                               fontWeight:
                                 700,
                             }}
                           >
-                            {item.title ??
+                            {item.hostname ??
                               "Source"}
-                          </div>
+
+                            <span
+                              style={{
+                                display:
+                                  "block",
+                                marginTop:
+                                  3,
+                                fontSize:
+                                  10,
+                                opacity:
+                                  0.42,
+                                fontWeight:
+                                  500,
+                              }}
+                            >
+                              {item.title ??
+                                ui.openOriginalEvidence}
+                            </span>
+                          </summary>
 
                           <div
                             style={{
-                              marginTop:
-                                6,
+                              padding:
+                                "0 11px 11px",
+                              fontSize:
+                                11,
+                              lineHeight:
+                                1.55,
+                              opacity:
+                                0.72,
                             }}
                           >
-                            {item.snippet ??
-                              ""}
-                          </div>
-
-                          {item.url && (
-                            <a
-                              href={
-                                item.url
-                              }
-                              target="_blank"
-                              rel="noreferrer"
+                            <div
                               style={{
-                                display:
-                                  "inline-block",
-                                marginTop:
-                                  8,
-                                color:
-                                  "#93c5fd",
-                                textDecoration:
-                                  "none",
+                                paddingTop:
+                                  9,
+                                borderTop:
+                                  "1px solid rgba(255,255,255,0.06)",
                               }}
                             >
-                              {item.hostname ??
-                                item.url}
-                            </a>
-                          )}
-                        </div>
-                      </details>
-                    ),
+                              {
+                                item.snippet
+                              }
+                            </div>
+
+                            {item.url && (
+                              <a
+                                href={
+                                  item.url
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display:
+                                    "inline-block",
+                                  marginTop:
+                                    7,
+                                  color:
+                                    "#93c5fd",
+                                  textDecoration:
+                                    "none",
+                                }}
+                              >
+                                {
+                                  ui.openOriginalEvidence
+                                }
+                              </a>
+                            )}
+                          </div>
+                        </details>
+                      ),
+                    )
                   )}
                 </div>
+              </details>
+            </Panel>
+
+            <div
+              style={{
+                display:
+                  "flex",
+                flexWrap:
+                  "wrap",
+                gap:
+                  "5px 12px",
+                marginTop:
+                  11,
+                padding:
+                  "0 3px",
+                fontSize:
+                  10,
+                lineHeight:
+                  1.5,
+                opacity:
+                  0.38,
+              }}
+            >
+              <span>
+                {ui.domains}:{" "}
+                {verification?.independentDomains ??
+                  0}
+              </span>
+
+              <span>
+                {ui.primarySource}:{" "}
+                {verification?.primarySourceFound
+                  ? ui.yes
+                  : ui.no}
+              </span>
+
+              <span>
+                {ui.liveQuote}:{" "}
+                {snapshot?.liveQuoteAvailable
+                  ? ui.yes
+                  : ui.no}
+              </span>
+
+              {result.latencyMs !==
+                undefined && (
+                <span>
+                  {result.latencyMs}ms
+                </span>
               )}
-            </Section>
+            </div>
 
             <div
               style={{
                 marginTop:
                   16,
                 padding:
-                  14,
+                  "0 4px",
                 fontSize:
-                  11,
+                  10,
                 lineHeight:
                   1.6,
                 opacity:
-                  0.48,
+                  0.34,
               }}
             >
               {ui.disclaimer}
@@ -2320,84 +2950,5 @@ export default function MarketResearchPage() {
         )}
       </div>
     </main>
-  );
-}
-
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          opacity:
-            0.5,
-          fontSize:
-            11,
-          marginBottom:
-            3,
-        }}
-      >
-        {label}
-      </div>
-
-      <strong>
-        {value}
-      </strong>
-    </div>
-  );
-}
-
-function Subheading({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <h3
-      style={{
-        margin:
-          "16px 0 7px",
-        fontSize:
-          13,
-        fontWeight:
-          750,
-      }}
-    >
-      {children}
-    </h3>
-  );
-}
-
-function TextBlock({
-  locale,
-  value,
-}: {
-  locale: Locale;
-  value?: string;
-}) {
-  if (!value)
-    return null;
-
-  return (
-    <p
-      style={{
-        margin:
-          "0 0 12px",
-        fontSize:
-          13,
-        lineHeight:
-          1.65,
-      }}
-    >
-      {translateRuntimeText(
-        locale,
-        value,
-      )}
-    </p>
   );
 }
