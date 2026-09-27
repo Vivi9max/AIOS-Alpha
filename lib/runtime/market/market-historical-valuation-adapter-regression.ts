@@ -158,7 +158,8 @@ export async function runMarketHistoricalValuationAdapterRegression(
   const adaptedRequest =
     adapterResult.request;
   const candidate =
-    adaptedRequest.candidates[0] ?? null;
+    adaptedRequest.candidates[0] ??
+    null;
   const c149SymbolPreserved =
     candidate !== null &&
     normalizeSymbol(
@@ -190,11 +191,16 @@ export async function runMarketHistoricalValuationAdapterRegression(
     null;
   const historicalContextUsable =
     context.historicalDataUsableForValuation;
+  /*
+   * targetContract belongs to the
+   * adapter result, not the frozen
+   * C149 MarketValuationRequest.
+   */
   const c149RequestGenerated =
-    adaptedRequest !==
-    null &&
-    adaptedRequest.targetContract ===
-      "C149";
+    adapterResult !== null &&
+    adapterResult.targetContract ===
+      "C149" &&
+    adaptedRequest !== null;
   const historicalRevenueGrowthObserved =
     historicalRevenueGrowth !==
     null;
@@ -302,7 +308,7 @@ export async function runMarketHistoricalValuationAdapterRegression(
     },
     adaptedRequest: {
       industry:
-        adaptedRequest.request.industry,
+        adaptedRequest.industry,
       symbol:
         candidate?.symbol ??
         symbol,
@@ -312,19 +318,19 @@ export async function runMarketHistoricalValuationAdapterRegression(
       assumptions: {
         revenueGrowthLow:
           finiteOrNull(
-            adaptedRequest.request
+            adaptedRequest
               .assumptions
               ?.revenueGrowthLow,
           ),
         revenueGrowthBase:
           finiteOrNull(
-            adaptedRequest.request
+            adaptedRequest
               .assumptions
               ?.revenueGrowthBase,
           ),
         revenueGrowthHigh:
           finiteOrNull(
-            adaptedRequest.request
+            adaptedRequest
               .assumptions
               ?.revenueGrowthHigh,
           ),
