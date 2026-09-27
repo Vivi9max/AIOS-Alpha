@@ -27,42 +27,50 @@ const MAX_IMAGE_BYTES =
   20 * 1024 * 1024;
 const MAX_FILE_BYTES =
   25 * 1024 * 1024;
-const SUPPORTED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
-const SUPPORTED_FILE_TYPES = new Set([
-  "application/pdf",
-  "text/plain",
-  "text/csv",
-  "application/json",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/octet-stream",
-]);
-const SUPPORTED_IMAGE_EXTENSIONS = new Set([
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".heic",
-  ".heif",
-]);
-const SUPPORTED_FILE_EXTENSIONS = new Set([
-  ".pdf",
-  ".txt",
-  ".csv",
-  ".json",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-]);
+const PHOTO_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/heic,image/heif";
+const CAMERA_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/heic,image/heif";
+const SUPPORTED_IMAGE_TYPES =
+  new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+  ]);
+const SUPPORTED_FILE_TYPES =
+  new Set([
+    "application/pdf",
+    "text/plain",
+    "text/csv",
+    "application/json",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/octet-stream",
+  ]);
+const SUPPORTED_IMAGE_EXTENSIONS =
+  new Set([
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".heic",
+    ".heif",
+  ]);
+const SUPPORTED_FILE_EXTENSIONS =
+  new Set([
+    ".pdf",
+    ".txt",
+    ".csv",
+    ".json",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+  ]);
 function createInputId(): string {
   return `aios-input-${Date.now()}-${Math.random()
     .toString(36)
@@ -389,8 +397,8 @@ export default function AIOSInputPicker({
         0,
         availableSlots,
       );
-    const acceptedItems: AIOSInputItem[] =
-      [];
+    const acceptedItems:
+      AIOSInputItem[] = [];
     for (
       const file of selectedFiles
     ) {
@@ -516,7 +524,7 @@ export default function AIOSInputPicker({
       <input
         ref={cameraRef}
         type="file"
-        accept="image/*"
+        accept={CAMERA_ACCEPT}
         capture="environment"
         onChange={
           handleCameraChange
@@ -529,8 +537,7 @@ export default function AIOSInputPicker({
       <input
         ref={photoRef}
         type="file"
-        accept="image/*"
-        multiple
+        accept={PHOTO_ACCEPT}
         onChange={
           handlePhotoChange
         }
