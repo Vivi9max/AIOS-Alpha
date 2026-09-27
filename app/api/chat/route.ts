@@ -146,7 +146,10 @@ function formatCommercialGap(
           0,
           Math.ceil(
             (deadlineAt - now) /
-              (24 * 60 * 60 * 1000),
+              (24 *
+                60 *
+                60 *
+                1000),
           ),
         )
       : null;
@@ -760,6 +763,8 @@ export async function GET(
           commercialDeadline: true,
           liveCommercialOpportunity: true,
           inputFoundation: true,
+          realFileUpload:
+            true,
         },
         identity: {
           userId:
@@ -805,11 +810,225 @@ export async function POST(
       request.headers.get(
         "content-type",
       ) ?? "";
-    if (
-      !contentType.includes(
+    const isMultipart =
+      contentType.includes(
+        "multipart/form-data",
+      );
+    let prompt = "";
+    let inputItems:
+      AIOSInputItem[] = [];
+    let uploadedFiles:
+      File[] = [];
+    let fileInputIds:
+      string[] = [];
+    if (isMultipart) {
+      const formData =
+        await request.formData();
+      const rawPrompt =
+        formData.get(
+          "prompt",
+        );
+      prompt =
+        typeof rawPrompt ===
+        "string"
+          ? rawPrompt.trim()
+          : "";
+      const rawInputs =
+        formData.get(
+          "inputs",
+        );
+      if (
+        typeof rawInputs ===
+        "string"
+      ) {
+        try {
+          inputItems =
+            normalizeInputPayload(
+              JSON.parse(
+                rawInputs,
+              ),
+            );
+        } catch {
+          inputItems = [];
+        }
+      }
+      const rawFileInputIds =
+        formData.get(
+          "fileInputIds",
+        );
+      if (
+        typeof rawFileInputIds ===
+        "string"
+      ) {
+        try {
+          const parsed =
+            JSON.parse(
+              rawFileInputIds,
+            );
+          fileInputIds =
+            Array.isArray(parsed)
+              ? parsed.filter(
+                  (
+                    value,
+                  ): value is string =>
+                    typeof value ===
+                      "string" &&
+                    value.trim()
+                      .length > 0,
+                )
+              : [];
+        } catch {
+          fileInputIds = [];
+        }
+      }
+      uploadedFiles =
+        formData
+          .getAll("files")
+          .filter(
+            (
+              value,
+            ): value is File =>
+              typeof value ===
+                "object" &&
+              value !== null &&
+              typeof File !==
+                "undefined" &&
+              value instanceof File,
+          );
+      if (
+        uploadedFiles.length >
+          8 ||
+        fileInputIds.length >
+          8
+      ) {
+        const response =
+          NextResponse.json(
+            {
+              success: false,
+              content:
+                "Too many uploaded inputs.",
+              error:
+                "AIOS_INPUT_TOO_MANY_FILES",
+              userId:
+                identity.userId,
+              timestamp:
+                Date.now(),
+            },
+            {
+              status: 400,
+            },
+          );
+        return applyIdentityCookie(
+          response,
+          identity.userId,
+        );
+      }
+      if (
+        uploadedFiles.length !==
+        fileInputIds.length
+      ) {
+        const response =
+          NextResponse.json(
+            {
+              success: false,
+              content:
+                "Uploaded file references do not match the submitted files.",
+              error:
+                "AIOS_INPUT_FILE_MAPPING_INVALID",
+              userId:
+                identity.userId,
+              timestamp:
+                Date.now(),
+            },
+            {
+              status: 400,
+            },
+          );
+        return applyIdentityCookie(
+          response,
+          identity.userId,
+        );
+      }
+      const rebuiltInputs:
+        AIOSInputItem[] =
+        fileInputIds.map(
+          (
+            inputId,
+            index,
+          ) => {
+            const file =
+              uploadedFiles[index];
+            const original =
+              inputItems.find(
+                (item) =>
+                  item.id ===
+                  inputId,
+              );
+            const isImage =
+              file.type.startsWith(
+                "image/",
+              );
+            return {
+              id: inputId,
+              kind:
+                original?.kind ===
+                  "image" ||
+                isImage
+                  ? "image"
+                  : "file",
+              metadata: {
+                name:
+                  file.name ||
+                  original?.metadata
+                    .name ||
+                  null,
+                mimeType:
+                  file.type ||
+                  "application/octet-stream",
+                sizeBytes:
+                  file.size,
+                lastModifiedAt:
+                  file.lastModified
+                    ? new Date(
+                        file.lastModified,
+                      ).toISOString()
+                    : null,
+                source:
+                  original?.metadata
+                    .source ??
+                  "runtime",
+              },
+              localReference:
+                null,
+              extractedText:
+                null,
+              processingStatus:
+                "pending",
+              processingError:
+                null,
+            };
+          },
+        );
+      inputItems =
+        rebuiltInputs;
+    } else if (
+      contentType.includes(
         "application/json",
       )
     ) {
+      const body =
+        (await request.json()) as
+          ChatRequestBody;
+      prompt =
+        typeof body.prompt ===
+        "string"
+          ? body.prompt.trim()
+          : "";
+      inputItems =
+        normalizeInputPayload(
+          body.inputs,
+        );
+    } else {
       const response =
         NextResponse.json(
           {
@@ -817,7 +1036,7 @@ export async function POST(
             content:
               "Invalid request format.",
             error:
-              "Content-Type must be application/json.",
+              "Content-Type must be application/json or multipart/form-data.",
             userId:
               identity.userId,
             timestamp:
@@ -832,21 +1051,9 @@ export async function POST(
         identity.userId,
       );
     }
-    const body =
-      (await request.json()) as
-        ChatRequestBody;
-    const prompt =
-      typeof body.prompt ===
-      "string"
-        ? body.prompt.trim()
-        : "";
     const locale =
       resolveRequestLocale(
         request,
-      );
-    const inputItems =
-      normalizeInputPayload(
-        body.inputs,
       );
     const hasInputs =
       inputItems.length > 0;
@@ -897,7 +1104,10 @@ export async function POST(
         );
       }
     }
-    if (!prompt && !hasInputs) {
+    if (
+      !prompt &&
+      !hasInputs
+    ) {
       const response =
         NextResponse.json(
           {
@@ -925,19 +1135,27 @@ export async function POST(
       );
     }
     /*
-     * Input-only requests stop at the Input Foundation.
+     * Input-only requests stop at
+     * the Input Foundation.
      *
      * This is intentional:
-     * browser-local files are not yet converted
-     * into provider-specific multimodal payloads.
+     * browser files are not yet
+     * converted into provider-specific
+     * multimodal payloads.
      *
-     * Do not claim Vision/OCR execution here.
+     * Do not claim Vision, OCR,
+     * or document parsing execution.
      */
-    if (!prompt && hasInputs) {
+    if (
+      !prompt &&
+      hasInputs
+    ) {
       const acceptedCount =
-        inputResult?.acceptedCount ?? 0;
+        inputResult?.acceptedCount ??
+        0;
       const rejectedCount =
-        inputResult?.rejectedCount ?? 0;
+        inputResult?.rejectedCount ??
+        0;
       const content =
         locale === "ja"
           ? `入力を受け付けました。${acceptedCount} 件を登録し、${rejectedCount} 件を拒否しました。画像認識・OCR・文書解析はまだ実行していません。`
@@ -952,7 +1170,7 @@ export async function POST(
               false,
             content,
             code:
-              "C164_3_INPUT_FOUNDATION_BRIDGE",
+              "C164_5B_REAL_FILE_UPLOAD_BRIDGE",
             inputResult,
             userId:
               identity.userId,
