@@ -1,26 +1,23 @@
 "use client";
-
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
-
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
-
 import {
   chatPanelCopy,
 } from "@/lib/i18n/chat-panel";
-
+import type {
+  AIOSInputItem,
+} from "@/lib/runtime/input/aios-input-types";
 import ChatInput from "./ChatInput";
-
 import MessageList, {
   type ChatMessage,
 } from "./MessageList";
-
 interface MemoryRecord {
   id: number;
   role:
@@ -29,7 +26,6 @@ interface MemoryRecord {
   content: string;
   timestamp: number;
 }
-
 type ProviderName =
   | "mock"
   | "qwen"
@@ -37,7 +33,6 @@ type ProviderName =
   | "openai"
   | "gemini"
   | "claude";
-
 interface ChatApiResponse {
   success?: boolean;
   provider?: ProviderName;
@@ -47,8 +42,17 @@ interface ChatApiResponse {
   content?: string;
   latencyMs?: number;
   conversation?: MemoryRecord[];
+  inputResult?: {
+    success?: boolean;
+    code?:
+      | "AIOS_INPUT_ACCEPTED"
+      | "AIOS_INPUT_PARTIAL"
+      | "AIOS_INPUT_REJECTED";
+    acceptedCount?: number;
+    rejectedCount?: number;
+    limitations?: string[];
+  };
 }
-
 interface RuntimeStatusResponse {
   success?: boolean;
   provider?: ProviderName;
@@ -62,7 +66,6 @@ interface RuntimeStatusResponse {
     lastRequestAt?: number | null;
   };
 }
-
 interface ProviderViewState {
   provider: ProviderName;
   requestedProvider: ProviderName;
@@ -70,7 +73,6 @@ interface ProviderViewState {
   error?: string;
   latencyMs?: number;
 }
-
 const providerLabels: Record<
   ProviderName,
   string
@@ -82,23 +84,19 @@ const providerLabels: Record<
   gemini: "Gemini",
   claude: "Claude",
 };
-
 const defaultProviderState:
   ProviderViewState = {
   provider: "mock",
   requestedProvider: "mock",
   fallbackUsed: false,
 };
-
 function isRuntimeWrapper(
   content: string,
 ): boolean {
   const raw = content.trim();
-
   if (!raw) {
     return false;
   }
-
   return (
     raw.includes(
       "你是 AIOS Runtime 的执行引擎",
@@ -111,7 +109,6 @@ function isRuntimeWrapper(
     )
   );
 }
-
 function sanitizeRestoredMessages(
   memory: MemoryRecord[],
 ): ChatMessage[] {
@@ -132,7 +129,6 @@ function sanitizeRestoredMessages(
       content: item.content,
     }));
 }
-
 function normalizeProvider(
   value: unknown,
   fallback: ProviderName = "mock",
@@ -147,35 +143,48 @@ function normalizeProvider(
   ) {
     return value;
   }
-
   return fallback;
 }
-
+function buildInputSummary(
+  inputs: AIOSInputItem[],
+): string {
+  const names = inputs
+    .map(
+      (item) =>
+        item.metadata.name,
+    )
+    .filter(
+      (
+        name,
+      ): name is string =>
+        typeof name === "string" &&
+        name.trim().length > 0,
+    );
+  if (names.length === 0) {
+    return `Attached inputs: ${inputs.length}`;
+  }
+  return `Attached inputs: ${names.join(", ")}`;
+}
 export default function ChatPanel() {
   const {
     locale,
   } = useLanguage();
-
   const copy =
     chatPanelCopy[locale];
-
   const [
     messages,
     setMessages,
   ] = useState<ChatMessage[]>(
     [],
   );
-
   const [
     loading,
     setLoading,
   ] = useState(false);
-
   const [
     historyLoading,
     setHistoryLoading,
   ] = useState(true);
-
   const [
     providerState,
     setProviderState,
@@ -183,12 +192,10 @@ export default function ChatPanel() {
     useState<ProviderViewState>(
       defaultProviderState,
     );
-
   const scrollRef =
     useRef<HTMLDivElement | null>(
       null,
     );
-
   const scrollToBottom =
     useCallback(
       (
@@ -200,11 +207,9 @@ export default function ChatPanel() {
           () => {
             const element =
               scrollRef.current;
-
             if (!element) {
               return;
             }
-
             element.scrollTo({
               top:
                 element.scrollHeight,
@@ -215,7 +220,6 @@ export default function ChatPanel() {
       },
       [],
     );
-
   const loadConversation =
     useCallback(
       async (
@@ -226,7 +230,6 @@ export default function ChatPanel() {
         if (showLoading) {
           setHistoryLoading(true);
         }
-
         try {
           const response =
             await fetch(
@@ -242,16 +245,13 @@ export default function ChatPanel() {
                 },
               },
             );
-
           if (!response.ok) {
             throw new Error(
               "Failed to load chat history.",
             );
           }
-
           const data =
             await response.json();
-
           const memory:
             MemoryRecord[] =
             Array.isArray(
@@ -259,12 +259,10 @@ export default function ChatPanel() {
             )
               ? data.items
               : [];
-
           const restoredMessages =
             sanitizeRestoredMessages(
               memory,
             );
-
           const nextMessages =
             restoredMessages.length >
             0
@@ -277,18 +275,15 @@ export default function ChatPanel() {
                       copy.welcome,
                   },
                 ];
-
           setMessages(
             nextMessages,
           );
-
           return nextMessages;
         } catch (error) {
           console.error(
             "[AIOS Chat History]",
             error,
           );
-
           return null;
         } finally {
           if (showLoading) {
@@ -300,7 +295,6 @@ export default function ChatPanel() {
       },
       [copy.welcome],
     );
-
   const loadRuntimeStatus =
     useCallback(
       async () => {
@@ -315,36 +309,29 @@ export default function ChatPanel() {
                   "same-origin",
               },
             );
-
           if (!response.ok) {
             return;
           }
-
           const runtimeData =
             (await response.json()) as
               RuntimeStatusResponse;
-
           const runtime =
             runtimeData.providerRuntime;
-
           const activeProvider =
             normalizeProvider(
               runtimeData.provider,
               "mock",
             );
-
           const actualProvider =
             normalizeProvider(
               runtime?.provider,
               activeProvider,
             );
-
           const requestedProvider =
             normalizeProvider(
               runtime?.requestedProvider,
               activeProvider,
             );
-
           setProviderState({
             provider:
               actualProvider,
@@ -366,25 +353,19 @@ export default function ChatPanel() {
       },
       [],
     );
-
   useEffect(() => {
     let active = true;
-
     async function loadInitialData() {
       await Promise.all([
         loadConversation(true),
         loadRuntimeStatus(),
       ]);
-
       if (!active) {
         return;
       }
-
       scrollToBottom("auto");
     }
-
     void loadInitialData();
-
     return () => {
       active = false;
     };
@@ -393,7 +374,6 @@ export default function ChatPanel() {
     loadRuntimeStatus,
     scrollToBottom,
   ]);
-
   useEffect(() => {
     scrollToBottom(
       historyLoading
@@ -406,7 +386,6 @@ export default function ChatPanel() {
     historyLoading,
     scrollToBottom,
   ]);
-
   function handleMessageDeleted(
     messageId: number,
   ) {
@@ -419,35 +398,42 @@ export default function ChatPanel() {
         ),
     );
   }
-
   async function handleSend(
     prompt: string,
+    inputs?: AIOSInputItem[],
   ) {
     const cleanPrompt =
       prompt.trim();
-
+    const normalizedInputs =
+      Array.isArray(inputs)
+        ? inputs
+        : [];
     if (
-      !cleanPrompt ||
+      (
+        !cleanPrompt &&
+        normalizedInputs.length === 0
+      ) ||
       loading
     ) {
       return;
     }
-
+    const userContent =
+      cleanPrompt ||
+      buildInputSummary(
+        normalizedInputs,
+      );
     setMessages(
       (current) => [
         ...current,
         {
           role: "user",
           content:
-            cleanPrompt,
+            userContent,
         },
       ],
     );
-
     setLoading(true);
-
     scrollToBottom("smooth");
-
     try {
       const response =
         await fetch(
@@ -466,26 +452,24 @@ export default function ChatPanel() {
               JSON.stringify({
                 prompt:
                   cleanPrompt,
+                inputs:
+                  normalizedInputs,
               }),
           },
         );
-
       const data =
         (await response.json()) as
           ChatApiResponse;
-
       const actualProvider =
         normalizeProvider(
           data.provider,
           "mock",
         );
-
       const requestedProvider =
         normalizeProvider(
           data.requestedProvider,
           actualProvider,
         );
-
       setProviderState({
         provider:
           actualProvider,
@@ -498,29 +482,18 @@ export default function ChatPanel() {
         latencyMs:
           data.latencyMs,
       });
-
       if (!response.ok) {
         throw new Error(
           data.content ??
             copy.runtimeError,
         );
       }
-
-      /*
-       * Immediate rendering path.
-       *
-       * Do not wait for the second history GET.
-       * The answer returned by /api/chat is rendered
-       * immediately so the user sees the result as
-       * soon as the HTTP response arrives.
-       */
       const assistantContent =
         typeof data.content ===
           "string" &&
         data.content.trim()
           ? data.content.trim()
           : copy.unknownResponse;
-
       setMessages(
         (current) => [
           ...current,
@@ -532,81 +505,52 @@ export default function ChatPanel() {
           },
         ],
       );
-
       scrollToBottom("smooth");
-
-      /*
-       * Persistence reconciliation is deliberately
-       * deferred by one animation frame.
-       *
-       * This prevents canonical-memory replacement
-       * from hiding the just-generated answer before
-       * the browser paints it.
-       */
-window.requestAnimationFrame(
-  () => {
-    if (
-      !Array.isArray(
-        data.conversation,
-      )
-    ) {
-      return;
-    }
-
-    const canonical =
-      sanitizeRestoredMessages(
-        data.conversation,
+      window.requestAnimationFrame(
+        () => {
+          if (
+            !Array.isArray(
+              data.conversation,
+            )
+          ) {
+            return;
+          }
+          const canonical =
+            sanitizeRestoredMessages(
+              data.conversation,
+            );
+          if (
+            canonical.length ===
+            0
+          ) {
+            return;
+          }
+          const canonicalHasLatestAssistant =
+            canonical.some(
+              (message) =>
+                message.role ===
+                  "assistant" &&
+                message.content ===
+                  assistantContent,
+            );
+          if (
+            !canonicalHasLatestAssistant
+          ) {
+            return;
+          }
+          setMessages(
+            canonical,
+          );
+          scrollToBottom(
+            "smooth",
+          );
+        },
       );
-
-    if (
-      canonical.length ===
-      0
-    ) {
-      return;
-    }
-
-    /*
-     * C144.4.9.1
-     *
-     * Runtime result preservation.
-     *
-     * /api/chat may return a conversation snapshot
-     * that was created before the newest Runtime result
-     * was persisted into memory.
-     *
-     * Never replace a freshly rendered Runtime response
-     * with an older canonical snapshot.
-     */
-    const canonicalHasLatestAssistant =
-      canonical.some(
-        (message) =>
-          message.role ===
-            "assistant" &&
-          message.content ===
-            assistantContent,
-      );
-
-    if (
-      !canonicalHasLatestAssistant
-    ) {
-      return;
-    }
-
-    setMessages(
-      canonical,
-    );
-
-    scrollToBottom(
-      "smooth",
-    );
-  },
-);
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : copy.connectionError;
-
       setMessages(
         (current) => [
           ...current,
@@ -618,13 +562,10 @@ window.requestAnimationFrame(
           },
         ],
       );
-
       scrollToBottom("smooth");
     } finally {
       setLoading(false);
-
       void loadRuntimeStatus();
-
       window.requestAnimationFrame(
         () =>
           scrollToBottom(
@@ -633,22 +574,18 @@ window.requestAnimationFrame(
       );
     }
   }
-
   const actualProviderLabel =
     providerLabels[
       providerState.provider
     ];
-
   const requestedProviderLabel =
     providerLabels[
       providerState.requestedProvider
     ];
-
   const providerSummary =
     providerState.fallbackUsed
       ? `${actualProviderLabel} <- ${requestedProviderLabel}`
       : actualProviderLabel;
-
   return (
     <section
       style={{
@@ -706,7 +643,6 @@ window.requestAnimationFrame(
                     : "#22c55e",
               }}
             />
-
             <strong
               style={{
                 color:
@@ -719,7 +655,6 @@ window.requestAnimationFrame(
               AIOS
             </strong>
           </div>
-
           <div
             style={{
               marginTop: 3,
@@ -734,7 +669,6 @@ window.requestAnimationFrame(
               ` · ${providerState.latencyMs}ms`}
           </div>
         </div>
-
         {providerState.fallbackUsed &&
           providerState.error && (
             <span
@@ -752,7 +686,6 @@ window.requestAnimationFrame(
             </span>
           )}
       </header>
-
       <div
         ref={scrollRef}
         style={{
@@ -801,7 +734,6 @@ window.requestAnimationFrame(
             }
           />
         )}
-
         {loading && (
           <div
             aria-live="polite"
@@ -840,14 +772,12 @@ window.requestAnimationFrame(
             >
               AI
             </span>
-
             <span>
               {copy.thinking}
             </span>
           </div>
         )}
       </div>
-
       <div
         style={{
           padding:
