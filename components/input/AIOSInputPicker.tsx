@@ -22,6 +22,17 @@ interface Props {
     inputs: AIOSInputItem[],
   ) => void;
 }
+interface AIOSNativePhotoBridge {
+  isAvailable: () => boolean;
+  pickPhotos: () => Promise<File[]>;
+}
+declare global {
+  interface Window {
+    AIOSNativeInput?: {
+      pickPhotos?: () => Promise<unknown>;
+    };
+  }
+}
 const MAX_INPUTS = 8;
 const MAX_IMAGE_BYTES =
   20 * 1024 * 1024;
@@ -228,6 +239,42 @@ function localized(
   }
   return zh;
 }
+function getNativePhotoBridge(): AIOSNativePhotoBridge {
+  return {
+    isAvailable() {
+      return (
+        typeof window !==
+          "undefined" &&
+        typeof window.AIOSNativeInput
+          ?.pickPhotos ===
+          "function"
+      );
+    },
+    async pickPhotos() {
+      if (
+        !this.isAvailable() ||
+        !window.AIOSNativeInput?.pickPhotos
+      ) {
+        return [];
+      }
+      const result =
+        await window.AIOSNativeInput.pickPhotos();
+      if (
+        !Array.isArray(result)
+      ) {
+        return [];
+      }
+      return result.filter(
+        (
+          value,
+        ): value is File =>
+          typeof File !==
+            "undefined" &&
+          value instanceof File,
+      );
+    },
+  };
+}
 function getInputItem(
   file: File,
   source: AIOSInputSource,
@@ -290,6 +337,14 @@ export default function AIOSInputPicker({
     inputError,
     setInputError,
   ] = useState("");
+  const [
+    nativePhotoAvailable,
+    setNativePhotoAvailable,
+  ] = useState(false);
+  const [
+    nativePhotoLoading,
+    setNativePhotoLoading,
+  ] = useState(false);
   const cameraRef =
     useRef<HTMLInputElement | null>(
       null,
@@ -365,7 +420,7 @@ export default function AIOSInputPicker({
     return null;
   }
   function addFiles(
-    files: FileList | null,
+    files: FileList | File[],
     source: AIOSInputSource,
   ) {
     if (
@@ -471,11 +526,61 @@ export default function AIOSInputPicker({
       ...acceptedItems,
     ]);
   }
+  async function handlePhotoPicker() {
+    if (
+      disabled ||
+      nativePhotoLoading
+    ) {
+      return;
+    }
+    const bridge =
+      getNativePhotoBridge();
+    if (
+      !bridge.isAvailable()
+    ) {
+      photoRef.current?.click();
+      return;
+    }
+    setInputError("");
+    setNativePhotoLoading(true);
+    try {
+      const files =
+        await bridge.pickPhotos();
+      if (
+        files.length === 0
+      ) {
+        return;
+      }
+      addFiles(
+        files,
+        "photo-library",
+      );
+    } catch (error) {
+      setInputError(
+        error instanceof Error
+          ? error.message
+          : localized(
+              locale,
+              "照片选择失败，请重试。",
+              "Photo selection failed. Please try again.",
+              "写真の選択に失敗しました。もう一度お試しください。",
+            ),
+      );
+    } finally {
+      setNativePhotoLoading(
+        false,
+      );
+    }
+  }
   function handleCameraChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
     addFiles(
-      event.target.files,
+      event.target.files
+        ? Array.from(
+            event.target.files,
+          )
+        : [],
       "camera",
     );
     event.target.value =
@@ -485,7 +590,11 @@ export default function AIOSInputPicker({
     event: ChangeEvent<HTMLInputElement>,
   ) {
     addFiles(
-      event.target.files,
+      event.target.files
+        ? Array.from(
+            event.target.files,
+          )
+        : [],
       "photo-library",
     );
     event.target.value =
@@ -495,7 +604,11 @@ export default function AIOSInputPicker({
     event: ChangeEvent<HTMLInputElement>,
   ) {
     addFiles(
-      event.target.files,
+      event.target.files
+        ? Array.from(
+            event.target.files,
+          )
+        : [],
       "file-picker",
     );
     event.target.value =
@@ -538,10 +651,14 @@ export default function AIOSInputPicker({
         ref={photoRef}
         type="file"
         accept={PHOTO_ACCEPT}
+        multiple
         onChange={
           handlePhotoChange
         }
-        disabled={disabled}
+        disabled={
+          disabled ||
+          nativePhotoLoading
+        }
         style={{
           display: "none",
         }}
@@ -586,10 +703,13 @@ export default function AIOSInputPicker({
       >
         <button
           type="button"
-          disabled={disabled}
-          onClick={() =>
-            cameraRef.current?.click()
+          disabled={
+            disabled ||
+            nativePhotoLoading
           }
+          onClick={() => {
+            cameraRef.current?.click();
+          }}
           aria-label={localized(
             locale,
             "打开相机",
@@ -607,8 +727,7 @@ export default function AIOSInputPicker({
             height: 40,
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
+            justifyContent: "center",
             gap: 6,
             padding: "0 11px",
             border:
@@ -643,10 +762,13 @@ export default function AIOSInputPicker({
         </button>
         <button
           type="button"
-          disabled={disabled}
-          onClick={() =>
-            photoRef.current?.click()
+          disabled={
+            disabled ||
+            nativePhotoLoading
           }
+          onClick={() => {
+            void handlePhotoPicker();
+          }}
           aria-label={localized(
             locale,
             "选择照片",
@@ -664,8 +786,7 @@ export default function AIOSInputPicker({
             height: 40,
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
+            justifyContent: "center",
             gap: 6,
             padding: "0 11px",
             border:
@@ -687,7 +808,9 @@ export default function AIOSInputPicker({
           }}
         >
           <span aria-hidden="true">
-            🖼️
+            {nativePhotoLoading
+              ? "…"
+              : "🖼️"}
           </span>
           <span>
             {localized(
@@ -701,9 +824,9 @@ export default function AIOSInputPicker({
         <button
           type="button"
           disabled={disabled}
-          onClick={() =>
-            fileRef.current?.click()
-          }
+          onClick={() => {
+            fileRef.current?.click();
+          }}
           aria-label={localized(
             locale,
             "选择文件",
@@ -721,8 +844,7 @@ export default function AIOSInputPicker({
             height: 40,
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
+            justifyContent: "center",
             gap: 6,
             padding: "0 11px",
             border:
@@ -756,6 +878,23 @@ export default function AIOSInputPicker({
           </span>
         </button>
       </div>
+      {!nativePhotoAvailable && (
+        <div
+          style={{
+            marginTop: 7,
+            color: "#94a3b8",
+            fontSize: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          {localized(
+            locale,
+            "Safari 网页模式下，iOS 可能显示系统照片选择菜单；原生照片选择器接入后将直接调用设备照片库。",
+            "In Safari web mode, iOS may show its system photo chooser. A native photo bridge can open the device photo library directly.",
+            "Safari の Web モードでは iOS のシステム写真選択メニューが表示される場合があります。ネイティブ連携時は端末の写真ライブラリを直接開けます。",
+          )}
+        </div>
+      )}
       {inputError && (
         <div
           role="alert"
@@ -862,48 +1001,49 @@ export default function AIOSInputPicker({
                         )
                       : "—"}
                     {" · "}
-                    {
-                      item.metadata
-                        .mimeType
-                    }
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 3,
-                      color:
-                        "#94a3b8",
-                      fontSize: 10,
-                    }}
-                  >
-                    {item.kind ===
-                    "image"
+                    {item.processingStatus ===
+                    "ready"
                       ? localized(
                           locale,
-                          "图片：将进入 Vision / OCR 理解",
-                          "Image: sent to Vision / OCR understanding",
-                          "画像：Vision / OCR 理解へ送信",
+                          "已处理",
+                          "Ready",
+                          "処理済み",
                         )
-                      : localized(
-                          locale,
-                          "文件：按类型处理，部分格式仍可能等待解析器",
-                          "File: processed by type; some formats may remain pending",
-                          "ファイル：種類ごとに処理、一部形式は保留になる場合があります",
-                        )}
+                      : item.processingStatus ===
+                        "failed"
+                        ? localized(
+                            locale,
+                            "处理失败",
+                            "Failed",
+                            "失敗",
+                          )
+                        : item.kind ===
+                          "image"
+                          ? localized(
+                              locale,
+                              "等待视觉理解",
+                              "Waiting for vision understanding",
+                              "画像理解待ち",
+                            )
+                          : localized(
+                              locale,
+                              "等待文件解析",
+                              "Waiting for file parsing",
+                              "ファイル解析待ち",
+                            )}
                   </div>
                 </div>
                 <button
                   type="button"
-                  disabled={
-                    disabled
-                  }
                   onClick={() =>
                     removeInput(
                       item.id,
                     )
                   }
+                  disabled={disabled}
                   aria-label={localized(
                     locale,
-                    "删除输入",
+                    "移除输入",
                     "Remove input",
                     "入力を削除",
                   )}
@@ -911,23 +1051,18 @@ export default function AIOSInputPicker({
                     width: 30,
                     height: 30,
                     flexShrink: 0,
-                    display:
-                      "flex",
-                    alignItems:
-                      "center",
-                    justifyContent:
-                      "center",
                     border: 0,
                     borderRadius: 9,
                     background:
-                      "#ffffff",
+                      "#e2e8f0",
                     color:
-                      "#64748b",
-                    fontSize: 16,
+                      "#475569",
                     cursor:
                       disabled
                         ? "not-allowed"
                         : "pointer",
+                    fontSize: 15,
+                    fontWeight: 800,
                   }}
                 >
                   ×
@@ -940,33 +1075,17 @@ export default function AIOSInputPicker({
       {inputs.length > 0 && (
         <div
           style={{
-            marginTop: 7,
-            display: "flex",
-            justifyContent:
-              "space-between",
-            gap: 8,
-            color:
-              "#94a3b8",
+            marginTop: 6,
+            color: "#94a3b8",
             fontSize: 10,
-            lineHeight: 1.45,
           }}
         >
-          <span>
-            {localized(
-              locale,
-              `已选择 ${inputs.length}/${MAX_INPUTS} 个输入`,
-              `${inputs.length}/${MAX_INPUTS} inputs selected`,
-              `${inputs.length}/${MAX_INPUTS} 件の入力を選択中`,
-            )}
-          </span>
-          <span>
-            {localized(
-              locale,
-              "上传后由 AIOS Input Understanding 处理",
-              "Processed by AIOS Input Understanding after upload",
-              "アップロード後に AIOS Input Understanding が処理します",
-            )}
-          </span>
+          {localized(
+            locale,
+            `已选择 ${inputs.length}/${MAX_INPUTS}`,
+            `${inputs.length}/${MAX_INPUTS} inputs selected`,
+            `${inputs.length}/${MAX_INPUTS} 件を選択中`,
+          )}
         </div>
       )}
     </div>
