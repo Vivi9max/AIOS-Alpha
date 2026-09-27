@@ -108,7 +108,8 @@ const defaultProviderState:
 function isRuntimeWrapper(
   content: string,
 ): boolean {
-  const raw = content.trim();
+  const raw =
+    content.trim();
   if (!raw) {
     return false;
   }
@@ -172,8 +173,10 @@ function buildInputSummary(
       (
         name,
       ): name is string =>
-        typeof name === "string" &&
-        name.trim().length > 0,
+        typeof name ===
+          "string" &&
+        name.trim()
+          .length > 0,
     );
   if (names.length === 0) {
     return `Attached inputs: ${inputs.length}`;
@@ -188,7 +191,9 @@ function buildUnderstandingSummary(
   },
   locale: string,
 ): string {
-  if (locale === "zh-CN") {
+  if (
+    locale === "zh-CN"
+  ) {
     return [
       "输入理解完成。",
       `已理解：${result.understoodCount}`,
@@ -196,7 +201,9 @@ function buildUnderstandingSummary(
       `失败：${result.failedCount}`,
     ].join("\n");
   }
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     return [
       "入力理解が完了しました。",
       `理解済み：${result.understoodCount}`,
@@ -239,7 +246,9 @@ function buildUnderstandingEvidencePrompt(
         ].join("\n");
       },
     );
-  if (evidence.length === 0) {
+  if (
+    evidence.length === 0
+  ) {
     return prompt;
   }
   const evidenceLabel =
@@ -265,6 +274,111 @@ function buildUnderstandingEvidencePrompt(
     "",
     ...evidence,
     "=== END AIOS INPUT UNDERSTANDING EVIDENCE ===",
+  ].join("\n");
+}
+function buildUnderstandingFailureMessage(
+  locale: string,
+  understoodCount: number,
+  pendingCount: number,
+  failedCount: number,
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
+    if (
+      pendingCount > 0 &&
+      understoodCount === 0 &&
+      failedCount === 0
+    ) {
+      return [
+        "输入已接收，但当前没有可用的理解证据。",
+        `待处理：${pendingCount}`,
+        "当前 PDF / Office 等部分文件格式仍等待解析器支持。",
+        "AIOS 未将未经理解的文件当作已读取内容继续回答。",
+      ].join("\n");
+    }
+    if (
+      failedCount > 0 &&
+      understoodCount === 0
+    ) {
+      return [
+        "输入理解失败，AIOS 未继续执行普通 Runtime。",
+        `失败：${failedCount}`,
+        `待处理：${pendingCount}`,
+        "请检查文件格式、文件大小或重新上传。",
+      ].join("\n");
+    }
+    return [
+      "输入已接收，但没有产生足够的可用理解证据。",
+      `已理解：${understoodCount}`,
+      `待处理：${pendingCount}`,
+      `失败：${failedCount}`,
+      "AIOS 未将未经理解的文件内容当作已确认事实。",
+    ].join("\n");
+  }
+  if (
+    locale === "ja"
+  ) {
+    if (
+      pendingCount > 0 &&
+      understoodCount === 0 &&
+      failedCount === 0
+    ) {
+      return [
+        "入力を受け付けましたが、現在利用可能な理解エビデンスがありません。",
+        `保留：${pendingCount}`,
+        "PDF / Office など一部の形式はまだパーサー対応待ちです。",
+        "AIOS は未解析のファイルを読み取り済みとして回答しません。",
+      ].join("\n");
+    }
+    if (
+      failedCount > 0 &&
+      understoodCount === 0
+    ) {
+      return [
+        "入力理解に失敗したため、通常の Runtime は実行されませんでした。",
+        `失敗：${failedCount}`,
+        `保留：${pendingCount}`,
+        "ファイル形式、サイズを確認するか、再アップロードしてください。",
+      ].join("\n");
+    }
+    return [
+      "入力を受け付けましたが、十分な理解エビデンスを取得できませんでした。",
+      `理解済み：${understoodCount}`,
+      `保留：${pendingCount}`,
+      `失敗：${failedCount}`,
+      "AIOS は未解析のファイル内容を確認済みの事実として扱いません。",
+    ].join("\n");
+  }
+  if (
+    pendingCount > 0 &&
+    understoodCount === 0 &&
+    failedCount === 0
+  ) {
+    return [
+      "The input was received, but no usable understanding evidence is available.",
+      `Pending: ${pendingCount}`,
+      "Some formats such as PDF and Office files are still waiting for parser support.",
+      "AIOS will not treat an unprocessed file as already-read content.",
+    ].join("\n");
+  }
+  if (
+    failedCount > 0 &&
+    understoodCount === 0
+  ) {
+    return [
+      "Input understanding failed, so the normal Runtime was not executed.",
+      `Failed: ${failedCount}`,
+      `Pending: ${pendingCount}`,
+      "Check the file type and size, then try uploading again.",
+    ].join("\n");
+  }
+  return [
+    "The input was received, but it did not produce enough usable understanding evidence.",
+    `Understood: ${understoodCount}`,
+    `Pending: ${pendingCount}`,
+    `Failed: ${failedCount}`,
+    "AIOS will not treat unprocessed file content as verified fact.",
   ].join("\n");
 }
 export default function ChatPanel() {
@@ -543,33 +657,24 @@ export default function ChatPanel() {
         ),
       );
     try {
-      /*
-       * C164.7.4:
-       *
-       * Real uploaded/captured files
-       * must be understood BEFORE the
-       * normal Chat Runtime executes.
-       *
-       * The understanding result becomes
-       * explicit evidence in the Runtime
-       * prompt. This closes:
-       *
-       * Camera / Photo / File
-       * -> Upload
-       * -> Vision / OCR / Parser
-       * -> Evidence
-       * -> AIOS Runtime
-       * -> Answer
-       *
-       * The raw File is never inserted
-       * into the prompt.
-       */
       let understanding:
         Awaited<
           ReturnType<
             typeof executeAIOSInputUnderstandingBridge
           >
         > | null = null;
+      /*
+       * C164.8.2:
+       *
+       * File inputs now require a
+       * successful understanding stage
+       * before Chat Runtime execution.
+       *
+       * This prevents silent degradation
+       * where the user uploads a file but
+       * Runtime answers without actually
+       * using the file evidence.
+       */
       if (files.length > 0) {
         understanding =
           await executeAIOSInputUnderstandingBridge(
@@ -591,16 +696,22 @@ export default function ChatPanel() {
                 .trim()
                 .length > 0,
           );
+        /*
+         * A failed understanding request
+         * must never silently fall through
+         * to ordinary Runtime execution.
+         */
         if (
-          !hasUsableEvidence &&
-          !cleanPrompt
+          !understanding.success ||
+          !hasUsableEvidence
         ) {
           const message =
-            locale === "zh-CN"
-              ? "输入已接收，但当前没有可供 AIOS Runtime 使用的理解证据。图片可能无法识别，或该文件类型尚未支持。"
-              : locale === "ja"
-                ? "入力を受け付けましたが、AIOS Runtime で使用できる理解エビデンスを取得できませんでした。画像を認識できないか、このファイル形式はまだ対応していません。"
-                : "The input was received, but no usable understanding evidence was produced for the AIOS Runtime. The image may not be readable, or this file type may not be supported yet.";
+            buildUnderstandingFailureMessage(
+              locale,
+              understanding.understoodCount,
+              understanding.pendingCount,
+              understanding.failedCount,
+            );
           setMessages(
             (current) => [
               ...current,
@@ -647,7 +758,9 @@ export default function ChatPanel() {
             ),
           ),
         );
-        for (const entry of files) {
+        for (
+          const entry of files
+        ) {
           formData.append(
             "files",
             entry.file,
@@ -731,16 +844,9 @@ export default function ChatPanel() {
           ? data.content.trim()
           : "";
       /*
-       * C164.7.4:
-       *
-       * The evidence has already been
-       * supplied to Chat Runtime.
-       *
        * Only append a compact processing
-       * status here. Do not append the
-       * full Vision/OCR output again,
-       * otherwise the same evidence would
-       * be duplicated in the UI.
+       * status. The actual evidence has
+       * already been supplied to Runtime.
        */
       if (
         understanding &&
