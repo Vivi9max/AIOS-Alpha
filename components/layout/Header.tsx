@@ -81,6 +81,39 @@ const initialStatus:
     "unknown",
 };
 
+const productCopy = {
+  en: {
+    global:
+      "AIOS Global",
+    globalDescription:
+      "Global AIOS Runtime",
+    cn:
+      "AIOS CN",
+    cnDescription:
+      "CN Runtime",
+  },
+  "zh-CN": {
+    global:
+      "AIOS Global",
+    globalDescription:
+      "全球 AIOS Runtime",
+    cn:
+      "AIOS CN",
+    cnDescription:
+      "中国 AIOS Runtime",
+  },
+  ja: {
+    global:
+      "AIOS Global",
+    globalDescription:
+      "グローバル AIOS Runtime",
+    cn:
+      "AIOS CN",
+    cnDescription:
+      "中国向け AIOS Runtime",
+  },
+} as const;
+
 export default function Header() {
   const {
     locale,
@@ -90,10 +123,12 @@ export default function Header() {
   const pathname =
     usePathname();
 
-  const [runtime, setRuntime] =
-    useState<RuntimeState>(
-      initialStatus
-    );
+  const [
+    runtime,
+    setRuntime,
+  ] = useState<RuntimeState>(
+    initialStatus,
+  );
 
   const copy =
     runtimeStatusCopy[locale];
@@ -101,8 +136,15 @@ export default function Header() {
   const pageTitle =
     t(
       pageTitles[pathname] ??
-        "page.default"
+        "page.default",
     );
+
+  const isCN =
+    pathname === "/cn" ||
+    pathname.startsWith("/cn/");
+
+  const product =
+    productCopy[locale];
 
   useEffect(() => {
     let active =
@@ -119,14 +161,14 @@ export default function Header() {
 
               credentials:
                 "same-origin",
-            }
+            },
           );
 
         if (
           !response.ok
         ) {
           throw new Error(
-            copy.unavailable
+            copy.unavailable,
           );
         }
 
@@ -178,7 +220,7 @@ export default function Header() {
     const interval =
       window.setInterval(
         loadRuntimeStatus,
-        30000
+        30000,
       );
 
     return () => {
@@ -186,10 +228,12 @@ export default function Header() {
         false;
 
       window.clearInterval(
-        interval
+        interval,
       );
     };
-  }, [copy.unavailable]);
+  }, [
+    copy.unavailable,
+  ]);
 
   const statusLabel =
     runtime.status ===
@@ -296,13 +340,19 @@ export default function Header() {
                 999,
 
               background:
-                "rgba(59, 130, 246, 0.16)",
+                isCN
+                  ? "rgba(239, 68, 68, 0.16)"
+                  : "rgba(59, 130, 246, 0.16)",
 
               border:
-                "1px solid rgba(147, 197, 253, 0.35)",
+                isCN
+                  ? "1px solid rgba(252, 165, 165, 0.35)"
+                  : "1px solid rgba(147, 197, 253, 0.35)",
 
               color:
-                "#bfdbfe",
+                isCN
+                  ? "#fecaca"
+                  : "#bfdbfe",
 
               fontSize:
                 11,
@@ -314,7 +364,9 @@ export default function Header() {
                 "0.04em",
             }}
           >
-            {APP_BADGE}
+            {isCN
+              ? product.cn
+              : product.global}
           </span>
         </div>
 
@@ -385,6 +437,16 @@ export default function Header() {
           </span>
 
           <span>
+            {isCN
+              ? product.cnDescription
+              : product.globalDescription}
+          </span>
+
+          <span>
+            ·
+          </span>
+
+          <span>
             {copy.provider}
             {": "}
             {runtime.provider}
@@ -396,6 +458,14 @@ export default function Header() {
 
           <span>
             {APP_CONFIG.codename}
+          </span>
+
+          <span>
+            ·
+          </span>
+
+          <span>
+            {APP_BADGE}
           </span>
         </div>
       </div>
