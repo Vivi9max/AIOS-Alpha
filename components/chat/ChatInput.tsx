@@ -11,6 +11,7 @@ import {
   chatInputCopy,
 } from "@/lib/i18n/chat-input";
 import AIOSInputPicker from "@/components/input/AIOSInputPicker";
+import AIOSVoiceInput from "@/components/input/AIOSVoiceInput";
 import type {
   AIOSInputItem,
 } from "@/lib/runtime/input/aios-input-types";
@@ -580,7 +581,7 @@ export default function ChatInput({
               locale,
               "视频生成失败。",
               "Video generation failed.",
-              "\u52d5\u753b\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u305f\u3002",
+              "\u52d5\u753b\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002",
             ),
       );
     } finally {
@@ -879,7 +880,7 @@ export default function ChatInput({
                 "#ffffff",
               fontSize:
                 12,
-                fontWeight:
+              fontWeight:
                 600,
             }}
           >
@@ -1081,6 +1082,19 @@ export default function ChatInput({
         >
           🎬
         </button>
+        {!mediaMode && (
+          <AIOSVoiceInput
+            value={value}
+            locale={locale}
+            disabled={
+              loading ||
+              mediaLoading
+            }
+            onChange={
+              setValue
+            }
+          />
+        )}
         <textarea
           ref={
             textareaRef
