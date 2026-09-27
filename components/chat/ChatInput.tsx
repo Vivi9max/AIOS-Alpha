@@ -1,24 +1,23 @@
 "use client";
-
 import {
   useEffect,
   useRef,
   useState,
 } from "react";
-
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
-
 import {
   chatInputCopy,
 } from "@/lib/i18n/chat-input";
-
+import AIOSInputPicker from "@/components/input/AIOSInputPicker";
+import type {
+  AIOSInputItem,
+} from "@/lib/runtime/input/aios-input-types";
 type MediaLanguage =
   | "zh-CN"
   | "en-US"
   | "ja-JP";
-
 type MediaAspectRatio =
   | "9:16"
   | "16:9"
@@ -26,27 +25,25 @@ type MediaAspectRatio =
   | "4:5"
   | "4:3"
   | "3:2";
-
 type MediaDuration =
   | 30
   | 60
   | 90
   | 120;
-
 type MediaResolution =
   | "720p"
   | "1080p"
   | "4k";
-
 type MediaEngine =
   | "composer"
   | "veo";
-
 interface Props {
   loading: boolean;
-  onSend: (text: string) => void;
+  onSend: (
+    text: string,
+    inputs?: AIOSInputItem[],
+  ) => void;
 }
-
 const LANGUAGE_OPTIONS = [
   {
     value:
@@ -67,7 +64,6 @@ const LANGUAGE_OPTIONS = [
       "\u65e5\u672c\u8a9e",
   },
 ];
-
 const DURATION_OPTIONS = [
   {
     value:
@@ -94,7 +90,6 @@ const DURATION_OPTIONS = [
       "2\u5206\u949f",
   },
 ];
-
 const RESOLUTION_OPTIONS = [
   {
     value:
@@ -115,7 +110,6 @@ const RESOLUTION_OPTIONS = [
       "4K",
   },
 ];
-
 const ASPECT_OPTIONS = [
   "9:16",
   "16:9",
@@ -124,7 +118,6 @@ const ASPECT_OPTIONS = [
   "4:3",
   "3:2",
 ] as MediaAspectRatio[];
-
 function localized(
   locale: string,
   zh: string,
@@ -136,16 +129,13 @@ function localized(
   ) {
     return ja;
   }
-
   if (
     locale === "en"
   ) {
     return en;
   }
-
   return zh;
 }
-
 export default function ChatInput({
   loading,
   onSend,
@@ -153,25 +143,26 @@ export default function ChatInput({
   const {
     locale,
   } = useLanguage();
-
   const copy =
     chatInputCopy[locale];
-
   const [
     value,
     setValue,
   ] = useState("");
-
+  const [
+    inputs,
+    setInputs,
+  ] = useState<
+    AIOSInputItem[]
+  >([]);
   const [
     isTouchDevice,
     setIsTouchDevice,
   ] = useState(false);
-
   const [
     mediaMode,
     setMediaMode,
   ] = useState(false);
-
   const [
     mediaEngine,
     setMediaEngine,
@@ -179,7 +170,6 @@ export default function ChatInput({
     useState<MediaEngine>(
       "composer",
     );
-
   const [
     mediaLanguage,
     setMediaLanguage,
@@ -191,7 +181,6 @@ export default function ChatInput({
           ? "en-US"
           : "zh-CN",
     );
-
   const [
     mediaDuration,
     setMediaDuration,
@@ -199,7 +188,6 @@ export default function ChatInput({
     useState<MediaDuration>(
       30,
     );
-
   const [
     mediaAspectRatio,
     setMediaAspectRatio,
@@ -207,7 +195,6 @@ export default function ChatInput({
     useState<MediaAspectRatio>(
       "9:16",
     );
-
   const [
     mediaResolution,
     setMediaResolution,
@@ -215,27 +202,22 @@ export default function ChatInput({
     useState<MediaResolution>(
       "1080p",
     );
-
   const [
     mediaLoading,
     setMediaLoading,
   ] = useState(false);
-
   const [
     mediaStatus,
     setMediaStatus,
   ] = useState("");
-
   const [
     mediaVideoUrl,
     setMediaVideoUrl,
   ] = useState("");
-
   const textareaRef =
     useRef<HTMLTextAreaElement>(
       null,
     );
-
   useEffect(() => {
     const detectInputMode =
       () => {
@@ -243,23 +225,18 @@ export default function ChatInput({
           window.matchMedia(
             "(pointer: coarse)",
           ).matches;
-
         const touch =
           navigator.maxTouchPoints >
           0;
-
         setIsTouchDevice(
           coarse || touch,
         );
       };
-
     detectInputMode();
-
     window.addEventListener(
       "resize",
       detectInputMode,
     );
-
     return () => {
       window.removeEventListener(
         "resize",
@@ -267,25 +244,20 @@ export default function ChatInput({
       );
     };
   }, []);
-
   useEffect(() => {
     const textarea =
       textareaRef.current;
-
     if (!textarea) {
       return;
     }
-
     textarea.style.height =
       "auto";
-
     textarea.style.height =
       `${Math.min(
         textarea.scrollHeight,
         150,
       )}px`;
   }, [value]);
-
   useEffect(() => {
     setMediaLanguage(
       locale === "ja"
@@ -295,46 +267,44 @@ export default function ChatInput({
           : "zh-CN",
     );
   }, [locale]);
-
   function resetTextareaHeight() {
     const textarea =
       textareaRef.current;
-
     if (!textarea) {
       return;
     }
-
     textarea.style.height =
       "48px";
   }
-
   function send() {
     const text =
       value.trim();
-
     if (
-      !text ||
+      (!text &&
+        inputs.length ===
+          0) ||
       loading ||
       mediaLoading
     ) {
       return;
     }
-
-    onSend(text);
-
+    onSend(
+      text,
+      inputs.length > 0
+        ? inputs
+        : undefined,
+    );
     setValue("");
-
+    setInputs([]);
     window.requestAnimationFrame(
       resetTextareaHeight,
     );
   }
-
   async function pollMediaVideo(
     videoId: string,
   ) {
     const maxAttempts =
       120;
-
     for (
       let attempt = 0;
       attempt <
@@ -349,18 +319,14 @@ export default function ChatInput({
           {
             method:
               "GET",
-
             credentials:
               "same-origin",
-
             cache:
               "no-store",
           },
         );
-
       const data =
         await response.json();
-
       if (
         !response.ok ||
         !data.success
@@ -371,14 +337,12 @@ export default function ChatInput({
             "Unable to retrieve video status.",
         );
       }
-
       const progress =
         Number(
           data.providerProgress ??
             data.job?.progress ??
             0,
         );
-
       setMediaStatus(
         localized(
           locale,
@@ -387,7 +351,6 @@ export default function ChatInput({
           `Veo\u52d5\u753b\u751f\u6210\u4e2d\u2026 ${progress}%`,
         ),
       );
-
       if (
         data.providerStatus ===
           "completed" &&
@@ -397,7 +360,6 @@ export default function ChatInput({
         setMediaVideoUrl(
           data.contentUrl,
         );
-
         setMediaStatus(
           localized(
             locale,
@@ -406,10 +368,8 @@ export default function ChatInput({
             "Veo\u52d5\u753b\u751f\u6210\u5b8c\u4e86\u3002",
           ),
         );
-
         return;
       }
-
       if (
         data.providerStatus ===
         "failed"
@@ -421,7 +381,6 @@ export default function ChatInput({
             "Veo video generation failed.",
         );
       }
-
       await new Promise(
         (resolve) =>
           window.setTimeout(
@@ -430,7 +389,6 @@ export default function ChatInput({
           ),
       );
     }
-
     throw new Error(
       localized(
         locale,
@@ -440,11 +398,9 @@ export default function ChatInput({
       ),
     );
   }
-
   async function generateVeoVideo() {
     const prompt =
       value.trim();
-
     if (
       !prompt ||
       loading ||
@@ -452,11 +408,9 @@ export default function ChatInput({
     ) {
       return;
     }
-
     setMediaLoading(true);
     setMediaStatus("");
     setMediaVideoUrl("");
-
     try {
       const response =
         await fetch(
@@ -464,49 +418,36 @@ export default function ChatInput({
           {
             method:
               "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
-
               "x-aios-locale":
                 locale,
             },
-
             credentials:
               "same-origin",
-
             body:
               JSON.stringify({
                 operation:
                   "video-create",
-
                 prompt,
-
                 language:
                   mediaLanguage,
-
                 durationSeconds:
                   mediaDuration,
-
                 aspectRatio:
                   mediaAspectRatio,
-
                 provider:
                   "google-veo",
-
                 model:
                   "veo-3.1-generate-preview",
-
                 resolution:
                   mediaResolution,
               }),
           },
         );
-
       const data =
         await response.json();
-
       if (
         !response.ok ||
         !data.success
@@ -517,10 +458,8 @@ export default function ChatInput({
             "Veo video generation failed.",
         );
       }
-
       const videoId =
         data.providerJobId;
-
       if (
         typeof videoId !==
         "string"
@@ -529,7 +468,6 @@ export default function ChatInput({
           "Media Generation Router did not return a provider operation ID.",
         );
       }
-
       setMediaStatus(
         localized(
           locale,
@@ -538,13 +476,10 @@ export default function ChatInput({
           "\u5b9f\u969b\u306eVeo Text-to-Video\u30bf\u30b9\u30af\u3092\u9001\u4fe1\u3057\u307e\u3057\u305f\u3002\u751f\u6210\u4e2d\u2026",
         ),
       );
-
       await pollMediaVideo(
         videoId,
       );
-
       setValue("");
-
       window.requestAnimationFrame(
         resetTextareaHeight,
       );
@@ -565,11 +500,9 @@ export default function ChatInput({
       );
     }
   }
-
   async function generateComposerVideo() {
     const prompt =
       value.trim();
-
     if (
       !prompt ||
       loading ||
@@ -577,11 +510,9 @@ export default function ChatInput({
     ) {
       return;
     }
-
     setMediaLoading(true);
     setMediaStatus("");
     setMediaVideoUrl("");
-
     try {
       const response =
         await fetch(
@@ -589,49 +520,36 @@ export default function ChatInput({
           {
             method:
               "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
-
               "x-aios-locale":
                 locale,
             },
-
             credentials:
               "same-origin",
-
             body:
               JSON.stringify({
                 operation:
                   "render",
-
                 prompt,
-
                 language:
                   mediaLanguage,
-
                 durationSeconds:
                   mediaDuration,
-
                 aspectRatio:
                   mediaAspectRatio,
-
                 resolution:
                   mediaResolution,
-
                 provider:
                   "aios-composer",
-
                 includeSubtitles:
                   true,
               }),
           },
         );
-
       const data =
         await response.json();
-
       if (
         !response.ok ||
         !data.success
@@ -642,7 +560,6 @@ export default function ChatInput({
             "Media generation failed.",
         );
       }
-
       setMediaStatus(
         localized(
           locale,
@@ -651,9 +568,7 @@ export default function ChatInput({
           `AIOS\u52d5\u753b\u306e\u5408\u6210\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\uff08${mediaResolution.toUpperCase()}\uff09\u3002`,
         ),
       );
-
       setValue("");
-
       window.requestAnimationFrame(
         resetTextareaHeight,
       );
@@ -665,7 +580,7 @@ export default function ChatInput({
               locale,
               "视频生成失败。",
               "Video generation failed.",
-              "\u52d5\u753b\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002",
+              "\u52d5\u753b\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u305f\u3002",
             ),
       );
     } finally {
@@ -674,7 +589,6 @@ export default function ChatInput({
       );
     }
   }
-
   function generateVideo() {
     if (
       mediaEngine ===
@@ -683,21 +597,37 @@ export default function ChatInput({
       void generateVeoVideo();
       return;
     }
-
     void generateComposerVideo();
   }
-
   const disabled =
     loading ||
     mediaLoading ||
-    !value.trim();
-
+    (!value.trim() &&
+      inputs.length ===
+        0);
   return (
     <div
       style={{
         width: "100%",
       }}
     >
+      {!mediaMode && (
+        <div
+          style={{
+            marginBottom: 8,
+          }}
+        >
+          <AIOSInputPicker
+            disabled={
+              loading ||
+              mediaLoading
+            }
+            onInputsChange={
+              setInputs
+            }
+          />
+        </div>
+      )}
       {mediaMode && (
         <div
           style={{
@@ -729,11 +659,9 @@ export default function ChatInput({
                 event.target
                   .value as MediaEngine,
               );
-
               setMediaStatus(
                 "",
               );
-
               setMediaVideoUrl(
                 "",
               );
@@ -768,12 +696,10 @@ export default function ChatInput({
                 "AIOS\u5408\u6210",
               )}
             </option>
-
             <option value="veo">
               Veo TTV
             </option>
           </select>
-
           <select
             value={
               mediaLanguage
@@ -825,7 +751,6 @@ export default function ChatInput({
               ),
             )}
           </select>
-
           <select
             value={
               mediaDuration
@@ -879,7 +804,6 @@ export default function ChatInput({
               ),
             )}
           </select>
-
           <select
             value={
               mediaAspectRatio
@@ -925,7 +849,6 @@ export default function ChatInput({
               ),
             )}
           </select>
-
           <select
             value={
               mediaResolution
@@ -956,7 +879,7 @@ export default function ChatInput({
                 "#ffffff",
               fontSize:
                 12,
-              fontWeight:
+                fontWeight:
                 600,
             }}
           >
@@ -981,7 +904,6 @@ export default function ChatInput({
           </select>
         </div>
       )}
-
       {mediaMode &&
         mediaEngine ===
           "veo" && (
@@ -1011,7 +933,6 @@ export default function ChatInput({
             )}
           </div>
         )}
-
       {mediaStatus && (
         <div
           style={{
@@ -1036,7 +957,6 @@ export default function ChatInput({
           {mediaStatus}
         </div>
       )}
-
       {mediaVideoUrl && (
         <div
           style={{
@@ -1067,7 +987,6 @@ export default function ChatInput({
                 "#000000",
             }}
           />
-
           <a
             href={
               mediaVideoUrl
@@ -1097,7 +1016,6 @@ export default function ChatInput({
           </a>
         </div>
       )}
-
       <div
         style={{
           display:
@@ -1122,11 +1040,9 @@ export default function ChatInput({
               ) =>
                 !current,
             );
-
             setMediaStatus(
               "",
             );
-
             setMediaVideoUrl(
               "",
             );
@@ -1165,7 +1081,6 @@ export default function ChatInput({
         >
           🎬
         </button>
-
         <textarea
           ref={
             textareaRef
@@ -1191,7 +1106,14 @@ export default function ChatInput({
                   "Describe the video you want…",
                   "\u52d5\u753b\u306e\u5185\u5bb9\u3092\u5165\u529b\u2026",
                 )
-              : copy.placeholder
+              : inputs.length > 0
+                ? localized(
+                    locale,
+                    "补充说明后发送……",
+                    "Add instructions and send…",
+                    "説明を追加して送信…",
+                  )
+                : copy.placeholder
           }
           aria-label={
             copy.ariaLabel
@@ -1212,14 +1134,12 @@ export default function ChatInput({
             ) {
               return;
             }
-
             if (
               event.key ===
                 "Enter" &&
               !event.shiftKey
             ) {
               event.preventDefault();
-
               if (
                 mediaMode
               ) {
@@ -1267,7 +1187,6 @@ export default function ChatInput({
               "none",
           }}
         />
-
         <button
           type="button"
           disabled={
