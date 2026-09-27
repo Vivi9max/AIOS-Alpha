@@ -1,25 +1,34 @@
 "use client";
+
 import {
   useEffect,
   useRef,
   useState,
 } from "react";
+import {
+  createPortal,
+} from "react-dom";
+
 interface AIOSSpeechRecognitionResult {
   isFinal: boolean;
   [index: number]: {
     transcript: string;
   };
 }
+
 interface AIOSSpeechRecognitionResultList {
   length: number;
   [index: number]: AIOSSpeechRecognitionResult;
 }
+
 interface AIOSSpeechRecognitionEvent {
   results: AIOSSpeechRecognitionResultList;
 }
+
 interface AIOSSpeechRecognitionErrorEvent {
   error: string;
 }
+
 interface AIOSSpeechRecognition {
   lang: string;
   continuous: boolean;
@@ -37,43 +46,57 @@ interface AIOSSpeechRecognition {
   stop: () => void;
   abort: () => void;
 }
+
 interface AIOSSpeechRecognitionConstructor {
   new (): AIOSSpeechRecognition;
 }
+
 interface Props {
   value: string;
   disabled?: boolean;
   locale?: string;
   onChange: (value: string) => void;
 }
+
+interface StatusPosition {
+  top: number;
+  left: number;
+}
+
 function getSpeechRecognitionConstructor():
   | AIOSSpeechRecognitionConstructor
   | null {
   if (typeof window === "undefined") {
     return null;
   }
+
   const browserWindow =
     window as Window & {
       SpeechRecognition?: AIOSSpeechRecognitionConstructor;
       webkitSpeechRecognition?: AIOSSpeechRecognitionConstructor;
     };
+
   return (
     browserWindow.SpeechRecognition ??
     browserWindow.webkitSpeechRecognition ??
     null
   );
 }
+
 function getRecognitionLanguage(
   locale: string,
 ): string {
   if (locale === "ja") {
     return "ja-JP";
   }
+
   if (locale === "en") {
     return "en-US";
   }
+
   return "zh-CN";
 }
+
 function getLocalizedText(
   locale: string,
   zh: string,
@@ -83,11 +106,14 @@ function getLocalizedText(
   if (locale === "ja") {
     return ja;
   }
+
   if (locale === "en") {
     return en;
   }
+
   return zh;
 }
+
 export default function AIOSVoiceInput({
   value,
   disabled = false,
@@ -96,51 +122,195 @@ export default function AIOSVoiceInput({
 }: Props) {
   const [supported, setSupported] =
     useState(false);
+
   const [listening, setListening] =
     useState(false);
+
   const [status, setStatus] =
     useState("");
+
+  const [statusPosition, setStatusPosition] =
+    useState<StatusPosition | null>(
+      null,
+    );
+
+  const buttonRef =
+    useRef<HTMLButtonElement | null>(
+      null,
+    );
+
   const recognitionRef =
     useRef<AIOSSpeechRecognition | null>(
       null,
     );
+
   const valueRef =
     useRef(value);
+
   useEffect(() => {
     valueRef.current =
       value;
   }, [value]);
+
   useEffect(() => {
     const constructor =
       getSpeechRecognitionConstructor();
+
     setSupported(
       constructor !== null &&
         window.isSecureContext,
     );
   }, []);
+
   useEffect(() => {
     return () => {
       const recognition =
         recognitionRef.current;
+
       if (!recognition) {
         return;
       }
+
       try {
         recognition.abort();
       } catch {
         // Ignore cleanup errors.
       }
+
       recognitionRef.current =
         null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!status) {
+      setStatusPosition(null);
+      return;
+    }
+
+    function updateStatusPosition() {
+      const button =
+        buttonRef.current;
+
+      if (!button) {
+        return;
+      }
+
+      const rect =
+        button.getBoundingClientRect();
+
+      const viewportWidth =
+        window.innerWidth;
+
+      const viewportHeight =
+        window.innerHeight;
+
+      const horizontalPadding =
+        12;
+
+      const estimatedWidth =
+        Math.min(
+          240,
+          viewportWidth -
+            horizontalPadding * 2,
+        );
+
+      const estimatedHeight =
+        48;
+
+      const gap =
+        8;
+
+      let left =
+        rect.left +
+        rect.width / 2 -
+        estimatedWidth / 2;
+
+      left = Math.max(
+        horizontalPadding,
+        Math.min(
+          left,
+          viewportWidth -
+            estimatedWidth -
+            horizontalPadding,
+        ),
+      );
+
+      let top =
+        rect.top -
+        estimatedHeight -
+        gap;
+
+      if (
+        top <
+        horizontalPadding
+      ) {
+        top =
+          rect.bottom +
+          gap;
+      }
+
+      if (
+        top +
+          estimatedHeight >
+        viewportHeight -
+          horizontalPadding
+      ) {
+        top =
+          Math.max(
+            horizontalPadding,
+            viewportHeight -
+              estimatedHeight -
+              horizontalPadding,
+          );
+      }
+
+      setStatusPosition({
+        top,
+        left,
+      });
+    }
+
+    updateStatusPosition();
+
+    window.addEventListener(
+      "resize",
+      updateStatusPosition,
+      {
+        passive: true,
+      },
+    );
+
+    window.addEventListener(
+      "scroll",
+      updateStatusPosition,
+      {
+        passive: true,
+      },
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        updateStatusPosition,
+      );
+
+      window.removeEventListener(
+        "scroll",
+        updateStatusPosition,
+      );
+    };
+  }, [status]);
+
   function stopRecognition() {
     const recognition =
       recognitionRef.current;
+
     if (!recognition) {
       setListening(false);
       return;
     }
+
     try {
       recognition.stop();
     } catch {
@@ -150,8 +320,10 @@ export default function AIOSVoiceInput({
         // Ignore stop errors.
       }
     }
+
     setListening(false);
   }
+
   function startRecognition() {
     if (
       disabled ||
@@ -159,8 +331,10 @@ export default function AIOSVoiceInput({
     ) {
       return;
     }
+
     const constructor =
       getSpeechRecognitionConstructor();
+
     if (
       !constructor ||
       !window.isSecureContext
@@ -175,21 +349,28 @@ export default function AIOSVoiceInput({
       );
       return;
     }
+
     const recognition =
       new constructor();
+
     recognition.lang =
       getRecognitionLanguage(
         locale,
       );
+
     recognition.continuous =
       false;
+
     recognition.interimResults =
       true;
+
     recognition.maxAlternatives =
       1;
+
     recognition.onstart =
       () => {
         setListening(true);
+
         setStatus(
           getLocalizedText(
             locale,
@@ -199,10 +380,12 @@ export default function AIOSVoiceInput({
           ),
         );
       };
+
     recognition.onresult =
       (event) => {
         let finalTranscript =
           "";
+
         for (
           let index = 0;
           index <
@@ -211,6 +394,7 @@ export default function AIOSVoiceInput({
         ) {
           const result =
             event.results[index];
+
           if (
             result.isFinal
           ) {
@@ -219,28 +403,36 @@ export default function AIOSVoiceInput({
                 .transcript;
           }
         }
+
         const cleaned =
           finalTranscript.trim();
+
         if (!cleaned) {
           return;
         }
+
         const current =
           valueRef.current.trim();
+
         const nextValue =
           current.length > 0
             ? current +
               " " +
               cleaned
             : cleaned;
+
         onChange(
           nextValue,
         );
+
         valueRef.current =
           nextValue;
       };
+
     recognition.onerror =
       (event) => {
         setListening(false);
+
         if (
           event.error ===
           "not-allowed"
@@ -255,6 +447,7 @@ export default function AIOSVoiceInput({
           );
           return;
         }
+
         if (
           event.error ===
           "no-speech"
@@ -269,6 +462,7 @@ export default function AIOSVoiceInput({
           );
           return;
         }
+
         if (
           event.error ===
           "audio-capture"
@@ -283,6 +477,7 @@ export default function AIOSVoiceInput({
           );
           return;
         }
+
         setStatus(
           getLocalizedText(
             locale,
@@ -292,21 +487,28 @@ export default function AIOSVoiceInput({
           ),
         );
       };
+
     recognition.onend =
       () => {
         setListening(false);
+
         recognitionRef.current =
           null;
       };
+
     recognitionRef.current =
       recognition;
+
     setStatus("");
+
     try {
       recognition.start();
     } catch {
       recognitionRef.current =
         null;
+
       setListening(false);
+
       setStatus(
         getLocalizedText(
           locale,
@@ -317,16 +519,20 @@ export default function AIOSVoiceInput({
       );
     }
   }
+
   function toggleRecognition() {
     if (listening) {
       stopRecognition();
       return;
     }
+
     startRecognition();
   }
+
   if (!supported) {
     return null;
   }
+
   const label =
     listening
       ? getLocalizedText(
@@ -341,125 +547,143 @@ export default function AIOSVoiceInput({
           "Start voice input",
           "音声入力を開始",
         );
+
+  const statusPortal =
+    status &&
+    statusPosition &&
+    typeof document !==
+      "undefined"
+      ? createPortal(
+          <div
+            aria-live="polite"
+            style={{
+              position:
+                "fixed",
+              top:
+                statusPosition.top,
+              left:
+                statusPosition.left,
+              width:
+                "max-content",
+              maxWidth:
+                "calc(100vw - 24px)",
+              minWidth:
+                120,
+              padding:
+                "7px 12px",
+              boxSizing:
+                "border-box",
+              border:
+                "1px solid #e2e8f0",
+              borderRadius:
+                10,
+              background:
+                "rgba(248, 250, 252, 0.98)",
+              color:
+                listening
+                  ? "#475569"
+                  : "#64748b",
+              fontSize:
+                12,
+              lineHeight:
+                1.4,
+              textAlign:
+                "center",
+              whiteSpace:
+                "normal",
+              wordBreak:
+                "break-word",
+              pointerEvents:
+                "none",
+              zIndex:
+                2147483647,
+              boxShadow:
+                "0 4px 14px rgba(15, 23, 42, 0.12)",
+            }}
+          >
+            {status}
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 44,
-        height: 48,
-        flexShrink: 0,
-        order: 1,
-        overflow: "visible",
-      }}
-    >
-      <button
-        type="button"
-        onClick={
-          toggleRecognition
-        }
-        disabled={
-          disabled
-        }
-        aria-label={
-          label
-        }
-        title={
-          label
-        }
+    <>
+      <div
         style={{
+          position: "relative",
           width: 44,
           height: 48,
-          boxSizing:
-            "border-box",
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
-          border:
-            listening
-              ? "1px solid #ef4444"
-              : "1px solid #d1d5db",
-          borderRadius:
-            14,
-          background:
-            listening
-              ? "#fef2f2"
-              : disabled
-                ? "#f3f4f6"
-                : "#ffffff",
-          color:
-            listening
-              ? "#dc2626"
-              : "#334155",
-          cursor:
-            disabled
-              ? "not-allowed"
-              : "pointer",
-          fontSize:
-            18,
-          WebkitTapHighlightColor:
-            "transparent",
+          flexShrink: 0,
+          order: 1,
+          overflow: "visible",
         }}
       >
-        <span
-          aria-hidden="true"
-        >
-          {listening
-            ? "■"
-            : "🎙️"}
-        </span>
-      </button>
-      {status && (
-        <div
-          aria-live="polite"
+        <button
+          ref={
+            buttonRef
+          }
+          type="button"
+          onClick={
+            toggleRecognition
+          }
+          disabled={
+            disabled
+          }
+          aria-label={
+            label
+          }
+          title={
+            label
+          }
           style={{
-            position:
-              "fixed",
-            left: "50%",
-            bottom: 92,
-            transform:
-              "translateX(-50%)",
-            width:
-              "max-content",
-            maxWidth:
-              "calc(100vw - 32px)",
-            minWidth: 120,
-            padding:
-              "7px 12px",
+            width: 44,
+            height: 48,
             boxSizing:
               "border-box",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
             border:
-              "1px solid #e2e8f0",
+              listening
+                ? "1px solid #ef4444"
+                : "1px solid #d1d5db",
             borderRadius:
-              10,
+              14,
             background:
-              "rgba(248, 250, 252, 0.98)",
+              listening
+                ? "#fef2f2"
+                : disabled
+                  ? "#f3f4f6"
+                  : "#ffffff",
             color:
               listening
-                ? "#475569"
-                : "#64748b",
+                ? "#dc2626"
+                : "#334155",
+            cursor:
+              disabled
+                ? "not-allowed"
+                : "pointer",
             fontSize:
-              12,
-            lineHeight:
-              1.4,
-            textAlign:
-              "center",
-            whiteSpace:
-              "normal",
-            wordBreak:
-              "break-word",
-            pointerEvents:
-              "none",
-            zIndex: 9999,
-            boxShadow:
-              "0 4px 14px rgba(15, 23, 42, 0.12)",
+              18,
+            WebkitTapHighlightColor:
+              "transparent",
           }}
         >
-          {status}
-        </div>
-      )}
-    </div>
+          <span
+            aria-hidden="true"
+          >
+            {listening
+              ? "■"
+              : "🎙️"}
+          </span>
+        </button>
+      </div>
+
+      {statusPortal}
+    </>
   );
 }
