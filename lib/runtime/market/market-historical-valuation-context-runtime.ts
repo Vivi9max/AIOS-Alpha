@@ -7,16 +7,13 @@ import type {
   MarketHistoricalFundamentalSeries,
 } from "./market-historical-fundamental-series-types";
 import type {
-  MarketRegion,
-} from "./market-types";
-import type {
   HistoricalGrowthSignal,
   HistoricalValuationObservation,
   MarketHistoricalValuationContext,
   MarketHistoricalValuationContextRequest,
   MarketHistoricalValuationContextResult,
 } from "./market-historical-valuation-context-types";
-function positiveFinite(
+function finiteOrNull(
   value: number | null,
 ): number | null {
   if (
@@ -252,7 +249,7 @@ function buildContext(
     determineQuality(
       series,
     );
-  const usable =
+  const historicalDataUsableForValuation =
     historicalDataQuality !==
       "insufficient" &&
     series.observationCount >= 2;
@@ -261,6 +258,7 @@ function buildContext(
     "C163.4 derives descriptive historical growth signals only; it does not create forecasts.",
     "Historical growth is not converted into a predicted return or target price.",
     "C163.4 does not modify the verified C149 valuation contract.",
+    "Negative historical growth is preserved as valid historical information.",
     "Human verification remains required before historical data is used in any valuation review.",
   ];
   return {
@@ -295,24 +293,23 @@ function buildContext(
       freeCashFlow,
     ],
     revenueGrowth:
-      positiveFinite(
+      finiteOrNull(
         revenue.growthRate,
       ),
     netIncomeGrowth:
-      positiveFinite(
+      finiteOrNull(
         netIncome.growthRate,
       ),
     operatingCashFlowGrowth:
-      positiveFinite(
+      finiteOrNull(
         operatingCashFlow.growthRate,
       ),
     freeCashFlowGrowth:
-      positiveFinite(
+      finiteOrNull(
         freeCashFlow.growthRate,
       ),
     historicalDataQuality,
-    historicalDataUsableForValuation:
-      usable,
+    historicalDataUsableForValuation,
     limitations,
     humanVerificationRequired:
       true,
@@ -381,6 +378,6 @@ export async function runMarketHistoricalValuationContext(
       Date.now() -
       startedAt,
     disclaimer:
-      "C163.4 converts verified C162.2 historical fundamental observations into a valuation-context adapter. It provides descriptive historical context only and does not generate forecasts, recommendations, target prices or trading instructions.",
+      "C163.4 converts C162.2 historical fundamental observations into a valuation-context adapter. It provides descriptive historical context only and does not generate forecasts, recommendations, target prices or trading instructions.",
   };
 }
