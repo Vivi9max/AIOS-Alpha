@@ -120,17 +120,11 @@ function normalizeFreshness(
 }
 
 /**
- * C156 Dossier intentionally exposes the stable six-metric valuation
- * contract only.
+ * C156 exposes the stable six-metric public valuation contract.
  *
- * C149 may contain additional historical fundamental metrics such as:
- * - historicalRevenue
- * - historicalNetIncome
- * - historicalOperatingCashFlow
- * - historicalFreeCashFlow
- *
- * Those remain available inside the valuation engine but are not part
- * of the current C156 dossier contract.
+ * C163.2 may internally expose additional historical fundamental
+ * metrics. Those remain available to the valuation engine and are
+ * intentionally not widened into the C156 public metric contract.
  */
 function isDossierValuationMetric(
   metric: string,
@@ -149,11 +143,6 @@ function isDossierValuationMetric(
   }
 }
 
-/**
- * C149 currently supports an additional historical-structured quality
- * state. C156 deliberately keeps its public metric-quality contract
- * stable, so only the supported C156 quality states are emitted.
- */
 function normalizeDossierMetricQuality(
   quality: string,
 ): MarketResearchDossierValuation["metricQuality"][number]["quality"] {
@@ -167,8 +156,13 @@ function normalizeDossierMetricQuality(
     case "missing":
       return "missing";
 
+    /**
+     * C163.2 historical structured data has its own provenance.
+     * C156 does not currently expose that provenance state, therefore
+     * it must not be relabeled as web evidence.
+     */
     case "historical-structured":
-      return "web-evidence";
+      return "missing";
 
     default:
       return "missing";
@@ -341,35 +335,39 @@ function buildItem(
   const selectionStages =
     selectionItem?.stages ?? [];
 
-  const stages: MarketResearchDossierItem["stages"] =
+  const stages:
+    MarketResearchDossierItem["stages"] =
     selectionStages.map(
       (stage) => ({
         stage:
-          stage.stage === "human-review"
+          stage.stage ===
+          "human-review"
             ? "human-decision"
             : stage.stage,
+
         status:
           mapStageStatus(
             stage.passed,
             stage.status,
           ),
+
         reasons:
           stage.reasons,
       }),
     );
 
   stages.push({
-    stage: "human-decision",
-    status: "blocked",
+    stage:
+      "human-decision",
+
+    status:
+      "blocked",
+
     reasons: [
       "Human decision remains mandatory before any investment or trading action.",
     ],
   });
 
-  /**
-   * C149 may now expose a broader metric set than C156.
-   * Filter at the Dossier boundary rather than weakening the type system.
-   */
   const dossierMetricQuality =
     valuationItem?.metrics
       .filter(
@@ -382,10 +380,13 @@ function buildItem(
         (metric) => ({
           metric:
             metric.metric,
+
           value:
             metric.value,
+
           available:
             metric.available,
+
           quality:
             normalizeDossierMetricQuality(
               metric.quality,
@@ -619,8 +620,11 @@ function buildItem(
 
 export async function runMarketResearchDossier(
   request: {
-    universe: MarketResearchDossierRequestItem[];
-    query?: string | null;
+    universe:
+      MarketResearchDossierRequestItem[];
+
+    query?:
+      string | null;
   },
 ): Promise<MarketResearchDossierResult> {
   const startedAt =
@@ -638,6 +642,7 @@ export async function runMarketResearchDossier(
             {
               symbol:
                 item.symbol.trim(),
+
               market:
                 item.market,
             },
@@ -660,12 +665,21 @@ export async function runMarketResearchDossier(
           "insufficient",
 
         universeSize: 0,
-        evaluatedCount: 0,
 
-        researchReadyCount: 0,
-        partialCount: 0,
-        blockedCount: 0,
-        insufficientCount: 0,
+        evaluatedCount:
+          0,
+
+        researchReadyCount:
+          0,
+
+        partialCount:
+          0,
+
+        blockedCount:
+          0,
+
+        insufficientCount:
+          0,
 
         dossiers: [],
 
@@ -680,12 +694,16 @@ export async function runMarketResearchDossier(
       upstream: {
         marketOperatingSystem:
           "C155.1",
+
         selectionFramework:
           "C147.4",
+
         evidenceMatrix:
           "C147.6",
+
         valuation:
           "C149",
+
         riskControl:
           "C147.17",
       },
@@ -739,18 +757,24 @@ export async function runMarketResearchDossier(
   ] = await Promise.all([
     runMarketOperatingSystem({
       universe,
+
       query:
-        request.query ?? null,
+        request.query ??
+        null,
+
       includeMonitoring:
         true,
+
       includeBlocked:
         true,
     }),
 
     runMarketEvidenceMatrix({
       universe,
+
       query:
-        request.query ?? null,
+        request.query ??
+        null,
     }),
 
     runMarketSelectionFramework({
@@ -876,8 +900,11 @@ export async function runMarketResearchDossier(
         dossiers.length,
 
       researchReadyCount,
+
       partialCount,
+
       blockedCount,
+
       insufficientCount,
 
       dossiers,
@@ -893,12 +920,16 @@ export async function runMarketResearchDossier(
     upstream: {
       marketOperatingSystem:
         "C155.1",
+
       selectionFramework:
         "C147.4",
+
       evidenceMatrix:
         "C147.6",
+
       valuation:
         "C149",
+
       riskControl:
         "C147.17",
     },
@@ -936,7 +967,8 @@ export async function runMarketResearchDossier(
       "Market changes are converted into research dossiers rather than trading instructions.",
       "C147.6 evidence identity and source quality remain authoritative.",
       "C147.4 provides the Industry → Company → Fundamentals → Valuation → Risk research framework.",
-      "C149 valuation scenarios remain modeling inputs and are not exposed as target-price instructions.",
+      "C163.2 historical fundamentals are used as structured research inputs when available.",
+      "C149/C163.2 valuation scenarios remain modeling inputs and are not exposed as target-price instructions.",
       "C147.17 risk control remains a human-review layer.",
       "No ranking, recommendation, automatic task, planner dispatch or trading execution is performed.",
     ],
