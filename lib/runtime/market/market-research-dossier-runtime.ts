@@ -29,6 +29,9 @@ import type {
   MarketResearchDossierValuation,
 } from "./market-research-dossier-types";
 
+type DossierValuationMetric =
+  MarketResearchDossierValuation["metricQuality"][number]["metric"];
+
 function unique(
   values: string[],
 ): string[] {
@@ -128,7 +131,7 @@ function normalizeFreshness(
  */
 function isDossierValuationMetric(
   metric: string,
-): metric is MarketResearchDossierValuation["metric"] {
+): metric is DossierValuationMetric {
   switch (metric) {
     case "pe":
     case "pb":
