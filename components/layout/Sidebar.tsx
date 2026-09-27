@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-
 import {
   usePathname,
 } from "next/navigation";
@@ -25,32 +24,29 @@ import type {
 
 const globalMenus = [
   {
-    icon: "💬",
+    icon: "CHAT",
     label:
       "nav.chat" as MessageKey,
     href: "/workspace",
   },
   {
-    icon: "🧭",
-    label:
-      "Market Research",
-    href:
-      "/market-intelligence",
+    icon: "MR",
+    label: "Market Research",
+    href: "/market-intelligence",
   },
   {
-    icon: "✅",
+    icon: "TASK",
     label:
       "nav.tasks" as MessageKey,
     href: "/tasks",
   },
   {
-    icon: "💳",
-    label:
-      "Plans",
+    icon: "PLAN",
+    label: "Plans",
     href: "/billing",
   },
   {
-    icon: "⚙️",
+    icon: "SET",
     label:
       "nav.settings" as MessageKey,
     href: "/settings",
@@ -59,76 +55,68 @@ const globalMenus = [
 
 const cnMenus = [
   {
-    icon: "💬",
-    label:
-      "AIOS CN",
+    icon: "CHAT",
+    label: "AIOS CN",
     href: "/cn",
   },
   {
-    icon: "◉",
-    label:
-      "CN Runtime",
+    icon: "MR",
+    label: "CN Market Research",
+    href: "/cn/market-research",
+  },
+  {
+    icon: "MEM",
+    label: "CN Memory",
+    href: "/cn/memory",
+  },
+  {
+    icon: "RT",
+    label: "CN Runtime",
     href: "/cn/runtime",
   },
   {
-    icon: "⚙️",
-    label:
-      "CN Settings",
+    icon: "SET",
+    label: "CN Settings",
     href: "/cn/settings",
   },
 ];
 
 const marketResearchLabels = {
-  en:
-    "Market Research",
-  "zh-CN":
-    "市场研究",
-  ja:
-    "市場リサーチ",
+  en: "Market Research",
+  "zh-CN": "市场研究",
+  ja: "市場リサーチ",
 } as const;
 
 const productCopy = {
   en: {
-    products:
-      "Products",
-    global:
-      "AIOS Global",
+    products: "Products",
+    global: "AIOS Global",
     globalDescription:
       "Global AIOS workspace",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "China-oriented AIOS workspace",
-    current:
-      "Current Product",
+    current: "Current Product",
   },
   "zh-CN": {
-    products:
-      "产品",
-    global:
-      "AIOS Global",
+    products: "产品",
+    global: "AIOS Global",
     globalDescription:
       "全球 AIOS 工作空间",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "中国 AIOS 工作空间",
-    current:
-      "当前产品",
+    current: "当前产品",
   },
   ja: {
-    products:
-      "製品",
-    global:
-      "AIOS Global",
+    products: "製品",
+    global: "AIOS Global",
     globalDescription:
       "グローバル AIOS ワークスペース",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "中国向け AIOS ワークスペース",
-    current:
-      "現在の製品",
+    current: "現在の製品",
   },
 } as const;
 
@@ -169,28 +157,20 @@ export default function Sidebar() {
   return (
     <aside
       style={{
-        width:
-          250,
-        minHeight:
-          "100%",
-        boxSizing:
-          "border-box",
-        display:
-          "flex",
-        flexDirection:
-          "column",
-        background:
-          "#ffffff",
+        width: 250,
+        minHeight: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        background: "#ffffff",
         borderRight:
           "1px solid #e5e7eb",
-        color:
-          "#111827",
+        color: "#111827",
       }}
     >
       <div
         style={{
-          padding:
-            "22px 18px",
+          padding: "22px 18px",
           borderBottom:
             "1px solid #e5e7eb",
         }}
@@ -199,16 +179,11 @@ export default function Sidebar() {
           href="/"
           prefetch={false}
           style={{
-            display:
-              "inline-block",
-            color:
-              "#111827",
-            textDecoration:
-              "none",
-            fontSize:
-              25,
-            fontWeight:
-              800,
+            display: "inline-block",
+            color: "#111827",
+            textDecoration: "none",
+            fontSize: 25,
+            fontWeight: 800,
           }}
         >
           {APP_NAME}
@@ -216,12 +191,9 @@ export default function Sidebar() {
 
         <p
           style={{
-            margin:
-              "5px 0 0",
-            color:
-              "#9ca3af",
-            fontSize:
-              12,
+            margin: "5px 0 0",
+            color: "#9ca3af",
+            fontSize: 12,
           }}
         >
           {APP_VERSION_LABEL}
@@ -230,20 +202,15 @@ export default function Sidebar() {
 
       <div
         style={{
-          padding:
-            "14px 14px 8px",
+          padding: "14px 14px 8px",
         }}
       >
         <p
           style={{
-            margin:
-              "0 4px 9px",
-            color:
-              "#9ca3af",
-            fontSize:
-              11,
-            fontWeight:
-              800,
+            margin: "0 4px 9px",
+            color: "#9ca3af",
+            fontSize: 11,
+            fontWeight: 800,
             letterSpacing:
               "0.08em",
             textTransform:
@@ -255,22 +222,17 @@ export default function Sidebar() {
 
         <div
           style={{
-            display:
-              "grid",
-            gap:
-              7,
+            display: "grid",
+            gap: 7,
           }}
         >
           <Link
             href="/workspace"
             prefetch={false}
             style={{
-              display:
-                "block",
-              padding:
-                "10px 11px",
-              borderRadius:
-                10,
+              display: "block",
+              padding: "10px 11px",
+              borderRadius: 10,
               background:
                 !isCN
                   ? "#eef2ff"
@@ -289,10 +251,8 @@ export default function Sidebar() {
           >
             <div
               style={{
-                fontSize:
-                  13,
-                fontWeight:
-                  800,
+                fontSize: 13,
+                fontWeight: 800,
               }}
             >
               {copy.global}
@@ -300,15 +260,14 @@ export default function Sidebar() {
 
             <div
               style={{
-                marginTop:
-                  3,
-                color:
-                  "#94a3b8",
-                fontSize:
-                  11,
+                marginTop: 3,
+                color: "#94a3b8",
+                fontSize: 11,
               }}
             >
-              {copy.globalDescription}
+              {
+                copy.globalDescription
+              }
             </div>
           </Link>
 
@@ -316,12 +275,9 @@ export default function Sidebar() {
             href="/cn"
             prefetch={false}
             style={{
-              display:
-                "block",
-              padding:
-                "10px 11px",
-              borderRadius:
-                10,
+              display: "block",
+              padding: "10px 11px",
+              borderRadius: 10,
               background:
                 isCN
                   ? "#fef2f2"
@@ -340,10 +296,8 @@ export default function Sidebar() {
           >
             <div
               style={{
-                fontSize:
-                  13,
-                fontWeight:
-                  800,
+                fontSize: 13,
+                fontWeight: 800,
               }}
             >
               {copy.cn}
@@ -351,12 +305,9 @@ export default function Sidebar() {
 
             <div
               style={{
-                marginTop:
-                  3,
-                color:
-                  "#94a3b8",
-                fontSize:
-                  11,
+                marginTop: 3,
+                color: "#94a3b8",
+                fontSize: 11,
               }}
             >
               {copy.cnDescription}
@@ -377,12 +328,9 @@ export default function Sidebar() {
               style={{
                 margin:
                   "0 4px 10px",
-                color:
-                  "#9ca3af",
-                fontSize:
-                  11,
-                fontWeight:
-                  800,
+                color: "#9ca3af",
+                fontSize: 11,
+                fontWeight: 800,
                 letterSpacing:
                   "0.08em",
                 textTransform:
@@ -396,18 +344,14 @@ export default function Sidebar() {
 
             <div
               style={{
-                display:
-                  "grid",
-                gap:
-                  7,
+                display: "grid",
+                gap: 7,
               }}
             >
               {projects
                 .slice(0, 3)
                 .map(
-                  (
-                    project,
-                  ) => {
+                  (project) => {
                     const active =
                       isProjectActive(
                         pathname,
@@ -420,16 +364,13 @@ export default function Sidebar() {
                           project.id
                         }
                         href={`/projects/${project.id}`}
-                        prefetch={
-                          false
-                        }
+                        prefetch={false}
                         style={{
                           display:
                             "flex",
                           alignItems:
                             "center",
-                          gap:
-                            8,
+                          gap: 8,
                           padding:
                             "10px 12px",
                           borderRadius:
@@ -444,10 +385,8 @@ export default function Sidebar() {
                               : "#374151",
                           textDecoration:
                             "none",
-                          fontSize:
-                            13,
-                          fontWeight:
-                            700,
+                          fontSize: 13,
+                          fontWeight: 700,
                         }}
                       >
                         <span
@@ -490,12 +429,9 @@ export default function Sidebar() {
           style={{
             margin:
               "0 4px 9px",
-            color:
-              "#9ca3af",
-            fontSize:
-              11,
-            fontWeight:
-              800,
+            color: "#9ca3af",
+            fontSize: 11,
+            fontWeight: 800,
             letterSpacing:
               "0.08em",
             textTransform:
@@ -507,16 +443,12 @@ export default function Sidebar() {
 
         <nav
           style={{
-            display:
-              "grid",
-            gap:
-              5,
+            display: "grid",
+            gap: 5,
           }}
         >
           {menus.map(
-            (
-              item,
-            ) => {
+            (item) => {
               const active =
                 pathname ===
                   item.href ||
@@ -553,16 +485,12 @@ export default function Sidebar() {
                   href={
                     item.href
                   }
-                  prefetch={
-                    false
-                  }
+                  prefetch={false}
                   style={{
-                    display:
-                      "block",
+                    display: "block",
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      10,
+                    borderRadius: 10,
                     background:
                       active
                         ? isCN
@@ -577,8 +505,7 @@ export default function Sidebar() {
                         : "#374151",
                     textDecoration:
                       "none",
-                    fontSize:
-                      14,
+                    fontSize: 14,
                     fontWeight:
                       active
                         ? 800
@@ -596,16 +523,12 @@ export default function Sidebar() {
 
       <div
         style={{
-          marginTop:
-            "auto",
-          padding:
-            16,
+          marginTop: "auto",
+          padding: 16,
           borderTop:
             "1px solid #e5e7eb",
-          color:
-            "#9ca3af",
-          fontSize:
-            12,
+          color: "#9ca3af",
+          fontSize: 12,
         }}
       >
         {isCN
