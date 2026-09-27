@@ -1,81 +1,69 @@
 // app/api/chat/route.ts
-
 import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   executeRuntime,
 } from "@/lib/runtime/engine";
-
 import {
   AIOS_USER_COOKIE,
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
-
 import {
   runWithUserContext,
 } from "@/lib/runtime/request-context";
-
 import {
   detectFounderRuntimeGitHubTask,
 } from "@/lib/github/founder-runtime-task-detector";
-
 import {
   executePlannerGitHubRead,
 } from "@/lib/github/planner-github-read";
-
 import {
   isLocale,
   type Locale,
 } from "@/lib/i18n";
-
 import {
   APP_CONFIG,
 } from "@/lib/config/app";
-
 import {
   requiresWebIntelligence,
   retrieveWebEvidence,
 } from "@/lib/web-intelligence";
-
 import {
   getPersistentMemory,
 } from "@/lib/memory/store";
-
 import {
   createCommercialObjective,
   listCommercialObjectives,
   updateCommercialObjective,
 } from "@/lib/commercial/operating-layer";
-
 import {
   ensureCommercialOperatingLoop,
 } from "@/lib/commercial/operating-loop";
-
 import {
   ensureCommercialNextAction,
 } from "@/lib/commercial/gap-engine";
-
 import {
   detectCommercialChatIntent,
 } from "@/lib/commercial/chat-intent";
-
 import {
   executeChatCommercialBridge,
 } from "@/lib/runtime/chat-commercial-bridge";
-
+import {
+  processAIOSInputs,
+} from "@/lib/runtime/input/aios-input-runtime";
+import type {
+  AIOSInputItem,
+} from "@/lib/runtime/input/aios-input-types";
 export const dynamic =
   "force-dynamic";
-
 export const runtime =
   "nodejs";
-
 interface ChatRequestBody {
   prompt?: unknown;
+  inputs?: unknown;
 }
-
 function resolveRequestLocale(
   request: NextRequest,
 ): Locale {
@@ -83,14 +71,11 @@ function resolveRequestLocale(
     request.headers.get(
       "x-aios-locale",
     );
-
   if (isLocale(header)) {
     return header;
   }
-
   return "en";
 }
-
 function applyIdentityCookie(
   response: NextResponse,
   userId: string,
@@ -109,10 +94,22 @@ function applyIdentityCookie(
         60 * 60 * 24 * 365,
     },
   );
-
   return response;
 }
-
+function normalizeInputPayload(
+  value: unknown,
+): AIOSInputItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (
+      item,
+    ): item is AIOSInputItem =>
+      typeof item === "object" &&
+      item !== null,
+  );
+}
 function formatCommercialGap(
   objective: Awaited<
     ReturnType<
@@ -124,31 +121,25 @@ function formatCommercialGap(
   if (!objective) {
     return [];
   }
-
   const now =
     Date.now();
-
   const revenueGap =
     Math.max(
       0,
       objective.revenueTarget -
         objective.revenueActual,
     );
-
   const customerGap =
     Math.max(
       0,
       objective.customerTarget -
         objective.customerActual,
     );
-
   const costHeadroom =
     objective.costTarget -
     objective.costActual;
-
   const deadlineAt =
     objective.deadlineAt;
-
   const daysRemaining =
     deadlineAt !== undefined
       ? Math.max(
@@ -159,7 +150,6 @@ function formatCommercialGap(
           ),
         )
       : null;
-
   const dailyRevenue =
     daysRemaining !== null &&
     daysRemaining > 0
@@ -169,7 +159,6 @@ function formatCommercialGap(
             100,
         ) / 100
       : revenueGap;
-
   const dailyCustomers =
     daysRemaining !== null &&
     daysRemaining > 0
@@ -178,7 +167,6 @@ function formatCommercialGap(
             daysRemaining,
         )
       : customerGap;
-
   if (locale === "ja") {
     return [
       "",
@@ -195,7 +183,6 @@ function formatCommercialGap(
         : []),
     ];
   }
-
   if (locale === "zh-CN") {
     return [
       "",
@@ -212,7 +199,6 @@ function formatCommercialGap(
         : []),
     ];
   }
-
   return [
     "",
     "Current Commercial Gap:",
@@ -228,7 +214,6 @@ function formatCommercialGap(
       : []),
   ];
 }
-
 async function executeChatPrompt(
   prompt: string,
   locale: Locale,
@@ -238,13 +223,11 @@ async function executeChatPrompt(
       prompt,
       locale,
     );
-
   if (
     commercialIntent.detected
   ) {
     const existingObjectives =
       await listCommercialObjectives();
-
     const existing =
       existingObjectives.find(
         (item) =>
@@ -255,15 +238,12 @@ async function executeChatPrompt(
           item.status !==
             "completed",
       );
-
     let objective;
-
     if (existing) {
       const updates:
         Parameters<
           typeof updateCommercialObjective
         >[1] = {};
-
       if (
         commercialIntent.currency !==
           "UNSPECIFIED" &&
@@ -273,7 +253,6 @@ async function executeChatPrompt(
         updates.currency =
           commercialIntent.currency;
       }
-
       if (
         commercialIntent.revenueTarget >
           0 &&
@@ -283,7 +262,6 @@ async function executeChatPrompt(
         updates.revenueTarget =
           commercialIntent.revenueTarget;
       }
-
       if (
         commercialIntent.costTarget >
           0 &&
@@ -293,7 +271,6 @@ async function executeChatPrompt(
         updates.costTarget =
           commercialIntent.costTarget;
       }
-
       if (
         commercialIntent.customerTarget >
           0 &&
@@ -303,7 +280,6 @@ async function executeChatPrompt(
         updates.customerTarget =
           commercialIntent.customerTarget;
       }
-
       if (
         commercialIntent.deadlineDays !==
           null
@@ -311,7 +287,6 @@ async function executeChatPrompt(
         updates.deadlineDays =
           commercialIntent.deadlineDays;
       }
-
       if (
         commercialIntent.description !==
           existing.description
@@ -319,7 +294,6 @@ async function executeChatPrompt(
         updates.description =
           commercialIntent.description;
       }
-
       if (
         commercialIntent.successCriteria !==
           existing.successCriteria
@@ -327,7 +301,6 @@ async function executeChatPrompt(
         updates.successCriteria =
           commercialIntent.successCriteria;
       }
-
       if (
         commercialIntent.stage !==
           existing.stage
@@ -335,7 +308,6 @@ async function executeChatPrompt(
         updates.stage =
           commercialIntent.stage;
       }
-
       objective =
         Object.keys(updates).length > 0
           ? await updateCommercialObjective(
@@ -372,24 +344,20 @@ async function executeChatPrompt(
             null,
         });
     }
-
     if (!objective) {
       throw new Error(
         "COMMERCIAL_OBJECTIVE_RECONCILIATION_FAILED",
       );
     }
-
     const loop =
       await ensureCommercialOperatingLoop(
         objective.id,
       );
-
     const nextAction =
       await ensureCommercialNextAction(
         objective.id,
         locale,
       );
-
     const liveCommercial =
       await executeChatCommercialBridge({
         prompt,
@@ -397,13 +365,10 @@ async function executeChatPrompt(
           objective.id,
         locale,
       });
-
     const currency =
       objective.currency;
-
     const deadlineAt =
       objective.deadlineAt;
-
     const daysRemaining =
       deadlineAt !== undefined
         ? Math.max(
@@ -418,9 +383,7 @@ async function executeChatPrompt(
             ),
           )
         : null;
-
     let content: string;
-
     if (locale === "ja") {
       content = [
         "商業目標を作成・更新しました。",
@@ -514,7 +477,6 @@ async function executeChatPrompt(
           : []),
       ].join("\n");
     }
-
     if (
       liveCommercial.shouldRunLiveOpportunity
     ) {
@@ -544,7 +506,7 @@ async function executeChatPrompt(
         },
         execution: {
           provider:
-            "chat-commercial-live-runtime",
+            "commercial-operating-layer",
           capabilityTrace: [
             "chat",
             "commercial-intent",
@@ -556,22 +518,16 @@ async function executeChatPrompt(
             "task",
             "gap-engine",
             "next-action",
-            "live-commercial-request",
             "live-commercial-opportunity",
-            "web-intelligence",
-            "verified-evidence",
-            "live-decision",
-            "commercial-runtime",
           ],
         },
       };
     }
-
     return {
       success: true,
       content,
       code:
-        "C143_17_2_COMMERCIAL_OBJECTIVE_RECONCILED",
+        "C143_32_3_COMMERCIAL_OBJECTIVE_RECONCILED",
       commercial: {
         detected: true,
         objective,
@@ -607,12 +563,10 @@ async function executeChatPrompt(
       },
     };
   }
-
   const detection =
     detectFounderRuntimeGitHubTask(
       prompt,
     );
-
   if (
     detection.isGitHubTask &&
     detection.action === "read" &&
@@ -622,7 +576,6 @@ async function executeChatPrompt(
       await executePlannerGitHubRead(
         prompt,
       );
-
     if (!githubRead.detected) {
       return {
         success: false,
@@ -653,7 +606,6 @@ async function executeChatPrompt(
         },
       };
     }
-
     if (!githubRead.success) {
       return {
         success: false,
@@ -662,7 +614,7 @@ async function executeChatPrompt(
             ? "GitHub READ の実行に失敗しました。"
             : locale === "zh-CN"
               ? "GitHub READ 执行失败。AIOS 没有使用模型猜测仓库内容。"
-              : "GitHub READ execution failed. AIOS did not use the model to guess repository content.",
+              : "AIOS GitHub READ execution failed. AIOS did not use the model to guess repository content.",
         error:
           githubRead.error ??
           "GitHub READ failed.",
@@ -688,7 +640,6 @@ async function executeChatPrompt(
         },
       };
     }
-
     return {
       success: true,
       content:
@@ -733,20 +684,16 @@ async function executeChatPrompt(
       },
     };
   }
-
   const needsWeb =
     requiresWebIntelligence(
       prompt,
     );
-
   let webContext;
-
   if (needsWeb) {
     webContext =
       await retrieveWebEvidence(
         prompt,
       );
-
     if (
       !webContext.success ||
       !webContext.verified
@@ -768,7 +715,6 @@ async function executeChatPrompt(
       );
     }
   }
-
   return executeRuntime({
     prompt,
     locale,
@@ -778,7 +724,6 @@ async function executeChatPrompt(
         : undefined,
   });
 }
-
 export async function GET(
   request: NextRequest,
 ) {
@@ -786,7 +731,6 @@ export async function GET(
     resolveAlphaIdentity(
       request,
     );
-
   const response =
     NextResponse.json(
       {
@@ -815,6 +759,7 @@ export async function GET(
           commercialGap: true,
           commercialDeadline: true,
           liveCommercialOpportunity: true,
+          inputFoundation: true,
         },
         identity: {
           userId:
@@ -841,30 +786,25 @@ export async function GET(
         },
       },
     );
-
   return applyIdentityCookie(
     response,
     identity.userId,
   );
 }
-
 export async function POST(
   request: NextRequest,
 ) {
   const startedAt =
     Date.now();
-
   const identity =
     resolveAlphaIdentity(
       request,
     );
-
   try {
     const contentType =
       request.headers.get(
         "content-type",
       ) ?? "";
-
     if (
       !contentType.includes(
         "application/json",
@@ -887,29 +827,77 @@ export async function POST(
             status: 415,
           },
         );
-
       return applyIdentityCookie(
         response,
         identity.userId,
       );
     }
-
     const body =
       (await request.json()) as
         ChatRequestBody;
-
     const prompt =
       typeof body.prompt ===
       "string"
         ? body.prompt.trim()
         : "";
-
     const locale =
       resolveRequestLocale(
         request,
       );
-
-    if (!prompt) {
+    const inputItems =
+      normalizeInputPayload(
+        body.inputs,
+      );
+    const hasInputs =
+      inputItems.length > 0;
+    let inputResult;
+    if (hasInputs) {
+      inputResult =
+        processAIOSInputs({
+          inputs:
+            inputItems,
+          prompt:
+            prompt || null,
+          sessionId:
+            identity.userId,
+        });
+      if (
+        inputResult.code ===
+        "AIOS_INPUT_REJECTED"
+      ) {
+        const response =
+          NextResponse.json(
+            {
+              success: false,
+              content:
+                locale === "ja"
+                  ? "入力ファイルを受け付けられませんでした。"
+                  : locale === "zh-CN"
+                    ? "输入文件无法通过 AIOS Input Foundation 验证。"
+                    : "The provided inputs could not pass AIOS Input Foundation validation.",
+              error:
+                "AIOS_INPUT_REJECTED",
+              inputResult,
+              userId:
+                identity.userId,
+              locale,
+              timestamp:
+                Date.now(),
+              latencyMs:
+                Date.now() -
+                startedAt,
+            },
+            {
+              status: 400,
+            },
+          );
+        return applyIdentityCookie(
+          response,
+          identity.userId,
+        );
+      }
+    }
+    if (!prompt && !hasInputs) {
       const response =
         NextResponse.json(
           {
@@ -921,7 +909,7 @@ export async function POST(
                   ? "请输入内容。"
                   : "Please enter a message.",
             error:
-              "Prompt is required.",
+              "Prompt or input is required.",
             userId:
               identity.userId,
             timestamp:
@@ -931,13 +919,76 @@ export async function POST(
             status: 400,
           },
         );
-
       return applyIdentityCookie(
         response,
         identity.userId,
       );
     }
-
+    /*
+     * Input-only requests stop at the Input Foundation.
+     *
+     * This is intentional:
+     * browser-local files are not yet converted
+     * into provider-specific multimodal payloads.
+     *
+     * Do not claim Vision/OCR execution here.
+     */
+    if (!prompt && hasInputs) {
+      const acceptedCount =
+        inputResult?.acceptedCount ?? 0;
+      const rejectedCount =
+        inputResult?.rejectedCount ?? 0;
+      const content =
+        locale === "ja"
+          ? `入力を受け付けました。${acceptedCount} 件を登録し、${rejectedCount} 件を拒否しました。画像認識・OCR・文書解析はまだ実行していません。`
+          : locale === "zh-CN"
+            ? `已接收输入。接受 ${acceptedCount} 项，拒绝 ${rejectedCount} 项。当前阶段尚未执行图像识别、OCR 或文档解析。`
+            : `Inputs accepted. ${acceptedCount} accepted and ${rejectedCount} rejected. Vision, OCR, and document parsing are not executed at this stage.`;
+      const response =
+        NextResponse.json(
+          {
+            success:
+              inputResult?.success ??
+              false,
+            content,
+            code:
+              "C164_3_INPUT_FOUNDATION_BRIDGE",
+            inputResult,
+            userId:
+              identity.userId,
+            identityMode:
+              "anonymous-alpha",
+            dataIsolated:
+              true,
+            locale,
+            runtime:
+              APP_CONFIG.runtimeId,
+            runtimeStage:
+              APP_CONFIG.stage,
+            runtimeVersion:
+              APP_CONFIG.version,
+            runtimeVersionLabel:
+              APP_CONFIG.fullTitle,
+            latencyMs:
+              Date.now() -
+              startedAt,
+          },
+          {
+            status:
+              inputResult?.success
+                ? 200
+                : 400,
+            headers: {
+              "Cache-Control":
+                "no-store",
+            },
+          },
+        );
+      return applyIdentityCookie(
+        response,
+        identity.userId,
+      );
+    }
     const result =
       await runWithUserContext(
         identity.userId,
@@ -947,35 +998,22 @@ export async function POST(
             locale,
           ),
       );
-
-    /*
-     * C143.10
-     *
-     * Return the canonical conversation
-     * in the same response that completes
-     * the chat request.
-     *
-     * ChatPanel can therefore receive the
-     * real persistent IDs immediately,
-     * without waiting for a second GET.
-     */
     const conversation =
       await runWithUserContext(
         identity.userId,
         () =>
           getPersistentMemory(),
       );
-
     const resultCode =
       "code" in result
         ? result.code
         : undefined;
-
     const response =
       NextResponse.json(
         {
           ...result,
           conversation,
+          inputResult,
           userId:
             identity.userId,
           identityMode:
@@ -1011,7 +1049,6 @@ export async function POST(
           },
         },
       );
-
     return applyIdentityCookie(
       response,
       identity.userId,
@@ -1021,17 +1058,14 @@ export async function POST(
       error instanceof Error
         ? error.message
         : "AIOS Chat API failed.";
-
     console.error(
       "[AIOS Chat API]",
       error,
     );
-
     const locale =
       resolveRequestLocale(
         request,
       );
-
     const response =
       NextResponse.json(
         {
@@ -1071,7 +1105,6 @@ export async function POST(
           },
         },
       );
-
     return applyIdentityCookie(
       response,
       identity.userId,
