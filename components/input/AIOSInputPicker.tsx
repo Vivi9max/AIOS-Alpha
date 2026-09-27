@@ -45,13 +45,15 @@ const SUPPORTED_FILE_TYPES = new Set([
   "application/vnd.ms-excel",
   "application/octet-stream",
 ]);
-const SUPPORTED_EXTENSIONS = new Set([
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   ".jpg",
   ".jpeg",
   ".png",
   ".webp",
   ".heic",
   ".heif",
+]);
+const SUPPORTED_FILE_EXTENSIONS = new Set([
   ".pdf",
   ".txt",
   ".csv",
@@ -94,14 +96,7 @@ function isImageFile(
   ) {
     return true;
   }
-  return [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".heic",
-    ".heif",
-  ].includes(
+  return SUPPORTED_IMAGE_EXTENSIONS.has(
     getFileExtension(file),
   );
 }
@@ -122,8 +117,15 @@ function isSupportedFile(
   ) {
     return true;
   }
-  return SUPPORTED_EXTENSIONS.has(
-    getFileExtension(file),
+  const extension =
+    getFileExtension(file);
+  return (
+    SUPPORTED_IMAGE_EXTENSIONS.has(
+      extension,
+    ) ||
+    SUPPORTED_FILE_EXTENSIONS.has(
+      extension,
+    )
   );
 }
 function getInputKind(
@@ -549,7 +551,7 @@ export default function AIOSInputPicker({
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "application/msword",
           "application/vnd.ms-excel",
-          "image/*",
+          "application/octet-stream",
           ".pdf",
           ".txt",
           ".csv",
@@ -703,9 +705,9 @@ export default function AIOSInputPicker({
           )}
           title={localized(
             locale,
-            "选择文件",
-            "Choose files",
-            "ファイルを選択",
+            "选择文档文件",
+            "Choose document files",
+            "ドキュメントファイルを選択",
           )}
           style={{
             minWidth: 44,
