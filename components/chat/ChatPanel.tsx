@@ -211,6 +211,62 @@ function buildUnderstandingSummary(
     `Failed: ${result.failedCount}`,
   ].join("\n");
 }
+function buildUnderstandingEvidencePrompt(
+  prompt: string,
+  inputs: AIOSInputItem[],
+  locale: string,
+): string {
+  const evidence = inputs
+    .filter(
+      (input) =>
+        typeof input.extractedText ===
+          "string" &&
+        input.extractedText.trim()
+          .length > 0 &&
+        input.processingStatus ===
+          "ready",
+    )
+    .map(
+      (input) => {
+        const name =
+          input.metadata.name ??
+          input.id;
+        return [
+          `Input: ${name}`,
+          "Status: ready",
+          "Evidence:",
+          input.extractedText!.trim(),
+        ].join("\n");
+      },
+    );
+  if (evidence.length === 0) {
+    return prompt;
+  }
+  const evidenceLabel =
+    locale === "zh-CN"
+      ? "以下内容来自 AIOS Input Understanding 对用户上传输入的实际处理结果。它属于输入证据，不是自动确认的事实。请基于这些证据回答用户，并明确区分可确认内容与推断内容。"
+      : locale === "ja"
+        ? "以下は AIOS Input Understanding がユーザーの入力ファイルから実際に取得した証拠です。自動的に事実と確定された情報ではありません。証拠と推測を明確に区別して回答してください。"
+        : "The following is evidence actually produced by AIOS Input Understanding from the user's uploaded inputs. It is not automatically verified as fact. Clearly distinguish evidence from inference.";
+  const userPrompt =
+    prompt ||
+    (
+      locale === "zh-CN"
+        ? "请分析我上传的输入。"
+        : locale === "ja"
+          ? "アップロードした入力を分析してください。"
+          : "Please analyze the uploaded input."
+    );
+  return [
+    userPrompt,
+    "",
+    "=== AIOS INPUT UNDERSTANDING EVIDENCE ===",
+    evidenceLabel,
+    "",
+    ...evidence,
+    "=== END AIOS INPUT UNDERSTANDING EVIDENCE ===",
+  ].join("\n");
+}
 export default function ChatPanel() {
   const {
     locale,
@@ -487,13 +543,94 @@ export default function ChatPanel() {
         ),
       );
     try {
+      /*
+       * C164.7.4:
+       *
+       * Real uploaded/captured files
+       * must be understood BEFORE the
+       * normal Chat Runtime executes.
+       *
+       * The understanding result becomes
+       * explicit evidence in the Runtime
+       * prompt. This closes:
+       *
+       * Camera / Photo / File
+       * -> Upload
+       * -> Vision / OCR / Parser
+       * -> Evidence
+       * -> AIOS Runtime
+       * -> Answer
+       *
+       * The raw File is never inserted
+       * into the prompt.
+       */
+      let understanding:
+        Awaited<
+          ReturnType<
+            typeof executeAIOSInputUnderstandingBridge
+          >
+        > | null = null;
+      if (files.length > 0) {
+        understanding =
+          await executeAIOSInputUnderstandingBridge(
+            normalizedInputs,
+            files,
+            locale,
+          );
+        const hasUsableEvidence =
+          understanding.success &&
+          understanding.understoodCount >
+            0 &&
+          understanding.inputs.some(
+            (input) =>
+              input.processingStatus ===
+                "ready" &&
+              typeof input.extractedText ===
+                "string" &&
+              input.extractedText
+                .trim()
+                .length > 0,
+          );
+        if (
+          !hasUsableEvidence &&
+          !cleanPrompt
+        ) {
+          const message =
+            locale === "zh-CN"
+              ? "输入已接收，但当前没有可供 AIOS Runtime 使用的理解证据。图片可能无法识别，或该文件类型尚未支持。"
+              : locale === "ja"
+                ? "入力を受け付けましたが、AIOS Runtime で使用できる理解エビデンスを取得できませんでした。画像を認識できないか、このファイル形式はまだ対応していません。"
+                : "The input was received, but no usable understanding evidence was produced for the AIOS Runtime. The image may not be readable, or this file type may not be supported yet.";
+          setMessages(
+            (current) => [
+              ...current,
+              {
+                role:
+                  "assistant",
+                content:
+                  message,
+              },
+            ],
+          );
+          return;
+        }
+      }
+      const runtimePrompt =
+        understanding &&
+        understanding.success
+          ? buildUnderstandingEvidencePrompt(
+              cleanPrompt,
+              understanding.inputs,
+              locale,
+            )
+          : cleanPrompt;
       let response: Response;
       if (files.length > 0) {
         const formData =
           new FormData();
         formData.append(
           "prompt",
-          cleanPrompt,
+          runtimePrompt,
         );
         formData.append(
           "inputs",
@@ -549,7 +686,7 @@ export default function ChatPanel() {
               body:
                 JSON.stringify({
                   prompt:
-                    cleanPrompt,
+                    runtimePrompt,
                   inputs:
                     normalizedInputs,
                 }),
@@ -594,86 +731,37 @@ export default function ChatPanel() {
           ? data.content.trim()
           : "";
       /*
-       * C164.7:
-       * When real browser Files are
-       * available, run the dedicated
-       * Input Understanding Bridge.
+       * C164.7.4:
        *
-       * This is intentionally separate
-       * from the normal Chat Runtime.
-       * Vision/OCR evidence must not be
-       * silently converted into a model
-       * claim without an explicit bridge.
+       * The evidence has already been
+       * supplied to Chat Runtime.
+       *
+       * Only append a compact processing
+       * status here. Do not append the
+       * full Vision/OCR output again,
+       * otherwise the same evidence would
+       * be duplicated in the UI.
        */
       if (
+        understanding &&
         files.length > 0
       ) {
-        const understanding =
-          await executeAIOSInputUnderstandingBridge(
-            normalizedInputs,
-            files,
+        const summary =
+          buildUnderstandingSummary(
+            {
+              understoodCount:
+                understanding.understoodCount,
+              pendingCount:
+                understanding.pendingCount,
+              failedCount:
+                understanding.failedCount,
+            },
             locale,
           );
-        if (
-          understanding.success &&
-          understanding.understoodCount >
-            0
-        ) {
-          const summary =
-            buildUnderstandingSummary(
-              {
-                understoodCount:
-                  understanding.understoodCount,
-                pendingCount:
-                  understanding.pendingCount,
-                failedCount:
-                  understanding.failedCount,
-              },
-              locale,
-            );
-          assistantContent =
-            assistantContent
-              ? `${assistantContent}\n\n${summary}`
-              : summary;
-          const extractedText =
-            understanding.inputs
-              .filter(
-                (input) =>
-                  typeof input.extractedText ===
-                    "string" &&
-                  input.extractedText.trim()
-                    .length > 0,
-              )
-              .map(
-                (input) =>
-                  input.extractedText!.trim(),
-              );
-          if (
-            extractedText.length > 0
-          ) {
-            const evidenceLabel =
-              locale === "zh-CN"
-                ? "输入理解证据："
-                : locale === "ja"
-                  ? "入力理解エビデンス："
-                  : "Input understanding evidence:";
-            assistantContent = [
-              assistantContent,
-              "",
-              evidenceLabel,
-              ...extractedText,
-            ].join("\n");
-          }
-        } else if (
-          !assistantContent
-        ) {
-          assistantContent =
-            locale === "zh-CN"
-              ? "输入已接收，但当前无法完成输入理解。"
-              : locale === "ja"
-                ? "入力を受け付けましたが、現在は入力理解を完了できません。"
-                : "The input was received, but input understanding could not be completed.";
-        }
+        assistantContent =
+          assistantContent
+            ? `${assistantContent}\n\n${summary}`
+            : summary;
       }
       if (
         !assistantContent
