@@ -70,8 +70,7 @@ metadata: {
   lastModifiedAt:
     typeof input.metadata
       .lastModifiedAt === "string"
-      ? input.metadata
-          .lastModifiedAt
+      ? input.metadata.lastModifiedAt
       : null,
   source:
     input.metadata.source ??
