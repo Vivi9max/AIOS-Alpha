@@ -1,25 +1,31 @@
 "use client";
+
 import {
   useEffect,
   useRef,
   useState,
 } from "react";
+
 interface AIOSSpeechRecognitionResult {
   isFinal: boolean;
   [index: number]: {
     transcript: string;
   };
 }
+
 interface AIOSSpeechRecognitionResultList {
   length: number;
   [index: number]: AIOSSpeechRecognitionResult;
 }
+
 interface AIOSSpeechRecognitionEvent {
   results: AIOSSpeechRecognitionResultList;
 }
+
 interface AIOSSpeechRecognitionErrorEvent {
   error: string;
 }
+
 interface AIOSSpeechRecognition {
   lang: string;
   continuous: boolean;
@@ -37,45 +43,52 @@ interface AIOSSpeechRecognition {
   stop: () => void;
   abort: () => void;
 }
+
 interface AIOSSpeechRecognitionConstructor {
   new (): AIOSSpeechRecognition;
 }
+
 interface Props {
   value: string;
   disabled?: boolean;
   locale?: string;
   onChange: (value: string) => void;
 }
+
 function getSpeechRecognitionConstructor():
   | AIOSSpeechRecognitionConstructor
   | null {
-  if (
-    typeof window === "undefined"
-  ) {
+  if (typeof window === "undefined") {
     return null;
   }
+
   const browserWindow =
     window as Window & {
       SpeechRecognition?: AIOSSpeechRecognitionConstructor;
       webkitSpeechRecognition?: AIOSSpeechRecognitionConstructor;
     };
+
   return (
     browserWindow.SpeechRecognition ??
     browserWindow.webkitSpeechRecognition ??
     null
   );
 }
+
 function getRecognitionLanguage(
   locale: string,
 ): string {
   if (locale === "ja") {
     return "ja-JP";
   }
+
   if (locale === "en") {
     return "en-US";
   }
+
   return "zh-CN";
 }
+
 function getLocalizedText(
   locale: string,
   zh: string,
@@ -85,70 +98,81 @@ function getLocalizedText(
   if (locale === "ja") {
     return ja;
   }
+
   if (locale === "en") {
     return en;
   }
+
   return zh;
 }
+
 export default function AIOSVoiceInput({
   value,
   disabled = false,
   locale = "zh-CN",
   onChange,
 }: Props) {
-  const [
-    supported,
-    setSupported,
-  ] = useState(false);
-  const [
-    listening,
-    setListening,
-  ] = useState(false);
-  const [
-    status,
-    setStatus,
-  ] = useState("");
+  const [supported, setSupported] =
+    useState(false);
+
+  const [listening, setListening] =
+    useState(false);
+
+  const [status, setStatus] =
+    useState("");
+
   const recognitionRef =
     useRef<AIOSSpeechRecognition | null>(
       null,
     );
+
   const valueRef =
     useRef(value);
+
   useEffect(() => {
     valueRef.current =
       value;
   }, [value]);
+
   useEffect(() => {
     const constructor =
       getSpeechRecognitionConstructor();
+
     setSupported(
       constructor !== null &&
         window.isSecureContext,
     );
   }, []);
+
   useEffect(() => {
     return () => {
       const recognition =
         recognitionRef.current;
+
       if (!recognition) {
         return;
       }
+
       try {
         recognition.abort();
       } catch {
         // Ignore cleanup errors.
       }
+
       recognitionRef.current =
         null;
     };
   }, []);
+
   function stopRecognition() {
     const recognition =
       recognitionRef.current;
+
     if (!recognition) {
       setListening(false);
       return;
     }
+
     try {
       recognition.stop();
     } catch {
@@ -158,8 +182,10 @@ export default function AIOSVoiceInput({
         // Ignore stop errors.
       }
     }
+
     setListening(false);
   }
+
   function startRecognition() {
     if (
       disabled ||
@@ -167,8 +193,10 @@ export default function AIOSVoiceInput({
     ) {
       return;
     }
+
     const constructor =
       getSpeechRecognitionConstructor();
+
     if (
       !constructor ||
       !window.isSecureContext
@@ -176,41 +204,50 @@ export default function AIOSVoiceInput({
       setStatus(
         getLocalizedText(
           locale,
-          "当前浏览器不支持语音输入，请使用支持语音识别的浏览器。",
+          "当前浏览器不支持语音输入。",
           "Voice input is not supported by this browser.",
           "現在のブラウザは音声入力に対応していません。",
         ),
       );
       return;
     }
+
     const recognition =
       new constructor();
+
     recognition.lang =
       getRecognitionLanguage(
         locale,
       );
+
     recognition.continuous =
       false;
+
     recognition.interimResults =
       true;
+
     recognition.maxAlternatives =
       1;
+
     recognition.onstart =
       () => {
         setListening(true);
+
         setStatus(
           getLocalizedText(
             locale,
-            "正在听，请说话……",
-            "Listening...",
-            "音声を聞いています...",
+            "正在听，请说话",
+            "Listening",
+            "音声を聞いています",
           ),
         );
       };
+
     recognition.onresult =
       (event) => {
         let finalTranscript =
           "";
+
         for (
           let index = 0;
           index <
@@ -219,6 +256,7 @@ export default function AIOSVoiceInput({
         ) {
           const result =
             event.results[index];
+
           if (
             result.isFinal
           ) {
@@ -227,28 +265,36 @@ export default function AIOSVoiceInput({
                 .transcript;
           }
         }
+
         const cleaned =
           finalTranscript.trim();
+
         if (!cleaned) {
           return;
         }
+
         const current =
           valueRef.current.trim();
+
         const nextValue =
           current.length > 0
             ? current +
               " " +
               cleaned
             : cleaned;
+
         onChange(
           nextValue,
         );
+
         valueRef.current =
           nextValue;
       };
+
     recognition.onerror =
       (event) => {
         setListening(false);
+
         if (
           event.error ===
           "not-allowed"
@@ -256,13 +302,14 @@ export default function AIOSVoiceInput({
           setStatus(
             getLocalizedText(
               locale,
-              "麦克风权限被拒绝，请在浏览器设置中允许麦克风访问。",
-              "Microphone permission was denied. Please allow microphone access in browser settings.",
-              "マイクの権限が拒否されました。ブラウザ設定でマイクを許可してください。",
+              "麦克风权限被拒绝，请在 Safari 设置中允许访问麦克风。",
+              "Microphone access was denied. Allow microphone access in Safari settings.",
+              "マイクの権限が拒否されました。Safari の設定でマイクを許可してください。",
             ),
           );
           return;
         }
+
         if (
           event.error ===
           "no-speech"
@@ -270,13 +317,14 @@ export default function AIOSVoiceInput({
           setStatus(
             getLocalizedText(
               locale,
-              "没有检测到语音，请重新尝试。",
-              "No speech was detected. Please try again.",
-              "音声が検出されませんでした。もう一度お試しください。",
+              "没有检测到语音。",
+              "No speech detected.",
+              "音声が検出されませんでした。",
             ),
           );
           return;
         }
+
         if (
           event.error ===
           "audio-capture"
@@ -291,6 +339,7 @@ export default function AIOSVoiceInput({
           );
           return;
         }
+
         setStatus(
           getLocalizedText(
             locale,
@@ -300,29 +349,28 @@ export default function AIOSVoiceInput({
           ),
         );
       };
+
     recognition.onend =
       () => {
         setListening(false);
+
         recognitionRef.current =
           null;
-        setStatus(
-          getLocalizedText(
-            locale,
-            "语音输入完成。",
-            "Voice input completed.",
-            "音声入力が完了しました。",
-          ),
-        );
       };
+
     recognitionRef.current =
       recognition;
+
     setStatus("");
+
     try {
       recognition.start();
     } catch {
       recognitionRef.current =
         null;
+
       setListening(false);
+
       setStatus(
         getLocalizedText(
           locale,
@@ -333,22 +381,43 @@ export default function AIOSVoiceInput({
       );
     }
   }
+
   function toggleRecognition() {
     if (listening) {
       stopRecognition();
       return;
     }
+
     startRecognition();
   }
+
   if (!supported) {
     return null;
   }
+
+  const label =
+    listening
+      ? getLocalizedText(
+          locale,
+          "停止语音输入",
+          "Stop voice input",
+          "音声入力を停止",
+        )
+      : getLocalizedText(
+          locale,
+          "开始语音输入",
+          "Start voice input",
+          "音声入力を開始",
+        );
+
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
+        position: "relative",
+        width: 44,
+        height: 48,
+        flexShrink: 0,
+        order: 1,
       }}
     >
       <button
@@ -356,49 +425,32 @@ export default function AIOSVoiceInput({
         onClick={
           toggleRecognition
         }
-        disabled={disabled}
+        disabled={
+          disabled
+        }
         aria-label={
-          listening
-            ? getLocalizedText(
-                locale,
-                "停止语音输入",
-                "Stop voice input",
-                "音声入力を停止",
-              )
-            : getLocalizedText(
-                locale,
-                "开始语音输入",
-                "Start voice input",
-                "音声入力を開始",
-              )
+          label
         }
         title={
-          listening
-            ? getLocalizedText(
-                locale,
-                "停止语音输入",
-                "Stop voice input",
-                "音声入力を停止",
-              )
-            : getLocalizedText(
-                locale,
-                "开始语音输入",
-                "Start voice input",
-                "音声入力を開始",
-              )
+          label
         }
         style={{
           width: 44,
-          height: 44,
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          height: 48,
+          boxSizing:
+            "border-box",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "center",
           border:
             listening
               ? "1px solid #ef4444"
               : "1px solid #d1d5db",
-          borderRadius: 12,
+          borderRadius:
+            14,
           background:
             listening
               ? "#fef2f2"
@@ -413,7 +465,8 @@ export default function AIOSVoiceInput({
             disabled
               ? "not-allowed"
               : "pointer",
-          fontSize: 18,
+          fontSize:
+            18,
           WebkitTapHighlightColor:
             "transparent",
         }}
@@ -426,17 +479,38 @@ export default function AIOSVoiceInput({
             : "🎙️"}
         </span>
       </button>
+
       {status && (
         <span
           aria-live="polite"
           style={{
-            maxWidth: 220,
+            position:
+              "absolute",
+            top:
+              "calc(100% + 4px)",
+            right: 0,
+            width: 180,
+            padding:
+              "5px 7px",
+            boxSizing:
+              "border-box",
+            borderRadius:
+              7,
+            background:
+              "#f8fafc",
             color:
               listening
                 ? "#475569"
                 : "#64748b",
-            fontSize: 10,
-            lineHeight: 1.4,
+            fontSize:
+              10,
+            lineHeight:
+              1.35,
+            textAlign:
+              "right",
+            pointerEvents:
+              "none",
+            zIndex: 5,
           }}
         >
           {status}
