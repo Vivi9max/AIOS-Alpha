@@ -28,53 +28,26 @@ function normalizeSymbol(
     .trim()
     .toUpperCase();
 }
+/**
+ * C163.5 semantic boundary:
+ *
+ * Historical growth data from C162.2 / C163.4
+ * must remain historical context.
+ *
+ * It must NOT automatically populate the
+ * C149 Low / Base / High valuation assumptions,
+ * because doing so would make historical data
+ * appear to be a forward-looking scenario.
+ *
+ * Explicit C149 assumptions supplied by the caller
+ * remain unchanged.
+ */
 function buildAssumptions(
-  historicalContext:
-    MarketHistoricalValuationContext | null,
   supplied:
     MarketValuationAssumptions | null | undefined,
 ): MarketValuationAssumptions {
-  const historicalGrowth =
-    finiteOrNull(
-      historicalContext?.revenueGrowth,
-    );
-  /*
-   * C149 keeps explicit scenario assumptions.
-   *
-   * Historical revenue growth is mapped only to the
-   * revenueGrowthReference fields. It is NOT converted
-   * into a price target or forecast.
-   */
-  if (
-    historicalGrowth === null
-  ) {
-    return {
-      ...(supplied ?? {}),
-    };
-  }
-  const existingLow =
-    finiteOrNull(
-      supplied?.revenueGrowthLow,
-    );
-  const existingBase =
-    finiteOrNull(
-      supplied?.revenueGrowthBase,
-    );
-  const existingHigh =
-    finiteOrNull(
-      supplied?.revenueGrowthHigh,
-    );
   return {
     ...(supplied ?? {}),
-    revenueGrowthLow:
-      existingLow ??
-      historicalGrowth,
-    revenueGrowthBase:
-      existingBase ??
-      historicalGrowth,
-    revenueGrowthHigh:
-      existingHigh ??
-      historicalGrowth,
   };
 }
 function buildCandidate(
@@ -145,7 +118,6 @@ export function buildHistoricalValuationRequest(
     null;
   const assumptions =
     buildAssumptions(
-      historicalContext,
       request.assumptions,
     );
   const candidate =
@@ -177,8 +149,11 @@ export function buildHistoricalValuationRequest(
     );
   const limitations: string[] = [
     "C163.4 is an adapter layer between historical fundamentals and the frozen C149 valuation request contract.",
-    "Historical growth is descriptive context only and is not a forecast.",
+    "Historical growth remains descriptive historical context only.",
+    "Historical growth is not automatically converted into C149 Low/Base/High forward scenario assumptions.",
+    "Historical growth is not treated as a forecast.",
     "Historical growth is not converted into a target price.",
+    "Explicit C149 valuation assumptions remain caller-supplied modeling inputs.",
     "The adapter does not modify C149 valuation-types.ts.",
     "The adapter does not modify C149 valuation-engine.ts.",
     "P/E and P/B assumptions remain explicit modeling inputs.",
@@ -234,6 +209,12 @@ export function buildHistoricalValuationRequest(
         "insufficient",
     },
     methodology: {
+      /**
+       * Historical data is available as
+       * descriptive historical context,
+       * but is deliberately NOT injected
+       * into C149 forward scenario assumptions.
+       */
       historicalGrowthUsedAsScenarioContext:
         historicalContext !== null &&
         historicalContext.historicalDataUsableForValuation,
