@@ -145,10 +145,52 @@ export default function AIOSVoiceInput({
   const valueRef =
     useRef(value);
 
+  const statusTimerRef =
+    useRef<number | null>(null);
+
   useEffect(() => {
     valueRef.current =
       value;
   }, [value]);
+
+  function clearStatusTimer() {
+    if (
+      statusTimerRef.current !==
+      null
+    ) {
+      window.clearTimeout(
+        statusTimerRef.current,
+      );
+
+      statusTimerRef.current =
+        null;
+    }
+  }
+
+  function clearStatus() {
+    clearStatusTimer();
+    setStatus("");
+  }
+
+  function setTransientStatus(
+    message: string,
+    duration = 4000,
+  ) {
+    clearStatusTimer();
+
+    setStatus(message);
+
+    statusTimerRef.current =
+      window.setTimeout(
+        () => {
+          setStatus("");
+
+          statusTimerRef.current =
+            null;
+        },
+        duration,
+      );
+  }
 
   useEffect(() => {
     const constructor =
@@ -162,6 +204,8 @@ export default function AIOSVoiceInput({
 
   useEffect(() => {
     return () => {
+      clearStatusTimer();
+
       const recognition =
         recognitionRef.current;
 
@@ -312,6 +356,7 @@ export default function AIOSVoiceInput({
 
     if (!recognition) {
       setListening(false);
+      clearStatus();
       return;
     }
 
@@ -326,6 +371,7 @@ export default function AIOSVoiceInput({
     }
 
     setListening(false);
+    clearStatus();
   }
 
   function startRecognition() {
@@ -336,6 +382,8 @@ export default function AIOSVoiceInput({
       return;
     }
 
+    clearStatus();
+
     const constructor =
       getSpeechRecognitionConstructor();
 
@@ -343,7 +391,7 @@ export default function AIOSVoiceInput({
       !constructor ||
       !window.isSecureContext
     ) {
-      setStatus(
+      setTransientStatus(
         getLocalizedText(
           locale,
           "当前浏览器不支持语音输入。",
@@ -373,6 +421,8 @@ export default function AIOSVoiceInput({
 
     recognition.onstart =
       () => {
+        clearStatus();
+
         setListening(true);
 
         setStatus(
@@ -437,11 +487,14 @@ export default function AIOSVoiceInput({
       (event) => {
         setListening(false);
 
+        recognitionRef.current =
+          null;
+
         if (
           event.error ===
           "not-allowed"
         ) {
-          setStatus(
+          setTransientStatus(
             getLocalizedText(
               locale,
               "麦克风权限被拒绝，请在 Safari 设置中允许访问麦克风。",
@@ -456,7 +509,7 @@ export default function AIOSVoiceInput({
           event.error ===
           "no-speech"
         ) {
-          setStatus(
+          setTransientStatus(
             getLocalizedText(
               locale,
               "没有检测到语音。",
@@ -471,7 +524,7 @@ export default function AIOSVoiceInput({
           event.error ===
           "audio-capture"
         ) {
-          setStatus(
+          setTransientStatus(
             getLocalizedText(
               locale,
               "无法访问麦克风。",
@@ -482,7 +535,7 @@ export default function AIOSVoiceInput({
           return;
         }
 
-        setStatus(
+        setTransientStatus(
           getLocalizedText(
             locale,
             "语音输入失败，请重试。",
@@ -498,12 +551,12 @@ export default function AIOSVoiceInput({
 
         recognitionRef.current =
           null;
+
+        clearStatus();
       };
 
     recognitionRef.current =
       recognition;
-
-    setStatus("");
 
     try {
       recognition.start();
@@ -513,7 +566,7 @@ export default function AIOSVoiceInput({
 
       setListening(false);
 
-      setStatus(
+      setTransientStatus(
         getLocalizedText(
           locale,
           "无法启动语音输入，请重试。",
