@@ -5,9 +5,6 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  createPortal,
-} from "react-dom";
 
 interface AIOSSpeechRecognitionResult {
   isFinal: boolean;
@@ -61,6 +58,7 @@ interface Props {
 interface StatusPosition {
   top: number;
   left: number;
+  maxWidth: number;
 }
 
 function getSpeechRecognitionConstructor():
@@ -196,27 +194,32 @@ export default function AIOSVoiceInput({
         return;
       }
 
-      const rect =
-        button.getBoundingClientRect();
-
       const viewportWidth =
         window.innerWidth;
 
       const viewportHeight =
         window.innerHeight;
 
+      const rect =
+        button.getBoundingClientRect();
+
       const horizontalPadding =
         12;
 
-      const estimatedWidth =
-        Math.min(
-          240,
-          viewportWidth -
-            horizontalPadding * 2,
+      const maxWidth =
+        Math.max(
+          160,
+          Math.min(
+            280,
+            viewportWidth -
+              horizontalPadding * 2,
+          ),
         );
 
       const estimatedHeight =
-        48;
+        status.length > 36
+          ? 64
+          : 42;
 
       const gap =
         8;
@@ -224,14 +227,14 @@ export default function AIOSVoiceInput({
       let left =
         rect.left +
         rect.width / 2 -
-        estimatedWidth / 2;
+        maxWidth / 2;
 
       left = Math.max(
         horizontalPadding,
         Math.min(
           left,
           viewportWidth -
-            estimatedWidth -
+            maxWidth -
             horizontalPadding,
         ),
       );
@@ -268,6 +271,7 @@ export default function AIOSVoiceInput({
       setStatusPosition({
         top,
         left,
+        maxWidth,
       });
     }
 
@@ -548,65 +552,6 @@ export default function AIOSVoiceInput({
           "音声入力を開始",
         );
 
-  const statusPortal =
-    status &&
-    statusPosition &&
-    typeof document !==
-      "undefined"
-      ? createPortal(
-          <div
-            aria-live="polite"
-            style={{
-              position:
-                "fixed",
-              top:
-                statusPosition.top,
-              left:
-                statusPosition.left,
-              width:
-                "max-content",
-              maxWidth:
-                "calc(100vw - 24px)",
-              minWidth:
-                120,
-              padding:
-                "7px 12px",
-              boxSizing:
-                "border-box",
-              border:
-                "1px solid #e2e8f0",
-              borderRadius:
-                10,
-              background:
-                "rgba(248, 250, 252, 0.98)",
-              color:
-                listening
-                  ? "#475569"
-                  : "#64748b",
-              fontSize:
-                12,
-              lineHeight:
-                1.4,
-              textAlign:
-                "center",
-              whiteSpace:
-                "normal",
-              wordBreak:
-                "break-word",
-              pointerEvents:
-                "none",
-              zIndex:
-                2147483647,
-              boxShadow:
-                "0 4px 14px rgba(15, 23, 42, 0.12)",
-            }}
-          >
-            {status}
-          </div>,
-          document.body,
-        )
-      : null;
-
   return (
     <>
       <div
@@ -681,9 +626,60 @@ export default function AIOSVoiceInput({
               : "🎙️"}
           </span>
         </button>
-      </div>
 
-      {statusPortal}
+        {status &&
+          statusPosition && (
+            <div
+              aria-live="polite"
+              style={{
+                position:
+                  "fixed",
+                top:
+                  statusPosition.top,
+                left:
+                  statusPosition.left,
+                width:
+                  "max-content",
+                maxWidth:
+                  statusPosition.maxWidth,
+                minWidth:
+                  120,
+                padding:
+                  "7px 12px",
+                boxSizing:
+                  "border-box",
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius:
+                  10,
+                background:
+                  "rgba(248, 250, 252, 0.98)",
+                color:
+                  listening
+                    ? "#475569"
+                    : "#64748b",
+                fontSize:
+                  12,
+                lineHeight:
+                  1.4,
+                textAlign:
+                  "center",
+                whiteSpace:
+                  "normal",
+                wordBreak:
+                  "break-word",
+                pointerEvents:
+                  "none",
+                zIndex:
+                  2147483647,
+                boxShadow:
+                  "0 4px 14px rgba(15, 23, 42, 0.12)",
+              }}
+            >
+              {status}
+            </div>
+          )}
+      </div>
     </>
   );
 }
