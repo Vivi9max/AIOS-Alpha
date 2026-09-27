@@ -53,6 +53,10 @@ import {
 import {
   processAIOSInputs,
 } from "@/lib/runtime/input/aios-input-runtime";
+import {
+  processAIOSUploadedFiles,
+  type AIOSInputProcessingResult,
+} from "@/lib/runtime/input/aios-input-processing-runtime";
 import type {
   AIOSInputItem,
 } from "@/lib/runtime/input/aios-input-types";
@@ -765,6 +769,8 @@ export async function GET(
           inputFoundation: true,
           realFileUpload:
             true,
+          inputProcessing:
+            true,
         },
         identity: {
           userId:
@@ -821,6 +827,9 @@ export async function POST(
       File[] = [];
     let fileInputIds:
       string[] = [];
+    let inputProcessingResult:
+      AIOSInputProcessingResult |
+      undefined;
     if (isMultipart) {
       const formData =
         await request.formData();
@@ -1104,6 +1113,52 @@ export async function POST(
         );
       }
     }
+    /*
+     * C164.6.1:
+     * Real uploaded browser Files are now
+     * passed into the server-side processing
+     * runtime after Input Foundation validation.
+     *
+     * Processing remains transient.
+     * No provider-specific multimodal model
+     * execution is performed here.
+     */
+    if (
+      isMultipart &&
+      uploadedFiles.length > 0 &&
+      hasInputs &&
+      inputResult
+    ) {
+      inputProcessingResult =
+        await processAIOSUploadedFiles(
+          inputItems,
+          uploadedFiles.map(
+            (
+              file,
+              index,
+            ) => ({
+              inputId:
+                fileInputIds[index] ??
+                "",
+              file,
+            }),
+          ),
+        );
+      inputItems =
+        inputProcessingResult.inputs;
+      inputResult = {
+        ...inputResult,
+        inputs:
+          inputProcessingResult.inputs,
+        limitations:
+          Array.from(
+            new Set([
+              ...inputResult.limitations,
+              ...inputProcessingResult.limitations,
+            ]),
+          ),
+      };
+    }
     if (
       !prompt &&
       !hasInputs
@@ -1136,15 +1191,15 @@ export async function POST(
     }
     /*
      * Input-only requests stop at
-     * the Input Foundation.
+     * the Input Foundation / Processing Runtime.
      *
-     * This is intentional:
-     * browser files are not yet
-     * converted into provider-specific
-     * multimodal payloads.
+     * Text, CSV, and JSON may be processed
+     * into transient extractedText.
      *
-     * Do not claim Vision, OCR,
-     * or document parsing execution.
+     * PDF parsing, image Vision/OCR,
+     * DOC/DOCX/XLS/XLSX parsing and
+     * provider-specific multimodal execution
+     * are not claimed here.
      */
     if (
       !prompt &&
@@ -1156,12 +1211,24 @@ export async function POST(
       const rejectedCount =
         inputResult?.rejectedCount ??
         0;
+      const processedCount =
+        inputProcessingResult
+          ?.processedCount ??
+        0;
+      const pendingCount =
+        inputProcessingResult
+          ?.pendingCount ??
+        0;
+      const failedCount =
+        inputProcessingResult
+          ?.failedCount ??
+        0;
       const content =
         locale === "ja"
-          ? `入力を受け付けました。${acceptedCount} 件を登録し、${rejectedCount} 件を拒否しました。画像認識・OCR・文書解析はまだ実行していません。`
+          ? `入力を受け付けました。${acceptedCount} 件を登録しました。処理済み ${processedCount} 件、保留 ${pendingCount} 件、失敗 ${failedCount} 件です。画像認識・OCR・PDF/DOC/XLS 解析はまだ実行していません。`
           : locale === "zh-CN"
-            ? `已接收输入。接受 ${acceptedCount} 项，拒绝 ${rejectedCount} 项。当前阶段尚未执行图像识别、OCR 或文档解析。`
-            : `Inputs accepted. ${acceptedCount} accepted and ${rejectedCount} rejected. Vision, OCR, and document parsing are not executed at this stage.`;
+            ? `已接收输入。共接受 ${acceptedCount} 项。已处理 ${processedCount} 项、待处理 ${pendingCount} 项、失败 ${failedCount} 项。当前尚未执行图像识别、OCR、PDF/DOC/XLS 文档解析。`
+            : `Inputs accepted. ${acceptedCount} accepted. ${processedCount} processed, ${pendingCount} pending, and ${failedCount} failed. Vision, OCR, and PDF/DOC/XLS document parsing are not executed at this stage.`;
       const response =
         NextResponse.json(
           {
@@ -1170,8 +1237,11 @@ export async function POST(
               false,
             content,
             code:
-              "C164_5B_REAL_FILE_UPLOAD_BRIDGE",
+              inputProcessingResult
+                ? "C164_6_1_INPUT_PROCESSING_BRIDGE"
+                : "C164_5B_REAL_FILE_UPLOAD_BRIDGE",
             inputResult,
+            inputProcessingResult,
             userId:
               identity.userId,
             identityMode:
@@ -1232,6 +1302,7 @@ export async function POST(
           ...result,
           conversation,
           inputResult,
+          inputProcessingResult,
           userId:
             identity.userId,
           identityMode:
