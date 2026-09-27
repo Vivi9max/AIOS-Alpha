@@ -59,16 +59,22 @@ const globalMenus = [
 
 const cnMenus = [
   {
-    icon: "🇨🇳",
+    icon: "💬",
     label:
       "AIOS CN",
     href: "/cn",
   },
   {
+    icon: "◉",
+    label:
+      "CN Runtime",
+    href: "/cn/runtime",
+  },
+  {
     icon: "⚙️",
     label:
-      "nav.settings" as MessageKey,
-    href: "/settings",
+      "CN Settings",
+    href: "/cn/settings",
   },
 ];
 
