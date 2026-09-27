@@ -3,6 +3,11 @@ import type {
 } from "@/lib/runtime/input/aios-input-types";
 
 import {
+  retrieveWebEvidence,
+  routeLiveIntelligence,
+} from "@/lib/web-intelligence";
+
+import {
   executeAIOSCNRuntime,
 } from "./aios-cn-runtime";
 
@@ -15,23 +20,29 @@ import type {
 } from "./aios-cn-chat-types";
 
 const RUNTIME_VERSION =
-  "C165.2";
+  "C165.4";
 
-function buildEvidencePrompt(
+function getUsableEvidence(
+  inputs: AIOSInputItem[],
+): AIOSInputItem[] {
+  return inputs.filter(
+    (input) =>
+      input.processingStatus ===
+        "ready" &&
+      typeof input.extractedText ===
+        "string" &&
+      input.extractedText.trim()
+        .length > 0,
+  );
+}
+
+function buildInputEvidencePrompt(
   prompt: string,
   inputs: AIOSInputItem[],
   locale: string,
 ): string {
   const usableInputs =
-    inputs.filter(
-      (input) =>
-        input.processingStatus ===
-          "ready" &&
-        typeof input.extractedText ===
-          "string" &&
-        input.extractedText.trim()
-          .length > 0,
-    );
+    getUsableEvidence(inputs);
 
   if (
     usableInputs.length ===
@@ -84,18 +95,94 @@ function buildEvidencePrompt(
   ].join("\n");
 }
 
-function getUsableEvidence(
-  inputs: AIOSInputItem[],
-): AIOSInputItem[] {
-  return inputs.filter(
-    (input) =>
-      input.processingStatus ===
-        "ready" &&
-      typeof input.extractedText ===
-        "string" &&
-      input.extractedText.trim()
-          .length > 0,
-  );
+function buildWebEvidencePrompt(
+  prompt: string,
+  locale: string,
+  webEvidence: Awaited<
+    ReturnType<
+      typeof retrieveWebEvidence
+    >
+  >,
+): string {
+  const route =
+    webEvidence.route;
+
+  const evidence =
+    webEvidence.evidence
+      .slice(0, 10)
+      .map(
+        (item, index) => {
+          const snippets =
+            item.snippets
+              .slice(0, 3)
+              .join(" ");
+
+          return [
+            `Source ${index + 1}: ${item.title}`,
+            `URL: ${item.url}`,
+            `Host: ${item.hostname}`,
+            `Freshness: ${item.freshness}`,
+            `RetrievedAt: ${new Date(
+              item.retrievedAt,
+            ).toISOString()}`,
+            `Evidence: ${snippets}`,
+          ].join("\n");
+        },
+      );
+
+  const verification =
+    webEvidence.verification;
+
+  const verificationText =
+    verification
+      ? [
+          `Verification: ${verification.verified ? "verified" : "limited"}`,
+          `Verification score: ${verification.score}`,
+          `Independent sources: ${verification.independentSourceCount}`,
+          `Primary source found: ${verification.primarySourceFound ? "yes" : "no"}`,
+          `Corroborated: ${verification.corroborated ? "yes" : "no"}`,
+        ].join("\n")
+      : "Verification: unavailable";
+
+  const evidenceLabel =
+    locale === "zh-CN"
+      ? "以下内容来自 AIOS Web Intelligence 实际联网检索结果。请把它作为外部证据，而不是无条件确认的事实。回答实时、今日、最新等问题时必须优先依据这些检索结果，并明确说明来源和时间范围。"
+      : locale === "ja"
+        ? "以下は AIOS Web Intelligence が実際に取得した外部ウェブ証拠です。無条件に確定した事実として扱わず、情報源と時間範囲を明確にしてください。"
+        : "The following is external evidence actually retrieved by AIOS Web Intelligence. Do not treat it as automatically verified fact. For current or recent questions, prioritize this evidence and identify sources and time scope.";
+
+  const userPrompt =
+    prompt.trim() ||
+    (
+      locale === "zh-CN"
+        ? "请根据最新可用信息回答。"
+        : locale === "ja"
+          ? "最新の利用可能な情報に基づいて回答してください。"
+          : "Please answer using the latest available information."
+    );
+
+  return [
+    userPrompt,
+    "",
+    "=== AIOS CN WEB INTELLIGENCE EVIDENCE ===",
+    evidenceLabel,
+    "",
+    `Search query: ${webEvidence.query}`,
+    `Category: ${route?.category ?? "general"}`,
+    `Freshness: ${route?.freshness ?? "general"}`,
+    `Retrieval mode: ${webEvidence.retrievalMode ?? "unknown"}`,
+    verificationText,
+    "",
+    ...evidence,
+    "",
+    "=== END AIOS CN WEB INTELLIGENCE EVIDENCE ===",
+    "",
+    locale === "zh-CN"
+      ? "回答实时新闻时，不得声称自己没有联网。如果检索结果不足，应明确说明证据不足，而不是使用模型记忆冒充今天的事实。"
+      : locale === "ja"
+        ? "最新ニュースについて回答する場合、ウェブ接続がないと主張してはいけません。検索結果が不足している場合は、証拠不足を明示し、モデルの記憶を今日の事実として扱わないでください。"
+        : "For current news, do not claim that web access is unavailable. If the retrieved evidence is insufficient, state that clearly instead of presenting model memory as today's facts.",
+  ].join("\n");
 }
 
 function buildFailureContent(
@@ -214,14 +301,10 @@ export async function executeAIOSCNChat(
     };
   }
 
-  const runtimePrompt =
-    buildEvidencePrompt(
-      prompt,
-      inputs,
-      locale,
-    );
-
-  if (!runtimePrompt.trim()) {
+  if (
+    !prompt.trim() &&
+    inputs.length === 0
+  ) {
     return {
       success: false,
       code:
@@ -250,6 +333,96 @@ export async function executeAIOSCNChat(
   }
 
   try {
+    let runtimePrompt =
+      buildInputEvidencePrompt(
+        prompt,
+        inputs,
+        locale,
+      );
+
+    const intelligenceRoute =
+      routeLiveIntelligence(
+        prompt,
+      );
+
+    let webIntelligence:
+      Awaited<
+        ReturnType<
+          typeof retrieveWebEvidence
+        >
+      > | null = null;
+
+    if (
+      intelligenceRoute.required
+    ) {
+      webIntelligence =
+        await retrieveWebEvidence(
+          prompt,
+        );
+
+      if (
+        webIntelligence.success &&
+        webIntelligence.evidence.length >
+          0
+      ) {
+        runtimePrompt =
+          buildWebEvidencePrompt(
+            runtimePrompt,
+            locale,
+            webIntelligence,
+          );
+      } else {
+        return {
+          success: false,
+          code:
+            "AIOS_CN_CHAT_RUNTIME_FAILED",
+          content:
+            locale === "zh-CN"
+              ? "AIOS CN 检测到该请求需要实时联网信息，但当前没有获得足够的 Web Intelligence 证据，因此没有使用模型记忆冒充实时事实。"
+              : locale === "ja"
+                ? "AIOS CN はこのリクエストに最新のウェブ情報が必要だと判断しましたが、十分な Web Intelligence 証拠を取得できなかったため、モデルの記憶を最新情報として扱いませんでした。"
+                : "AIOS CN detected that this request requires current web information, but sufficient Web Intelligence evidence was not retrieved, so model memory was not presented as current fact.",
+          inputUnderstanding:
+            inputs.length > 0
+              ? {
+                  success:
+                    usableEvidence.length >
+                    0,
+                  understoodCount:
+                    usableEvidence.length,
+                  pendingCount:
+                    inputs.filter(
+                      (input) =>
+                        input.processingStatus ===
+                        "pending",
+                    ).length,
+                  failedCount:
+                    inputs.filter(
+                      (input) =>
+                        input.processingStatus ===
+                        "failed",
+                    ).length,
+                  limitations: [],
+                }
+              : undefined,
+          safetyBoundary: {
+            plannerDispatched: false,
+            tradingExecuted: false,
+            commercialActualWritten: false,
+          },
+          runtime:
+            "aios-cn-chat",
+          runtimeVersion:
+            RUNTIME_VERSION,
+          latencyMs:
+            Date.now() -
+            startedAt,
+          generatedAt:
+            new Date().toISOString(),
+        };
+      }
+    }
+
     const result =
       await executeAIOSCNRuntime({
         prompt:
