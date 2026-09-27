@@ -31,6 +31,11 @@ const menus = [
     href: "/workspace",
   },
   {
+    icon: "🇨🇳",
+    label: "AIOS CN",
+    href: "/cn",
+  },
+  {
     icon: "🧭",
     label:
       "Market Research",
@@ -45,8 +50,7 @@ const menus = [
   },
   {
     icon: "💳",
-    label:
-      "Plans",
+    label: "Plans",
     href: "/billing",
   },
   {
