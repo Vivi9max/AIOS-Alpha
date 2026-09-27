@@ -1,30 +1,41 @@
 "use client";
+
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
+
 import {
   chatPanelCopy,
 } from "@/lib/i18n/chat-panel";
+
 import {
   clearAIOSInputFiles,
   getAIOSInputFiles,
 } from "@/lib/runtime/input/aios-input-browser-store";
+
 import {
-  executeAIOSInputUnderstandingBridge,
-} from "@/lib/runtime/input/aios-input-understanding-bridge";
+  executeAIOSCNInputUnderstandingBridge,
+} from "@/lib/runtime/cn/aios-cn-input-understanding-bridge";
+
 import type {
   AIOSInputItem,
 } from "@/lib/runtime/input/aios-input-types";
+
+import AIOSCNVideoInput from "@/components/input/AIOSCNVideoInput";
+
 import ChatInput from "./ChatInput";
+
 import MessageList, {
   type ChatMessage,
 } from "./MessageList";
+
 interface MemoryRecord {
   id: number;
   role:
@@ -33,6 +44,7 @@ interface MemoryRecord {
   content: string;
   timestamp: number;
 }
+
 interface CNChatResponse {
   success?: boolean;
   code?: string;
@@ -43,12 +55,8 @@ interface CNChatResponse {
   error?: string;
   latencyMs?: number;
   conversation?: MemoryRecord[];
-  inputUnderstanding?: {
-    understoodCount?: number;
-    pendingCount?: number;
-    failedCount?: number;
-  };
 }
+
 interface CNRuntimeStatus {
   success?: boolean;
   configuredProviders?: {
@@ -58,14 +66,17 @@ interface CNRuntimeStatus {
   selectedProvider?: string;
   fallbackProvider?: string;
 }
+
 function isRuntimeWrapper(
   content: string,
 ): boolean {
   const raw =
     content.trim();
+
   if (!raw) {
     return false;
   }
+
   return (
     raw.includes(
       "你是 AIOS Runtime 的执行引擎",
@@ -78,6 +89,7 @@ function isRuntimeWrapper(
     )
   );
 }
+
 function sanitizeMessages(
   memory: MemoryRecord[],
 ): ChatMessage[] {
@@ -85,8 +97,10 @@ function sanitizeMessages(
     .filter(
       (item) =>
         (
-          item.role === "user" ||
-          item.role === "assistant"
+          item.role ===
+            "user" ||
+          item.role ===
+            "assistant"
         ) &&
         !isRuntimeWrapper(
           item.content,
@@ -100,6 +114,7 @@ function sanitizeMessages(
       }),
     );
 }
+
 function buildInputSummary(
   inputs: AIOSInputItem[],
 ): string {
@@ -118,14 +133,17 @@ function buildInputSummary(
           name.trim()
             .length > 0,
       );
+
   if (
     names.length ===
     0
   ) {
     return `Attached inputs: ${inputs.length}`;
   }
+
   return `Attached inputs: ${names.join(", ")}`;
 }
+
 function buildEvidencePrompt(
   prompt: string,
   inputs: AIOSInputItem[],
@@ -148,6 +166,7 @@ function buildEvidencePrompt(
           const name =
             input.metadata.name ??
             input.id;
+
           return [
             `Input: ${name}`,
             "Status: ready",
@@ -156,27 +175,35 @@ function buildEvidencePrompt(
           ].join("\n");
         },
       );
+
   const userPrompt =
     prompt ||
     (
-      locale === "zh-CN"
+      locale ===
+      "zh-CN"
         ? "请分析我上传的输入。"
-        : locale === "ja"
+        : locale ===
+            "ja"
           ? "アップロードした入力を分析してください。"
           : "Please analyze the uploaded input."
     );
+
   if (
     evidence.length ===
     0
   ) {
     return userPrompt;
   }
+
   const evidenceLabel =
-    locale === "zh-CN"
-      ? "以下内容来自 AIOS Input Understanding 对用户上传输入的实际处理结果。它属于输入证据，不是自动确认的事实。请明确区分证据与推断。"
-      : locale === "ja"
-        ? "以下は AIOS Input Understanding が入力から取得した証拠です。自動的に事実と確定された情報ではありません。証拠と推測を明確に区別してください。"
-        : "The following is evidence produced by AIOS Input Understanding. It is not automatically verified as fact. Clearly distinguish evidence from inference.";
+    locale ===
+    "zh-CN"
+      ? "以下内容来自 AIOS CN Input Understanding 的实际处理结果。它属于输入证据，不是自动确认的事实。请明确区分证据、可确认内容和推断。"
+      : locale ===
+          "ja"
+        ? "以下は AIOS CN Input Understanding が実際に取得した証拠です。自動的に事実と確定された情報ではありません。"
+        : "The following is evidence actually produced by AIOS CN Input Understanding. It is not automatically verified fact.";
+
   return [
     userPrompt,
     "",
@@ -187,6 +214,7 @@ function buildEvidencePrompt(
     "=== END AIOS CN INPUT EVIDENCE ===",
   ].join("\n");
 }
+
 function buildFailureMessage(
   locale: string,
   understoodCount: number,
@@ -194,7 +222,8 @@ function buildFailureMessage(
   failedCount: number,
 ): string {
   if (
-    locale === "zh-CN"
+    locale ===
+    "zh-CN"
   ) {
     return [
       "输入已接收，但当前没有足够的可用理解证据。",
@@ -204,8 +233,10 @@ function buildFailureMessage(
       "AIOS CN 未将未解析的文件内容当作已读取事实继续回答。",
     ].join("\n");
   }
+
   if (
-    locale === "ja"
+    locale ===
+    "ja"
   ) {
     return [
       "入力を受け付けましたが、利用可能な理解エビデンスが不足しています。",
@@ -215,6 +246,7 @@ function buildFailureMessage(
       "AIOS CN は未解析のファイルを読み取り済みの事実として扱いません。",
     ].join("\n");
   }
+
   return [
     "The input was received, but there is not enough usable understanding evidence.",
     `Understood: ${understoodCount}`,
@@ -223,6 +255,7 @@ function buildFailureMessage(
     "AIOS CN will not treat unprocessed files as already-read facts.",
   ].join("\n");
 }
+
 function localized(
   locale: string,
   zh: string,
@@ -230,61 +263,75 @@ function localized(
   ja: string,
 ): string {
   if (
-    locale === "ja"
+    locale ===
+    "ja"
   ) {
     return ja;
   }
+
   if (
-    locale === "en"
+    locale ===
+    "en"
   ) {
     return en;
   }
+
   return zh;
 }
+
 export default function AIOSCNChatPanel() {
   const {
     locale,
   } = useLanguage();
+
   const copy =
     chatPanelCopy[locale];
+
   const [
     messages,
     setMessages,
-  ] = useState<ChatMessage[]>(
-    [],
-  );
+  ] = useState<
+    ChatMessage[]
+  >([]);
+
   const [
     loading,
     setLoading,
   ] = useState(false);
+
   const [
     historyLoading,
     setHistoryLoading,
   ] = useState(true);
+
   const [
     runtimeStatus,
     setRuntimeStatus,
-  ] = useState<CNRuntimeStatus | null>(
-    null,
-  );
+  ] = useState<
+    CNRuntimeStatus | null
+  >(null);
+
   const scrollRef =
     useRef<HTMLDivElement | null>(
       null,
     );
+
   const scrollToBottom =
     useCallback(
       (
         behavior:
-          | ScrollBehavior
-          = "smooth",
+          | ScrollBehavior =
+          "smooth",
       ) => {
         window.requestAnimationFrame(
           () => {
             const element =
               scrollRef.current;
+
             if (!element) {
               return;
             }
+
             element.scrollTo({
               top:
                 element.scrollHeight,
@@ -295,10 +342,14 @@ export default function AIOSCNChatPanel() {
       },
       [],
     );
+
   const loadHistory =
     useCallback(
       async () => {
-        setHistoryLoading(true);
+        setHistoryLoading(
+          true,
+        );
+
         try {
           const response =
             await fetch(
@@ -310,13 +361,18 @@ export default function AIOSCNChatPanel() {
                   "same-origin",
               },
             );
-          if (!response.ok) {
+
+          if (
+            !response.ok
+          ) {
             throw new Error(
               "Failed to load chat history.",
             );
           }
+
           const data =
             await response.json();
+
           const memory:
             MemoryRecord[] =
             Array.isArray(
@@ -324,12 +380,15 @@ export default function AIOSCNChatPanel() {
             )
               ? data.items
               : [];
+
           const restored =
             sanitizeMessages(
               memory,
             );
+
           setMessages(
-            restored.length > 0
+            restored.length >
+              0
               ? restored
               : [
                   {
@@ -338,24 +397,29 @@ export default function AIOSCNChatPanel() {
                     content:
                       localized(
                         locale,
-                        "AIOS CN 已准备就绪。可以直接输入问题，也可以使用相机、相册、文件或语音输入。",
-                        "AIOS CN is ready. You can type a question or use camera, photos, files, or voice input.",
-                        "AIOS CN の準備が完了しました。質問を入力するか、カメラ、写真、ファイル、音声入力を使用できます。",
+                        "AIOS CN 已准备就绪。可以直接提问，也可以使用相机、相册、文件、视频或语音输入。",
+                        "AIOS CN is ready. You can ask questions or use camera, photos, files, video, or voice input.",
+                        "AIOS CN の準備が完了しました。質問、カメラ、写真、ファイル、動画、音声入力を使用できます。",
                       ),
                   },
                 ],
-          );
-        } catch (error) {
+                );
+        } catch (
+          error
+        ) {
           console.error(
             "[AIOS CN History]",
             error,
           );
         } finally {
-          setHistoryLoading(false);
+          setHistoryLoading(
+            false,
+          );
         }
       },
       [locale],
     );
+
   const loadRuntimeStatus =
     useCallback(
       async () => {
@@ -370,15 +434,22 @@ export default function AIOSCNChatPanel() {
                   "same-origin",
               },
             );
-          if (!response.ok) {
+
+          if (
+            !response.ok
+          ) {
             return;
           }
+
           const data =
             (await response.json()) as CNRuntimeStatus;
+
           setRuntimeStatus(
             data,
           );
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "[AIOS CN Runtime Status]",
             error,
@@ -387,6 +458,7 @@ export default function AIOSCNChatPanel() {
       },
       [],
     );
+
   useEffect(() => {
     void Promise.all([
       loadHistory(),
@@ -396,6 +468,7 @@ export default function AIOSCNChatPanel() {
     loadHistory,
     loadRuntimeStatus,
   ]);
+
   useEffect(() => {
     scrollToBottom(
       historyLoading
@@ -408,6 +481,7 @@ export default function AIOSCNChatPanel() {
     historyLoading,
     scrollToBottom,
   ]);
+
   function handleMessageDeleted(
     messageId: number,
   ) {
@@ -420,16 +494,48 @@ export default function AIOSCNChatPanel() {
         ),
     );
   }
+
+  function handleVideoResult(
+    content: string,
+  ) {
+    setMessages(
+      (current) => [
+        ...current,
+        {
+          role: "user",
+          content:
+            localized(
+              locale,
+              "视频分析",
+              "Video analysis",
+              "動画分析",
+            ),
+        },
+        {
+          role:
+            "assistant",
+          content,
+        },
+      ],
+    );
+
+    scrollToBottom(
+      "smooth",
+    );
+  }
+
   async function handleSend(
     prompt: string,
     inputs?: AIOSInputItem[],
   ) {
     const cleanPrompt =
       prompt.trim();
+
     const normalizedInputs =
       Array.isArray(inputs)
         ? inputs
         : [];
+
     if (
       (
         !cleanPrompt &&
@@ -440,11 +546,13 @@ export default function AIOSCNChatPanel() {
     ) {
       return;
     }
+
     const userContent =
       cleanPrompt ||
       buildInputSummary(
         normalizedInputs,
       );
+
     setMessages(
       (current) => [
         ...current,
@@ -455,10 +563,13 @@ export default function AIOSCNChatPanel() {
         },
       ],
     );
+
     setLoading(true);
+
     scrollToBottom(
       "smooth",
     );
+
     const files =
       getAIOSInputFiles(
         normalizedInputs.map(
@@ -466,22 +577,47 @@ export default function AIOSCNChatPanel() {
             item.id,
         ),
       );
+
     try {
+      const nonVideoFiles =
+        files.filter(
+          (entry) =>
+            !entry.file.type
+              .toLowerCase()
+              .startsWith(
+                "video/",
+              ),
+        );
+
+      const nonVideoInputs =
+        normalizedInputs.filter(
+          (input) =>
+            !input.metadata.mimeType
+              .toLowerCase()
+              .startsWith(
+                "video/",
+              ),
+        );
+
       let understanding:
         Awaited<
           ReturnType<
-            typeof executeAIOSInputUnderstandingBridge
+            typeof executeAIOSCNInputUnderstandingBridge
           >
         > | null = null;
+
       if (
-        files.length > 0
+        nonVideoFiles.length >
+        0
       ) {
         understanding =
-          await executeAIOSInputUnderstandingBridge(
-            normalizedInputs,
-            files,
+          await executeAIOSCNInputUnderstandingBridge(
+            nonVideoInputs,
+            nonVideoFiles,
+            cleanPrompt,
             locale,
           );
+
         const usable =
           understanding.success &&
           understanding.inputs.some(
@@ -494,6 +630,7 @@ export default function AIOSCNChatPanel() {
                 .trim()
                 .length > 0,
           );
+
         if (!usable) {
           setMessages(
             (current) => [
@@ -514,6 +651,36 @@ export default function AIOSCNChatPanel() {
           return;
         }
       }
+
+      if (
+        files.some(
+          (entry) =>
+            entry.file.type
+              .toLowerCase()
+              .startsWith(
+                "video/",
+              ),
+        )
+      ) {
+        setMessages(
+          (current) => [
+            ...current,
+            {
+              role:
+                "assistant",
+              content:
+                localized(
+                  locale,
+                  "视频请使用下方的「视频分析」入口。当前不会把原始视频当作已读取事实发送给普通 Runtime。",
+                  "Use the Video Analysis entry below for video input. Raw video is not treated as already-read evidence.",
+                  "動画は下の「動画分析」入口を使用してください。未解析の動画を読み取り済みの事実として扱いません。",
+                ),
+            },
+          ],
+        );
+        return;
+      }
+
       const runtimePrompt =
         buildEvidencePrompt(
           cleanPrompt,
@@ -521,35 +688,42 @@ export default function AIOSCNChatPanel() {
             [],
           locale,
         );
-      const inputIds =
-        files.map(
-          (entry) =>
-            entry.inputId,
-        );
-      let response: Response;
+
+      let response:
+        Response;
+
       if (
-        files.length > 0
+        nonVideoFiles.length >
+        0
       ) {
         const formData =
           new FormData();
+
         formData.append(
           "prompt",
           runtimePrompt,
         );
+
         formData.append(
           "inputs",
           JSON.stringify(
-            normalizedInputs,
+            nonVideoInputs,
           ),
         );
+
         formData.append(
           "fileInputIds",
           JSON.stringify(
-            inputIds,
+            nonVideoFiles.map(
+              (entry) =>
+                entry.inputId,
+            ),
           ),
         );
+
         for (
-          const entry of files
+          const entry of
+            nonVideoFiles
         ) {
           formData.append(
             "files",
@@ -557,6 +731,7 @@ export default function AIOSCNChatPanel() {
             entry.file.name,
           );
         }
+
         response =
           await fetch(
             "/api/cn/chat",
@@ -592,11 +767,16 @@ export default function AIOSCNChatPanel() {
                     runtimePrompt,
                 }),
               },
-            );
+            },
+          );
       }
+
       const data =
         (await response.json()) as CNChatResponse;
-      if (!response.ok) {
+
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.content ??
             data.error ??
@@ -608,38 +788,19 @@ export default function AIOSCNChatPanel() {
             ),
         );
       }
-      let assistantContent =
+
+      const assistantContent =
         typeof data.content ===
           "string" &&
         data.content.trim()
           ? data.content.trim()
-          : "";
-      if (
-        understanding
-      ) {
-        const status =
-          localized(
-            locale,
-            `输入理解完成：已理解 ${understanding.understoodCount}，待处理 ${understanding.pendingCount}，失败 ${understanding.failedCount}。`,
-            `Input understanding: ${understanding.understoodCount} understood, ${understanding.pendingCount} pending, ${understanding.failedCount} failed.`,
-            `入力理解：理解済み ${understanding.understoodCount}、保留 ${understanding.pendingCount}、失敗 ${understanding.failedCount}。`,
-          );
-        assistantContent =
-          assistantContent
-            ? `${assistantContent}\n\n${status}`
-            : status;
-      }
-      if (
-        !assistantContent
-      ) {
-        assistantContent =
-          localized(
-            locale,
-            "AIOS CN 没有返回可显示的内容。",
-            "AIOS CN returned no displayable content.",
-            "AIOS CN から表示可能な内容が返されませんでした。",
-          );
-      }
+          : localized(
+              locale,
+              "AIOS CN 没有返回可显示的内容。",
+              "AIOS CN returned no displayable content.",
+              "AIOS CN から表示可能な内容が返されませんでした。",
+            );
+
       setMessages(
         (current) => [
           ...current,
@@ -651,6 +812,7 @@ export default function AIOSCNChatPanel() {
           },
         ],
       );
+
       if (
         Array.isArray(
           data.conversation,
@@ -660,18 +822,23 @@ export default function AIOSCNChatPanel() {
           sanitizeMessages(
             data.conversation,
           );
+
         if (
-          canonical.length > 0
+          canonical.length >
+          0
         ) {
           setMessages(
             canonical,
           );
         }
       }
+
       scrollToBottom(
         "smooth",
       );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       setMessages(
         (current) => [
           ...current,
@@ -690,6 +857,7 @@ export default function AIOSCNChatPanel() {
           },
         ],
       );
+
       scrollToBottom(
         "smooth",
       );
@@ -704,18 +872,25 @@ export default function AIOSCNChatPanel() {
           ),
         );
       }
-      setLoading(false);
+
+      setLoading(
+        false,
+      );
+
       void loadRuntimeStatus();
     }
   }
+
   const deepseekReady =
     runtimeStatus
       ?.configuredProviders
       ?.deepseek === true;
+
   const providerText =
     deepseekReady
       ? "DeepSeek"
       : "CN Runtime";
+
   return (
     <section
       style={{
@@ -776,6 +951,7 @@ export default function AIOSCNChatPanel() {
                     : "#f59e0b",
               }}
             />
+
             <strong
               style={{
                 color:
@@ -787,6 +963,7 @@ export default function AIOSCNChatPanel() {
               AIOS CN
             </strong>
           </div>
+
           <div
             style={{
               marginTop:
@@ -801,6 +978,7 @@ export default function AIOSCNChatPanel() {
             {" · China Runtime"}
           </div>
         </div>
+
         <div
           style={{
             color:
@@ -828,13 +1006,12 @@ export default function AIOSCNChatPanel() {
               )}
         </div>
       </header>
+
       <div
         ref={scrollRef}
         style={{
-          flex:
-            1,
-          minHeight:
-            0,
+          flex: 1,
+          minHeight: 0,
           overflowY:
             "auto",
           padding:
@@ -878,6 +1055,7 @@ export default function AIOSCNChatPanel() {
             }
           />
         )}
+
         {loading && (
           <div
             aria-live="polite"
@@ -897,32 +1075,29 @@ export default function AIOSCNChatPanel() {
           >
             <span
               style={{
-                width:
-                  28,
-                height:
-                  28,
+                width: 28,
+                height: 28,
                 display:
                   "flex",
                 alignItems:
                   "center",
                 justifyContent:
                   "center",
-                flexShrink:
-                  0,
+                flexShrink: 0,
                 borderRadius:
                   "50%",
                 background:
                   "#111827",
                 color:
                   "#ffffff",
-                fontSize:
-                  10,
+                fontSize: 10,
                 fontWeight:
                   800,
               }}
             >
               CN
             </span>
+
             <span>
               {localized(
                 locale,
@@ -934,6 +1109,7 @@ export default function AIOSCNChatPanel() {
           </div>
         )}
       </div>
+
       <div
         style={{
           padding:
@@ -951,6 +1127,16 @@ export default function AIOSCNChatPanel() {
           }
           onSend={
             handleSend
+          }
+        />
+
+        <AIOSCNVideoInput
+          disabled={
+            loading ||
+            historyLoading
+          }
+          onResult={
+            handleVideoResult
           }
         />
       </div>
