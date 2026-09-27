@@ -11,8 +11,8 @@ import type {
 } from "./market-types";
 
 import type {
-  MarketHistoricalFundamentalSeries,
   HistoricalFundamentalMetricName,
+  MarketHistoricalFundamentalSeries,
 } from "./market-historical-fundamental-series-types";
 
 import type {
@@ -40,14 +40,9 @@ interface NormalizedValuationAssumptions {
 }
 
 interface HistoricalGrowthContext {
-  revenueGrowth:
-    number | null;
-
-  netIncomeGrowth:
-    number | null;
-
-  freeCashFlowGrowth:
-    number | null;
+  revenueGrowth: number | null;
+  netIncomeGrowth: number | null;
+  freeCashFlowGrowth: number | null;
 }
 
 function clamp(
@@ -57,10 +52,7 @@ function clamp(
 ): number {
   return Math.max(
     min,
-    Math.min(
-      max,
-      value,
-    ),
+    Math.min(max, value),
   );
 }
 
@@ -76,28 +68,9 @@ function positiveOrNull(
   value: unknown,
 ): number | null {
   if (
-    typeof value !==
-      "number" ||
-    !Number.isFinite(
-      value,
-    ) ||
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
     value <= 0
-  ) {
-    return null;
-  }
-
-  return value;
-}
-
-function nullableNumber(
-  value: unknown,
-): number | null {
-  if (
-    typeof value !==
-      "number" ||
-    !Number.isFinite(
-      value,
-    )
   ) {
     return null;
   }
@@ -142,7 +115,7 @@ function normalizeAssumptions(
 
   const revenueGrowthLow =
     typeof assumptions?.revenueGrowthLow ===
-        "number" &&
+      "number" &&
     Number.isFinite(
       assumptions.revenueGrowthLow,
     )
@@ -151,7 +124,7 @@ function normalizeAssumptions(
 
   const revenueGrowthBase =
     typeof assumptions?.revenueGrowthBase ===
-        "number" &&
+      "number" &&
     Number.isFinite(
       assumptions.revenueGrowthBase,
     )
@@ -160,7 +133,7 @@ function normalizeAssumptions(
 
   const revenueGrowthHigh =
     typeof assumptions?.revenueGrowthHigh ===
-        "number" &&
+      "number" &&
     Number.isFinite(
       assumptions.revenueGrowthHigh,
     )
@@ -168,28 +141,16 @@ function normalizeAssumptions(
       : 0.15;
 
   return {
-    peLow:
-      peLow ?? 10,
+    peLow: peLow ?? 10,
+    peBase: peBase ?? 15,
+    peHigh: peHigh ?? 20,
 
-    peBase:
-      peBase ?? 15,
-
-    peHigh:
-      peHigh ?? 20,
-
-    pbLow:
-      pbLow ?? 0.8,
-
-    pbBase:
-      pbBase ?? 1.5,
-
-    pbHigh:
-      pbHigh ?? 2.5,
+    pbLow: pbLow ?? 0.8,
+    pbBase: pbBase ?? 1.5,
+    pbHigh: pbHigh ?? 2.5,
 
     revenueGrowthLow,
-
     revenueGrowthBase,
-
     revenueGrowthHigh,
   };
 }
@@ -204,9 +165,7 @@ function assessMultiple(
   | "unavailable" {
   if (
     value === null ||
-    !Number.isFinite(
-      value,
-    ) ||
+    !Number.isFinite(value) ||
     value <= 0
   ) {
     return "unavailable";
@@ -257,8 +216,7 @@ function metricQuality(
   }
 
   if (
-    result.evidence.length >
-    0
+    result.evidence.length > 0
   ) {
     return "web-evidence";
   }
@@ -266,20 +224,23 @@ function metricQuality(
   return "missing";
 }
 
+/**
+ * C156 public valuation boundary.
+ *
+ * Historical C163.2 metrics are deliberately not added here.
+ * They are handled separately by buildHistoricalMetrics().
+ */
 function buildMetrics(
   result: MarketAnalysisResult,
 ): MarketValuationMetric[] {
   const fields:
     Array<
-      Extract<
-        MarketValuationMetric["metric"],
-        | "pe"
-        | "pb"
-        | "eps"
-        | "revenue"
-        | "revenueGrowth"
-        | "marketCap"
-      >
+      | "pe"
+      | "pb"
+      | "eps"
+      | "revenue"
+      | "revenueGrowth"
+      | "marketCap"
     > = [
       "pe",
       "pb",
@@ -290,9 +251,7 @@ function buildMetrics(
     ];
 
   return fields.map(
-    (
-      field,
-    ) => {
+    (field) => {
       const value =
         result.snapshot[field] ??
         null;
@@ -300,9 +259,7 @@ function buildMetrics(
       const available =
         typeof value ===
           "number" &&
-        Number.isFinite(
-          value,
-        );
+        Number.isFinite(value);
 
       let interpretation =
         "Data unavailable.";
@@ -321,7 +278,7 @@ function buildMetrics(
 
           case "eps":
             interpretation =
-              "Observed earnings-per-share input used only when available.";
+              "Observed earnings-per-share input used when available.";
             break;
 
           case "revenue":
@@ -342,19 +299,14 @@ function buildMetrics(
       }
 
       return {
-        metric:
-          field,
-
+        metric: field,
         value,
-
         available,
-
         quality:
           metricQuality(
             result,
             field,
           ),
-
         interpretation,
       };
     },
@@ -362,35 +314,42 @@ function buildMetrics(
 }
 
 function latestObservation(
-  series: MarketHistoricalFundamentalSeries,
+  series:
+    MarketHistoricalFundamentalSeries,
   metric:
     HistoricalFundamentalMetricName,
 ) {
-  return series.observations
-    .filter(
-      (observation) =>
-        observation.metric ===
-          metric &&
-        observation.value !==
-          null,
-    )
-    .sort(
-      (a, b) =>
-        new Date(
-          b.periodEnd,
-        ).getTime() -
-        new Date(
-          a.periodEnd,
-        ).getTime(),
-    )[0] ?? null;
+  return (
+    series.observations
+      .filter(
+        (observation) =>
+          observation.metric ===
+            metric &&
+          observation.value !==
+            null,
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            b.periodEnd,
+          ).getTime() -
+          new Date(
+            a.periodEnd,
+          ).getTime(),
+      )[0] ?? null
+  );
 }
 
 function previousObservation(
-  series: MarketHistoricalFundamentalSeries,
+  series:
+    MarketHistoricalFundamentalSeries,
   metric:
     HistoricalFundamentalMetricName,
-  latestPeriod: "annual" | "quarterly",
-  latestEnd: string,
+  latestPeriod:
+    "annual" |
+    "quarterly",
+  latestEnd:
+    string,
 ) {
   const candidates =
     series.observations
@@ -415,14 +374,12 @@ function previousObservation(
           ).getTime(),
       );
 
-  return (
-    candidates[0] ??
-    null
-  );
+  return candidates[0] ?? null;
 }
 
 function growthFromObservations(
-  series: MarketHistoricalFundamentalSeries,
+  series:
+    MarketHistoricalFundamentalSeries,
   metric:
     HistoricalFundamentalMetricName,
 ): number | null {
@@ -434,8 +391,7 @@ function growthFromObservations(
 
   if (
     !latest ||
-    latest.value ===
-      null
+    latest.value === null
   ) {
     return null;
   }
@@ -450,8 +406,7 @@ function growthFromObservations(
 
   if (
     !previous ||
-    previous.value ===
-      null ||
+    previous.value === null ||
     previous.value === 0
   ) {
     return null;
@@ -466,15 +421,9 @@ function growthFromObservations(
       previous.value,
     );
 
-  if (
-    !Number.isFinite(
-      growth,
-    )
-  ) {
-    return null;
-  }
-
-  return growth;
+  return Number.isFinite(growth)
+    ? growth
+    : null;
 }
 
 function historicalGrowthContext(
@@ -488,14 +437,9 @@ function historicalGrowthContext(
       0
   ) {
     return {
-      revenueGrowth:
-        null,
-
-      netIncomeGrowth:
-        null,
-
-      freeCashFlowGrowth:
-        null,
+      revenueGrowth: null,
+      netIncomeGrowth: null,
+      freeCashFlowGrowth: null,
     };
   }
 
@@ -527,41 +471,40 @@ function historicalMetricQuality(
   metric:
     HistoricalFundamentalMetricName,
 ): MarketValuationMetric["quality"] {
-  if (
-    !series ||
-    !series.observations.some(
+  if (!series) {
+    return "missing";
+  }
+
+  const observations =
+    series.observations.filter(
       (observation) =>
         observation.metric ===
           metric &&
         observation.value !==
           null,
-    )
+    );
+
+  if (
+    observations.length === 0
   ) {
     return "missing";
   }
 
-  const hasStructured =
-    series.observations.some(
-      (observation) =>
-        observation.metric ===
-          metric &&
-        observation.quality ===
-          "structured-verified",
-    );
-
   if (
-    hasStructured
+    observations.some(
+      (observation) =>
+        observation.quality ===
+        "structured-verified",
+    )
   ) {
     return "historical-structured";
   }
 
   if (
-    series.observations.some(
+    observations.some(
       (observation) =>
-        observation.metric ===
-          metric &&
         observation.quality ===
-          "web-evidence",
+        "web-evidence",
     )
   ) {
     return "web-evidence";
@@ -575,16 +518,17 @@ function buildHistoricalMetrics(
     | MarketHistoricalFundamentalSeries
     | null,
 ): MarketValuationMetric[] {
-  if (
-    !series
-  ) {
+  if (!series) {
     return [];
   }
 
   const mappings:
     Array<{
       metric:
-        MarketValuationMetric["metric"];
+        | "historicalRevenue"
+        | "historicalNetIncome"
+        | "historicalOperatingCashFlow"
+        | "historicalFreeCashFlow";
 
       historicalMetric:
         HistoricalFundamentalMetricName;
@@ -653,19 +597,13 @@ function buildHistoricalMetrics(
         observation?.value ??
         null;
 
-      const available =
-        typeof value ===
-          "number" &&
-        Number.isFinite(
-          value,
-        );
-
       return {
         metric,
-
         value,
-
-        available,
+        available:
+          typeof value ===
+            "number" &&
+          Number.isFinite(value),
 
         quality:
           historicalMetricQuality(
@@ -674,7 +612,7 @@ function buildHistoricalMetrics(
           ),
 
         interpretation:
-          available
+          value !== null
             ? interpretation
             : "Historical structured data unavailable.",
       };
@@ -708,14 +646,14 @@ function buildScenario(
       result.snapshot.pb,
     );
 
-  const peReference: number =
+  const peReference =
     name === "low"
       ? assumptions.peLow
       : name === "base"
         ? assumptions.peBase
         : assumptions.peHigh;
 
-  const pbReference: number =
+  const pbReference =
     name === "low"
       ? assumptions.pbLow
       : name === "base"
@@ -749,14 +687,11 @@ function buildScenario(
     ): value is number =>
       typeof value ===
         "number" &&
-      Number.isFinite(
-        value,
-      ),
+      Number.isFinite(value),
   );
 
   const combinedImpliedPrice =
-    prices.length ===
-      0
+    prices.length === 0
       ? null
       : round(
           prices.reduce(
@@ -780,28 +715,23 @@ function buildScenario(
           ? "pb"
           : "unavailable";
 
-  const caveats:
-    string[] = [];
+  const caveats: string[] =
+    [];
 
-  if (
-    eps === null
-  ) {
+  if (eps === null) {
     caveats.push(
       "EPS is unavailable or non-positive, so P/E implied price cannot be calculated.",
     );
   }
 
-  if (
-    pb === null
-  ) {
+  if (pb === null) {
     caveats.push(
       "Current P/B is unavailable or non-positive, so P/B implied price cannot be calculated.",
     );
   }
 
   if (
-    result.snapshot
-      .dataQuality !==
+    result.snapshot.dataQuality !==
     "live"
   ) {
     caveats.push(
@@ -846,22 +776,17 @@ function buildScenario(
     multipleSource,
 
     referenceMultiple:
-      multipleSource ===
-        "pe"
+      multipleSource === "pe"
         ? peReference
-        : multipleSource ===
-            "pb"
+        : multipleSource === "pb"
           ? pbReference
           : null,
 
     peReference,
-
     pbReference,
 
     peImpliedPrice,
-
     pbImpliedPrice,
-
     combinedImpliedPrice,
 
     revenueGrowthReference:
@@ -884,6 +809,181 @@ function buildScenario(
   };
 }
 
+function buildHistoricalContext(
+  series:
+    | MarketHistoricalFundamentalSeries
+    | null,
+) {
+  const revenueLatest =
+    series
+      ? latestObservation(
+          series,
+          "revenue",
+        )
+      : null;
+
+  const netIncomeLatest =
+    series
+      ? latestObservation(
+          series,
+          "netIncome",
+        )
+      : null;
+
+  const operatingCashFlowLatest =
+    series
+      ? latestObservation(
+          series,
+          "operatingCashFlow",
+        )
+      : null;
+
+  const freeCashFlowLatest =
+    series
+      ? latestObservation(
+          series,
+          "freeCashFlow",
+        )
+      : null;
+
+  const previousFor =
+    (
+      metric:
+        HistoricalFundamentalMetricName,
+      latest:
+        ReturnType<
+          typeof latestObservation
+        >,
+    ) =>
+      series &&
+      latest
+        ? previousObservation(
+            series,
+            metric,
+            latest.period,
+            latest.periodEnd,
+          )
+        : null;
+
+  const revenuePrevious =
+    previousFor(
+      "revenue",
+      revenueLatest,
+    );
+
+  const netIncomePrevious =
+    previousFor(
+      "netIncome",
+      netIncomeLatest,
+    );
+
+  const operatingCashFlowPrevious =
+    previousFor(
+      "operatingCashFlow",
+      operatingCashFlowLatest,
+    );
+
+  const freeCashFlowPrevious =
+    previousFor(
+      "freeCashFlow",
+      freeCashFlowLatest,
+    );
+
+  const historical =
+    historicalGrowthContext(
+      series,
+    );
+
+  return {
+    available:
+      Boolean(
+        series &&
+        series.observationCount >
+          0,
+      ),
+
+    provider:
+      series?.provider ??
+      "none",
+
+    observationCount:
+      series?.observationCount ??
+      0,
+
+    annualObservationCount:
+      series?.annualObservationCount ??
+      0,
+
+    quarterlyObservationCount:
+      series?.quarterlyObservationCount ??
+      0,
+
+    latestPeriodEnd:
+      series?.latestPeriodEnd ??
+      null,
+
+    earliestPeriodEnd:
+      series?.earliestPeriodEnd ??
+      null,
+
+    revenueLatest:
+      revenueLatest?.value ??
+      null,
+
+    revenuePrevious:
+      revenuePrevious?.value ??
+      null,
+
+    revenueGrowth:
+      historical.revenueGrowth,
+
+    netIncomeLatest:
+      netIncomeLatest?.value ??
+      null,
+
+    netIncomePrevious:
+      netIncomePrevious?.value ??
+      null,
+
+    netIncomeGrowth:
+      historical.netIncomeGrowth,
+
+    operatingCashFlowLatest:
+      operatingCashFlowLatest?.value ??
+      null,
+
+    operatingCashFlowPrevious:
+      operatingCashFlowPrevious?.value ??
+      null,
+
+    freeCashFlowLatest:
+      freeCashFlowLatest?.value ??
+      null,
+
+    freeCashFlowPrevious:
+      freeCashFlowPrevious?.value ??
+      null,
+
+    series,
+
+    quality:
+      series &&
+      series.observationCount >
+        0
+        ? "structured-verified"
+        : "insufficient",
+
+    limitations:
+      series?.limitations ??
+      [
+        "No structured historical fundamental series was available.",
+      ],
+
+    humanVerificationRequired:
+      true as const,
+  };
+}
+
 function buildCandidate(
   industry: string,
   input:
@@ -893,18 +993,15 @@ function buildCandidate(
   assumptions:
     NormalizedValuationAssumptions,
   historicalSeries:
-    MarketHistoricalFundamentalSeries | null,
+    MarketHistoricalFundamentalSeries |
+    null,
 ): MarketValuationCandidateResult {
-  const metrics =
-    [
-      ...buildMetrics(
-        result,
-      ),
-
-      ...buildHistoricalMetrics(
-        historicalSeries,
-      ),
-    ];
+  const metrics = [
+    ...buildMetrics(result),
+    ...buildHistoricalMetrics(
+      historicalSeries,
+    ),
+  ];
 
   const pe =
     positiveOrNull(
@@ -946,9 +1043,7 @@ function buildCandidate(
 
   const availableMethods =
     scenarios.filter(
-      (
-        scenario,
-      ) =>
+      (scenario) =>
         scenario.combinedImpliedPrice !==
           null ||
         scenario.peImpliedPrice !==
@@ -958,28 +1053,22 @@ function buildCandidate(
     ).length;
 
   const valuationStatus =
-    availableMethods ===
-        3
+    availableMethods === 3
       ? "valuation-ready"
-      : availableMethods >
-          0
+      : availableMethods > 0
         ? "partial"
         : "insufficient";
 
-  const strengths:
-    string[] = [];
+  const strengths: string[] =
+    [];
 
-  if (
-    pe !== null
-  ) {
+  if (pe !== null) {
     strengths.push(
       "P/E is available for scenario valuation.",
     );
   }
 
-  if (
-    pb !== null
-  ) {
+  if (pb !== null) {
     strengths.push(
       "P/B is available for scenario valuation.",
     );
@@ -1018,15 +1107,12 @@ function buildCandidate(
     );
   }
 
-  const risks:
-    string[] = [
-      ...result.analysis.risk
-        .factors,
-    ];
+  const risks: string[] = [
+    ...result.analysis.risk.factors,
+  ];
 
   if (
-    result.snapshot
-      .dataQuality !==
+    result.snapshot.dataQuality !==
     "live"
   ) {
     risks.push(
@@ -1045,8 +1131,7 @@ function buildCandidate(
   }
 
   if (
-    historicalSeries ===
-      null ||
+    !historicalSeries ||
     historicalSeries.observationCount ===
       0
   ) {
@@ -1055,8 +1140,8 @@ function buildCandidate(
     );
   }
 
-  const methodologyWarnings:
-    string[] = [
+  const methodologyWarnings =
+    [
       "Relative multiples are not a substitute for a complete intrinsic-value model.",
 
       "Industry-specific normal valuation ranges should be supplied or validated before using the scenarios.",
@@ -1068,31 +1153,17 @@ function buildCandidate(
       "C163.2 historical fundamentals are descriptive historical inputs, not forecasts.",
     ];
 
-  let resultCode:
-    | "C149_VALUATION_PASS"
-    | "C149_VALUATION_PARTIAL"
-    | "C149_VALUATION_INSUFFICIENT";
-
-  if (
+  const resultCode =
     valuationStatus ===
-    "valuation-ready"
-  ) {
-    resultCode =
-      "C149_VALUATION_PASS";
-  } else if (
-    valuationStatus ===
-    "partial"
-  ) {
-    resultCode =
-      "C149_VALUATION_PARTIAL";
-  } else {
-    resultCode =
-      "C149_VALUATION_INSUFFICIENT";
-  }
+      "valuation-ready"
+      ? "C149_VALUATION_PASS"
+      : valuationStatus ===
+          "partial"
+        ? "C149_VALUATION_PARTIAL"
+        : "C149_VALUATION_INSUFFICIENT";
 
   return {
-    rank:
-      0,
+    rank: 0,
 
     input,
 
@@ -1109,170 +1180,13 @@ function buildCandidate(
 
     metrics,
 
-    historicalFundamentals: {
-      available:
-        historicalSeries !==
-          null &&
-        historicalSeries.observationCount >
-          0,
-
-      provider:
-        historicalSeries?.provider ??
-        "none",
-
-      observationCount:
-        historicalSeries?.observationCount ??
-        0,
-
-      annualObservationCount:
-        historicalSeries?.annualObservationCount ??
-        0,
-
-      quarterlyObservationCount:
-        historicalSeries?.quarterlyObservationCount ??
-        0,
-
-      latestPeriodEnd:
-        historicalSeries?.latestPeriodEnd ??
-        null,
-
-      earliestPeriodEnd:
-        historicalSeries?.earliestPeriodEnd ??
-        null,
-
-      revenueLatest:
-        latestObservation(
-          historicalSeries!,
-          "revenue",
-        )?.value ??
-        null,
-
-      revenuePrevious:
-        historicalSeries
-          ? previousObservation(
-              historicalSeries,
-              "revenue",
-              latestObservation(
-                historicalSeries,
-                "revenue",
-              )?.period ??
-                "annual",
-              latestObservation(
-                historicalSeries,
-                "revenue",
-              )?.periodEnd ??
-                "",
-            )?.value ??
-            null
-          : null,
-
-      revenueGrowth:
-        historical.revenueGrowth,
-
-      netIncomeLatest:
-        latestObservation(
-          historicalSeries!,
-          "netIncome",
-        )?.value ??
-        null,
-
-      netIncomePrevious:
-        historicalSeries
-          ? previousObservation(
-              historicalSeries,
-              "netIncome",
-              latestObservation(
-                historicalSeries,
-                "netIncome",
-              )?.period ??
-                "annual",
-              latestObservation(
-                historicalSeries,
-                "netIncome",
-              )?.periodEnd ??
-                "",
-            )?.value ??
-            null
-          : null,
-
-      netIncomeGrowth:
-        historical.netIncomeGrowth,
-
-      operatingCashFlowLatest:
-        latestObservation(
-          historicalSeries!,
-          "operatingCashFlow",
-        )?.value ??
-        null,
-
-      operatingCashFlowPrevious:
-        historicalSeries
-          ? previousObservation(
-              historicalSeries,
-              "operatingCashFlow",
-              latestObservation(
-                historicalSeries,
-                "operatingCashFlow",
-              )?.period ??
-                "annual",
-              latestObservation(
-                historicalSeries,
-                "operatingCashFlow",
-              )?.periodEnd ??
-                "",
-            )?.value ??
-            null
-          : null,
-
-      freeCashFlowLatest:
-        latestObservation(
-          historicalSeries!,
-          "freeCashFlow",
-        )?.value ??
-        null,
-
-      freeCashFlowPrevious:
-        historicalSeries
-          ? previousObservation(
-              historicalSeries,
-              "freeCashFlow",
-              latestObservation(
-                historicalSeries,
-                "freeCashFlow",
-              )?.period ??
-                "annual",
-              latestObservation(
-                historicalSeries,
-                "freeCashFlow",
-              )?.periodEnd ??
-                "",
-            )?.value ??
-            null
-          : null,
-
-      series:
+    historicalFundamentals:
+      buildHistoricalContext(
         historicalSeries,
-
-      quality:
-        historicalSeries &&
-        historicalSeries.observationCount >
-          0
-          ? "structured-verified"
-          : "insufficient",
-
-      limitations:
-        historicalSeries?.limitations ??
-        [
-          "No structured historical fundamental series was available.",
-        ],
-
-      humanVerificationRequired:
-        true,
-    },
+      ),
 
     currentValuation: {
       pe,
-
       pb,
 
       peAssessment:
@@ -1298,10 +1212,231 @@ function buildCandidate(
 
     methodologyWarnings,
 
-    sourceResult:
-      result,
+    sourceResult: result,
 
     resultCode,
+  };
+}
+
+function buildFailedCandidate(
+  candidate:
+    MarketValuationCandidateInput,
+  message: string,
+): MarketValuationCandidateResult {
+  const market =
+    candidate.market ??
+    "us";
+
+  const currency =
+    market === "hk"
+      ? "HKD"
+      : market === "cn"
+        ? "CNY"
+        : "USD";
+
+  const sourceResult:
+    MarketAnalysisResult = {
+    success: false,
+
+    code:
+      "C147_2_MARKET_EVIDENCE_INSUFFICIENT",
+
+    instrument: {
+      symbol:
+        candidate.symbol,
+
+      normalizedSymbol:
+        candidate.symbol,
+
+      market,
+
+      exchange:
+        "UNKNOWN",
+
+      currency,
+    },
+
+    snapshot: {
+      dataQuality:
+        "insufficient",
+
+      liveQuoteAvailable:
+        false,
+    },
+
+    analysis: {
+      industry: {
+        summary:
+          "Candidate valuation failed.",
+        evidence: [],
+      },
+
+      company: {
+        summary: message,
+        strengths: [],
+        risks: [message],
+      },
+
+      fundamentals: {
+        assessment:
+          "Unavailable.",
+        signals: [],
+      },
+
+      valuation: {
+        assessment:
+          "Unavailable.",
+        signals: [],
+      },
+
+      trend: {
+        assessment:
+          "Unavailable.",
+        signals: [],
+      },
+
+      risk: {
+        level:
+          "unknown",
+        factors: [message],
+      },
+
+      decisionSupport: {
+        currentState:
+          "Unavailable.",
+        supportingFactors: [],
+        invalidationConditions: [],
+        watchMetrics: [],
+        scenarios: [],
+      },
+    },
+
+    evidence: [],
+
+    verification: {
+      verified: false,
+      sourceCount: 0,
+      independentDomains: 0,
+      primarySourceFound: false,
+      structuredDataAvailable: false,
+      structuredDataVerified: false,
+
+      freshness: {
+        freshness:
+          "unknown",
+        ageMinutes: null,
+        ageHours: null,
+        referenceTime: null,
+        reason:
+          "Candidate valuation failed.",
+      },
+    },
+
+    provider: {
+      provider:
+        "unavailable",
+      configured: false,
+      available: false,
+      supportsQuote: false,
+      supportsHistorical: false,
+      supportsFundamentals: false,
+      supportsMarkets: [],
+    },
+
+    metadata: {
+      runtime:
+        "aios-alpha",
+      stage:
+        "C147.2.7",
+      analysisMode:
+        "valuation",
+      generatedAt:
+        new Date().toISOString(),
+      disclaimer:
+        "Research-only valuation analysis.",
+    },
+
+    error: message,
+  };
+
+  return {
+    rank: 0,
+
+    input: candidate,
+
+    normalizedSymbol:
+      candidate.symbol,
+
+    currentPrice: null,
+
+    currency,
+
+    metrics: [],
+
+    historicalFundamentals: {
+      available: false,
+      provider: "unavailable",
+      observationCount: 0,
+      annualObservationCount: 0,
+      quarterlyObservationCount: 0,
+      latestPeriodEnd: null,
+      earliestPeriodEnd: null,
+
+      revenueLatest: null,
+      revenuePrevious: null,
+      revenueGrowth: null,
+
+      netIncomeLatest: null,
+      netIncomePrevious: null,
+      netIncomeGrowth: null,
+
+      operatingCashFlowLatest:
+        null,
+      operatingCashFlowPrevious:
+        null,
+
+      freeCashFlowLatest:
+        null,
+      freeCashFlowPrevious:
+        null,
+
+      series: null,
+
+      quality:
+        "insufficient",
+
+      limitations: [message],
+
+      humanVerificationRequired:
+        true,
+    },
+
+    currentValuation: {
+      pe: null,
+      pb: null,
+      peAssessment:
+        "unavailable",
+      pbAssessment:
+        "unavailable",
+    },
+
+    scenarios: [],
+
+    valuationStatus:
+      "insufficient",
+
+    strengths: [],
+
+    risks: [message],
+
+    methodologyWarnings: [
+      "Candidate valuation could not be completed.",
+    ],
+
+    sourceResult,
+
+    resultCode:
+      "C149_VALUATION_ERROR",
   };
 }
 
@@ -1315,34 +1450,28 @@ async function evaluateCandidate(
     NormalizedValuationAssumptions,
 ): Promise<MarketValuationCandidateResult> {
   const result =
-    await analyzeMarketRequest(
-      {
-        symbol:
-          input.symbol,
+    await analyzeMarketRequest({
+      symbol:
+        input.symbol,
 
-        market:
-          input.market,
+      market:
+        input.market,
 
-        mode:
-          "valuation",
+      mode:
+        "valuation",
 
-        query: [
-          industry,
-
-          request.query ??
-            "",
-
-          "company fundamentals earnings valuation P/E P/B revenue growth financial results",
-        ]
-          .filter(Boolean)
-          .join(" "),
-      },
-    );
+      query: [
+        industry,
+        request.query ?? "",
+        "company fundamentals earnings valuation P/E P/B revenue growth financial results",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
 
   let historicalSeries:
     MarketHistoricalFundamentalSeries |
-    null =
-      null;
+    null = null;
 
   if (
     request.includeHistoricalFundamentals !==
@@ -1367,8 +1496,11 @@ async function evaluateCandidate(
       historicalSeries =
         historicalResult.series;
     } catch {
-      historicalSeries =
-        null;
+      /*
+       * Historical data is an enrichment layer.
+       * Failure here must not destroy current valuation.
+       */
+      historicalSeries = null;
     }
   }
 
@@ -1413,9 +1545,7 @@ export async function valueMarketCandidates(
     Array.from(
       new Map(
         request.candidates.map(
-          (
-            candidate,
-          ) => [
+          (candidate) => [
             `${
               candidate.market ??
               "auto"
@@ -1424,10 +1554,8 @@ export async function valueMarketCandidates(
                 .trim()
                 .toUpperCase()
             }`,
-
             {
               ...candidate,
-
               symbol:
                 candidate.symbol
                   .trim()
@@ -1470,333 +1598,23 @@ export async function valueMarketCandidates(
       candidates.push(
         result,
       );
-    } catch (
-      error
-    ) {
+    } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "Candidate valuation failed.";
 
-      candidates.push({
-        rank:
-          0,
-
-        input:
+      candidates.push(
+        buildFailedCandidate(
           candidate,
-
-        normalizedSymbol:
-          candidate.symbol,
-
-        currentPrice:
-          null,
-
-        currency:
-          candidate.market ===
-          "hk"
-            ? "HKD"
-            : candidate.market ===
-                "cn"
-              ? "CNY"
-              : "USD",
-
-        metrics: [],
-
-        historicalFundamentals: {
-          available:
-            false,
-
-          provider:
-            "unavailable",
-
-          observationCount:
-            0,
-
-          annualObservationCount:
-            0,
-
-          quarterlyObservationCount:
-            0,
-
-          latestPeriodEnd:
-            null,
-
-          earliestPeriodEnd:
-            null,
-
-          revenueLatest:
-            null,
-
-          revenuePrevious:
-            null,
-
-          revenueGrowth:
-            null,
-
-          netIncomeLatest:
-            null,
-
-          netIncomePrevious:
-            null,
-
-          netIncomeGrowth:
-            null,
-
-          operatingCashFlowLatest:
-            null,
-
-          operatingCashFlowPrevious:
-            null,
-
-          freeCashFlowLatest:
-            null,
-
-          freeCashFlowPrevious:
-            null,
-
-          series:
-            null,
-
-          quality:
-            "insufficient",
-
-          limitations: [
-            message,
-          ],
-
-          humanVerificationRequired:
-            true,
-        },
-
-        currentValuation: {
-          pe:
-            null,
-
-          pb:
-            null,
-
-          peAssessment:
-            "unavailable",
-
-          pbAssessment:
-            "unavailable",
-        },
-
-        scenarios: [],
-
-        valuationStatus:
-          "insufficient",
-
-        strengths: [],
-
-        risks: [
           message,
-        ],
-
-        methodologyWarnings: [
-          "Candidate valuation could not be completed.",
-        ],
-
-        sourceResult: {
-          success:
-            false,
-
-          code:
-            "C147_2_MARKET_EVIDENCE_INSUFFICIENT",
-
-          instrument: {
-            symbol:
-              candidate.symbol,
-
-            normalizedSymbol:
-              candidate.symbol,
-
-            market:
-              candidate.market ??
-              "us",
-
-            exchange:
-              "UNKNOWN",
-
-            currency:
-              candidate.market ===
-              "hk"
-                ? "HKD"
-                : candidate.market ===
-                    "cn"
-                  ? "CNY"
-                  : "USD",
-          },
-
-          snapshot: {
-            dataQuality:
-              "insufficient",
-
-            liveQuoteAvailable:
-              false,
-          },
-
-          analysis: {
-            industry: {
-              summary:
-                "Candidate valuation failed.",
-
-              evidence: [],
-            },
-
-            company: {
-              summary:
-                message,
-
-              strengths: [],
-
-              risks: [
-                message,
-              ],
-            },
-
-            fundamentals: {
-              assessment:
-                "Unavailable.",
-
-              signals: [],
-            },
-
-            valuation: {
-              assessment:
-                "Unavailable.",
-
-              signals: [],
-            },
-
-            trend: {
-              assessment:
-                "Unavailable.",
-
-              signals: [],
-            },
-
-            risk: {
-              level:
-                "unknown",
-
-              factors: [
-                message,
-              ],
-            },
-
-            decisionSupport: {
-              currentState:
-                "Unavailable.",
-
-              supportingFactors:
-                [],
-
-              invalidationConditions:
-                [],
-
-              watchMetrics:
-                [],
-
-              scenarios:
-                [],
-            },
-          },
-
-          evidence: [],
-
-          verification: {
-            verified:
-              false,
-
-            sourceCount:
-              0,
-
-            independentDomains:
-              0,
-
-            primarySourceFound:
-              false,
-
-            structuredDataAvailable:
-              false,
-
-            structuredDataVerified:
-              false,
-
-            freshness: {
-              freshness:
-                "unknown",
-
-              ageMinutes:
-                null,
-
-              ageHours:
-                null,
-
-              referenceTime:
-                null,
-
-              reason:
-                "Candidate valuation failed.",
-            },
-          },
-
-          provider: {
-            provider:
-              "unavailable",
-
-            configured:
-              false,
-
-            available:
-              false,
-
-            supportsQuote:
-              false,
-
-            supportsHistorical:
-              false,
-
-            supportsFundamentals:
-              false,
-
-            supportsMarkets:
-              [],
-          },
-
-          metadata: {
-            runtime:
-              "aios-alpha",
-
-            stage:
-              "C147.2.7",
-
-            analysisMode:
-              "valuation",
-
-            generatedAt:
-              new Date().toISOString(),
-
-            disclaimer:
-              "Research-only valuation analysis.",
-          },
-
-          error:
-            message,
-        },
-
-        resultCode:
-          "C149_VALUATION_ERROR",
-      });
+        ),
+      );
     }
   }
 
   candidates.sort(
-    (
-      a,
-      b,
-    ) => {
+    (a, b) => {
       const aPrice =
         a.currentPrice ??
         Number.POSITIVE_INFINITY;
@@ -1809,21 +1627,16 @@ export async function valueMarketCandidates(
         a.valuationStatus !==
         b.valuationStatus
       ) {
-        return (
-          a.valuationStatus ===
+        return a.valuationStatus ===
           "valuation-ready"
-            ? -1
-            : b.valuationStatus ===
-                "valuation-ready"
-              ? 1
-              : 0
-        );
+          ? -1
+          : b.valuationStatus ===
+              "valuation-ready"
+            ? 1
+            : 0;
       }
 
-      return (
-        aPrice -
-        bPrice
-      );
+      return aPrice - bPrice;
     },
   );
 
@@ -1839,34 +1652,19 @@ export async function valueMarketCandidates(
 
   const readyCount =
     candidates.filter(
-      (
-        candidate,
-      ) =>
+      (candidate) =>
         candidate.valuationStatus ===
         "valuation-ready",
     ).length;
 
-  let code:
-    | "C149_VALUATION_PASS"
-    | "C149_VALUATION_PARTIAL"
-    | "C149_VALUATION_INSUFFICIENT";
-
-  if (
+  const code =
     readyCount ===
-      candidates.length &&
-    candidates.length > 0
-  ) {
-    code =
-      "C149_VALUATION_PASS";
-  } else if (
-    readyCount > 0
-  ) {
-    code =
-      "C149_VALUATION_PARTIAL";
-  } else {
-    code =
-      "C149_VALUATION_INSUFFICIENT";
-  }
+        candidates.length &&
+      candidates.length > 0
+      ? "C149_VALUATION_PASS"
+      : readyCount > 0
+        ? "C149_VALUATION_PARTIAL"
+        : "C149_VALUATION_INSUFFICIENT";
 
   return {
     success:
@@ -1874,8 +1672,7 @@ export async function valueMarketCandidates(
 
     code,
 
-    stage:
-      "C149",
+    stage: "C149",
 
     industry,
 
@@ -1895,14 +1692,16 @@ export async function valueMarketCandidates(
       availableCandidates:
         candidates.filter(
           (candidate) =>
-            candidate.historicalFundamentals
+            candidate
+              .historicalFundamentals
               .available,
         ).length,
 
       structuredCandidates:
         candidates.filter(
           (candidate) =>
-            candidate.historicalFundamentals
+            candidate
+              .historicalFundamentals
               .quality ===
             "structured-verified",
         ).length,
@@ -1910,7 +1709,8 @@ export async function valueMarketCandidates(
       unavailableCandidates:
         candidates.filter(
           (candidate) =>
-            !candidate.historicalFundamentals
+            !candidate
+              .historicalFundamentals
               .available,
         ).length,
     },
@@ -1961,13 +1761,11 @@ export async function valueMarketCandidates(
         "Automated trading.",
       ],
 
-      nextStage:
-        "C150",
+      nextStage: "C150",
     },
 
     safetyBoundary: {
-      founderOnly:
-        true,
+      founderOnly: true,
 
       personalizedAdvice:
         false,
