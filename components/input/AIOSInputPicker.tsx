@@ -1,5 +1,6 @@
 "use client";
 import {
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -357,6 +358,11 @@ export default function AIOSInputPicker({
     useRef<HTMLInputElement | null>(
       null,
     );
+  useEffect(() => {
+    setNativePhotoAvailable(
+      getNativePhotoBridge().isAvailable(),
+    );
+  }, []);
   function updateInputs(
     nextInputs: AIOSInputItem[],
   ) {
@@ -882,16 +888,23 @@ export default function AIOSInputPicker({
         <div
           style={{
             marginTop: 7,
-            color: "#94a3b8",
+            padding:
+              "6px 8px",
+            border:
+              "1px solid #e2e8f0",
+            borderRadius: 9,
+            background:
+              "#f8fafc",
+            color: "#64748b",
             fontSize: 10,
-            lineHeight: 1.4,
+            lineHeight: 1.45,
           }}
         >
           {localized(
             locale,
-            "Safari 网页模式下，iOS 可能显示系统照片选择菜单；原生照片选择器接入后将直接调用设备照片库。",
-            "In Safari web mode, iOS may show its system photo chooser. A native photo bridge can open the device photo library directly.",
-            "Safari の Web モードでは iOS のシステム写真選択メニューが表示される場合があります。ネイティブ連携時は端末の写真ライブラリを直接開けます。",
+            "iPhone Safari：点击「相册」后，在系统菜单选择「照片图库」。这是 iOS 网页文件选择器的正常行为。",
+            "iPhone Safari: tap Photos, then choose Photo Library from the system menu. This is normal iOS web file-picker behavior.",
+            "iPhone Safari：写真をタップし、システムメニューから「写真ライブラリ」を選択してください。iOS Web の通常動作です。",
           )}
         </div>
       )}
