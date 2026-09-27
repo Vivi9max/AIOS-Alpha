@@ -766,7 +766,6 @@ export default function AIOSCNChatPanel() {
                   prompt:
                     runtimePrompt,
                 }),
-              },
             },
           );
       }
