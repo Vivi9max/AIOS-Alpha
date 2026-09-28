@@ -37,37 +37,26 @@ type RuntimeStatus =
 interface RuntimeState {
   status:
     RuntimeStatus;
-
-  provider:
-    string;
 }
 
 const pageTitles:
   Record<string, MessageKey> = {
   "/":
     "page.workspace",
-
   "/workspace":
     "page.workspace",
-
   "/dashboard":
     "nav.dashboard",
-
   "/memory":
     "nav.memory",
-
   "/tasks":
     "nav.tasks",
-
   "/projects":
     "nav.projects",
-
   "/settings":
     "nav.settings",
-
   "/brain":
     "page.runtime",
-
   "/release":
     "page.release",
 };
@@ -76,10 +65,7 @@ const initialStatus:
   RuntimeState = {
   status:
     "checking",
-
-  provider:
-    "unknown",
-};
+  };
 
 const productCopy = {
   en: {
@@ -90,7 +76,7 @@ const productCopy = {
     cn:
       "AIOS CN",
     cnDescription:
-      "CN Runtime",
+      "China AIOS Runtime",
   },
   "zh-CN": {
     global:
@@ -141,7 +127,9 @@ export default function Header() {
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith("/cn/");
+    pathname.startsWith(
+      "/cn/",
+    );
 
   const product =
     productCopy[locale];
@@ -158,7 +146,6 @@ export default function Header() {
             {
               cache:
                 "no-store",
-
               credentials:
                 "same-origin",
             },
@@ -195,21 +182,12 @@ export default function Header() {
         setRuntime({
           status:
             normalizedStatus,
-
-          provider:
-            typeof data.provider ===
-              "string"
-              ? data.provider
-              : "unknown",
         });
       } catch {
         if (active) {
           setRuntime({
             status:
               "offline",
-
-            provider:
-              "unknown",
           });
         }
       }
@@ -259,29 +237,23 @@ export default function Header() {
     <header
       style={{
         minHeight:
-          78,
-
+          72,
+        boxSizing:
+          "border-box",
         background:
           "#111827",
-
         color:
           "#ffffff",
-
         display:
           "flex",
-
         alignItems:
           "center",
-
         justifyContent:
           "space-between",
-
         gap:
           16,
-
         padding:
-          "14px 20px",
-
+          "12px 20px",
         borderBottom:
           "1px solid #1f2937",
       }}
@@ -290,36 +262,38 @@ export default function Header() {
         style={{
           minWidth:
             0,
+          overflow:
+            "hidden",
         }}
       >
         <div
           style={{
             display:
               "flex",
-
             flexWrap:
               "wrap",
-
             alignItems:
               "center",
-
             gap:
-              10,
+              9,
           }}
         >
           <h2
             style={{
               margin:
                 0,
-
               fontSize:
-                21,
-
+                20,
               fontWeight:
                 800,
-
               lineHeight:
                 1.25,
+              whiteSpace:
+                "nowrap",
+                overflow:
+                "hidden",
+              textOverflow:
+                "ellipsis",
             }}
           >
             {pageTitle}
@@ -329,39 +303,28 @@ export default function Header() {
             style={{
               display:
                 "inline-flex",
-
               alignItems:
                 "center",
-
               padding:
                 "4px 9px",
-
               borderRadius:
                 999,
-
               background:
                 isCN
                   ? "rgba(239, 68, 68, 0.16)"
                   : "rgba(59, 130, 246, 0.16)",
-
               border:
                 isCN
                   ? "1px solid rgba(252, 165, 165, 0.35)"
                   : "1px solid rgba(147, 197, 253, 0.35)",
-
               color:
                 isCN
                   ? "#fecaca"
                   : "#bfdbfe",
-
               fontSize:
                 11,
-
               fontWeight:
                 800,
-
-              letterSpacing:
-                "0.04em",
             }}
           >
             {isCN
@@ -374,34 +337,26 @@ export default function Header() {
           style={{
             display:
               "flex",
-
             flexWrap:
               "wrap",
-
             alignItems:
               "center",
-
             gap:
               8,
-
             marginTop:
-              7,
-
+              6,
             color:
               "#cbd5e1",
-
             fontSize:
-              12,
+              11,
           }}
         >
           <span
             style={{
               display:
                 "inline-flex",
-
               alignItems:
                 "center",
-
               gap:
                 5,
             }}
@@ -410,13 +365,10 @@ export default function Header() {
               style={{
                 width:
                   7,
-
                 height:
                   7,
-
                 borderRadius:
                   "50%",
-
                 background:
                   statusIsChecking
                     ? "#f59e0b"
@@ -447,16 +399,6 @@ export default function Header() {
           </span>
 
           <span>
-            {copy.provider}
-            {": "}
-            {runtime.provider}
-          </span>
-
-          <span>
-            ·
-          </span>
-
-          <span>
             {APP_CONFIG.codename}
           </span>
 
@@ -474,13 +416,10 @@ export default function Header() {
         style={{
           flexShrink:
             0,
-
           display:
             "flex",
-
           alignItems:
             "center",
-
           gap:
             10,
         }}
@@ -491,32 +430,23 @@ export default function Header() {
           title={`${APP_CONFIG.stage} User`}
           style={{
             width:
-              44,
-
+              42,
             height:
-              44,
-
+              42,
             borderRadius:
               "50%",
-
             background:
               "#374151",
-
             display:
               "flex",
-
             alignItems:
               "center",
-
             justifyContent:
               "center",
-
             fontWeight:
               800,
-
             fontSize:
-              17,
-
+              16,
             border:
               "1px solid #4b5563",
           }}
