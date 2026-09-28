@@ -110,9 +110,7 @@ export async function executePlannerGitHubRead(
           DEFAULT_BRANCH,
       });
 
-    if (
-      !result.success
-    ) {
+    if (!result.success) {
       return {
         detected: true,
         success: false,
@@ -125,9 +123,7 @@ export async function executePlannerGitHubRead(
       };
     }
 
-    if (
-      !result.data
-    ) {
+    if (!result.data) {
       return {
         detected: true,
         success: false,
