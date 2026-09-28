@@ -111,8 +111,7 @@ export async function executePlannerGitHubRead(
       });
 
     if (
-      !result.success ||
-      !result.data
+      !result.success
     ) {
       return {
         detected: true,
@@ -123,6 +122,20 @@ export async function executePlannerGitHubRead(
         error:
           result.error ||
           "GitHub file read failed.",
+      };
+    }
+
+    if (
+      !result.data
+    ) {
+      return {
+        detected: true,
+        success: false,
+        path,
+        code:
+          "GITHUB_READ_EMPTY",
+        error:
+          "GitHub returned no file data.",
       };
     }
 
