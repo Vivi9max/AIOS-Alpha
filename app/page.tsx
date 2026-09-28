@@ -8,58 +8,55 @@ import {
 
 const copy = {
   en: {
-    eyebrow: "AIOS PRODUCT ENTRY",
-    title: "Choose your AIOS workspace",
+    eyebrow: "AIOS",
+    title: "AIOS Workspace",
     description:
-      "AIOS Global and AIOS CN share the AIOS product foundation while using separate product entry points and runtime boundaries.",
+      "One workspace for thinking, research, files, tasks and execution.",
     globalTitle: "AIOS Global",
     globalDescription:
-      "Global AIOS workspace for chat, memory, tasks, planning, execution and broader AIOS capabilities.",
-    globalAction: "Enter AIOS Global",
-    globalTag: "Global Runtime",
+      "Global AIOS workspace.",
+    globalAction: "Enter Workspace",
     cnTitle: "AIOS CN",
     cnDescription:
-      "China-oriented AIOS workspace with CN Runtime, DeepSeek provider support and China-accessible product boundaries.",
+      "China-oriented AIOS workspace.",
     cnAction: "Enter AIOS CN",
-    cnTag: "CN Runtime",
-    note:
-      "Product entry is separated by runtime and capability boundary. Your workspace data remains isolated by the existing identity system.",
+    status: "Runtime Online",
+    version:
+      "ALPHA v0.5.1",
   },
   "zh-CN": {
-    eyebrow: "AIOS 产品入口",
-    title: "选择 AIOS 工作空间",
+    eyebrow: "AIOS",
+    title: "AIOS 工作区",
     description:
-      "AIOS Global 与 AIOS CN 共用 AIOS 产品基础能力，同时保持独立的产品入口和 Runtime 边界。",
+      "统一处理思考、研究、文件、任务与执行。",
     globalTitle: "AIOS Global",
     globalDescription:
-      "面向全球使用的 AIOS 工作空间，包含聊天、Memory、Tasks、Planner、Execution 及更完整的 AIOS 能力。",
-    globalAction: "进入 AIOS Global",
-    globalTag: "Global Runtime",
+      "全球 AIOS 工作区。",
+    globalAction: "进入工作区",
     cnTitle: "AIOS CN",
     cnDescription:
-      "面向中国使用场景的 AIOS 工作空间，使用 CN Runtime、DeepSeek Provider，并保持独立的产品能力边界。",
+      "面向中国使用场景的 AIOS 工作区。",
     cnAction: "进入 AIOS CN",
-    cnTag: "CN Runtime",
-    note:
-      "两个产品入口按照 Runtime 与能力边界进行区分，工作区数据继续由现有 Identity 系统进行隔离。",
+    status: "运行正常",
+    version:
+      "ALPHA v0.5.1",
   },
   ja: {
-    eyebrow: "AIOS プロダクト入口",
-    title: "AIOS ワークスペースを選択",
+    eyebrow: "AIOS",
+    title: "AIOS ワークスペース",
     description:
-      "AIOS Global と AIOS CN は共通の AIOS 基盤を使用しながら、製品入口と Runtime 境界を分離しています。",
+      "思考、リサーチ、ファイル、タスク、実行を一つのワークスペースで扱います。",
     globalTitle: "AIOS Global",
     globalDescription:
-      "Chat、Memory、Tasks、Planner、Execution など、AIOS の主要機能を利用するグローバルワークスペース。",
-    globalAction: "AIOS Global に入る",
-    globalTag: "Global Runtime",
+      "グローバル AIOS ワークスペース。",
+    globalAction: "ワークスペースへ",
     cnTitle: "AIOS CN",
     cnDescription:
-      "CN Runtime と DeepSeek Provider を利用する、中国向けの独立した AIOS ワークスペース。",
-    cnAction: "AIOS CN に入る",
-    cnTag: "CN Runtime",
-    note:
-      "2つの製品入口は Runtime と機能境界によって分離されています。ワークスペースデータは既存の Identity システムで分離されます。",
+      "中国向け AIOS ワークスペース。",
+    cnAction: "AIOS CN へ",
+    status: "Runtime Online",
+    version:
+      "ALPHA v0.5.1",
   },
 } as const;
 
@@ -85,7 +82,7 @@ export default function Home() {
         justifyContent:
           "center",
         padding:
-          "32px 18px",
+          "28px 18px",
         background:
           "#f8fafc",
         color:
@@ -97,10 +94,10 @@ export default function Home() {
           width:
             "100%",
           maxWidth:
-            1040,
+            900,
         }}
       >
-        <section
+        <header
           style={{
             textAlign:
               "center",
@@ -114,8 +111,9 @@ export default function Home() {
                 "inline-flex",
               alignItems:
                 "center",
+              gap: 7,
               padding:
-                "6px 10px",
+                "6px 11px",
               borderRadius:
                 999,
               background:
@@ -125,11 +123,22 @@ export default function Home() {
               fontSize:
                 11,
               fontWeight:
-                800,
+                850,
               letterSpacing:
                 "0.08em",
             }}
           >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius:
+                  "50%",
+                background:
+                  "#22c55e",
+              }}
+            />
+
             {currentCopy.eyebrow}
           </div>
 
@@ -138,11 +147,13 @@ export default function Home() {
               margin:
                 "18px 0 10px",
               fontSize:
-                "clamp(30px, 6vw, 48px)",
+                "clamp(34px, 7vw, 52px)",
               lineHeight:
-                1.1,
+                1.05,
               fontWeight:
-                850,
+                900,
+              letterSpacing:
+                "-0.035em",
             }}
           >
             {currentCopy.title}
@@ -151,7 +162,7 @@ export default function Home() {
           <p
             style={{
               maxWidth:
-                760,
+                650,
               margin:
                 "0 auto",
               color:
@@ -162,9 +173,68 @@ export default function Home() {
                 1.7,
             }}
           >
-            {currentCopy.description}
+            {
+              currentCopy.description
+            }
           </p>
-        </section>
+
+          <div
+            style={{
+              display:
+                "flex",
+              justifyContent:
+                "center",
+              alignItems:
+                "center",
+              flexWrap:
+                "wrap",
+              gap: 8,
+              marginTop:
+                16,
+            }}
+          >
+            <span
+              style={{
+                padding:
+                  "5px 9px",
+                borderRadius:
+                  999,
+                background:
+                  "#ecfdf5",
+                color:
+                  "#15803d",
+                fontSize:
+                  11,
+                fontWeight:
+                  800,
+              }}
+            >
+              {currentCopy.status}
+            </span>
+
+            <span
+              style={{
+                color:
+                  "#94a3b8",
+                fontSize:
+                  11,
+              }}
+            >
+              ·
+            </span>
+
+            <span
+              style={{
+                color:
+                  "#94a3b8",
+                fontSize:
+                  11,
+              }}
+            >
+              {currentCopy.version}
+            </span>
+          </div>
+        </header>
 
         <section
           style={{
@@ -173,7 +243,7 @@ export default function Home() {
             gridTemplateColumns:
               "repeat(auto-fit, minmax(280px, 1fr))",
             gap:
-              18,
+              16,
           }}
         >
           <Link
@@ -185,7 +255,7 @@ export default function Home() {
               padding:
                 26,
               borderRadius:
-                20,
+                22,
               background:
                 "#ffffff",
               border:
@@ -216,37 +286,39 @@ export default function Home() {
                   800,
               }}
             >
-              {currentCopy.globalTag}
+              GLOBAL
             </div>
 
             <h2
               style={{
                 margin:
-                  "18px 0 8px",
+                  "17px 0 7px",
                 fontSize:
                   25,
                 fontWeight:
-                  800,
+                  850,
               }}
             >
-              {currentCopy.globalTitle}
+              {
+                currentCopy.globalTitle
+              }
             </h2>
 
             <p
               style={{
-                minHeight:
-                  76,
                 margin:
-                  "0 0 22px",
+                  "0 0 20px",
                 color:
                   "#64748b",
                 fontSize:
                   14,
                 lineHeight:
-                  1.7,
+                  1.65,
               }}
             >
-              {currentCopy.globalDescription}
+              {
+                currentCopy.globalDescription
+              }
             </p>
 
             <span
@@ -254,7 +326,7 @@ export default function Home() {
                 display:
                   "inline-flex",
                 padding:
-                  "11px 15px",
+                  "10px 14px",
                 borderRadius:
                   10,
                 background:
@@ -267,7 +339,9 @@ export default function Home() {
                   800,
               }}
             >
-              {currentCopy.globalAction}
+              {
+                currentCopy.globalAction
+              }
             </span>
           </Link>
 
@@ -280,7 +354,7 @@ export default function Home() {
               padding:
                 26,
               borderRadius:
-                20,
+                22,
               background:
                 "#ffffff",
               border:
@@ -311,37 +385,39 @@ export default function Home() {
                   800,
               }}
             >
-              {currentCopy.cnTag}
+              CN
             </div>
 
             <h2
               style={{
                 margin:
-                  "18px 0 8px",
+                  "17px 0 7px",
                 fontSize:
                   25,
                 fontWeight:
-                  800,
+                  850,
               }}
             >
-              {currentCopy.cnTitle}
+              {
+                currentCopy.cnTitle
+              }
             </h2>
 
             <p
               style={{
-                minHeight:
-                  76,
                 margin:
-                  "0 0 22px",
+                  "0 0 20px",
                 color:
                   "#64748b",
                 fontSize:
                   14,
                 lineHeight:
-                  1.7,
+                  1.65,
               }}
             >
-              {currentCopy.cnDescription}
+              {
+                currentCopy.cnDescription
+              }
             </p>
 
             <span
@@ -349,7 +425,7 @@ export default function Home() {
                 display:
                   "inline-flex",
                 padding:
-                  "11px 15px",
+                  "10px 14px",
                 borderRadius:
                   10,
                 background:
@@ -362,29 +438,27 @@ export default function Home() {
                   800,
               }}
             >
-              {currentCopy.cnAction}
+              {
+                currentCopy.cnAction
+              }
             </span>
           </Link>
         </section>
 
-        <p
+        <footer
           style={{
-            maxWidth:
-              820,
-            margin:
-              "24px auto 0",
+            marginTop:
+              22,
             textAlign:
               "center",
             color:
               "#94a3b8",
             fontSize:
-              12,
-            lineHeight:
-              1.6,
+              11,
           }}
         >
-          {currentCopy.note}
-        </p>
+          AIOS · Outcome-oriented workspace
+        </footer>
       </div>
     </main>
   );
