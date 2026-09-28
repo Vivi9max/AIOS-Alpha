@@ -58,8 +58,7 @@ function baseResult(
     safetyBoundary: {
       plannerDispatched: false,
       tradingExecuted: false,
-      commercialActualWritten:
-        false,
+      commercialActualWritten: false,
     },
     generatedAt:
       new Date().toISOString(),
@@ -180,11 +179,11 @@ export async function transcribeAIOSCNAudio(
         },
       );
 
-const text =
-  typeof transcription.text ===
-  "string"
-    ? transcription.text.trim()
-    : "";
+    const text =
+      typeof transcription.text ===
+      "string"
+        ? transcription.text.trim()
+        : "";
 
     if (!text) {
       return baseResult(
