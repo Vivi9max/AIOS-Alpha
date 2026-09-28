@@ -20,6 +20,9 @@ export interface AIOSCNVideoResult {
   model?: string;
   frameCount: number;
   analyzedFrameCount: number;
+  coverageMode:
+    | "full-timeline"
+    | "none";
   semanticUnderstandingReady: boolean;
   safetyBoundary: {
     plannerDispatched: false;
@@ -29,7 +32,7 @@ export interface AIOSCNVideoResult {
   generatedAt: string;
 }
 
-const MAX_FRAMES = 5;
+const MAX_FRAMES = 48;
 
 const MAX_FRAME_DATA_BYTES =
   42 * 1024 * 1024;
@@ -77,8 +80,6 @@ function estimateBase64Bytes(
 }
 
 function buildFailure(
-  code:
-    | "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
   provider:
     | "deepseek"
     | "none",
@@ -88,24 +89,61 @@ function buildFailure(
 ): AIOSCNVideoResult {
   return {
     success: false,
-    code,
+    code:
+      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
     provider,
     model,
     frameCount,
     analyzedFrameCount,
+    coverageMode: "none",
     semanticUnderstandingReady:
       false,
     safetyBoundary: {
-      plannerDispatched:
-        false,
-      tradingExecuted:
-        false,
+      plannerDispatched: false,
+      tradingExecuted: false,
       commercialActualWritten:
         false,
     },
     generatedAt:
       new Date().toISOString(),
   };
+}
+
+function buildAnalysisPrompt(
+  prompt: string,
+  frameCount: number,
+): string {
+  const userPrompt =
+    prompt.trim();
+
+  return [
+    "You are the AIOS multimodal understanding layer.",
+    "",
+    "The supplied images are ordered samples covering the complete video timeline.",
+    `Analyze all ${frameCount} timeline samples as one continuous video.`,
+    "Do not describe them as unrelated images.",
+    "",
+    "Required output structure:",
+    "1. Video overview",
+    "2. Timeline and temporal changes",
+    "3. Key information",
+    "4. Confirmed visual facts",
+    "5. Visible text and OCR",
+    "6. People, actions, scenes, and objects",
+    "7. Products, brands, locations, or commercial information",
+    "8. Important details that may be easy to miss",
+    "9. Uncertainties and evidence limits",
+    "10. Concise conclusion",
+    "",
+    "Compare earlier and later timeline samples.",
+    "Identify changes, transitions, repeated actions, and important events.",
+    "Do not claim audio content because this request contains visual frames only.",
+    "Do not invent information that is not visually supported.",
+    "Clearly separate confirmed observations from uncertain interpretation.",
+    "",
+    userPrompt ||
+      "Provide a comprehensive visual understanding of the entire video.",
+  ].join("\n");
 }
 
 export async function analyzeAIOSCNVideoFrames(
@@ -118,7 +156,6 @@ export async function analyzeAIOSCNVideoFrames(
 
   if (!apiKey) {
     return buildFailure(
-      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
       "none",
       frames.length,
       0,
@@ -135,6 +172,9 @@ export async function analyzeAIOSCNVideoFrames(
           Number.isFinite(
             frame.timestampSeconds,
           ) &&
+          Number.isFinite(
+            frame.ratio,
+          ) &&
           typeof frame.imageBase64 ===
             "string" &&
           frame.imageBase64.length >
@@ -150,7 +190,6 @@ export async function analyzeAIOSCNVideoFrames(
     0
   ) {
     return buildFailure(
-      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
       "none",
       frames.length,
       0,
@@ -175,7 +214,6 @@ export async function analyzeAIOSCNVideoFrames(
     MAX_FRAME_DATA_BYTES
   ) {
     return buildFailure(
-      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
       "none",
       frames.length,
       0,
@@ -191,70 +229,62 @@ export async function analyzeAIOSCNVideoFrames(
         "https://api.deepseek.com",
     });
 
-  const timeline =
-    usableFrames
-      .map(
-        (frame) =>
-          `Frame ${frame.index}: ${frame.timestampSeconds.toFixed(2)}s`,
-      )
-      .join(
-        "\n",
-      );
-
-  const content = [
+  const content: Array<
+    Record<string, unknown>
+  > = [
     {
       type: "text",
-      text: [
-        "你是 AIOS CN 视频视觉理解层。",
-        "",
-        "下面的图片是同一个真实视频按照时间顺序抽取的关键帧。",
-        "这些图片是实际视觉输入。",
-        "只能分析实际提供的关键帧。",
-        "不能声称观察到了没有提供的其他视频内容。",
-        "不能虚构音频、对白或没有出现的画面。",
-        "必须区分直接视觉证据与推断。",
-        "",
-        "请使用中文返回：",
-        "1. 视频整体内容",
-        "2. 关键画面",
-        "3. 时间顺序变化",
-        "4. 可确认的视觉事实",
-        "5. 画面文字 / OCR",
-        "6. 人物动作或场景变化",
-        "7. 商品 / 商业信息",
-        "8. 可能的上下文",
-        "9. 不确定项",
-        "10. 置信度",
-        "",
-        `用户任务：${
-          prompt.trim() ||
-          "分析这个视频的视觉内容。"
-        }`,
-        "",
-        "关键帧时间线：",
-        timeline,
-      ].join(
-        "\n",
-      ),
+      text:
+        buildAnalysisPrompt(
+          prompt,
+          usableFrames.length,
+        ),
     },
-    ...usableFrames.map(
-      (frame) => ({
-        type:
-          "image_url",
-        image_url: {
-          url:
-            buildDataUrl(
-              normalizeMimeType(
-                frame.mimeType,
-              ),
-              frame.imageBase64,
-            ),
-          detail:
-            "auto",
-        },
-      }),
-    ),
   ];
+
+  for (
+    let index = 0;
+    index <
+    usableFrames.length;
+    index += 1
+  ) {
+    const frame =
+      usableFrames[index];
+
+    content.push({
+      type: "text",
+      text:
+        [
+          "Timeline sample:",
+          String(
+            index + 1,
+          ),
+          "Timestamp:",
+          frame.timestampSeconds.toFixed(
+            2,
+          ),
+          "seconds",
+          "Timeline ratio:",
+          frame.ratio.toFixed(
+            4,
+          ),
+        ].join(" "),
+    });
+
+    content.push({
+      type: "image_url",
+      image_url: {
+        url:
+          buildDataUrl(
+            normalizeMimeType(
+              frame.mimeType,
+            ),
+            frame.imageBase64,
+          ),
+        detail: "auto",
+      },
+    });
+  }
 
   try {
     const response =
@@ -264,29 +294,32 @@ export async function analyzeAIOSCNVideoFrames(
             "deepseek-flash",
           messages: [
             {
-              role:
-                "user",
-              content,
+              role: "user",
+              content:
+                content as never,
             },
           ],
-          max_tokens:
-            5_000,
-        } as never,
+          temperature: 0.1,
+          max_tokens: 8000,
+        },
       );
 
     const output =
-      response
-        .choices?.[0]
-        ?.message
-        ?.content;
+      response.choices?.[0]
+        ?.message?.content;
 
-    if (
-      typeof output !==
-        "string" ||
-      !output.trim()
-    ) {
-      throw new Error(
-        "DeepSeek returned no video analysis.",
+    const contentText =
+      typeof output ===
+      "string"
+        ? output.trim()
+        : "";
+
+    if (!contentText) {
+      return buildFailure(
+        "deepseek",
+        frames.length,
+        usableFrames.length,
+        "deepseek-flash",
       );
     }
 
@@ -295,22 +328,24 @@ export async function analyzeAIOSCNVideoFrames(
       code:
         "AIOS_CN_VIDEO_UNDERSTANDING_COMPLETED",
       content:
-        output.trim(),
-      provider:
-        "deepseek",
+        contentText.slice(
+          0,
+          8000,
+        ),
+      provider: "deepseek",
       model:
         "deepseek-flash",
       frameCount:
         frames.length,
       analyzedFrameCount:
         usableFrames.length,
+      coverageMode:
+        "full-timeline",
       semanticUnderstandingReady:
         true,
       safetyBoundary: {
-        plannerDispatched:
-          false,
-        tradingExecuted:
-          false,
+        plannerDispatched: false,
+        tradingExecuted: false,
         commercialActualWritten:
           false,
       },
@@ -319,7 +354,6 @@ export async function analyzeAIOSCNVideoFrames(
     };
   } catch {
     return buildFailure(
-      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
       "deepseek",
       frames.length,
       usableFrames.length,
