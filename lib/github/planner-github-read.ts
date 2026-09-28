@@ -1,12 +1,21 @@
 import "server-only";
 
 import {
+  readGitHubFile,
+} from "@/lib/github/bridge";
+
+import {
   detectFounderRuntimeGitHubTask,
 } from "@/lib/github/founder-runtime-task-detector";
 
-import {
-  executeFounderRuntimeGitHubTask,
-} from "@/lib/github/founder-runtime-task";
+const DEFAULT_REPOSITORY =
+  "Vivi9max/AIOS-Alpha";
+
+const DEFAULT_BRANCH =
+  "main";
+
+const MAX_READ_SIZE =
+  300000;
 
 export interface PlannerGitHubReadResult {
   detected: boolean;
@@ -19,11 +28,45 @@ export interface PlannerGitHubReadResult {
   error?: string;
 }
 
+function normalizePath(
+  value: string,
+): string {
+  return value
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/{2,}/g, "/");
+}
+
+function isSafeRepositoryPath(
+  value: string,
+): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (
+    value.includes("..") ||
+    value.includes("\\") ||
+    value.startsWith(".git/")
+  ) {
+    return false;
+  }
+
+  return (
+    value.length <= 500 &&
+    /^[A-Za-z0-9._/@-]+$/.test(
+      value,
+    )
+  );
+}
+
 export async function executePlannerGitHubRead(
   input: string,
 ): Promise<PlannerGitHubReadResult> {
   const detection =
-    detectFounderRuntimeGitHubTask(input);
+    detectFounderRuntimeGitHubTask(
+      input,
+    );
 
   if (
     !detection.isGitHubTask ||
@@ -36,35 +79,101 @@ export async function executePlannerGitHubRead(
     };
   }
 
-  const result =
-    await executeFounderRuntimeGitHubTask({
-      action: "read",
-      path: detection.path,
-      objective:
-        `Planner real GitHub read: ${input.slice(0, 500)}`,
-    });
+  const path =
+    normalizePath(
+      detection.path,
+    );
 
-  if (!result.success) {
+  if (
+    !isSafeRepositoryPath(
+      path,
+    )
+  ) {
     return {
       detected: true,
       success: false,
-      path: detection.path,
-      code: result.github.code,
-      error: result.github.error,
+      path,
+      code:
+        "GITHUB_READ_INVALID_PATH",
+      error:
+        "The requested GitHub path is not allowed.",
     };
   }
 
-  return {
-    detected: true,
-    success: true,
-    path: detection.path,
-    content:
-      result.github.read?.content ?? "",
-    sha:
-      result.github.read?.sha,
-    size:
-      result.github.read?.size,
-    code:
-      result.github.code,
-  };
+  try {
+    const result =
+      await readGitHubFile({
+        repo:
+          DEFAULT_REPOSITORY,
+        path,
+        ref:
+          DEFAULT_BRANCH,
+      });
+
+    if (
+      !result.success ||
+      !result.data
+    ) {
+      return {
+        detected: true,
+        success: false,
+        path,
+        code:
+          "GITHUB_READ_FAILED",
+        error:
+          result.error ||
+          "GitHub file read failed.",
+      };
+    }
+
+    const content =
+      result.data.content ??
+      "";
+
+    const size =
+      result.data.size ??
+      content.length;
+
+    if (
+      size >
+      MAX_READ_SIZE
+    ) {
+      return {
+        detected: true,
+        success: false,
+        path,
+        size,
+        code:
+          "GITHUB_READ_TOO_LARGE",
+        error:
+          "The requested GitHub file is too large for direct Chat inspection.",
+      };
+    }
+
+    return {
+      detected: true,
+      success: true,
+      path,
+      content,
+      sha:
+        result.data.sha,
+      size,
+      code:
+        "CHAT_GITHUB_READ_COMPLETED",
+    };
+  } catch (
+    error
+  ) {
+    return {
+      detected: true,
+      success: false,
+      path,
+      code:
+        "GITHUB_READ_RUNTIME_ERROR",
+      error:
+        error instanceof Error
+          ? error.message
+          : "GitHub read failed.",
+    };
+  }
 }
