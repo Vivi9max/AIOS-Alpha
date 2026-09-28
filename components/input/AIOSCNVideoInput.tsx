@@ -170,10 +170,17 @@ async function extractFrames(
       );
     }
 
+    const sourceWidth =
+      video.videoWidth ||
+      1280;
+
+    const sourceHeight =
+      video.videoHeight ||
+      720;
+
     const width =
       Math.min(
-        video.videoWidth ||
-          1280,
+        sourceWidth,
         1280,
       );
 
@@ -182,12 +189,8 @@ async function extractFrames(
         1,
         Math.round(
           width *
-            (
-              (video.videoHeight ||
-                720) /
-              (video.videoWidth ||
-                1280)
-            ),
+            (sourceHeight /
+              sourceWidth),
         ),
       );
 
@@ -224,7 +227,9 @@ async function extractFrames(
       index += 1
     ) {
       const ratio =
-        SAMPLE_RATIOS[index];
+        SAMPLE_RATIOS[
+          index
+        ];
 
       const timestamp =
         Math.min(
@@ -252,7 +257,7 @@ async function extractFrames(
       const dataUrl =
         canvas.toDataURL(
           "image/jpeg",
-          0.62,
+          0.58,
         );
 
       const commaIndex =
@@ -261,15 +266,11 @@ async function extractFrames(
         );
 
       if (
-        commaIndex < 0
+        commaIndex <
+        0
       ) {
         continue;
       }
-
-      const base64 =
-        dataUrl.slice(
-          commaIndex + 1,
-        );
 
       frames.push({
         index,
@@ -279,7 +280,9 @@ async function extractFrames(
         mimeType:
           "image/jpeg",
         imageBase64:
-          base64,
+          dataUrl.slice(
+            commaIndex + 1,
+          ),
       });
     }
 
@@ -295,10 +298,13 @@ async function extractFrames(
     return frames;
   } finally {
     video.pause();
+
     video.removeAttribute(
       "src",
     );
+
     video.load();
+
     URL.revokeObjectURL(
       objectUrl,
     );
@@ -370,7 +376,8 @@ export default function AIOSCNVideoInput({
         await fetch(
           "/api/cn/video/understanding",
           {
-            method: "POST",
+            method:
+              "POST",
             headers: {
               "Content-Type":
                 "application/json",
@@ -392,8 +399,6 @@ export default function AIOSCNVideoInput({
                 frames,
                 fileName:
                   file.name,
-                durationSeconds:
-                  undefined,
               }),
           },
         );
@@ -403,7 +408,8 @@ export default function AIOSCNVideoInput({
 
       if (
         !response.ok ||
-        data.success !== true
+        data.success !==
+          true
       ) {
         throw new Error(
           data.error ??
@@ -421,6 +427,7 @@ export default function AIOSCNVideoInput({
           `视频：${file.name}`,
           `关键帧：${data.analyzedFrameCount ?? frames.length}`,
           `模型：${data.model ?? "deepseek-flash"}`,
+          `Provider：${data.provider ?? "deepseek"}`,
           "",
           data.content ??
             localized(
@@ -429,7 +436,9 @@ export default function AIOSCNVideoInput({
               "No displayable video analysis was returned.",
               "表示可能な動画分析結果が返されませんでした。",
             ),
-        ].join("\n"),
+        ].join(
+          "\n",
+        ),
       );
     } catch (
       caughtError
@@ -467,7 +476,8 @@ export default function AIOSCNVideoInput({
           loading
         }
         style={{
-          display: "none",
+          display:
+            "none",
         }}
       />
 
@@ -491,7 +501,8 @@ export default function AIOSCNVideoInput({
             loading
               ? "#f8fafc"
               : "#ffffff",
-          color: "#334155",
+          color:
+            "#334155",
           fontSize: 12,
           fontWeight: 800,
           cursor:
