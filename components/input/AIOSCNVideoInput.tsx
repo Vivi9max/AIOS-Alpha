@@ -30,13 +30,8 @@ const MAX_VIDEO_BYTES =
 const MAX_VIDEO_DURATION =
   120;
 
-const SAMPLE_RATIOS = [
-  0,
-  0.25,
-  0.5,
-  0.75,
-  0.95,
-];
+const MAX_TIMELINE_FRAMES =
+  48;
 
 function localized(
   locale: string,
@@ -114,6 +109,41 @@ function waitForEvent(
       );
     },
   );
+}
+
+function buildTimelineRatios(
+  duration: number,
+): number[] {
+  const desired =
+    Math.min(
+      MAX_TIMELINE_FRAMES,
+      Math.max(
+        8,
+        Math.ceil(
+          duration / 2.5,
+        ),
+      ),
+    );
+
+  const ratios: number[] =
+    [];
+
+  if (desired <= 1) {
+    return [0];
+  }
+
+  for (
+    let index = 0;
+    index < desired;
+    index += 1
+  ) {
+    ratios.push(
+      index /
+        (desired - 1),
+    );
+  }
+
+  return ratios;
 }
 
 async function extractFrames(
@@ -216,6 +246,11 @@ async function extractFrames(
       );
     }
 
+    const ratios =
+      buildTimelineRatios(
+        duration,
+      );
+
     const frames:
       VideoFramePayload[] =
       [];
@@ -223,13 +258,11 @@ async function extractFrames(
     for (
       let index = 0;
       index <
-        SAMPLE_RATIOS.length;
+      ratios.length;
       index += 1
     ) {
       const ratio =
-        SAMPLE_RATIOS[
-          index
-        ];
+        ratios[index];
 
       const timestamp =
         Math.min(
@@ -257,7 +290,7 @@ async function extractFrames(
       const dataUrl =
         canvas.toDataURL(
           "image/jpeg",
-          0.58,
+          0.48,
         );
 
       const commaIndex =
@@ -389,13 +422,7 @@ export default function AIOSCNVideoInput({
             body:
               JSON.stringify({
                 prompt:
-                  locale ===
-                  "zh-CN"
-                    ? "请分析这个视频的主要内容、关键画面、时间顺序变化、可确认事实、画面文字、人物动作、产品或商业信息，以及不确定项。"
-                    : locale ===
-                        "ja"
-                      ? "この動画の主な内容、重要な場面、時間順の変化、確認できる事実、画面内テキスト、人物の動き、商品または商業情報、不確実な点を分析してください。"
-                      : "Analyze the main content, key frames, temporal changes, confirmed visual facts, visible text, people actions, product or commercial information, and uncertainties in this video.",
+                  "Provide comprehensive full-timeline visual understanding. Focus on the complete sequence, temporal changes, confirmed facts, visible text, people, actions, scenes, objects, products, brands, commercial information, important details, and uncertainties.",
                 frames,
                 fileName:
                   file.name,
@@ -422,12 +449,18 @@ export default function AIOSCNVideoInput({
         );
       }
 
+      const coverageText =
+        localized(
+          locale,
+          "全时段覆盖",
+          "Full timeline coverage",
+          "全時間軸カバレッジ",
+        );
+
       onResult(
         [
           `视频：${file.name}`,
-          `关键帧：${data.analyzedFrameCount ?? frames.length}`,
-          `模型：${data.model ?? "deepseek-flash"}`,
-          `Provider：${data.provider ?? "deepseek"}`,
+          `${coverageText}：${data.analyzedFrameCount ?? frames.length}`,
           "",
           data.content ??
             localized(
@@ -515,9 +548,9 @@ export default function AIOSCNVideoInput({
         {loading
           ? localized(
               locale,
-              "正在分析视频...",
-              "Analyzing video...",
-              "動画を分析中...",
+              "正在完整分析视频...",
+              "Analyzing the full video...",
+              "動画全体を分析中...",
             )
           : localized(
               locale,
