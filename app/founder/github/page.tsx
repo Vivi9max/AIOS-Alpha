@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import {
+  useState,
+} from "react";
 
 type StatusKey =
   | "connection"
@@ -17,7 +20,11 @@ type StatusValue =
   | "RUNNING"
   | "IDLE";
 
-type StatusMap = Record<StatusKey, StatusValue>;
+type StatusMap =
+  Record<
+    StatusKey,
+    StatusValue
+  >;
 
 type VerificationResult = {
   success?: boolean;
@@ -53,75 +60,124 @@ type VerificationResult = {
   };
 };
 
-const INITIAL_STATUS: StatusMap = {
-  connection: "IDLE",
-  auth: "IDLE",
-  repo: "IDLE",
-  read: "IDLE",
-  write: "IDLE",
-  commit: "IDLE",
-  readback: "IDLE",
-};
+const INITIAL_STATUS:
+  StatusMap = {
+    connection:
+      "IDLE",
+    auth:
+      "IDLE",
+    repo:
+      "IDLE",
+    read:
+      "IDLE",
+    write:
+      "IDLE",
+    commit:
+      "IDLE",
+    readback:
+      "IDLE",
+  };
 
 const STATUS_ITEMS: {
   key: StatusKey;
   label: string;
 }[] = [
   {
-    key: "connection",
-    label: "C141 Verification Connection",
+    key:
+      "connection",
+    label:
+      "Connection",
   },
   {
-    key: "auth",
-    label: "GitHub Authentication",
+    key:
+      "auth",
+    label:
+      "Authentication",
   },
   {
-    key: "repo",
-    label: "Repository Access",
+    key:
+      "repo",
+    label:
+      "Repository",
   },
   {
-    key: "read",
-    label: "READ",
+    key:
+      "read",
+    label:
+      "READ",
   },
   {
-    key: "write",
-    label: "WRITE",
+    key:
+      "write",
+    label:
+      "WRITE",
   },
   {
-    key: "commit",
-    label: "COMMIT",
+    key:
+      "commit",
+    label:
+      "COMMIT",
   },
   {
-    key: "readback",
-    label: "READBACK",
+    key:
+      "readback",
+    label:
+      "READBACK",
   },
 ];
 
-const STATUS_COLOR: Record<string, string> = {
-  READY: "#16a34a",
-  ERROR: "#dc2626",
-  RUNNING: "#ea580c",
-  IDLE: "#9ca3af",
+const STATUS_COLOR:
+  Record<
+    string,
+    string
+  > = {
+  READY:
+    "#16a34a",
+  ERROR:
+    "#dc2626",
+  RUNNING:
+    "#ea580c",
+  IDLE:
+    "#94a3b8",
 };
 
-export default function C141GithubLiveVerification() {
-  const [accessKey, setAccessKey] = useState("");
+export default function FounderGithubControlPage() {
+  const [
+    accessKey,
+    setAccessKey,
+  ] = useState("");
 
-  const [status, setStatus] =
-    useState<StatusMap>(INITIAL_STATUS);
+  const [
+    status,
+    setStatus,
+  ] =
+    useState<StatusMap>(
+      INITIAL_STATUS,
+    );
 
-  const [running, setRunning] = useState(false);
+  const [
+    running,
+    setRunning,
+  ] = useState(false);
 
-  const [error, setError] = useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
-  const [result, setResult] =
-    useState<VerificationResult | null>(null);
+  const [
+    result,
+    setResult,
+  ] =
+    useState<VerificationResult | null>(
+      null,
+    );
 
-  const handleRun = async () => {
-    const normalizedKey =
+  async function handleRun() {
+    const key =
       accessKey.trim();
 
-    if (!normalizedKey) {
+    if (!key) {
       setError(
         "请输入 Founder Access Key",
       );
@@ -134,303 +190,430 @@ export default function C141GithubLiveVerification() {
 
     setStatus({
       ...INITIAL_STATUS,
-      connection: "RUNNING",
+      connection:
+        "RUNNING",
     });
 
     try {
-      const response = await fetch(
-        "/api/founder/github-verify",
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "Content-Type":
-              "application/json",
-            Accept:
-              "application/json",
-            Authorization:
-              `Bearer ${normalizedKey}`,
+      const response =
+        await fetch(
+          "/api/founder/github-verify",
+          {
+            method:
+              "POST",
+            cache:
+              "no-store",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Accept:
+                "application/json",
+              Authorization:
+                `Bearer ${key}`,
+            },
           },
-        },
-      );
+        );
 
       const data =
         (await response.json()) as VerificationResult;
 
-      setResult(data);
+      setResult(
+        data,
+      );
 
-      const checks = data.checks;
+      const checks =
+        data.checks;
 
       setStatus({
         connection:
-          checks?.connection === "PASS"
+          checks?.connection ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         auth:
-          checks?.authentication === "PASS"
+          checks?.authentication ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         repo:
-          checks?.repository === "PASS"
+          checks?.repository ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         read:
-          checks?.read === "PASS"
+          checks?.read ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         write:
-          checks?.write === "PASS"
+          checks?.write ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         commit:
-          checks?.commit === "PASS"
+          checks?.commit ===
+          "PASS"
             ? "READY"
             : "ERROR",
-
         readback:
-          checks?.readback === "PASS"
+          checks?.readback ===
+          "PASS"
             ? "READY"
             : "ERROR",
       });
 
-      if (!response.ok) {
+      if (
+        !response.ok ||
+        data.success !==
+          true
+      ) {
         throw new Error(
           data.error ||
-            "C141 Live Verification failed.",
+            "GitHub Direct Control verification failed.",
         );
       }
-
-      if (data.success !== true) {
-        throw new Error(
-          data.error ||
-            "C141 Live Verification failed.",
-        );
-      }
-    } catch (requestError) {
-      const message =
+    } catch (
+      requestError
+    ) {
+      setError(
         requestError instanceof Error
           ? requestError.message
-          : "C141 Live Verification failed.";
+          : "GitHub Direct Control verification failed.",
+      );
 
-      setError(message);
-
-      setStatus((previous) => ({
-        ...previous,
-        connection: "ERROR",
-      }));
+      setStatus(
+        (
+          previous,
+        ) => ({
+          ...previous,
+          connection:
+            "ERROR",
+        }),
+      );
     } finally {
-      setRunning(false);
+      setRunning(
+        false,
+      );
     }
-  };
-
-  const getStatusColor = (
-    value: string,
-  ) =>
-    STATUS_COLOR[value] ||
-    STATUS_COLOR.IDLE;
+  }
 
   return (
     <main
       style={{
-        minHeight: "100vh",
-        background: "#fafafa",
-        padding: "24px 16px",
+        minHeight:
+          "100vh",
+        background:
+          "#f4f6fb",
+        padding:
+          "24px 16px 60px",
+        boxSizing:
+          "border-box",
       }}
     >
       <div
         style={{
-          maxWidth: 560,
-          margin: "0 auto",
-          background: "#fff",
-          border:
-            "1px solid #e5e5e5",
-          borderRadius: 12,
-          padding: 32,
-          boxShadow:
-            "0 1px 3px rgba(0,0,0,0.06)",
+          width:
+            "100%",
+          maxWidth:
+            760,
+          margin:
+            "0 auto",
         }}
       >
-        <div
+        <header
           style={{
-            marginBottom: 8,
+            marginBottom:
+              18,
           }}
         >
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing:
-                "0.05em",
-              color: "#dc2626",
-              border:
-                "1px solid #dc2626",
-              borderRadius: 4,
-              padding:
-                "2px 8px",
-            }}
-          >
-            FOUNDER ONLY
-          </span>
-        </div>
-
-        <h1
-          style={{
-            fontSize: 20,
-            fontWeight: 700,
-            margin:
-              "0 0 4px",
-            color: "#111",
-          }}
-        >
-          C141 LIVE VERIFICATION
-        </h1>
-
-        <p
-          style={{
-            fontSize: 13,
-            color: "#666",
-            margin:
-              "0 0 24px",
-            lineHeight: 1.5,
-          }}
-        >
-          GitHub Direct Bridge
-          真实验证：AIOS Alpha
-          Production →
-          GitHub Authentication →
-          Founder Contract →
-          READ → WRITE → COMMIT →
-          READBACK
-        </p>
-
-        <label
-          style={{
-            display: "block",
-            fontSize: 13,
-            fontWeight: 600,
-            marginBottom: 6,
-            color: "#333",
-          }}
-        >
-          Founder Access Key
-        </label>
-
-        <input
-          type="password"
-          placeholder="Enter your Founder Access Key"
-          value={accessKey}
-          onChange={(event) =>
-            setAccessKey(
-              event.target.value,
-            )
-          }
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !running
-            ) {
-              void handleRun();
-            }
-          }}
-          autoComplete="off"
-          style={{
-            width: "100%",
-            padding:
-              "10px 12px",
-            border:
-              "1px solid #d1d5db",
-            borderRadius: 6,
-            fontSize: 14,
-            outline: "none",
-            boxSizing:
-              "border-box",
-          }}
-        />
-
-        <button
-          type="button"
-          onClick={() =>
-            void handleRun()
-          }
-          disabled={running}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            padding:
-              "12px 16px",
-            background:
-              running
-                ? "#6b7280"
-                : "#111",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor:
-              running
-                ? "not-allowed"
-                : "pointer",
-          }}
-        >
-          {running
-            ? "Running C141 Live Test..."
-            : "Run C141 Live Test"}
-        </button>
-
-        {error && (
           <div
             style={{
-              marginTop: 12,
-              padding:
-                "10px 12px",
-              border:
-                "1px solid #fecaca",
-              borderRadius: 8,
-              background:
-                "#fef2f2",
-              color: "#dc2626",
-              fontSize: 13,
-              lineHeight: 1.5,
+              color:
+                "#dc2626",
+              fontSize:
+                11,
+              fontWeight:
+                900,
+              letterSpacing:
+                "0.12em",
             }}
           >
-            {error}
+            PRIVATE FOUNDER ACCESS
           </div>
-        )}
 
-        <div
+          <h1
+            style={{
+              margin:
+                "8px 0 0",
+              fontSize:
+                30,
+              lineHeight:
+                1.1,
+              color:
+                "#0f172a",
+            }}
+          >
+            Founder GitHub Direct Control
+          </h1>
+
+          <p
+            style={{
+              margin:
+                "9px 0 0",
+              color:
+                "#64748b",
+              fontSize:
+                13,
+              lineHeight:
+                1.6,
+            }}
+          >
+            Founder-only control boundary for
+            repository READ, WRITE, COMMIT and
+            READBACK verification.
+          </p>
+        </header>
+
+        <section
           style={{
-            marginTop: 28,
-            borderTop:
-              "1px solid #e5e5e5",
-            paddingTop: 16,
+            padding:
+              20,
+            border:
+              "1px solid #dbe3f0",
+            borderRadius:
+              20,
+            background:
+              "#ffffff",
+          }}
+        >
+          <div
+            style={{
+              display:
+                "grid",
+              gridTemplateColumns:
+                "repeat(4, 1fr)",
+              gap:
+                8,
+              marginBottom:
+                20,
+            }}
+          >
+            {[
+              "READ",
+              "WRITE",
+              "COMMIT",
+              "READBACK",
+            ].map(
+              (
+                item,
+              ) => (
+                <div
+                  key={
+                    item
+                  }
+                  style={{
+                    padding:
+                      "12px 8px",
+                    border:
+                      "1px solid #e2e8f0",
+                    borderRadius:
+                      12,
+                    background:
+                      "#f8fafc",
+                    textAlign:
+                      "center",
+                    fontSize:
+                      11,
+                    fontWeight:
+                      850,
+                    color:
+                      "#334155",
+                  }}
+                >
+                  {item}
+                </div>
+              ),
+            )}
+          </div>
+
+          <label
+            htmlFor="founder-github-key"
+            style={{
+              display:
+                "block",
+              marginBottom:
+                7,
+              color:
+                "#334155",
+              fontSize:
+                13,
+              fontWeight:
+                800,
+            }}
+          >
+            Founder Access Key
+          </label>
+
+          <input
+            id="founder-github-key"
+            type="password"
+            value={
+              accessKey
+            }
+            onChange={(
+              event,
+            ) =>
+              setAccessKey(
+                event.target
+                  .value,
+              )
+            }
+            onKeyDown={(
+              event,
+            ) => {
+              if (
+                event.key ===
+                  "Enter" &&
+                !running
+              ) {
+                void handleRun();
+              }
+            }}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Enter Founder Access Key"
+            style={{
+              width:
+                "100%",
+              height:
+                48,
+              boxSizing:
+                "border-box",
+              padding:
+                "0 13px",
+              border:
+                "1px solid #cbd5e1",
+              borderRadius:
+                12,
+              fontSize:
+                14,
+              color:
+                "#0f172a",
+              background:
+                "#ffffff",
+            }}
+          />
+
+          <button
+            type="button"
+            disabled={
+              running
+            }
+            onClick={() =>
+              void handleRun()
+            }
+            style={{
+              width:
+                "100%",
+              height:
+                48,
+              marginTop:
+                12,
+              border:
+                "none",
+              borderRadius:
+                12,
+              background:
+                running
+                  ? "#94a3b8"
+                  : "#0f172a",
+              color:
+                "#ffffff",
+              fontSize:
+                14,
+              fontWeight:
+                850,
+              cursor:
+                running
+                  ? "default"
+                  : "pointer",
+            }}
+          >
+            {running
+              ? "Verifying..."
+              : "Run Direct Control Verification"}
+          </button>
+
+          {error && (
+            <div
+              role="alert"
+              style={{
+                marginTop:
+                  12,
+                padding:
+                  12,
+                border:
+                  "1px solid #fecaca",
+                borderRadius:
+                  12,
+                background:
+                  "#fef2f2",
+                color:
+                  "#b91c1c",
+                fontSize:
+                  13,
+                lineHeight:
+                  1.5,
+              }}
+            >
+              {error}
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            marginTop:
+              14,
+            display:
+              "grid",
+            gap:
+              8,
           }}
         >
           {STATUS_ITEMS.map(
-            (item) => (
+            (
+              item,
+            ) => (
               <div
-                key={item.key}
+                key={
+                  item.key
+                }
                 style={{
-                  display: "flex",
-                  justifyContent:
-                    "space-between",
+                  display:
+                    "flex",
                   alignItems:
                     "center",
+                  justifyContent:
+                    "space-between",
                   padding:
-                    "8px 0",
-                  fontSize: 13,
-                  borderBottom:
-                    "1px solid #f3f4f6",
+                    "12px 14px",
+                  border:
+                    "1px solid #e2e8f0",
+                  borderRadius:
+                    12,
+                  background:
+                    "#ffffff",
                 }}
               >
                 <span
                   style={{
-                    color: "#333",
+                    color:
+                      "#334155",
+                    fontSize:
+                      13,
+                    fontWeight:
+                      700,
                   }}
                 >
                   {item.label}
@@ -438,13 +621,16 @@ export default function C141GithubLiveVerification() {
 
                 <span
                   style={{
-                    fontWeight: 700,
                     color:
-                      getStatusColor(
+                      STATUS_COLOR[
                         status[
                           item.key
-                        ],
-                      ),
+                        ]
+                      ],
+                    fontSize:
+                      11,
+                    fontWeight:
+                      900,
                   }}
                 >
                   {
@@ -456,16 +642,201 @@ export default function C141GithubLiveVerification() {
               </div>
             ),
           )}
-        </div>
+        </section>
+
+        <section
+          style={{
+            marginTop:
+              18,
+            padding:
+              20,
+            border:
+              "1px solid #dbe3f0",
+            borderRadius:
+              20,
+            background:
+              "#ffffff",
+          }}
+        >
+          <div
+            style={{
+              color:
+                "#94a3b8",
+              fontSize:
+                11,
+              fontWeight:
+                900,
+              letterSpacing:
+                "0.1em",
+            }}
+          >
+            AUTONOMOUS RUNTIME
+          </div>
+
+          <h2
+            style={{
+              margin:
+                "8px 0 6px",
+              fontSize:
+                21,
+              color:
+                "#0f172a",
+            }}
+          >
+            24h Autonomous Runtime
+          </h2>
+
+          <p
+            style={{
+              margin:
+                "0 0 16px",
+              color:
+                "#64748b",
+              fontSize:
+                13,
+              lineHeight:
+                1.6,
+            }}
+          >
+            Existing Founder autonomous-development
+            control plane. This page provides the
+            direct entry point; continuous operation
+            remains governed by the existing runtime
+            and safety boundaries.
+          </p>
+
+          <div
+            style={{
+              display:
+                "grid",
+              gap:
+                7,
+            }}
+          >
+            {[
+              "Research",
+              "Detect",
+              "Plan",
+              "GitHub",
+              "Verify",
+              "Deploy",
+              "Monitor",
+              "Continue",
+            ].map(
+              (
+                step,
+                index,
+              ) => (
+                <div
+                  key={
+                    step
+                  }
+                  style={{
+                    display:
+                      "flex",
+                    alignItems:
+                      "center",
+                    gap:
+                      9,
+                    padding:
+                      "8px 10px",
+                    borderRadius:
+                      9,
+                    background:
+                      "#f8fafc",
+                    color:
+                      "#334155",
+                    fontSize:
+                      12,
+                    fontWeight:
+                      750,
+                  }}
+                >
+                  <span
+                    style={{
+                      width:
+                        7,
+                      height:
+                        7,
+                      borderRadius:
+                        "50%",
+                      background:
+                        "#94a3b8",
+                    }}
+                  />
+
+                  {step}
+
+                  {index <
+                    7 && (
+                    <span
+                      style={{
+                        marginLeft:
+                          "auto",
+                        color:
+                          "#cbd5e1",
+                      }}
+                    >
+                      →
+                    </span>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
+
+          <Link
+            href="/founder/autonomous-development"
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
+              marginTop:
+                16,
+              minHeight:
+                46,
+              padding:
+                "0 14px",
+              borderRadius:
+                11,
+              background:
+                "#0f172a",
+              color:
+                "#ffffff",
+              textDecoration:
+                "none",
+              fontSize:
+                13,
+              fontWeight:
+                850,
+            }}
+          >
+            <span>
+              Open Autonomous Runtime
+            </span>
+
+            <span>
+              →
+            </span>
+          </Link>
+        </section>
 
         {result && (
           <section
             style={{
-              marginTop: 24,
+              marginTop:
+                18,
+              padding:
+                18,
               border:
-                "1px solid #e5e7eb",
-              borderRadius: 10,
-              padding: 16,
+                result.success
+                  ? "1px solid #bbf7d0"
+                  : "1px solid #fecaca",
+              borderRadius:
+                18,
               background:
                 result.success
                   ? "#f0fdf4"
@@ -476,77 +847,73 @@ export default function C141GithubLiveVerification() {
               style={{
                 margin:
                   "0 0 12px",
-                fontSize: 15,
-                fontWeight: 700,
-                color: "#111",
+                fontSize:
+                  17,
+                color:
+                  "#0f172a",
               }}
             >
-              C141 LIVE RESULT
+              Verification Result
             </h2>
 
             <div
               style={{
-                display: "grid",
-                gap: 8,
-                fontSize: 13,
+                display:
+                  "grid",
+                gap:
+                  7,
+                fontSize:
+                  12,
+                color:
+                  "#334155",
               }}
             >
               <div>
-                <strong>Status:</strong>{" "}
+                <strong>
+                  Status:
+                </strong>{" "}
                 {result.success
                   ? "PASS"
                   : "FAIL"}
               </div>
 
-              {result.phase && (
-                <div>
-                  <strong>Phase:</strong>{" "}
-                  {result.phase}
-                </div>
-              )}
-
-              {result.code && (
-                <div>
-                  <strong>Code:</strong>{" "}
-                  {result.code}
-                </div>
-              )}
-
               {result.repository && (
                 <div>
-                  <strong>Repository:</strong>{" "}
-                  {result.repository}
+                  <strong>
+                    Repository:
+                  </strong>{" "}
+                  {
+                    result.repository
+                  }
                 </div>
               )}
 
               {result.branch && (
                 <div>
-                  <strong>Branch:</strong>{" "}
-                  {result.branch}
+                  <strong>
+                    Branch:
+                  </strong>{" "}
+                  {
+                    result.branch
+                  }
                 </div>
               )}
 
-              {result.read?.sha && (
+              {result.write
+                ?.commitSha && (
                 <div
                   style={{
                     wordBreak:
                       "break-all",
                   }}
                 >
-                  <strong>Read SHA:</strong>{" "}
-                  {result.read.sha}
-                </div>
-              )}
-
-              {result.write?.commitSha && (
-                <div
-                  style={{
-                    wordBreak:
-                      "break-all",
-                  }}
-                >
-                  <strong>Commit SHA:</strong>{" "}
-                  {result.write.commitSha}
+                  <strong>
+                    Commit:
+                  </strong>{" "}
+                  {
+                    result.write
+                      .commitSha
+                  }
                 </div>
               )}
 
@@ -564,30 +931,6 @@ export default function C141GithubLiveVerification() {
                 </div>
               )}
 
-              {result.durationMs !==
-                undefined && (
-                <div>
-                  <strong>
-                    Duration:
-                  </strong>{" "}
-                  {result.durationMs} ms
-                </div>
-              )}
-
-              {result.timestamp && (
-                <div
-                  style={{
-                    wordBreak:
-                      "break-all",
-                  }}
-                >
-                  <strong>
-                    Timestamp:
-                  </strong>{" "}
-                  {result.timestamp}
-                </div>
-              )}
-
               {result.commit?.url && (
                 <a
                   href={
@@ -596,8 +939,8 @@ export default function C141GithubLiveVerification() {
                   target="_blank"
                   rel="noreferrer"
                   style={{
-                    marginTop: 4,
-                    color: "#2563eb",
+                    color:
+                      "#2563eb",
                     textDecoration:
                       "underline",
                   }}
