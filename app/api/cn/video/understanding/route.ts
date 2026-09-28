@@ -19,6 +19,8 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
+const MAX_FRAMES = 48;
+
 function applyIdentityCookie(
   response: NextResponse,
   userId: string,
@@ -76,7 +78,7 @@ export async function POST(
       frames.length ===
       0 ||
       frames.length >
-        5
+        MAX_FRAMES
     ) {
       const response =
         NextResponse.json(
@@ -132,7 +134,22 @@ export async function POST(
     const response =
       NextResponse.json(
         {
-          ...result,
+          success:
+            result.success,
+          code:
+            result.code,
+          content:
+            result.content,
+          frameCount:
+            result.frameCount,
+          analyzedFrameCount:
+            result.analyzedFrameCount,
+          coverageMode:
+            result.coverageMode,
+          semanticUnderstandingReady:
+            result.semanticUnderstandingReady,
+          safetyBoundary:
+            result.safetyBoundary,
           runtime:
             "aios-cn-video-understanding",
           identity: {
