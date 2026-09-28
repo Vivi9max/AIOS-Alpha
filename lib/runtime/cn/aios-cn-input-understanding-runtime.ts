@@ -16,7 +16,7 @@ const MAX_OUTPUT_CHARS =
   8_000;
 
 const IMAGE_TYPES =
-  new Set([
+  new Set<string>([
     "image/jpeg",
     "image/png",
     "image/gif",
@@ -24,7 +24,7 @@ const IMAGE_TYPES =
   ]);
 
 const TEXT_TYPES =
-  new Set([
+  new Set<string>([
     "text/plain",
     "text/csv",
     "application/json",
@@ -76,13 +76,16 @@ function ready(
   return {
     ...cloneInput(input),
     extractedText:
-      text.trim().slice(
-        0,
-        MAX_OUTPUT_CHARS,
-      ),
+      text
+        .trim()
+        .slice(
+          0,
+          MAX_OUTPUT_CHARS,
+        ),
     processingStatus:
       "ready",
-    processingError: null,
+    processingError:
+      null,
   };
 }
 
@@ -119,6 +122,25 @@ function dataUrl(
   return `data:${mimeType};base64,${base64}`;
 }
 
+function normalizeImageMimeType(
+  mimeType: string,
+): string {
+  const normalized =
+    mimeType
+      .trim()
+      .toLowerCase();
+
+  if (
+    IMAGE_TYPES.has(
+      normalized,
+    )
+  ) {
+    return normalized;
+  }
+
+  return "image/jpeg";
+}
+
 async function analyzeImage(
   file: File,
   prompt: string,
@@ -137,15 +159,23 @@ async function analyzeImage(
     await file.arrayBuffer();
 
   const base64 =
-    Buffer.from(bytes)
-      .toString("base64");
+    Buffer.from(
+      bytes,
+    ).toString(
+      "base64",
+    );
+
+  const mimeType =
+    normalizeImageMimeType(
+      file.type,
+    );
 
   const client =
     new OpenAI({
       apiKey,
       baseURL:
         process.env
-          .DEEPSEEK_BASE_URL ??
+          .DEEPSEEK_BASE_URL?.trim() ||
         "https://api.deepseek.com",
     });
 
@@ -165,46 +195,57 @@ async function analyzeImage(
               {
                 type: "text",
                 text: [
-                  "你是 AIOS CN 的视觉理解层。",
-                  "只分析实际提供的图片。",
-                  "不要把推断内容写成确定事实。",
+                  "你是 AIOS CN 的真实视觉理解层。",
                   "",
-                  "请使用中文返回以下结构：",
+                  "下面提供的 image_url 是实际图片数据。",
+                  "必须直接分析图片本身。",
+                  "不要把文件名、用户描述或模型常识当作视觉事实。",
+                  "不要声称看到了图片中不存在的内容。",
+                  "必须明确区分视觉证据与推断。",
+                  "如果文字无法确认，明确标记为不清晰。",
+                  "",
+                  "请使用中文返回：",
                   "1. 图片内容",
                   "2. 可确认的视觉事实",
                   "3. 图片文字 / OCR",
                   "4. 关键对象",
-                  "5. 可能的上下文",
-                  "6. 不确定项",
-                  "7. 置信度",
+                  "5. 人物或场景",
+                  "6. 商品 / 商业信息",
+                  "7. 可能的上下文",
+                  "8. 不确定项",
+                  "9. 置信度",
                   "",
                   `用户任务：${userPrompt}`,
-                ].join("\n"),
+                ].join(
+                  "\n",
+                ),
               },
               {
-                type: "image_url",
+                type:
+                  "image_url",
                 image_url: {
-                  url: dataUrl(
-                    file.type ||
-                      "image/jpeg",
-                    base64,
-                  ),
-                  detail: "auto",
+                  url:
+                    dataUrl(
+                      mimeType,
+                      base64,
+                    ),
+                  detail:
+                    "auto",
                 },
               },
             ],
           },
         ],
-        thinking: {
-          type: "disabled",
-        },
-        max_tokens: 4_000,
+        max_tokens:
+          4_000,
       } as never,
     );
 
   const content =
-    response.choices?.[0]
-      ?.message?.content;
+    response
+      .choices?.[0]
+      ?.message
+      ?.content;
 
   if (
     typeof content !==
@@ -244,9 +285,6 @@ export async function processAIOSCNInputUnderstanding(
   files: AIOSCNInputFile[],
   prompt = "",
 ): Promise<AIOSCNInputUnderstandingResult> {
-  const started =
-    Date.now();
-
   if (
     inputs.length === 0 ||
     files.length === 0
@@ -271,7 +309,8 @@ export async function processAIOSCNInputUnderstanding(
         commercialActualWritten:
           false,
       },
-      provider: "none",
+      provider:
+        "none",
       generatedAt:
         new Date().toISOString(),
     };
@@ -287,13 +326,14 @@ export async function processAIOSCNInputUnderstanding(
       success: false,
       code:
         "AIOS_CN_INPUT_UNDERSTANDING_REJECTED",
-      inputs: inputs.map(
-        (input) =>
-          failed(
-            input,
-            "AIOS CN accepts at most 8 inputs.",
-          ),
-      ),
+      inputs:
+        inputs.map(
+          (input) =>
+            failed(
+              input,
+              "AIOS CN accepts at most 8 inputs.",
+            ),
+        ),
       understoodCount: 0,
       pendingCount: 0,
       failedCount:
@@ -309,14 +349,18 @@ export async function processAIOSCNInputUnderstanding(
         commercialActualWritten:
           false,
       },
-      provider: "none",
+      provider:
+        "none",
       generatedAt:
         new Date().toISOString(),
     };
   }
 
   const fileMap =
-    new Map(
+    new Map<
+      string,
+      File
+    >(
       files.map(
         (entry) => [
           entry.inputId,
@@ -325,8 +369,8 @@ export async function processAIOSCNInputUnderstanding(
       ),
     );
 
-  const output: AIOSInputItem[] =
-    [];
+  const output:
+    AIOSInputItem[] = [];
 
   let usedDeepSeek =
     false;
@@ -335,7 +379,9 @@ export async function processAIOSCNInputUnderstanding(
     const input of inputs
   ) {
     const file =
-      fileMap.get(input.id);
+      fileMap.get(
+        input.id,
+      );
 
     if (!file) {
       output.push(
@@ -490,33 +536,27 @@ export async function processAIOSCNInputUnderstanding(
     ).length;
 
   const limitations: string[] =
-    [];
-
-  if (
-    pendingCount > 0
-  ) {
-    limitations.push(
+    [
+      "AIOS CN uses DeepSeek Flash for real image understanding.",
+      "Supported image formats are JPEG, PNG, GIF, and WebP.",
+      "Image analysis is performed from the supplied image data, not from the filename.",
+      "Vision output is evidence and is not automatically verified fact.",
       "PDF and Office document parsing remain pending.",
-    );
-  }
-
-  if (
-    failedCount > 0
-  ) {
-    limitations.push(
-      "Some inputs could not be understood.",
-    );
-  }
+      "Uploaded files are processed transiently and are not persisted by this runtime.",
+      "Planner dispatch, trading execution, and commercial actual writes remain disabled.",
+    ];
 
   return {
     success:
-      understoodCount > 0,
+      understoodCount >
+      0,
     code:
       understoodCount ===
         output.length
         ? "AIOS_CN_INPUT_UNDERSTANDING_COMPLETED"
         : "AIOS_CN_INPUT_UNDERSTANDING_PARTIAL",
-    inputs: output,
+    inputs:
+      output,
     understoodCount,
     pendingCount,
     failedCount,
