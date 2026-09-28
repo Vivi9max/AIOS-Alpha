@@ -1,48 +1,59 @@
 "use client";
+
 import {
   useEffect,
   useRef,
   useState,
   type ChangeEvent,
 } from "react";
+
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
+
 import type {
   AIOSInputItem,
   AIOSInputKind,
   AIOSInputSource,
 } from "@/lib/runtime/input/aios-input-types";
+
 import {
   registerAIOSInputFile,
   removeAIOSInputFile,
 } from "@/lib/runtime/input/aios-input-browser-store";
+
 interface Props {
   disabled?: boolean;
   onInputsChange?: (
     inputs: AIOSInputItem[],
   ) => void;
 }
-interface AIOSNativePhotoBridge {
+
+interface AIOSNativeInputBridge {
   isAvailable: () => boolean;
   pickPhotos: () => Promise<File[]>;
 }
-declare global {
-  interface Window {
-    AIOSNativeInput?: {
-      pickPhotos?: () => Promise<unknown>;
-    };
-  }
+
+interface NativeInputWindow extends Window {
+  AIOSNativeInput?: {
+    pickPhotos?: () => Promise<unknown>;
+  };
 }
+
 const MAX_INPUTS = 8;
+
 const MAX_IMAGE_BYTES =
   20 * 1024 * 1024;
+
 const MAX_FILE_BYTES =
   25 * 1024 * 1024;
+
 const PHOTO_ACCEPT =
   "image/jpeg,image/png,image/webp,image/heic,image/heif";
+
 const CAMERA_ACCEPT =
   "image/jpeg,image/png,image/webp,image/heic,image/heif";
+
 const SUPPORTED_IMAGE_TYPES =
   new Set([
     "image/jpeg",
@@ -51,6 +62,7 @@ const SUPPORTED_IMAGE_TYPES =
     "image/heic",
     "image/heif",
   ]);
+
 const SUPPORTED_FILE_TYPES =
   new Set([
     "application/pdf",
@@ -63,6 +75,7 @@ const SUPPORTED_FILE_TYPES =
     "application/vnd.ms-excel",
     "application/octet-stream",
   ]);
+
 const SUPPORTED_IMAGE_EXTENSIONS =
   new Set([
     ".jpg",
@@ -72,6 +85,7 @@ const SUPPORTED_IMAGE_EXTENSIONS =
     ".heic",
     ".heif",
   ]);
+
 const SUPPORTED_FILE_EXTENSIONS =
   new Set([
     ".pdf",
@@ -83,11 +97,30 @@ const SUPPORTED_FILE_EXTENSIONS =
     ".xls",
     ".xlsx",
   ]);
+
+function localized(
+  locale: string,
+  zh: string,
+  en: string,
+  ja: string,
+): string {
+  if (locale === "ja") {
+    return ja;
+  }
+
+  if (locale === "en") {
+    return en;
+  }
+
+  return zh;
+}
+
 function createInputId(): string {
   return `aios-input-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 10)}`;
 }
+
 function getFileExtension(
   file: File,
 ): string {
@@ -95,13 +128,17 @@ function getFileExtension(
     file.name
       .trim()
       .toLowerCase();
+
   const index =
     name.lastIndexOf(".");
+
   if (index < 0) {
     return "";
   }
+
   return name.slice(index);
 }
+
 function isImageFile(
   file: File,
 ): boolean {
@@ -109,6 +146,7 @@ function isImageFile(
     file.type
       .trim()
       .toLowerCase();
+
   if (
     SUPPORTED_IMAGE_TYPES.has(
       mime,
@@ -116,10 +154,12 @@ function isImageFile(
   ) {
     return true;
   }
+
   return SUPPORTED_IMAGE_EXTENSIONS.has(
     getFileExtension(file),
   );
 }
+
 function isSupportedFile(
   file: File,
 ): boolean {
@@ -127,6 +167,7 @@ function isSupportedFile(
     file.type
       .trim()
       .toLowerCase();
+
   if (
     SUPPORTED_IMAGE_TYPES.has(
       mime,
@@ -137,8 +178,10 @@ function isSupportedFile(
   ) {
     return true;
   }
+
   const extension =
     getFileExtension(file);
+
   return (
     SUPPORTED_IMAGE_EXTENSIONS.has(
       extension,
@@ -148,6 +191,7 @@ function isSupportedFile(
     )
   );
 }
+
 function getInputKind(
   file: File,
 ): AIOSInputKind {
@@ -155,12 +199,14 @@ function getInputKind(
     ? "image"
     : "file";
 }
+
 function formatFileSize(
   bytes: number,
 ): string {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
+
   if (
     bytes <
     1024 * 1024
@@ -169,6 +215,7 @@ function formatFileSize(
       bytes / 1024
     ).toFixed(1)} KB`;
   }
+
   if (
     bytes <
     1024 *
@@ -180,6 +227,7 @@ function formatFileSize(
       (1024 * 1024)
     ).toFixed(1)} MB`;
   }
+
   return `${(
     bytes /
     (1024 *
@@ -187,6 +235,7 @@ function formatFileSize(
       1024)
   ).toFixed(1)} GB`;
 }
+
 function getFileIcon(
   item: AIOSInputItem,
 ): string {
@@ -194,14 +243,16 @@ function getFileIcon(
     item.kind ===
     "image"
   ) {
-    return "🖼️";
+    return "IMG";
   }
+
   if (
     item.metadata.mimeType ===
     "application/pdf"
   ) {
-    return "📕";
+    return "PDF";
   }
+
   if (
     item.metadata.mimeType.includes(
       "spreadsheet",
@@ -209,8 +260,9 @@ function getFileIcon(
     item.metadata.mimeType ===
       "text/csv"
   ) {
-    return "📊";
+    return "CSV";
   }
+
   if (
     item.metadata.mimeType.includes(
       "word",
@@ -218,53 +270,61 @@ function getFileIcon(
     item.metadata.mimeType ===
       "text/plain"
   ) {
-    return "📄";
+    return "TXT";
   }
-  return "📎";
+
+  return "FILE";
 }
-function localized(
-  locale: string,
-  zh: string,
-  en: string,
-  ja: string,
-): string {
-  if (
-    locale === "ja"
-  ) {
-    return ja;
-  }
-  if (
-    locale === "en"
-  ) {
-    return en;
-  }
-  return zh;
-}
-function getNativePhotoBridge(): AIOSNativePhotoBridge {
+
+function getNativePhotoBridge(): AIOSNativeInputBridge {
   return {
     isAvailable() {
+      if (
+        typeof window ===
+        "undefined"
+      ) {
+        return false;
+      }
+
+      const runtimeWindow =
+        window as NativeInputWindow;
+
       return (
-        typeof window !==
-          "undefined" &&
-        typeof window.AIOSNativeInput
+        typeof runtimeWindow
+          .AIOSNativeInput
           ?.pickPhotos ===
-          "function"
+        "function"
       );
     },
+
     async pickPhotos() {
       if (
-        !this.isAvailable() ||
-        !window.AIOSNativeInput?.pickPhotos
+        !this.isAvailable()
       ) {
         return [];
       }
+
+      const runtimeWindow =
+        window as NativeInputWindow;
+
+      const picker =
+        runtimeWindow
+          .AIOSNativeInput
+          ?.pickPhotos;
+
+      if (!picker) {
+        return [];
+      }
+
       const result =
-        await window.AIOSNativeInput.pickPhotos();
+        await picker();
+
       if (
         !Array.isArray(result)
       ) {
         return [];
       }
+
       return result.filter(
         (
           value,
@@ -276,16 +336,19 @@ function getNativePhotoBridge(): AIOSNativePhotoBridge {
     },
   };
 }
+
 function getInputItem(
   file: File,
   source: AIOSInputSource,
 ): AIOSInputItem {
   const id =
     createInputId();
+
   registerAIOSInputFile(
     id,
     file,
   );
+
   return {
     id,
     kind:
@@ -321,6 +384,7 @@ function getInputItem(
       null,
   };
 }
+
 export default function AIOSInputPicker({
   disabled = false,
   onInputsChange,
@@ -328,51 +392,55 @@ export default function AIOSInputPicker({
   const {
     locale,
   } = useLanguage();
+
   const [
     inputs,
     setInputs,
   ] = useState<
     AIOSInputItem[]
   >([]);
+
   const [
     inputError,
     setInputError,
   ] = useState("");
-  const [
-    nativePhotoAvailable,
-    setNativePhotoAvailable,
-  ] = useState(false);
+
   const [
     nativePhotoLoading,
     setNativePhotoLoading,
   ] = useState(false);
+
   const cameraRef =
     useRef<HTMLInputElement | null>(
       null,
     );
+
   const photoRef =
     useRef<HTMLInputElement | null>(
       null,
     );
+
   const fileRef =
     useRef<HTMLInputElement | null>(
       null,
     );
+
   useEffect(() => {
-    setNativePhotoAvailable(
-      getNativePhotoBridge().isAvailable(),
-    );
+    getNativePhotoBridge().isAvailable();
   }, []);
+
   function updateInputs(
     nextInputs: AIOSInputItem[],
   ) {
     setInputs(
       nextInputs,
     );
+
     onInputsChange?.(
       nextInputs,
     );
   }
+
   function validateFile(
     file: File,
   ): string | null {
@@ -381,11 +449,12 @@ export default function AIOSInputPicker({
     ) {
       return localized(
         locale,
-        `暂不支持 ${file.name || "该文件"}。`,
-        `${file.name || "This file"} is not supported yet.`,
-        `${file.name || "このファイル"} はまだ対応していません。`,
+        "暂不支持该文件类型。",
+        "This file type is not supported yet.",
+        "このファイル形式にはまだ対応していません。",
       );
     }
+
     if (
       !Number.isFinite(
         file.size,
@@ -394,11 +463,12 @@ export default function AIOSInputPicker({
     ) {
       return localized(
         locale,
-        `${file.name || "该文件"} 无法读取。`,
-        `${file.name || "This file"} cannot be read.`,
-        `${file.name || "このファイル"} を読み取れません。`,
+        "该文件无法读取。",
+        "This file cannot be read.",
+        "このファイルを読み取れません。",
       );
     }
+
     if (
       isImageFile(file) &&
       file.size >
@@ -406,11 +476,12 @@ export default function AIOSInputPicker({
     ) {
       return localized(
         locale,
-        `${file.name || "图片"} 超过 20 MB 图片限制。`,
-        `${file.name || "Image"} exceeds the 20 MB image limit.`,
-        `${file.name || "画像"} は 20 MB の上限を超えています。`,
+        "图片超过 20 MB 限制。",
+        "Image exceeds the 20 MB limit.",
+        "画像が 20 MB の上限を超えています。",
       );
     }
+
     if (
       !isImageFile(file) &&
       file.size >
@@ -418,13 +489,15 @@ export default function AIOSInputPicker({
     ) {
       return localized(
         locale,
-        `${file.name || "文件"} 超过 25 MB 文件限制。`,
-        `${file.name || "File"} exceeds the 25 MB file limit.`,
-        `${file.name || "ファイル"} は 25 MB の上限を超えています。`,
+        "文件超过 25 MB 限制。",
+        "File exceeds the 25 MB limit.",
+        "ファイルが 25 MB の上限を超えています。",
       );
     }
+
     return null;
   }
+
   function addFiles(
     files: FileList | File[],
     source: AIOSInputSource,
@@ -436,35 +509,43 @@ export default function AIOSInputPicker({
     ) {
       return;
     }
+
     setInputError("");
+
     const availableSlots =
       MAX_INPUTS -
       inputs.length;
+
     if (
       availableSlots <= 0
     ) {
       setInputError(
         localized(
           locale,
-          `最多同时上传 ${MAX_INPUTS} 个输入。`,
-          `You can upload up to ${MAX_INPUTS} inputs at once.`,
-          `同時にアップロードできる入力は最大 ${MAX_INPUTS} 件です。`,
+          `最多同时添加 ${MAX_INPUTS} 个输入。`,
+          `Up to ${MAX_INPUTS} inputs can be attached at once.`,
+          `同時に追加できる入力は最大 ${MAX_INPUTS} 件です。`,
         ),
       );
       return;
     }
+
     const selectedFiles =
       Array.from(files).slice(
         0,
         availableSlots,
       );
+
     const acceptedItems:
-      AIOSInputItem[] = [];
+      AIOSInputItem[] =
+      [];
+
     for (
       const file of selectedFiles
     ) {
       const validationError =
         validateFile(file);
+
       if (
         validationError
       ) {
@@ -473,6 +554,7 @@ export default function AIOSInputPicker({
         );
         continue;
       }
+
       const duplicate =
         inputs.some(
           (item) =>
@@ -488,19 +570,21 @@ export default function AIOSInputPicker({
             item.metadata.sizeBytes ===
               file.size,
         );
+
       if (
         duplicate
       ) {
         setInputError(
           localized(
             locale,
-            `${file.name || "文件"} 已添加，未重复添加。`,
-            `${file.name || "File"} is already attached.`,
-            `${file.name || "ファイル"} はすでに追加されています。`,
+            "该文件已经添加。",
+            "This file is already attached.",
+            "このファイルはすでに追加されています。",
           ),
         );
         continue;
       }
+
       acceptedItems.push(
         getInputItem(
           file,
@@ -508,6 +592,7 @@ export default function AIOSInputPicker({
         ),
       );
     }
+
     if (
       files.length >
       availableSlots
@@ -515,23 +600,26 @@ export default function AIOSInputPicker({
       setInputError(
         localized(
           locale,
-          `最多同时上传 ${MAX_INPUTS} 个输入，其余已忽略。`,
-          `Only ${MAX_INPUTS} inputs can be attached at once. Extra files were ignored.`,
-          `同時に追加できる入力は最大 ${MAX_INPUTS} 件です。超過分は無視されました。`,
+          `最多同时添加 ${MAX_INPUTS} 个输入。`,
+          `Only ${MAX_INPUTS} inputs can be attached at once.`,
+          `同時に追加できる入力は最大 ${MAX_INPUTS} 件です。`,
         ),
       );
     }
+
     if (
       acceptedItems.length ===
       0
     ) {
       return;
     }
+
     updateInputs([
       ...inputs,
       ...acceptedItems,
     ]);
   }
+
   async function handlePhotoPicker() {
     if (
       disabled ||
@@ -539,29 +627,35 @@ export default function AIOSInputPicker({
     ) {
       return;
     }
+
     const bridge =
       getNativePhotoBridge();
+
     if (
       !bridge.isAvailable()
     ) {
       photoRef.current?.click();
       return;
     }
+
     setInputError("");
     setNativePhotoLoading(true);
+
     try {
       const files =
         await bridge.pickPhotos();
+
       if (
-        files.length === 0
+        files.length > 0
       ) {
-        return;
+        addFiles(
+          files,
+          "photo-library",
+        );
       }
-      addFiles(
-        files,
-        "photo-library",
-      );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       setInputError(
         error instanceof Error
           ? error.message
@@ -578,6 +672,7 @@ export default function AIOSInputPicker({
       );
     }
   }
+
   function handleCameraChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -589,9 +684,11 @@ export default function AIOSInputPicker({
         : [],
       "camera",
     );
+
     event.target.value =
       "";
   }
+
   function handlePhotoChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -603,9 +700,11 @@ export default function AIOSInputPicker({
         : [],
       "photo-library",
     );
+
     event.target.value =
       "";
   }
+
   function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -617,16 +716,20 @@ export default function AIOSInputPicker({
         : [],
       "file-picker",
     );
+
     event.target.value =
       "";
   }
+
   function removeInput(
     id: string,
   ) {
     removeAIOSInputFile(
       id,
     );
+
     setInputError("");
+
     updateInputs(
       inputs.filter(
         (item) =>
@@ -634,8 +737,10 @@ export default function AIOSInputPicker({
       ),
     );
   }
+
   return (
     <div
+      className="aios-input-dock"
       style={{
         width: "100%",
       }}
@@ -653,6 +758,7 @@ export default function AIOSInputPicker({
           display: "none",
         }}
       />
+
       <input
         ref={photoRef}
         type="file"
@@ -669,6 +775,7 @@ export default function AIOSInputPicker({
           display: "none",
         }}
       />
+
       <input
         ref={fileRef}
         type="file"
@@ -700,22 +807,26 @@ export default function AIOSInputPicker({
           display: "none",
         }}
       />
+
       <div
+        className="aios-input-actions"
         style={{
           display: "flex",
           flexWrap: "wrap",
-          gap: 8,
+          alignItems: "center",
+          gap: 7,
         }}
       >
         <button
           type="button"
+          className="aios-input-action"
           disabled={
             disabled ||
             nativePhotoLoading
           }
-          onClick={() => {
-            cameraRef.current?.click();
-          }}
+          onClick={() =>
+            cameraRef.current?.click()
+          }
           aria-label={localized(
             locale,
             "打开相机",
@@ -728,36 +839,11 @@ export default function AIOSInputPicker({
             "Take photo",
             "写真を撮る",
           )}
-          style={{
-            minWidth: 44,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            padding: "0 11px",
-            border:
-              "1px solid #d1d5db",
-            borderRadius: 12,
-            background:
-              disabled
-                ? "#f3f4f6"
-                : "#ffffff",
-            color: "#334155",
-            fontSize: 13,
-            fontWeight: 800,
-            cursor:
-              disabled
-                ? "not-allowed"
-                : "pointer",
-            WebkitTapHighlightColor:
-              "transparent",
-          }}
         >
-          <span aria-hidden="true">
-            📷
+          <span className="aios-input-action-icon">
+            C
           </span>
-          <span>
+          <span className="aios-input-action-label">
             {localized(
               locale,
               "拍照",
@@ -766,15 +852,17 @@ export default function AIOSInputPicker({
             )}
           </span>
         </button>
+
         <button
           type="button"
+          className="aios-input-action"
           disabled={
             disabled ||
             nativePhotoLoading
           }
-          onClick={() => {
-            void handlePhotoPicker();
-          }}
+          onClick={() =>
+            void handlePhotoPicker()
+          }
           aria-label={localized(
             locale,
             "选择照片",
@@ -784,55 +872,37 @@ export default function AIOSInputPicker({
           title={localized(
             locale,
             "从相册选择",
-            "Choose from photo library",
-            "写真ライブラリから選択",
+            "Choose from photos",
+            "写真から選択",
           )}
-          style={{
-            minWidth: 44,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            padding: "0 11px",
-            border:
-              "1px solid #d1d5db",
-            borderRadius: 12,
-            background:
-              disabled
-                ? "#f3f4f6"
-                : "#ffffff",
-            color: "#334155",
-            fontSize: 13,
-            fontWeight: 800,
-            cursor:
-              disabled
-                ? "not-allowed"
-                : "pointer",
-            WebkitTapHighlightColor:
-              "transparent",
-          }}
         >
-          <span aria-hidden="true">
-            {nativePhotoLoading
-              ? "…"
-              : "🖼️"}
+          <span className="aios-input-action-icon">
+            P
           </span>
-          <span>
-            {localized(
-              locale,
-              "相册",
-              "Photos",
-              "写真",
-            )}
+          <span className="aios-input-action-label">
+            {nativePhotoLoading
+              ? localized(
+                  locale,
+                  "处理中",
+                  "Loading",
+                  "処理中",
+                )
+              : localized(
+                  locale,
+                  "相册",
+                  "Photos",
+                  "写真",
+                )}
           </span>
         </button>
+
         <button
           type="button"
+          className="aios-input-action"
           disabled={disabled}
-          onClick={() => {
-            fileRef.current?.click();
-          }}
+          onClick={() =>
+            fileRef.current?.click()
+          }
           aria-label={localized(
             locale,
             "选择文件",
@@ -843,38 +913,13 @@ export default function AIOSInputPicker({
             locale,
             "选择文档文件",
             "Choose document files",
-            "ドキュメントファイルを選択",
+            "ドキュメントを選択",
           )}
-          style={{
-            minWidth: 44,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            padding: "0 11px",
-            border:
-              "1px solid #d1d5db",
-            borderRadius: 12,
-            background:
-              disabled
-                ? "#f3f4f6"
-                : "#ffffff",
-            color: "#334155",
-            fontSize: 13,
-            fontWeight: 800,
-            cursor:
-              disabled
-                ? "not-allowed"
-                : "pointer",
-            WebkitTapHighlightColor:
-              "transparent",
-          }}
         >
-          <span aria-hidden="true">
-            📎
+          <span className="aios-input-action-icon">
+            F
           </span>
-          <span>
+          <span className="aios-input-action-label">
             {localized(
               locale,
               "文件",
@@ -884,109 +929,37 @@ export default function AIOSInputPicker({
           </span>
         </button>
       </div>
-      {!nativePhotoAvailable && (
-        <div
-          style={{
-            marginTop: 7,
-            padding:
-              "6px 8px",
-            border:
-              "1px solid #e2e8f0",
-            borderRadius: 9,
-            background:
-              "#f8fafc",
-            color: "#64748b",
-            fontSize: 10,
-            lineHeight: 1.45,
-          }}
-        >
-          {localized(
-            locale,
-            "iPhone Safari：点击「相册」后，在系统菜单选择「照片图库」。这是 iOS 网页文件选择器的正常行为。",
-            "iPhone Safari: tap Photos, then choose Photo Library from the system menu. This is normal iOS web file-picker behavior.",
-            "iPhone Safari：写真をタップし、システムメニューから「写真ライブラリ」を選択してください。iOS Web の通常動作です。",
-          )}
-        </div>
-      )}
+
       {inputError && (
         <div
           role="alert"
-          style={{
-            marginTop: 8,
-            padding:
-              "8px 10px",
-            border:
-              "1px solid #fecaca",
-            borderRadius: 10,
-            background:
-              "#fef2f2",
-            color:
-              "#b91c1c",
-            fontSize: 11,
-            lineHeight: 1.45,
-          }}
+          className="aios-input-error"
         >
           {inputError}
         </div>
       )}
+
       {inputs.length > 0 && (
-        <div
-          style={{
-            display: "grid",
-            gap: 7,
-            marginTop: 9,
-          }}
-        >
+        <div className="aios-input-files">
           {inputs.map(
             (item) => (
               <div
                 key={item.id}
-                style={{
-                  display: "flex",
-                  alignItems:
-                    "center",
-                  gap: 9,
-                  minWidth: 0,
-                  padding:
-                    "8px 10px",
-                  border:
-                    "1px solid #e2e8f0",
-                  borderRadius: 12,
-                  background:
-                    "#f8fafc",
-                }}
+                className="aios-input-file"
               >
                 <span
+                  className="aios-input-file-type"
                   aria-hidden="true"
-                  style={{
-                    flexShrink: 0,
-                    fontSize: 18,
-                  }}
                 >
                   {getFileIcon(
                     item,
                   )}
                 </span>
+
                 <div
-                  style={{
-                    minWidth: 0,
-                    flex: 1,
-                  }}
+                  className="aios-input-file-info"
                 >
-                  <div
-                    style={{
-                      overflow:
-                        "hidden",
-                      textOverflow:
-                        "ellipsis",
-                      whiteSpace:
-                        "nowrap",
-                      color:
-                        "#1e293b",
-                      fontSize: 12,
-                      fontWeight: 800,
-                    }}
-                  >
+                  <div className="aios-input-file-name">
                     {item.metadata
                       .name ??
                       localized(
@@ -996,14 +969,8 @@ export default function AIOSInputPicker({
                         "名前なしファイル",
                       )}
                   </div>
-                  <div
-                    style={{
-                      marginTop: 2,
-                      color:
-                        "#64748b",
-                      fontSize: 10,
-                    }}
-                  >
+
+                  <div className="aios-input-file-meta">
                     {item.metadata
                       .sizeBytes !==
                     null
@@ -1013,7 +980,11 @@ export default function AIOSInputPicker({
                             .sizeBytes,
                         )
                       : "—"}
-                    {" · "}
+
+                    <span aria-hidden="true">
+                      {" · "}
+                    </span>
+
                     {item.processingStatus ===
                     "ready"
                       ? localized(
@@ -1046,8 +1017,10 @@ export default function AIOSInputPicker({
                             )}
                   </div>
                 </div>
+
                 <button
                   type="button"
+                  className="aios-input-remove"
                   onClick={() =>
                     removeInput(
                       item.id,
@@ -1060,47 +1033,197 @@ export default function AIOSInputPicker({
                     "Remove input",
                     "入力を削除",
                   )}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    flexShrink: 0,
-                    border: 0,
-                    borderRadius: 9,
-                    background:
-                      "#e2e8f0",
-                    color:
-                      "#475569",
-                    cursor:
-                      disabled
-                        ? "not-allowed"
-                        : "pointer",
-                    fontSize: 15,
-                    fontWeight: 800,
-                  }}
                 >
-                  ×
+                  x
                 </button>
               </div>
             ),
           )}
         </div>
       )}
+
       {inputs.length > 0 && (
-        <div
-          style={{
-            marginTop: 6,
-            color: "#94a3b8",
-            fontSize: 10,
-          }}
-        >
+        <div className="aios-input-count">
           {localized(
             locale,
             `已选择 ${inputs.length}/${MAX_INPUTS}`,
-            `${inputs.length}/${MAX_INPUTS} inputs selected`,
-            `${inputs.length}/${MAX_INPUTS} 件を選択中`,
+            `${inputs.length}/${MAX_INPUTS} inputs`,
+            `${inputs.length}/${MAX_INPUTS} 件`,
           )}
         </div>
       )}
+
+      <style jsx>{`
+        .aios-input-actions {
+          width: 100%;
+        }
+
+        .aios-input-action {
+          min-width: 72px;
+          height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 0 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: 11px;
+          background: #ffffff;
+          color: #475569;
+          font-size: 11px;
+          font-weight: 800;
+          cursor: pointer;
+          transition:
+            border-color 120ms ease,
+            background 120ms ease,
+            transform 120ms ease;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .aios-input-action:hover:not(:disabled) {
+          border-color: #cbd5e1;
+          background: #f8fafc;
+        }
+
+        .aios-input-action:active:not(:disabled) {
+          transform: translateY(1px);
+        }
+
+        .aios-input-action:disabled {
+          opacity: 0.48;
+          cursor: not-allowed;
+        }
+
+        .aios-input-action-icon {
+          width: 22px;
+          height: 22px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 7px;
+          background: #f1f5f9;
+          color: #334155;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+        }
+
+        .aios-input-action-label {
+          white-space: nowrap;
+        }
+
+        .aios-input-error {
+          margin-top: 7px;
+          padding: 7px 9px;
+          border: 1px solid #fecaca;
+          border-radius: 9px;
+          background: #fff7f7;
+          color: #b91c1c;
+          font-size: 10px;
+          line-height: 1.45;
+        }
+
+        .aios-input-files {
+          display: grid;
+          gap: 6px;
+          margin-top: 7px;
+        }
+
+        .aios-input-file {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 8px;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #f8fafc;
+        }
+
+        .aios-input-file-type {
+          width: 28px;
+          height: 28px;
+          flex: 0 0 28px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 8px;
+          background: #eef2f7;
+          color: #64748b;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .aios-input-file-info {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .aios-input-file-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: #1e293b;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .aios-input-file-meta {
+          margin-top: 2px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: #94a3b8;
+          font-size: 9px;
+        }
+
+        .aios-input-remove {
+          width: 27px;
+          height: 27px;
+          flex: 0 0 27px;
+          border: 0;
+          border-radius: 8px;
+          background: #e2e8f0;
+          color: #475569;
+          font-size: 12px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .aios-input-remove:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .aios-input-count {
+          margin-top: 5px;
+          color: #94a3b8;
+          font-size: 9px;
+          line-height: 1.4;
+        }
+
+        @media (max-width: 520px) {
+          .aios-input-actions {
+            gap: 6px;
+          }
+
+          .aios-input-action {
+            min-width: 0;
+            flex: 1;
+            height: 35px;
+            padding: 0 7px;
+          }
+
+          .aios-input-action-icon {
+            width: 21px;
+            height: 21px;
+          }
+
+          .aios-input-action-label {
+            font-size: 10px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
