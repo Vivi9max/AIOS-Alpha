@@ -29,6 +29,7 @@ import type {
 } from "@/lib/runtime/input/aios-input-types";
 
 import AIOSCNVideoInput from "@/components/input/AIOSCNVideoInput";
+import AIOSCNAudioInput from "@/components/input/AIOSCNAudioInput";
 
 import ChatInput from "./ChatInput";
 
@@ -304,13 +305,6 @@ export default function AIOSCNChatPanel() {
     setHistoryLoading,
   ] = useState(true);
 
-  const [
-    runtimeStatus,
-    setRuntimeStatus,
-  ] = useState<
-    CNRuntimeStatus | null
-  >(null);
-
   const scrollRef =
     useRef<HTMLDivElement | null>(
       null,
@@ -403,7 +397,7 @@ export default function AIOSCNChatPanel() {
                       ),
                   },
                 ],
-                );
+          );
         } catch (
           error
         ) {
@@ -420,53 +414,10 @@ export default function AIOSCNChatPanel() {
       [locale],
     );
 
-  const loadRuntimeStatus =
-    useCallback(
-      async () => {
-        try {
-          const response =
-            await fetch(
-              "/api/cn/runtime",
-              {
-                cache:
-                  "no-store",
-                credentials:
-                  "same-origin",
-              },
-            );
-
-          if (
-            !response.ok
-          ) {
-            return;
-          }
-
-          const data =
-            (await response.json()) as CNRuntimeStatus;
-
-          setRuntimeStatus(
-            data,
-          );
-        } catch (
-          error
-        ) {
-          console.error(
-            "[AIOS CN Runtime Status]",
-            error,
-          );
-        }
-      },
-      [],
-    );
-
   useEffect(() => {
-    void Promise.all([
-      loadHistory(),
-      loadRuntimeStatus(),
-    ]);
+    void loadHistory();
   }, [
     loadHistory,
-    loadRuntimeStatus,
   ]);
 
   useEffect(() => {
@@ -509,6 +460,35 @@ export default function AIOSCNChatPanel() {
               "视频分析",
               "Video analysis",
               "動画分析",
+            ),
+        },
+        {
+          role:
+            "assistant",
+          content,
+        },
+      ],
+    );
+
+    scrollToBottom(
+      "smooth",
+    );
+  }
+
+  function handleAudioResult(
+    content: string,
+  ) {
+    setMessages(
+      (current) => [
+        ...current,
+        {
+          role: "user",
+          content:
+            localized(
+              locale,
+              "音频转文字",
+              "Audio to text",
+              "音声を文字化",
             ),
         },
         {
@@ -671,9 +651,9 @@ export default function AIOSCNChatPanel() {
               content:
                 localized(
                   locale,
-                  "视频请使用下方的「视频分析」入口。当前不会把原始视频当作已读取事实发送给普通 Runtime。",
+                  "视频请使用下方的视频分析入口。当前不会把原始视频当作已读取事实发送给普通 Runtime。",
                   "Use the Video Analysis entry below for video input. Raw video is not treated as already-read evidence.",
-                  "動画は下の「動画分析」入口を使用してください。未解析の動画を読み取り済みの事実として扱いません。",
+                  "動画は下の動画分析入口を使用してください。未解析の動画を読み取り済みの事実として扱いません。",
                 ),
             },
           ],
@@ -875,20 +855,8 @@ export default function AIOSCNChatPanel() {
       setLoading(
         false,
       );
-
-      void loadRuntimeStatus();
     }
   }
-
-  const deepseekReady =
-    runtimeStatus
-      ?.configuredProviders
-      ?.deepseek === true;
-
-  const providerText =
-    deepseekReady
-      ? "DeepSeek"
-      : "CN Runtime";
 
   return (
     <section
@@ -945,9 +913,7 @@ export default function AIOSCNChatPanel() {
                 borderRadius:
                   "50%",
                 background:
-                  deepseekReady
-                    ? "#22c55e"
-                    : "#f59e0b",
+                  "#22c55e",
               }}
             />
 
@@ -973,36 +939,31 @@ export default function AIOSCNChatPanel() {
                 11,
             }}
           >
-            {providerText}
-            {" · China Runtime"}
+            {localized(
+              locale,
+              "统一智能工作区",
+              "Unified AI workspace",
+              "統合 AI ワークスペース",
+            )}
           </div>
         </div>
 
         <div
           style={{
             color:
-              deepseekReady
-                ? "#15803d"
-                : "#b45309",
+              "#15803d",
             fontSize:
               11,
             fontWeight:
               700,
           }}
         >
-          {deepseekReady
-            ? localized(
-                locale,
-                "运行正常",
-                "Ready",
-                "稼働中",
-              )
-            : localized(
-                locale,
-                "等待 Provider",
-                "Provider required",
-                "Provider 待ち",
-              )}
+          {localized(
+            locale,
+            "运行正常",
+            "Ready",
+            "稼働中",
+          )}
         </div>
       </header>
 
@@ -1136,6 +1097,16 @@ export default function AIOSCNChatPanel() {
           }
           onResult={
             handleVideoResult
+          }
+        />
+
+        <AIOSCNAudioInput
+          disabled={
+            loading ||
+            historyLoading
+          }
+          onResult={
+            handleAudioResult
           }
         />
       </div>
