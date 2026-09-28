@@ -1,7 +1,7 @@
+"use client";
+
 import AIOSCNChatPanel from "@/components/chat/AIOSCNChatPanel";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
-
-export const dynamic = "force-dynamic";
 
 export default function CNPage() {
   return (
@@ -102,7 +102,8 @@ export default function CNPage() {
               padding: 10px 10px 12px !important;
             }
           }
-        `}</style>
+        `}
+        </style>
       </main>
     </WorkspaceShell>
   );
