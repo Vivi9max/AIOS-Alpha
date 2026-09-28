@@ -180,14 +180,11 @@ export async function transcribeAIOSCNAudio(
         },
       );
 
-    const text =
-      typeof transcription ===
-      "string"
-        ? transcription.trim()
-        : typeof transcription.text ===
-            "string"
-          ? transcription.text.trim()
-          : "";
+const text =
+  typeof transcription.text ===
+  "string"
+    ? transcription.text.trim()
+    : "";
 
     if (!text) {
       return baseResult(
