@@ -14,20 +14,26 @@ type Result = {
   code?: string;
   phase?: string;
   error?: string;
-
   path?: string;
   commitSha?: string;
   commitUrl?: string;
   readbackVerified?: boolean;
-
   checks?: string[];
-
   verification?: {
     success?: boolean;
     checks?: string[];
     reason?: string;
   };
 };
+
+function isNoEligibleTask(
+  result: Result | null,
+): boolean {
+  return (
+    result?.code ===
+    "PLANNER_NO_ELIGIBLE_TASK"
+  );
+}
 
 export default function FounderAutonomousDevelopmentPage() {
   const [
@@ -43,19 +49,15 @@ export default function FounderAutonomousDevelopmentPage() {
   const [
     result,
     setResult,
-  ] = useState<Result | null>(null);
+  ] = useState<Result | null>(
+    null,
+  );
 
   const [
     error,
     setError,
   ] = useState("");
 
-  /*
-   * C142.3.2
-   *
-   * Reuse the Founder session established
-   * by the main Founder Console.
-   */
   useEffect(() => {
     const storedKey =
       window.sessionStorage.getItem(
@@ -69,234 +71,351 @@ export default function FounderAutonomousDevelopmentPage() {
     }
   }, []);
 
-  const handleRun = async () => {
-    const key =
-      accessKey.trim();
+  const handleRun =
+    async () => {
+      const key =
+        accessKey.trim();
 
-    if (!key) {
-      setError(
-        "请输入 Founder Access Key，或先在 Founder Console 完成验证。",
-      );
-      return;
-    }
-
-    /*
-     * Keep the Founder session synchronized
-     * across Founder-only pages.
-     */
-    window.sessionStorage.setItem(
-      STORAGE_KEY,
-      key,
-    );
-
-    setRunning(true);
-    setError("");
-    setResult(null);
-
-    try {
-      const response =
-        await fetch(
-          "/api/founder/autonomous-development",
-          {
-            method: "POST",
-
-            cache: "no-store",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              Accept:
-                "application/json",
-
-              Authorization:
-                `Bearer ${key}`,
-            },
-
-            body: JSON.stringify({
-              action:
-                "dispatch-planner",
-            }),
-          },
-        );
-
-      const data =
-        (await response.json()) as Result;
-
-      setResult(data);
-
-      if (!response.ok) {
-        if (
-          data.code ===
-            "FOUNDER_UNAUTHORIZED" ||
-          data.code ===
-            "FOUNDER_NOT_CONFIGURED"
-        ) {
-          window.sessionStorage.removeItem(
-            STORAGE_KEY,
-          );
-        }
-
+      if (!key) {
         setError(
-          data.error ||
-            `Request failed (${response.status})`,
+          "请输入 Founder Access Key，或先在 Founder Console 完成验证。",
         );
-
         return;
       }
 
-      if (
-        data.ok === false &&
-        data.success !== true
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        key,
+      );
+
+      setRunning(true);
+      setError("");
+      setResult(null);
+
+      try {
+        const response =
+          await fetch(
+            "/api/founder/autonomous-development",
+            {
+              method:
+                "POST",
+              cache:
+                "no-store",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Accept:
+                  "application/json",
+                Authorization:
+                  `Bearer ${key}`,
+              },
+              body:
+                JSON.stringify({
+                  action:
+                    "dispatch-planner",
+                }),
+            },
+          );
+
+        const data =
+          (await response.json()) as Result;
+
+        setResult(
+          data,
+        );
+
+        if (
+          !response.ok
+        ) {
+          if (
+            data.code ===
+              "FOUNDER_UNAUTHORIZED" ||
+            data.code ===
+              "FOUNDER_NOT_CONFIGURED"
+          ) {
+            window.sessionStorage.removeItem(
+              STORAGE_KEY,
+            );
+          }
+
+          setError(
+            data.error ||
+              `Request failed (${response.status})`,
+          );
+
+          return;
+        }
+
+        if (
+          data.ok ===
+            false &&
+          data.success !==
+            true &&
+          !isNoEligibleTask(
+            data,
+          )
+        ) {
+          setError(
+            data.error ||
+              "Autonomous development dispatch failed.",
+          );
+        }
+      } catch (
+        requestError
       ) {
         setError(
-          data.error ||
-            "Autonomous development dispatch failed.",
+          requestError instanceof Error
+            ? requestError.message
+            : "Autonomous development request failed.",
+        );
+      } finally {
+        setRunning(
+          false,
         );
       }
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Autonomous development request failed.",
-      );
-    } finally {
-      setRunning(false);
-    }
-  };
+    };
+
+  const idle =
+    isNoEligibleTask(
+      result,
+    );
+
+  const accepted =
+    Boolean(
+      result?.ok ||
+        result?.success,
+    );
 
   return (
     <main
       style={{
-        minHeight: "100vh",
-        background: "#fafafa",
+        minHeight:
+          "100vh",
+        background:
+          "#f6f7fb",
         padding:
-          "24px 16px",
+          "24px 16px 48px",
         boxSizing:
           "border-box",
       }}
     >
       <div
         style={{
-          width: "100%",
-          maxWidth: 620,
-          margin: "0 auto",
-          background: "#fff",
-          border:
-            "1px solid #e5e5e5",
-          borderRadius: 14,
-          padding: 28,
-          boxSizing:
-            "border-box",
-          boxShadow:
-            "0 2px 8px rgba(0,0,0,0.05)",
+          width:
+            "100%",
+          maxWidth:
+            720,
+          margin:
+            "0 auto",
         }}
       >
-        <div
+        <header
           style={{
-            display:
-              "inline-block",
+            marginBottom:
+              18,
+          }}
+        >
+          <div
+            style={{
+              color:
+                "#dc2626",
+              fontSize:
+                10,
+              fontWeight:
+                900,
+              letterSpacing:
+                "0.14em",
+            }}
+          >
+            FOUNDER ONLY
+          </div>
+
+          <h1
+            style={{
+              margin:
+                "8px 0 6px",
+              fontSize:
+                28,
+              lineHeight:
+                1.1,
+              fontWeight:
+                850,
+              color:
+                "#111827",
+            }}
+          >
+            24h Autonomous Runtime
+          </h1>
+
+          <p
+            style={{
+              margin:
+                0,
+              color:
+                "#64748b",
+              fontSize:
+                13,
+              lineHeight:
+                1.6,
+            }}
+          >
+            Research → Detect → Plan → GitHub →
+            Verify → Deploy → Monitor → Continue
+          </p>
+        </header>
+
+        <section
+          style={{
             padding:
-              "4px 9px",
+              18,
             border:
-              "1px solid #dc2626",
-            borderRadius: 5,
-            color:
-              "#dc2626",
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing:
-              "0.05em",
-          }}
-        >
-          FOUNDER ONLY
-        </div>
-
-        <h1
-          style={{
-            margin:
-              "12px 0 6px",
-            fontSize: 22,
-            fontWeight: 750,
-            color: "#111",
-          }}
-        >
-          C142.3
-        </h1>
-
-        <h2
-          style={{
-            margin:
-              "0 0 12px",
-            fontSize: 16,
-            fontWeight: 650,
-            color: "#333",
-          }}
-        >
-          Planner Autonomous Development Dispatch
-        </h2>
-
-        <p
-          style={{
-            margin:
-              "0 0 22px",
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: "#666",
-          }}
-        >
-          Founder-only dispatch from Planner
-          into the Autonomous Development
-          Control Plane.
-        </p>
-
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 9,
+              "1px solid #e2e8f0",
+            borderRadius:
+              18,
             background:
-              "#f8fafc",
-            border:
-              "1px solid #e5e7eb",
-            marginBottom: 20,
+              "#ffffff",
+            boxShadow:
+              "0 8px 26px rgba(15, 23, 42, 0.05)",
           }}
         >
           <div
             style={{
-              fontSize: 12,
-              color: "#666",
-              marginBottom: 6,
+              display:
+                "grid",
+              gridTemplateColumns:
+                "repeat(4, minmax(0, 1fr))",
+              gap:
+                7,
+              marginBottom:
+                18,
             }}
           >
-            FOUNDER AUTH SESSION
+            {[
+              "Research",
+              "Detect",
+              "Plan",
+              "GitHub",
+              "Verify",
+              "Deploy",
+              "Monitor",
+              "Continue",
+            ].map(
+              (
+                step,
+                index,
+              ) => (
+                <div
+                  key={
+                    step
+                  }
+                  style={{
+                    position:
+                      "relative",
+                    padding:
+                      "9px 6px",
+                    borderRadius:
+                      9,
+                    background:
+                      "#f8fafc",
+                    textAlign:
+                      "center",
+                    color:
+                      "#475569",
+                    fontSize:
+                      10,
+                    fontWeight:
+                      750,
+                  }}
+                >
+                  <span
+                    style={{
+                      display:
+                        "block",
+                      marginBottom:
+                        4,
+                      color:
+                        "#94a3b8",
+                      fontSize:
+                        9,
+                    }}
+                  >
+                    {String(
+                      index +
+                        1,
+                    ).padStart(
+                      2,
+                      "0",
+                    )}
+                  </span>
+
+                  {step}
+                </div>
+              ),
+            )}
           </div>
 
           <div
             style={{
-              fontSize: 13,
-              color: "#111",
+              padding:
+                13,
+              borderRadius:
+                12,
+              background:
+                "#f8fafc",
+              border:
+                "1px solid #e2e8f0",
+              marginBottom:
+                14,
             }}
           >
-            {accessKey
-              ? "Founder Access Key loaded"
-              : "Founder Access Key required"}
-          </div>
-        </div>
+            <div
+              style={{
+                marginBottom:
+                  5,
+                color:
+                  "#94a3b8",
+                fontSize:
+                  10,
+                fontWeight:
+                  850,
+                letterSpacing:
+                  "0.08em",
+              }}
+            >
+              FOUNDER AUTH SESSION
+            </div>
 
-        <div
-          style={{
-            marginBottom: 20,
-          }}
-        >
+            <div
+              style={{
+                color:
+                  accessKey
+                    ? "#15803d"
+                    : "#64748b",
+                fontSize:
+                  13,
+                fontWeight:
+                  700,
+              }}
+            >
+              {accessKey
+                ? "Founder Access Key loaded"
+                : "Founder Access Key required"}
+            </div>
+          </div>
+
           <label
             htmlFor="founder-access-key"
             style={{
               display:
                 "block",
-              marginBottom: 7,
-              fontSize: 13,
-              fontWeight: 650,
-              color: "#333",
+              marginBottom:
+                7,
+              color:
+                "#334155",
+              fontSize:
+                12,
+              fontWeight:
+                750,
             }}
           >
             Founder Access Key
@@ -305,13 +424,20 @@ export default function FounderAutonomousDevelopmentPage() {
           <input
             id="founder-access-key"
             type="password"
-            value={accessKey}
-            onChange={(event) =>
+            value={
+              accessKey
+            }
+            onChange={(
+              event,
+            ) =>
               setAccessKey(
-                event.target.value,
+                event.target
+                  .value,
               )
             }
-            onKeyDown={(event) => {
+            onKeyDown={(
+              event,
+            ) => {
               if (
                 event.key ===
                   "Enter" &&
@@ -326,223 +452,220 @@ export default function FounderAutonomousDevelopmentPage() {
             style={{
               width:
                 "100%",
+              height:
+                46,
               boxSizing:
                 "border-box",
               padding:
-                "11px 12px",
+                "0 12px",
               border:
-                "1px solid #d1d5db",
-              borderRadius: 7,
-              fontSize: 14,
-              outline: "none",
+                "1px solid #cbd5e1",
+              borderRadius:
+                10,
+              outline:
+                "none",
+              color:
+                "#111827",
+              background:
+                "#ffffff",
+              fontSize:
+                14,
             }}
           />
-        </div>
 
-        <button
-          type="button"
-          disabled={running}
-          onClick={() =>
-            void handleRun()
-          }
-          style={{
-            width:
-              "100%",
-            padding:
-              "12px 16px",
-            border: "none",
-            borderRadius: 7,
-            background:
+          <button
+            type="button"
+            disabled={
               running
-                ? "#6b7280"
-                : "#111",
-            color: "#fff",
-            fontSize: 14,
-            fontWeight: 700,
-            cursor:
-              running
-                ? "not-allowed"
-                : "pointer",
-          }}
-        >
-          {running
-            ? "Dispatching Planner Task..."
-            : "RUN PLANNER AUTONOMOUS DISPATCH"}
-        </button>
-
-        {error && (
-          <div
+            }
+            onClick={() =>
+              void handleRun()
+            }
             style={{
-              marginTop: 16,
-              padding: 12,
-              borderRadius: 8,
+              width:
+                "100%",
+              height:
+                46,
+              marginTop:
+                10,
               border:
-                "1px solid #fecaca",
+                "none",
+              borderRadius:
+                10,
               background:
-                "#fef2f2",
+                running
+                  ? "#94a3b8"
+                  : "#111827",
               color:
-                "#b91c1c",
-              fontSize: 13,
-              lineHeight: 1.5,
+                "#ffffff",
+              fontSize:
+                13,
+              fontWeight:
+                850,
+              cursor:
+                running
+                  ? "default"
+                  : "pointer",
             }}
           >
-            {error}
-          </div>
-        )}
+            {running
+              ? "Checking Planner..."
+              : "Run Planner Autonomous Dispatch"}
+          </button>
 
-        <div
-          style={{
-            marginTop: 24,
-            borderTop:
-              "1px solid #e5e7eb",
-            paddingTop: 18,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#666",
-              marginBottom: 12,
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            EXECUTION PIPELINE
-          </div>
-
-          {[
-            "FOUNDER_AUTH",
-            "PLANNER",
-            "ELIGIBILITY",
-            "AUTONOMOUS_TASK",
-            "CLAIM",
-            "C142.2 EXECUTION",
-            "C141 GITHUB BRIDGE",
-          ].map((step) => (
+          {error && (
             <div
-              key={step}
+              role="alert"
               style={{
-                display:
-                  "flex",
-                alignItems:
-                  "center",
-                gap: 9,
+                marginTop:
+                  10,
                 padding:
-                  "6px 0",
-                fontSize: 13,
-                color: "#333",
+                  11,
+                border:
+                  "1px solid #fecaca",
+                borderRadius:
+                  10,
+                background:
+                  "#fef2f2",
+                color:
+                  "#b91c1c",
+                fontSize:
+                  12,
+                lineHeight:
+                  1.5,
               }}
             >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius:
-                    "50%",
-                  background:
-                    "#9ca3af",
-                  flexShrink: 0,
-                }}
-              />
-
-              {step}
+              {error}
             </div>
-          ))}
-        </div>
+          )}
 
-        {result && (
-          <section
-            style={{
-              marginTop: 24,
-              padding: 16,
-              borderRadius: 10,
-              border:
-                result.ok ||
-                result.success
-                  ? "1px solid #bbf7d0"
-                  : "1px solid #fecaca",
-              background:
-                result.ok ||
-                result.success
-                  ? "#f0fdf4"
-                  : "#fef2f2",
-            }}
-          >
+          {result && (
             <div
               style={{
-                fontSize: 15,
-                fontWeight: 750,
-                marginBottom: 14,
-                color: "#111",
+                marginTop:
+                  12,
+                padding:
+                  13,
+                borderRadius:
+                  12,
+                border:
+                  idle
+                    ? "1px solid #dbeafe"
+                    : accepted
+                      ? "1px solid #bbf7d0"
+                      : "1px solid #fecaca",
+                background:
+                  idle
+                    ? "#eff6ff"
+                    : accepted
+                      ? "#f0fdf4"
+                      : "#fef2f2",
               }}
             >
-              {result.ok ||
-              result.success
-                ? "DISPATCH ACCEPTED"
-                : "DISPATCH BLOCKED"}
-            </div>
-
-            {result.code && (
               <div
                 style={{
-                  fontSize: 13,
-                  marginBottom: 8,
-                }}
-              >
-                <strong>
-                  Code:
-                </strong>{" "}
-                {result.code}
-              </div>
-            )}
-
-            {result.phase && (
-              <div
-                style={{
-                  fontSize: 13,
-                  marginBottom: 8,
-                }}
-              >
-                <strong>
-                  Phase:
-                </strong>{" "}
-                {result.phase}
-              </div>
-            )}
-
-            {result.error && (
-              <div
-                style={{
-                  marginTop: 12,
-                  fontSize: 13,
+                  marginBottom:
+                    6,
                   color:
-                    "#b91c1c",
-                  lineHeight: 1.5,
+                    idle
+                      ? "#1d4ed8"
+                      : accepted
+                        ? "#15803d"
+                        : "#b91c1c",
+                  fontSize:
+                    12,
+                  fontWeight:
+                    850,
                 }}
               >
-                {result.error}
+                {idle
+                  ? "PLANNER IDLE"
+                  : accepted
+                    ? "DISPATCH ACCEPTED"
+                    : "DISPATCH BLOCKED"}
               </div>
-            )}
 
-            {result.readbackVerified !==
-              undefined && (
-              <div
-                style={{
-                  fontSize: 13,
-                  marginTop: 8,
-                }}
-              >
-                <strong>
-                  Readback:
-                </strong>{" "}
-                {result.readbackVerified
-                  ? "VERIFIED"
-                  : "NOT VERIFIED"}
-              </div>
-            )}
-          </section>
-        )}
+              {idle ? (
+                <div
+                  style={{
+                    color:
+                      "#475569",
+                    fontSize:
+                      12,
+                    lineHeight:
+                      1.6,
+                  }}
+                >
+                  当前没有符合自动执行条件的
+                  Planner Task。GitHub Direct
+                  Control 不受影响。
+                </div>
+              ) : (
+                <>
+                  {result.code && (
+                    <div
+                      style={{
+                        color:
+                          "#475569",
+                        fontSize:
+                          12,
+                      }}
+                    >
+                      <strong>
+                        Code:
+                      </strong>{" "}
+                      {
+                        result.code
+                      }
+                    </div>
+                  )}
+
+                  {result.phase && (
+                    <div
+                      style={{
+                        marginTop:
+                          5,
+                        color:
+                          "#475569",
+                        fontSize:
+                          12,
+                      }}
+                    >
+                      <strong>
+                        Phase:
+                      </strong>{" "}
+                      {
+                        result.phase
+                      }
+                    </div>
+                  )}
+
+                  {result.readbackVerified !==
+                    undefined && (
+                    <div
+                      style={{
+                        marginTop:
+                          5,
+                        color:
+                          "#475569",
+                        fontSize:
+                          12,
+                      }}
+                    >
+                      <strong>
+                        Readback:
+                      </strong>{" "}
+                      {result
+                        .readbackVerified
+                        ? "VERIFIED"
+                        : "NOT VERIFIED"}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
