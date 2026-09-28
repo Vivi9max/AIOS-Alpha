@@ -29,11 +29,83 @@ export interface AIOSCNVideoResult {
   generatedAt: string;
 }
 
+const MAX_FRAMES = 5;
+
+const MAX_FRAME_DATA_BYTES =
+  42 * 1024 * 1024;
+
+const SUPPORTED_IMAGE_TYPES =
+  new Set<string>([
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ]);
+
 function buildDataUrl(
   mimeType: string,
   base64: string,
 ): string {
   return `data:${mimeType};base64,${base64}`;
+}
+
+function normalizeMimeType(
+  mimeType: string,
+): string {
+  const normalized =
+    mimeType
+      .trim()
+      .toLowerCase();
+
+  if (
+    SUPPORTED_IMAGE_TYPES.has(
+      normalized,
+    )
+  ) {
+    return normalized;
+  }
+
+  return "image/jpeg";
+}
+
+function estimateBase64Bytes(
+  value: string,
+): number {
+  return Math.floor(
+    (value.length * 3) / 4,
+  );
+}
+
+function buildFailure(
+  code:
+    | "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
+  provider:
+    | "deepseek"
+    | "none",
+  frameCount: number,
+  analyzedFrameCount: number,
+  model?: string,
+): AIOSCNVideoResult {
+  return {
+    success: false,
+    code,
+    provider,
+    model,
+    frameCount,
+    analyzedFrameCount,
+    semanticUnderstandingReady:
+      false,
+    safetyBoundary: {
+      plannerDispatched:
+        false,
+      tradingExecuted:
+        false,
+      commercialActualWritten:
+        false,
+    },
+    generatedAt:
+      new Date().toISOString(),
+  };
 }
 
 export async function analyzeAIOSCNVideoFrames(
@@ -45,27 +117,12 @@ export async function analyzeAIOSCNVideoFrames(
       .DEEPSEEK_API_KEY?.trim();
 
   if (!apiKey) {
-    return {
-      success: false,
-      code:
-        "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
-      provider: "none",
-      frameCount:
-        frames.length,
-      analyzedFrameCount: 0,
-      semanticUnderstandingReady:
-        false,
-      safetyBoundary: {
-        plannerDispatched:
-          false,
-        tradingExecuted:
-          false,
-        commercialActualWritten:
-          false,
-      },
-      generatedAt:
-        new Date().toISOString(),
-    };
+    return buildFailure(
+      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
+      "none",
+      frames.length,
+      0,
+    );
   }
 
   const usableFrames =
@@ -83,33 +140,46 @@ export async function analyzeAIOSCNVideoFrames(
           frame.imageBase64.length >
             0,
       )
-      .slice(0, 5);
+      .slice(
+        0,
+        MAX_FRAMES,
+      );
 
   if (
     usableFrames.length ===
     0
   ) {
-    return {
-      success: false,
-      code:
-        "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
-      provider: "none",
-      frameCount:
-        frames.length,
-      analyzedFrameCount: 0,
-      semanticUnderstandingReady:
-        false,
-      safetyBoundary: {
-        plannerDispatched:
-          false,
-        tradingExecuted:
-          false,
-        commercialActualWritten:
-          false,
-      },
-      generatedAt:
-        new Date().toISOString(),
-    };
+    return buildFailure(
+      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
+      "none",
+      frames.length,
+      0,
+    );
+  }
+
+  const estimatedBytes =
+    usableFrames.reduce(
+      (
+        total,
+        frame,
+      ) =>
+        total +
+        estimateBase64Bytes(
+          frame.imageBase64,
+        ),
+      0,
+    );
+
+  if (
+    estimatedBytes >
+    MAX_FRAME_DATA_BYTES
+  ) {
+    return buildFailure(
+      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
+      "none",
+      frames.length,
+      0,
+    );
   }
 
   const client =
@@ -117,7 +187,7 @@ export async function analyzeAIOSCNVideoFrames(
       apiKey,
       baseURL:
         process.env
-          .DEEPSEEK_BASE_URL ??
+          .DEEPSEEK_BASE_URL?.trim() ||
         "https://api.deepseek.com",
     });
 
@@ -127,7 +197,9 @@ export async function analyzeAIOSCNVideoFrames(
         (frame) =>
           `Frame ${frame.index}: ${frame.timestampSeconds.toFixed(2)}s`,
       )
-      .join("\n");
+      .join(
+        "\n",
+      );
 
   const content = [
     {
@@ -135,10 +207,11 @@ export async function analyzeAIOSCNVideoFrames(
       text: [
         "你是 AIOS CN 视频视觉理解层。",
         "",
-        "这些图片是同一个视频按时间顺序抽取的关键帧。",
+        "下面的图片是同一个真实视频按照时间顺序抽取的关键帧。",
+        "这些图片是实际视觉输入。",
         "只能分析实际提供的关键帧。",
         "不能声称观察到了没有提供的其他视频内容。",
-        "不能推断视频声音或没有提供的对白。",
+        "不能虚构音频、对白或没有出现的画面。",
         "必须区分直接视觉证据与推断。",
         "",
         "请使用中文返回：",
@@ -146,11 +219,11 @@ export async function analyzeAIOSCNVideoFrames(
         "2. 关键画面",
         "3. 时间顺序变化",
         "4. 可确认的视觉事实",
-        "5. 画面文字",
+        "5. 画面文字 / OCR",
         "6. 人物动作或场景变化",
         "7. 商品 / 商业信息",
-        "8. 推断内容",
-        "9. 未知项",
+        "8. 可能的上下文",
+        "9. 不确定项",
         "10. 置信度",
         "",
         `用户任务：${
@@ -160,18 +233,24 @@ export async function analyzeAIOSCNVideoFrames(
         "",
         "关键帧时间线：",
         timeline,
-      ].join("\n"),
+      ].join(
+        "\n",
+      ),
     },
     ...usableFrames.map(
       (frame) => ({
-        type: "image_url",
+        type:
+          "image_url",
         image_url: {
-          url: buildDataUrl(
-            frame.mimeType ||
-              "image/jpeg",
-            frame.imageBase64,
-          ),
-          detail: "low",
+          url:
+            buildDataUrl(
+              normalizeMimeType(
+                frame.mimeType,
+              ),
+              frame.imageBase64,
+            ),
+          detail:
+            "auto",
         },
       }),
     ),
@@ -185,20 +264,21 @@ export async function analyzeAIOSCNVideoFrames(
             "deepseek-flash",
           messages: [
             {
-              role: "user",
+              role:
+                "user",
               content,
             },
           ],
-          thinking: {
-            type: "disabled",
-          },
-          max_tokens: 5_000,
+          max_tokens:
+            5_000,
         } as never,
       );
 
     const output =
-      response.choices?.[0]
-        ?.message?.content;
+      response
+        .choices?.[0]
+        ?.message
+        ?.content;
 
     if (
       typeof output !==
@@ -238,30 +318,12 @@ export async function analyzeAIOSCNVideoFrames(
         new Date().toISOString(),
     };
   } catch {
-    return {
-      success: false,
-      code:
-        "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
-      provider:
-        "deepseek",
-      model:
-        "deepseek-flash",
-      frameCount:
-        frames.length,
-      analyzedFrameCount:
-        usableFrames.length,
-      semanticUnderstandingReady:
-        false,
-      safetyBoundary: {
-        plannerDispatched:
-          false,
-        tradingExecuted:
-          false,
-        commercialActualWritten:
-          false,
-      },
-      generatedAt:
-        new Date().toISOString(),
-    };
+    return buildFailure(
+      "AIOS_CN_VIDEO_UNDERSTANDING_FAILED",
+      "deepseek",
+      frames.length,
+      usableFrames.length,
+      "deepseek-flash",
+    );
   }
 }
