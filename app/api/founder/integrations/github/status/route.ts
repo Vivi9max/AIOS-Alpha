@@ -2,25 +2,19 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
-
 import {
   ensureUserGitHubConnection,
   isUserGitHubConfigured,
 } from "@/lib/integrations/github/user-github";
-
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
-
 export const dynamic =
   "force-dynamic";
-
 export const runtime =
   "nodejs";
-
 export async function GET(
   request: NextRequest,
 ) {
@@ -46,7 +40,6 @@ export async function GET(
       },
     );
   }
-
   if (
     !isUserGitHubConfigured()
   ) {
@@ -59,6 +52,7 @@ export async function GET(
           "github-app",
       },
       {
+        status: 200,
         headers: {
           "Cache-Control":
             "no-store",
@@ -66,7 +60,6 @@ export async function GET(
       },
     );
   }
-
   const response =
     NextResponse.json(
       {
@@ -84,13 +77,11 @@ export async function GET(
         },
       },
     );
-
   const connection =
     await ensureUserGitHubConnection(
       request,
       response,
     );
-
   if (
     !connection ||
     connection.userId !==
@@ -98,9 +89,6 @@ export async function GET(
   ) {
     return response;
   }
-
-  response.body;
-
   const payload = {
     success: true,
     configured: true,
@@ -120,21 +108,26 @@ export async function GET(
     accessExpiresAt:
       connection.accessExpiresAt,
   };
-
-  return new NextResponse(
-    JSON.stringify(payload),
-    {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "application/json",
-        "Cache-Control":
-          "no-store",
-        "Set-Cookie":
-          response.headers.get(
-            "Set-Cookie",
-          ) || "",
+  const setCookie =
+    response.headers.get(
+      "Set-Cookie",
+    );
+  const result =
+    NextResponse.json(
+      payload,
+      {
+        status: 200,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
-    },
-  );
+    );
+  if (setCookie) {
+    result.headers.set(
+      "Set-Cookie",
+      setCookie,
+    );
+  }
+  return result;
 }
