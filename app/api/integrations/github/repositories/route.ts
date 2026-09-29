@@ -4,88 +4,41 @@ import {
 } from "next/server";
 
 import {
-  ensureUserGitHubConnection,
-  isUserGitHubConfigured,
-  listUserGitHubRepositories,
-} from "@/lib/integrations/github/user-github";
+  isFounderRequest,
+} from "@/lib/founder/auth";
 
 export async function GET(
   request: NextRequest,
 ) {
   if (
-    !isUserGitHubConfigured()
-  ) {
-    return NextResponse.json(
-      {
-        success: false,
-        code:
-          "GITHUB_APP_NOT_CONFIGURED",
-        error:
-          "GitHub App is not configured.",
-      },
-      {
-        status: 503,
-      },
-    );
-  }
-
-  const response =
-    NextResponse.json(
-      {
-        success: false,
-      },
-      {
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
-    );
-
-  const connection =
-    await ensureUserGitHubConnection(
+    !isFounderRequest(
       request,
-      response,
-    );
-
-  if (!connection) {
+    )
+  ) {
     return NextResponse.json(
       {
         success: false,
         code:
-          "GITHUB_NOT_CONNECTED",
+          "FOUNDER_ONLY",
         error:
-          "GitHub account is not connected.",
+          "GitHub repository access is available only in the Founder Console.",
       },
       {
-        status: 401,
-      },
-    );
-  }
-
-  const result =
-    await listUserGitHubRepositories(
-      connection,
-    );
-
-  if (
-    !result.success
-  ) {
-    return NextResponse.json(
-      result,
-      {
-        status: 502,
+        status: 403,
       },
     );
   }
 
   return NextResponse.json(
-    result,
     {
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
+      success: false,
+      code:
+        "LEGACY_GITHUB_ROUTE",
+      error:
+        "Use the Founder GitHub repositories route.",
+    },
+    {
+      status: 410,
     },
   );
 }
