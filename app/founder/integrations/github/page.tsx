@@ -46,6 +46,40 @@ interface GitHubRepositoriesResponse {
   error?: string;
 }
 
+interface GitHubDiagnostic {
+  success: boolean;
+  diagnosis?: string;
+  configuration?: {
+    appId: string;
+    clientId: string;
+    clientIdNumeric: boolean;
+    clientIdMatchesAppId: boolean;
+    appSlug: string;
+    callbackUrl: string;
+    authorizationEndpoint: string;
+  };
+  githubProbe?: {
+    attempted: boolean;
+    status: number;
+    statusText: string;
+    accepted: boolean;
+    locationHost: string | null;
+  };
+  authorizationRequest?: {
+    clientIdIncluded: boolean;
+    redirectUriIncluded: boolean;
+    stateIncluded: boolean;
+    pkceIncluded: boolean;
+  };
+  security?: {
+    clientSecretExposed: boolean;
+    stateExposed: boolean;
+    codeChallengeExposed: boolean;
+  };
+  code?: string;
+  error?: string;
+}
+
 const initialStatus: GitHubStatus = {
   success: false,
   configured: false,
@@ -72,11 +106,21 @@ export default function FounderGitHubPage() {
   const [actionLoading, setActionLoading] =
     useState(false);
 
+  const [diagnosticLoading, setDiagnosticLoading] =
+    useState(false);
+
+  const [diagnostic, setDiagnostic] =
+    useState<GitHubDiagnostic | null>(
+      null,
+    );
+
   const [error, setError] =
     useState("");
 
   const loadStatus = useCallback(
-    async (key: string) => {
+    async (
+      key: string,
+    ) => {
       const normalizedKey =
         key.trim();
 
@@ -152,7 +196,9 @@ export default function FounderGitHubPage() {
 
   const loadRepositories =
     useCallback(
-      async (key: string) => {
+      async (
+        key: string,
+      ) => {
         const normalizedKey =
           key.trim();
 
@@ -329,6 +375,69 @@ export default function FounderGitHubPage() {
     }
   }
 
+  async function runDiagnostic() {
+    if (
+      !accessKey.trim()
+    ) {
+      setError(
+        "Founder Access Key is required.",
+      );
+      return;
+    }
+
+    setDiagnosticLoading(
+      true,
+    );
+
+    setError("");
+
+    try {
+      const response =
+        await fetch(
+          "/api/founder/integrations/github/diagnostic",
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              Accept:
+                "application/json",
+              Authorization:
+                `Bearer ${accessKey.trim()}`,
+            },
+          },
+        );
+
+      const data =
+        (await response.json()) as GitHubDiagnostic;
+
+      setDiagnostic(
+        data,
+      );
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ||
+            "GitHub OAuth diagnostic failed.",
+        );
+      }
+    } catch (
+      requestError
+    ) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "GitHub OAuth diagnostic failed.",
+      );
+    } finally {
+      setDiagnosticLoading(
+        false,
+      );
+    }
+  }
+
   async function disconnectGitHub() {
     setActionLoading(true);
     setError("");
@@ -371,6 +480,7 @@ export default function FounderGitHubPage() {
       });
 
       setRepositories([]);
+      setDiagnostic(null);
     } catch (
       requestError
     ) {
@@ -380,7 +490,9 @@ export default function FounderGitHubPage() {
           : "GitHub disconnect failed.",
       );
     } finally {
-      setActionLoading(false);
+      setActionLoading(
+        false,
+      );
     }
   }
 
@@ -429,7 +541,8 @@ export default function FounderGitHubPage() {
               "space-between",
             alignItems:
               "center",
-            gap: 14,
+            gap:
+              14,
             marginBottom:
               18,
           }}
@@ -492,16 +605,7 @@ export default function FounderGitHubPage() {
         </div>
 
         <section
-          style={{
-            padding:
-              20,
-            border:
-              "1px solid #dbe3f0",
-            borderRadius:
-              20,
-            background:
-              "#ffffff",
-          }}
+          style={cardStyle}
         >
           <div
             style={{
@@ -519,16 +623,7 @@ export default function FounderGitHubPage() {
           >
             <div>
               <div
-                style={{
-                  color:
-                    "#64748b",
-                  fontSize:
-                    12,
-                  fontWeight:
-                    900,
-                  letterSpacing:
-                    "0.08em",
-                }}
+                style={eyebrowStyle}
               >
                 GITHUB APP
               </div>
@@ -559,16 +654,7 @@ export default function FounderGitHubPage() {
           </div>
 
           <div
-            style={{
-              display:
-                "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(190px, 1fr))",
-              gap:
-                10,
-              marginTop:
-                18,
-            }}
+            style={gridStyle}
           >
             <InfoCard
               label="Scope"
@@ -602,42 +688,14 @@ export default function FounderGitHubPage() {
 
           {error ? (
             <div
-              style={{
-                marginTop:
-                  16,
-                padding:
-                  13,
-                border:
-                  "1px solid #fecaca",
-                borderRadius:
-                  12,
-                background:
-                  "#fff7f7",
-                color:
-                  "#991b1b",
-                fontSize:
-                  13,
-                lineHeight:
-                  1.55,
-                overflowWrap:
-                  "anywhere",
-              }}
+              style={errorStyle}
             >
               {error}
             </div>
           ) : null}
 
           <div
-            style={{
-              display:
-                "flex",
-              flexWrap:
-                "wrap",
-              gap:
-                10,
-              marginTop:
-                18,
-            }}
+            style={buttonRowStyle}
           >
             {!status.connected ? (
               <button
@@ -693,35 +751,247 @@ export default function FounderGitHubPage() {
                 </button>
               </>
             )}
+
+            <button
+              type="button"
+              onClick={
+                runDiagnostic
+              }
+              disabled={
+                diagnosticLoading ||
+                loading
+              }
+              style={
+                diagnosticButtonStyle
+              }
+            >
+              {diagnosticLoading
+                ? "Testing OAuth..."
+                : "OAuth Diagnostics"}
+            </button>
           </div>
         </section>
 
         <section
           style={{
+            ...cardStyle,
             marginTop:
               16,
-            padding:
-              20,
-            border:
-              "1px solid #dbe3f0",
-            borderRadius:
-              20,
-            background:
-              "#ffffff",
+          }}
+        >
+          <div
+            style={eyebrowStyle}
+          >
+            OAUTH DIAGNOSTICS
+          </div>
+
+          <h2
+            style={{
+              margin:
+                "7px 0 0",
+              fontSize:
+                21,
+            }}
+          >
+            GitHub OAuth Runtime Verification
+          </h2>
+
+          <p
+            style={{
+              margin:
+                "8px 0 0",
+              color:
+                "#64748b",
+              lineHeight:
+                1.6,
+            }}
+          >
+            This Founder-only test checks the actual
+            Vercel runtime configuration and probes the
+            GitHub authorization endpoint. Secrets,
+            OAuth state, and PKCE values are never shown.
+          </p>
+
+          {!diagnostic ? (
+            <div
+              style={{
+                marginTop:
+                  16,
+                padding:
+                  16,
+                border:
+                  "1px dashed #cbd5e1",
+                borderRadius:
+                  14,
+                color:
+                  "#64748b",
+              }}
+            >
+              Run OAuth Diagnostics before attempting
+              another GitHub connection.
+            </div>
+          ) : (
+            <div
+              style={{
+                display:
+                  "grid",
+                gap:
+                  10,
+                marginTop:
+                  16,
+              }}
+            >
+              <DiagnosticRow
+                label="Diagnosis"
+                value={
+                  diagnostic.diagnosis ||
+                  diagnostic.error ||
+                  "Unknown"
+                }
+                emphasis
+              />
+
+              <DiagnosticRow
+                label="App ID"
+                value={
+                  diagnostic.configuration?.appId ||
+                  "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="Client ID"
+                value={
+                  diagnostic.configuration?.clientId ||
+                  "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="Client ID numeric"
+                value={
+                  diagnostic.configuration
+                    ? diagnostic.configuration.clientIdNumeric
+                      ? "YES"
+                      : "NO"
+                    : "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="Client ID equals App ID"
+                value={
+                  diagnostic.configuration
+                    ? diagnostic.configuration.clientIdMatchesAppId
+                      ? "YES"
+                      : "NO"
+                    : "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="App Slug"
+                value={
+                  diagnostic.configuration?.appSlug ||
+                  "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="Callback URL"
+                value={
+                  diagnostic.configuration?.callbackUrl ||
+                  "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="Authorize Endpoint"
+                value={
+                  diagnostic.configuration
+                    ?.authorizationEndpoint ||
+                  "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="GitHub HTTP"
+                value={
+                  diagnostic.githubProbe
+                    ? `${diagnostic.githubProbe.status} ${diagnostic.githubProbe.statusText}`
+                    : "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="GitHub endpoint accepted"
+                value={
+                  diagnostic.githubProbe
+                    ? diagnostic.githubProbe.accepted
+                      ? "YES"
+                      : "NO"
+                    : "Unavailable"
+                }
+              />
+
+              <DiagnosticRow
+                label="client_id included"
+                value={
+                  diagnostic.authorizationRequest
+                    ?.clientIdIncluded
+                    ? "YES"
+                    : "NO"
+                }
+              />
+
+              <DiagnosticRow
+                label="redirect_uri included"
+                value={
+                  diagnostic.authorizationRequest
+                    ?.redirectUriIncluded
+                    ? "YES"
+                    : "NO"
+                }
+              />
+
+              <DiagnosticRow
+                label="state included"
+                value={
+                  diagnostic.authorizationRequest
+                    ?.stateIncluded
+                    ? "YES"
+                    : "NO"
+                }
+              />
+
+              <DiagnosticRow
+                label="PKCE S256 included"
+                value={
+                  diagnostic.authorizationRequest
+                    ?.pkceIncluded
+                    ? "YES"
+                    : "NO"
+                }
+              />
+
+              <DiagnosticRow
+                label="Secret exposed"
+                value="NO"
+              />
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            ...cardStyle,
+            marginTop:
+              16,
           }}
         >
           <div>
             <div
-              style={{
-                color:
-                  "#64748b",
-                fontSize:
-                  12,
-                fontWeight:
-                  900,
-                letterSpacing:
-                  "0.08em",
-              }}
+              style={eyebrowStyle}
             >
               REPOSITORY ACCESS
             </div>
@@ -1027,6 +1297,132 @@ function InfoCard({
   );
 }
 
+function DiagnosticRow({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display:
+          "grid",
+        gridTemplateColumns:
+          "190px minmax(0, 1fr)",
+        gap:
+          12,
+        padding:
+          "11px 13px",
+        border:
+          "1px solid #e2e8f0",
+        borderRadius:
+          12,
+        background:
+          emphasis
+            ? "#f8fafc"
+            : "#ffffff",
+      }}
+    >
+      <strong
+        style={{
+          color:
+            "#475569",
+          fontSize:
+            12,
+        }}
+      >
+        {label}
+      </strong>
+
+      <span
+        style={{
+          color:
+            emphasis
+              ? "#0f172a"
+              : "#334155",
+          fontWeight:
+            emphasis
+              ? 900
+              : 650,
+          overflowWrap:
+            "anywhere",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+const cardStyle = {
+  padding:
+    20,
+  border:
+    "1px solid #dbe3f0",
+  borderRadius:
+    20,
+  background:
+    "#ffffff",
+} as const;
+
+const eyebrowStyle = {
+  color:
+    "#64748b",
+  fontSize:
+    12,
+  fontWeight:
+    900,
+  letterSpacing:
+    "0.08em",
+} as const;
+
+const gridStyle = {
+  display:
+    "grid",
+  gridTemplateColumns:
+    "repeat(auto-fit, minmax(190px, 1fr))",
+  gap:
+    10,
+  marginTop:
+    18,
+} as const;
+
+const buttonRowStyle = {
+  display:
+    "flex",
+  flexWrap:
+    "wrap",
+  gap:
+    10,
+  marginTop:
+    18,
+} as const;
+
+const errorStyle = {
+  marginTop:
+    16,
+  padding:
+    13,
+  border:
+    "1px solid #fecaca",
+  borderRadius:
+    12,
+  background:
+    "#fff7f7",
+  color:
+    "#991b1b",
+  fontSize:
+    13,
+  lineHeight:
+    1.55,
+  overflowWrap:
+    "anywhere",
+} as const;
+
 const primaryButtonStyle = {
   height:
     44,
@@ -1059,6 +1455,25 @@ const secondaryButtonStyle = {
     "#ffffff",
   color:
     "#334155",
+  fontWeight:
+    900,
+  cursor:
+    "pointer",
+} as const;
+
+const diagnosticButtonStyle = {
+  height:
+    44,
+  padding:
+    "0 16px",
+  border:
+    "1px solid #94a3b8",
+  borderRadius:
+    12,
+  background:
+    "#f8fafc",
+  color:
+    "#0f172a",
   fontWeight:
     900,
   cursor:
