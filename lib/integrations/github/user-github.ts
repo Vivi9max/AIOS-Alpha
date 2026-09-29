@@ -153,8 +153,7 @@ function unseal<T>(
       );
 
     if (
-      raw.length <
-      28
+      raw.length < 28
     ) {
       return null;
     }
@@ -467,10 +466,19 @@ export function readUserGitHubConnection(
 
   if (
     !connection ||
-    !connection.userId ||
+    connection.userId !==
+      "founder:aios-alpha" ||
     !connection.githubUserId ||
     !connection.login ||
     !connection.accessToken
+  ) {
+    return null;
+  }
+
+  if (
+    !Array.isArray(
+      connection.installationIds,
+    )
   ) {
     return null;
   }
@@ -561,23 +569,47 @@ export async function completeUserGitHubConnect(
       STATE_COOKIE,
     )?.value;
 
+  if (!stateCookie) {
+    return {
+      success: false,
+      error:
+        "GitHub OAuth state cookie is missing.",
+    };
+  }
+
   const statePayload =
-    stateCookie
-      ? unseal<OAuthState>(
-          stateCookie,
-          config.sessionSecret,
-        )
-      : null;
+    unseal<OAuthState>(
+      stateCookie,
+      config.sessionSecret,
+    );
 
   if (
-    !statePayload ||
-    statePayload.state !== state ||
+    !statePayload
+  ) {
+    return {
+      success: false,
+      error:
+        "GitHub OAuth state cookie could not be decrypted.",
+    };
+  }
+
+  if (
+    statePayload.state !== state
+  ) {
+    return {
+      success: false,
+      error:
+        "GitHub OAuth state does not match.",
+    };
+  }
+
+  if (
     !statePayload.codeVerifier
   ) {
     return {
       success: false,
       error:
-        "GitHub authorization state is invalid or expired.",
+        "GitHub OAuth PKCE verifier is missing.",
     };
   }
 
@@ -695,7 +727,8 @@ export async function completeUserGitHubConnect(
         (installation) =>
           String(
             installation.app_id,
-          ) === config.appId,
+          ) ===
+          String(config.appId),
       )
       .map(
         (installation) =>
@@ -733,7 +766,7 @@ export async function completeUserGitHubConnect(
         ? Date.now() +
           tokenResult.data
             .refresh_token_expires_in *
-            1000
+          1000
         : undefined,
 
     installationIds,
@@ -838,7 +871,7 @@ export async function refreshUserGitHubConnection(
         ? Date.now() +
           result.data
             .refresh_token_expires_in *
-            1000
+          1000
         : connection.refreshExpiresAt,
   };
 }
@@ -986,26 +1019,19 @@ export async function listUserGitHubRepositories(
       repositories.push({
         id:
           repository.id,
-
         fullName:
           repository.full_name,
-
         name:
           repository.name,
-
         owner:
           repository.owner.login,
-
         private:
           repository.private,
-
         defaultBranch:
           repository.default_branch,
-
         permissions:
           repository.permissions ||
           {},
-
         installationId,
       });
     }
