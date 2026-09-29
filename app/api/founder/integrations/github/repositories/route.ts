@@ -2,20 +2,20 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
-
 import {
   ensureUserGitHubConnection,
   isUserGitHubConfigured,
   listUserGitHubRepositories,
 } from "@/lib/integrations/github/user-github";
-
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
-
+export const dynamic =
+  "force-dynamic";
+export const runtime =
+  "nodejs";
 export async function GET(
   request: NextRequest,
 ) {
@@ -34,10 +34,13 @@ export async function GET(
       },
       {
         status: 401,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
   }
-
   if (
     !isUserGitHubConfigured()
   ) {
@@ -51,71 +54,107 @@ export async function GET(
       },
       {
         status: 503,
-      },
-    );
-  }
-
-  const response =
-    NextResponse.json(
-      {
-        success: false,
-      },
-      {
         headers: {
           "Cache-Control":
             "no-store",
         },
       },
     );
-
+  }
+  const response =
+    NextResponse.json(
+      {
+        success: false,
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      },
+    );
   const connection =
     await ensureUserGitHubConnection(
       request,
       response,
     );
-
+  const setCookie =
+    response.headers.get(
+      "Set-Cookie",
+    );
   if (
     !connection ||
     connection.userId !==
       FOUNDER_GITHUB_USER_ID
   ) {
-    return NextResponse.json(
-      {
-        success: false,
-        code:
-          "GITHUB_NOT_CONNECTED",
-        error:
-          "Founder GitHub account is not connected.",
-      },
-      {
-        status: 401,
-      },
-    );
+    const result =
+      NextResponse.json(
+        {
+          success: false,
+          code:
+            "GITHUB_NOT_CONNECTED",
+          error:
+            "Founder GitHub account is not connected.",
+        },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control":
+              "no-store",
+          },
+        },
+      );
+    if (setCookie) {
+      result.headers.set(
+        "Set-Cookie",
+        setCookie,
+      );
+    }
+    return result;
   }
-
-  const result =
+  const repositoryResult =
     await listUserGitHubRepositories(
       connection,
     );
-
   if (
-    !result.success
+    !repositoryResult.success
   ) {
-    return NextResponse.json(
-      result,
+    const result =
+      NextResponse.json(
+        repositoryResult,
+        {
+          status: 502,
+          headers: {
+            "Cache-Control":
+              "no-store",
+          },
+        },
+      );
+    if (setCookie) {
+      result.headers.set(
+        "Set-Cookie",
+        setCookie,
+      );
+    }
+    return result;
+  }
+  const result =
+    NextResponse.json(
+      repositoryResult,
       {
-        status: 502,
+        status: 200,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
+  if (setCookie) {
+    result.headers.set(
+      "Set-Cookie",
+      setCookie,
+    );
   }
-
-  return NextResponse.json(
-    result,
-    {
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
-    },
-  );
+  return result;
 }
