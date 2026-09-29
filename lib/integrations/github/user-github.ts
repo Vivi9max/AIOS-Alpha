@@ -25,6 +25,9 @@ const GITHUB_API =
 const GITHUB_API_VERSION =
   "2022-11-28";
 
+const GITHUB_OAUTH_TOKEN_URL =
+  "https://github.com/login/oauth/access_token";
+
 const OAUTH_STATE_MAX_AGE =
   10 * 60;
 
@@ -57,10 +60,17 @@ interface GitHubAppConfig {
 }
 
 interface GitHubTokenResponse {
-  access_token: string;
+  access_token?: string;
   expires_in?: number;
   refresh_token?: string;
   refresh_token_expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
+interface GitHubApiError {
+  message?: string;
+  documentation_url?: string;
 }
 
 function getConfig():
@@ -279,16 +289,12 @@ async function githubFetch<T>(
       data !== null &&
       "message" in data &&
       typeof (
-        data as {
-          message?: unknown;
-        }
+        data as GitHubApiError
       ).message === "string"
         ? (
-            data as {
-              message: string;
-            }
+            data as GitHubApiError
           ).message
-        : `GitHub request failed with ${response.status}.`;
+        : `GitHub API request failed with HTTP ${response.status}.`;
 
     return {
       ok: false,
@@ -536,6 +542,114 @@ export function clearUserGitHubConnection(
   );
 }
 
+async function exchangeCodeForToken(
+  config: GitHubAppConfig,
+  request: NextRequest,
+  code: string,
+  codeVerifier: string,
+):
+  Promise<
+    | {
+        success: true;
+        token: GitHubTokenResponse;
+      }
+    | {
+        success: false;
+        error: string;
+      }
+  > {
+  const callbackUrl =
+    getCallbackUrl(
+      request,
+    );
+
+  const body =
+    new URLSearchParams({
+      client_id:
+        config.clientId,
+      client_secret:
+        config.clientSecret,
+      code,
+      redirect_uri:
+        callbackUrl,
+      code_verifier:
+        codeVerifier,
+    });
+
+  let response:
+    | Response;
+
+  try {
+    response =
+      await fetch(
+        GITHUB_OAUTH_TOKEN_URL,
+        {
+          method:
+            "POST",
+          cache:
+            "no-store",
+          headers: {
+            Accept:
+              "application/json",
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+          body:
+            body.toString(),
+        },
+      );
+  } catch {
+    return {
+      success: false,
+      error:
+        "GitHub OAuth token exchange network request failed.",
+    };
+  }
+
+  const text =
+    await response.text();
+
+  let data:
+    | GitHubTokenResponse
+    | undefined;
+
+  try {
+    data =
+      JSON.parse(
+        text,
+      ) as GitHubTokenResponse;
+  } catch {
+    data =
+      undefined;
+  }
+
+  if (
+    !response.ok
+  ) {
+    return {
+      success: false,
+      error:
+        `GitHub OAuth token exchange failed: HTTP ${response.status}${data?.error ? ` (${data.error})` : ""}${data?.error_description ? ` - ${data.error_description}` : text ? ` - ${text}` : ""}`,
+    };
+  }
+
+  if (
+    !data?.access_token
+  ) {
+    return {
+      success: false,
+      error:
+        `GitHub OAuth token exchange returned no access token${data?.error ? `: ${data.error}` : ""}${data?.error_description ? ` - ${data.error_description}` : ""}.`,
+    };
+  }
+
+  return {
+    success: true,
+    token:
+      data,
+  };
+}
+
 export async function completeUserGitHubConnect(
   request: NextRequest,
   response: NextResponse,
@@ -625,52 +739,30 @@ export async function completeUserGitHubConnect(
     };
   }
 
-  const callbackUrl =
-    getCallbackUrl(
-      request,
-    );
-
-  const body =
-    new URLSearchParams({
-      client_id:
-        config.clientId,
-      client_secret:
-        config.clientSecret,
-      code,
-      redirect_uri:
-        callbackUrl,
-      code_verifier:
-        statePayload.codeVerifier,
-    });
-
   const tokenResult =
-    await githubFetch<GitHubTokenResponse>(
-      "/login/oauth/access_token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded",
-        },
-        body:
-          body.toString(),
-      },
+    await exchangeCodeForToken(
+      config,
+      request,
+      code,
+      statePayload.codeVerifier,
     );
 
   if (
-    !tokenResult.ok ||
-    !tokenResult.data?.access_token
+    !tokenResult.success
   ) {
-    return {
-      success: false,
-      error:
-        tokenResult.message ||
-        "GitHub authorization failed.",
-    };
+    return tokenResult;
   }
 
   const accessToken =
-    tokenResult.data.access_token;
+    tokenResult.token.access_token;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error:
+        "GitHub OAuth did not return a user access token.",
+    };
+  }
 
   const userResult =
     await githubFetch<{
@@ -689,8 +781,7 @@ export async function completeUserGitHubConnect(
     return {
       success: false,
       error:
-        userResult.message ||
-        "GitHub user verification failed.",
+        `GitHub user verification failed: HTTP ${userResult.status} - ${userResult.message || "Unknown error"}.`,
     };
   }
 
@@ -712,8 +803,7 @@ export async function completeUserGitHubConnect(
     return {
       success: false,
       error:
-        installationsResult.message ||
-        "GitHub App installation verification failed.",
+        `GitHub App installation verification failed: HTTP ${installationsResult.status} - ${installationsResult.message || "Unknown error"}.`,
     };
   }
 
@@ -749,22 +839,23 @@ export async function completeUserGitHubConnect(
     accessToken,
 
     refreshToken:
-      tokenResult.data.refresh_token,
+      tokenResult.token
+        .refresh_token,
 
     accessExpiresAt:
       Date.now() +
       (
-        tokenResult.data
+        tokenResult.token
           .expires_in ||
         DEFAULT_ACCESS_TOKEN_TTL
       ) *
         1000,
 
     refreshExpiresAt:
-      tokenResult.data
+      tokenResult.token
         .refresh_token_expires_in
         ? Date.now() +
-          tokenResult.data
+          tokenResult.token
             .refresh_token_expires_in *
           1000
         : undefined,
@@ -831,6 +922,8 @@ export async function refreshUserGitHubConnection(
       {
         method: "POST",
         headers: {
+          Accept:
+            "application/json",
           "Content-Type":
             "application/x-www-form-urlencoded",
         },
@@ -1005,8 +1098,7 @@ export async function listUserGitHubRepositories(
       return {
         success: false,
         error:
-          result.message ||
-          "GitHub repository access failed.",
+          `GitHub repository access failed: HTTP ${result.status} - ${result.message || "Unknown error"}.`,
       };
     }
 
