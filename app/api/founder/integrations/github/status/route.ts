@@ -15,6 +15,12 @@ import {
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
 
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -33,6 +39,10 @@ export async function GET(
       },
       {
         status: 401,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
   }
@@ -67,6 +77,7 @@ export async function GET(
           "github-app",
       },
       {
+        status: 200,
         headers: {
           "Cache-Control":
             "no-store",
@@ -88,30 +99,41 @@ export async function GET(
     return response;
   }
 
-  return NextResponse.json(
-    {
-      success: true,
-      configured: true,
-      connected: true,
-      provider:
-        "github-app",
-      account: {
-        id:
-          String(
-            connection.githubUserId,
-          ),
-        login:
-          connection.login,
-      },
-      installationCount:
-        connection.installationIds.length,
-      accessExpiresAt:
-        connection.accessExpiresAt,
+  response.body;
+
+  const payload = {
+    success: true,
+    configured: true,
+    connected: true,
+    provider:
+      "github-app",
+    account: {
+      id:
+        String(
+          connection.githubUserId,
+        ),
+      login:
+        connection.login,
     },
+    installationCount:
+      connection.installationIds.length,
+    accessExpiresAt:
+      connection.accessExpiresAt,
+  };
+
+  return new NextResponse(
+    JSON.stringify(payload),
     {
+      status: 200,
       headers: {
+        "Content-Type":
+          "application/json",
         "Cache-Control":
           "no-store",
+        "Set-Cookie":
+          response.headers.get(
+            "Set-Cookie",
+          ) || "",
       },
     },
   );
