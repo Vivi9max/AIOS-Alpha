@@ -68,8 +68,7 @@ interface FounderOverview {
   timestamp?: number;
 }
 
-const STORAGE_KEY =
-  "aios-founder-access-key";
+const STORAGE_KEY = "aios-founder-access-key";
 
 type Locale =
   | "en"
@@ -130,6 +129,9 @@ const copy: Record<
     feedbackCenter: string;
     feedbackCenterDetail: string;
 
+    githubIntegration: string;
+    githubIntegrationDetail: string;
+
     mediaExecution: string;
     mediaExecutionDetail: string;
     mediaExecutionDescription: string;
@@ -160,74 +162,59 @@ const copy: Record<
   }
 > = {
   en: {
-    access:
-      "PRIVATE FOUNDER ACCESS",
+    access: "PRIVATE FOUNDER ACCESS",
 
-    title:
-      "Founder Console",
+    title: "Founder Console",
 
     description:
       "AIOS Alpha runtime, feedback and deployment center",
 
-    logout:
-      "Log out",
+    logout: "Log out",
 
-    refresh:
-      "Refresh Founder data",
+    refresh: "Refresh Founder data",
 
-    refreshing:
-      "Refreshing…",
+    refreshing: "Refreshing...",
 
-    allFeedback:
-      "All feedback",
+    allFeedback: "All feedback",
 
     allFeedbackDetail:
       "View all user feedback",
 
-    bugs:
-      "Bugs",
+    bugs: "Bugs",
 
     bugsDetail:
       "Needs priority review",
 
-    negative:
-      "Negative feedback",
+    negative: "Negative feedback",
 
     negativeDetail:
-      "Ratings 1–2",
+      "Ratings 1-2",
 
-    positive:
-      "Positive feedback",
+    positive: "Positive feedback",
 
     positiveDetail:
-      "Ratings 4–5",
+      "Ratings 4-5",
 
-    users:
-      "Feedback users",
+    users: "Feedback users",
 
     usersDetail:
       "Unique anonymous users",
 
-    average:
-      "Average rating",
+    average: "Average rating",
 
     averageDetail:
       "Out of 5",
 
-    runtime:
-      "Runtime",
+    runtime: "Runtime",
 
-    online:
-      "Online",
+    online: "Online",
 
     runtimeDetail:
       "Open Runtime Status",
 
-    storage:
-      "Storage",
+    storage: "Storage",
 
-    dashboard:
-      "Dashboard",
+    dashboard: "Dashboard",
 
     dashboardValue:
       "Operating Center",
@@ -235,20 +222,16 @@ const copy: Record<
     dashboardDetail:
       "View current AIOS operating state",
 
-    planner:
-      "Planner",
+    planner: "Planner",
 
-    plannerValue:
-      "Snapshot",
+    plannerValue: "Snapshot",
 
     plannerDetail:
       "View current tasks and execution queue",
 
-    deploy:
-      "Deploy",
+    deploy: "Deploy",
 
-    branch:
-      "Branch",
+    branch: "Branch",
 
     latestFeedback:
       "Latest user feedback",
@@ -256,38 +239,38 @@ const copy: Record<
     latestFeedbackDescription:
       "New feedback appears here. Only the Founder API can read this data.",
 
-    viewAll:
-      "View all →",
+    viewAll: "View all ->",
 
     noFeedback:
       "No global feedback yet. New feedback will appear here after deployment.",
 
-    anonymousUser:
-      "Anonymous user",
+    anonymousUser: "Anonymous user",
 
-    userWorkspace:
-      "User Workspace",
+    userWorkspace: "User Workspace",
 
     userWorkspaceDetail:
       "Open the user workspace",
 
-    taskCenter:
-      "Task Center",
+    taskCenter: "Task Center",
 
     taskCenterDetail:
       "View current tasks and completion",
 
-    memoryCenter:
-      "Memory Center",
+    memoryCenter: "Memory Center",
 
     memoryCenterDetail:
       "View current long-term memory",
 
-    feedbackCenter:
-      "Feedback Center",
+    feedbackCenter: "Feedback Center",
 
     feedbackCenterDetail:
       "Search, filter and analyze user feedback",
+
+    githubIntegration:
+      "GitHub Integration",
+
+    githubIntegrationDetail:
+      "Founder-only repository integration and engineering access",
 
     mediaExecution:
       "Real Media Execution",
@@ -296,7 +279,7 @@ const copy: Record<
       "Run the Founder-only live Veo verification",
 
     mediaExecutionDescription:
-      "Runtime → Google Veo → real media operation",
+      "Runtime -> Google Veo -> real media operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
@@ -313,8 +296,7 @@ const copy: Record<
     keyPlaceholder:
       "Enter Founder Access Key",
 
-    verifying:
-      "Verifying…",
+    verifying: "Verifying...",
 
     enterConsole:
       "Enter Founder Console",
@@ -336,94 +318,73 @@ const copy: Record<
       bug: "Bug",
     },
 
-    localeDate:
-      "en-US",
+    localeDate: "en-US",
 
-    release:
-      "Release",
+    release: "Release",
 
-    environment:
-      "Environment",
+    environment: "Environment",
 
-    commit:
-      "Commit",
+    commit: "Commit",
 
-    branchLabel:
-      "Branch",
+    branchLabel: "Branch",
 
-    workspace:
-      "Workspace",
+    workspace: "Workspace",
   },
 
   "zh-CN": {
-    access:
-      "PRIVATE FOUNDER ACCESS",
+    access: "PRIVATE FOUNDER ACCESS",
 
-    title:
-      "Founder Console",
+    title: "Founder Console",
 
     description:
       "AIOS Alpha 运行、反馈与部署中心",
 
-    logout:
-      "退出",
+    logout: "退出",
 
-    refresh:
-      "刷新 Founder 数据",
+    refresh: "刷新 Founder 数据",
 
-    refreshing:
-      "数据刷新中…",
+    refreshing: "数据刷新中...",
 
-    allFeedback:
-      "全部反馈",
+    allFeedback: "全部反馈",
 
     allFeedbackDetail:
       "查看全部用户反馈",
 
-    bugs:
-      "Bug",
+    bugs: "Bug",
 
     bugsDetail:
       "需要优先检查",
 
-    negative:
-      "负面反馈",
+    negative: "负面反馈",
 
     negativeDetail:
-      "评分 1–2",
+      "评分 1-2",
 
-    positive:
-      "正面反馈",
+    positive: "正面反馈",
 
     positiveDetail:
-      "评分 4–5",
+      "评分 4-5",
 
-    users:
-      "反馈用户",
+    users: "反馈用户",
 
     usersDetail:
       "独立匿名用户",
 
-    average:
-      "平均评分",
+    average: "平均评分",
 
     averageDetail:
       "满分 5 分",
 
-    runtime:
-      "Runtime",
+    runtime: "Runtime",
 
-    online:
-      "Online",
+    online: "Online",
 
     runtimeDetail:
       "打开 Runtime Status",
 
-    storage:
-      "Storage",
+    storage: "Storage",
 
-    dashboard:
-      "Dashboard",
+    dashboard: "Dashboard",
 
     dashboardValue:
       "Operating Center",
@@ -431,20 +392,16 @@ const copy: Record<
     dashboardDetail:
       "查看 AIOS 当前运行状态",
 
-    planner:
-      "Planner",
+    planner: "Planner",
 
-    plannerValue:
-      "Snapshot",
+    plannerValue: "Snapshot",
 
     plannerDetail:
       "查看当前任务与执行队列",
 
-    deploy:
-      "Deploy",
+    deploy: "Deploy",
 
-    branch:
-      "Branch",
+    branch: "Branch",
 
     latestFeedback:
       "最新用户反馈",
@@ -452,47 +409,46 @@ const copy: Record<
     latestFeedbackDescription:
       "所有新提交反馈会进入这里，仅 Founder API 可读取。",
 
-    viewAll:
-      "查看全部 →",
+    viewAll: "查看全部 ->",
 
     noFeedback:
       "暂无全局反馈。部署后新提交的反馈会显示在这里。",
 
-    anonymousUser:
-      "匿名用户",
+    anonymousUser: "匿名用户",
 
-    userWorkspace:
-      "用户 Workspace",
+    userWorkspace: "用户 Workspace",
 
     userWorkspaceDetail:
       "进入用户端工作空间",
 
-    taskCenter:
-      "任务中心",
+    taskCenter: "任务中心",
 
     taskCenterDetail:
       "查看当前任务与完成情况",
 
-    memoryCenter:
-      "记忆中心",
+    memoryCenter: "记忆中心",
 
     memoryCenterDetail:
       "查看当前用户长期记忆",
 
-    feedbackCenter:
-      "反馈中心",
+    feedbackCenter: "反馈中心",
 
     feedbackCenterDetail:
       "搜索、筛选并分析用户反馈",
 
-    mediaExecution:
-      "真实媒体执行",
+    githubIntegration:
+      "GitHub 工程集成",
+
+    githubIntegrationDetail:
+      "Founder 专用仓库连接与工程访问",
+
+    mediaExecution: "真实媒体执行",
 
     mediaExecutionDetail:
       "运行 Founder 专用 Veo 实时验证",
 
     mediaExecutionDescription:
-      "Runtime → Google Veo → 真实媒体 Operation",
+      "Runtime -> Google Veo -> 真实媒体 Operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
@@ -509,8 +465,7 @@ const copy: Record<
     keyPlaceholder:
       "输入 Founder Access Key",
 
-    verifying:
-      "验证中…",
+    verifying: "验证中...",
 
     enterConsole:
       "进入 Founder Console",
@@ -532,43 +487,33 @@ const copy: Record<
       bug: "Bug",
     },
 
-    localeDate:
-      "zh-CN",
+    localeDate: "zh-CN",
 
-    release:
-      "Release",
+    release: "Release",
 
-    environment:
-      "环境",
+    environment: "环境",
 
-    commit:
-      "Commit",
+    commit: "Commit",
 
-    branchLabel:
-      "Branch",
+    branchLabel: "Branch",
 
-    workspace:
-      "Workspace",
+    workspace: "Workspace",
   },
 
   ja: {
-    access:
-      "PRIVATE FOUNDER ACCESS",
+    access: "PRIVATE FOUNDER ACCESS",
 
-    title:
-      "Founder Console",
+    title: "Founder Console",
 
     description:
       "AIOS Alpha の Runtime、フィードバック、デプロイ管理センター",
 
-    logout:
-      "ログアウト",
+    logout: "ログアウト",
 
     refresh:
       "Founder データを更新",
 
-    refreshing:
-      "更新中…",
+    refreshing: "更新中...",
 
     allFeedback:
       "すべてのフィードバック",
@@ -576,23 +521,20 @@ const copy: Record<
     allFeedbackDetail:
       "ユーザーフィードバックを表示",
 
-    bugs:
-      "Bug",
+    bugs: "Bug",
 
     bugsDetail:
       "優先確認が必要",
 
-    negative:
-      "低評価",
+    negative: "低評価",
 
     negativeDetail:
-      "評価 1–2",
+      "評価 1-2",
 
-    positive:
-      "高評価",
+    positive: "高評価",
 
     positiveDetail:
-      "評価 4–5",
+      "評価 4-5",
 
     users:
       "フィードバックユーザー",
@@ -600,26 +542,21 @@ const copy: Record<
     usersDetail:
       "匿名ユーザー数",
 
-    average:
-      "平均評価",
+    average: "平均評価",
 
     averageDetail:
       "5 点満点",
 
-    runtime:
-      "Runtime",
+    runtime: "Runtime",
 
-    online:
-      "Online",
+    online: "Online",
 
     runtimeDetail:
       "Runtime Status を開く",
 
-    storage:
-      "Storage",
+    storage: "Storage",
 
-    dashboard:
-      "Dashboard",
+    dashboard: "Dashboard",
 
     dashboardValue:
       "Operating Center",
@@ -627,20 +564,16 @@ const copy: Record<
     dashboardDetail:
       "現在の AIOS 稼働状態を確認",
 
-    planner:
-      "Planner",
+    planner: "Planner",
 
-    plannerValue:
-      "Snapshot",
+    plannerValue: "Snapshot",
 
     plannerDetail:
       "現在のタスクと実行キューを確認",
 
-    deploy:
-      "Deploy",
+    deploy: "Deploy",
 
-    branch:
-      "Branch",
+    branch: "Branch",
 
     latestFeedback:
       "最新のユーザーフィードバック",
@@ -648,8 +581,7 @@ const copy: Record<
     latestFeedbackDescription:
       "新しいフィードバックがここに表示されます。Founder API のみが読み取れます。",
 
-    viewAll:
-      "すべて表示 →",
+    viewAll: "すべて表示 ->",
 
     noFeedback:
       "グローバルフィードバックはまだありません。",
@@ -663,8 +595,7 @@ const copy: Record<
     userWorkspaceDetail:
       "ユーザーワークスペースを開く",
 
-    taskCenter:
-      "タスクセンター",
+    taskCenter: "タスクセンター",
 
     taskCenterDetail:
       "現在のタスクと完了状況を確認",
@@ -681,6 +612,12 @@ const copy: Record<
     feedbackCenterDetail:
       "ユーザーフィードバックを検索、絞り込み、分析",
 
+    githubIntegration:
+      "GitHub エンジニアリング連携",
+
+    githubIntegrationDetail:
+      "Founder 専用リポジトリ接続とエンジニアリングアクセス",
+
     mediaExecution:
       "リアルメディア実行",
 
@@ -688,7 +625,7 @@ const copy: Record<
       "Founder 専用の Veo ライブ検証を実行",
 
     mediaExecutionDescription:
-      "Runtime → Google Veo → 実際の Media Operation",
+      "Runtime -> Google Veo -> 実際の Media Operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
@@ -705,8 +642,7 @@ const copy: Record<
     keyPlaceholder:
       "Founder Access Key を入力",
 
-    verifying:
-      "確認中…",
+    verifying: "確認中...",
 
     enterConsole:
       "Founder Console に入る",
@@ -728,23 +664,17 @@ const copy: Record<
       bug: "Bug",
     },
 
-    localeDate:
-      "ja-JP",
+    localeDate: "ja-JP",
 
-    release:
-      "Release",
+    release: "Release",
 
-    environment:
-      "環境",
+    environment: "環境",
 
-    commit:
-      "Commit",
+    commit: "Commit",
 
-    branchLabel:
-      "Branch",
+    branchLabel: "Branch",
 
-    workspace:
-      "Workspace",
+    workspace: "Workspace",
   },
 };
 
@@ -767,10 +697,11 @@ function maskUserId(
     return userId;
   }
 
-  return `${userId.slice(
-    0,
-    10,
-  )}…${userId.slice(-6)}`;
+  return (
+    userId.slice(0, 10) +
+    "..." +
+    userId.slice(-6)
+  );
 }
 
 function formatTime(
@@ -867,7 +798,8 @@ export default function FounderPage() {
                   Accept:
                     "application/json",
                   Authorization:
-                    `Bearer ${normalizedKey}`,
+                    "Bearer " +
+                    normalizedKey,
                 },
               },
             );
@@ -1098,7 +1030,7 @@ export default function FounderPage() {
             label={t.negative}
             value={
               overview?.feedback
-                ?.critical ?? 0
+                ?.negative ?? 0
             }
             detail={
               t.negativeDetail
@@ -1107,7 +1039,7 @@ export default function FounderPage() {
 
           <MetricLink
             href="/founder/feedback?rating=5"
-            icon="😍"
+            icon="👍"
             label={t.positive}
             value={
               overview?.feedback
@@ -1137,7 +1069,8 @@ export default function FounderPage() {
             label={t.average}
             value={
               overview?.feedback
-                ?.averageRating ?? 0
+                ?.averageRating
+                ?.toFixed(1) ?? "0.0"
             }
             detail={
               t.averageDetail
@@ -1154,28 +1087,12 @@ export default function FounderPage() {
             marginTop: 18,
           }}
         >
-          <SystemLink
-            href="/runtime"
+          <SystemCard
             icon="⚡"
             title={t.runtime}
             value={t.online}
             detail={
               t.runtimeDetail
-            }
-          />
-
-          <SystemCard
-            icon="🗄️"
-            title={t.storage}
-            value={
-              overview?.storage
-                ?.mode ??
-              "unknown"
-            }
-            detail={
-              overview?.storage
-                ?.workspaceId ??
-              "AIOS workspace"
             }
           />
 
@@ -1198,6 +1115,21 @@ export default function FounderPage() {
             }
             detail={
               t.plannerDetail
+            }
+          />
+
+          <SystemCard
+            icon="💾"
+            title={t.storage}
+            value={
+              overview?.storage
+                ?.mode ??
+              "Runtime"
+            }
+            detail={
+              overview?.storage
+                ?.workspaceId ??
+              "AIOS"
             }
           />
         </section>
@@ -1245,7 +1177,9 @@ export default function FounderPage() {
               "production"
             }
             detail={
-              `${t.release} ${release}`
+              t.release +
+              " " +
+              release
             }
           />
 
@@ -1258,7 +1192,8 @@ export default function FounderPage() {
               "AIOS"
             }
             detail={
-              `Runtime ${version}`
+              "Runtime " +
+              version
             }
           />
         </section>
@@ -1364,35 +1299,14 @@ export default function FounderPage() {
 
           <Link
             href="/founder/media-chat-regression"
-            style={{
-              display: "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "space-between",
-              gap: 12,
-              minHeight: 52,
-              marginTop: 18,
-              padding:
-                "0 17px",
-              boxSizing:
-                "border-box",
-              borderRadius: 15,
-              background:
-                "#ffffff",
-              color:
-                "#0f172a",
-              textDecoration:
-                "none",
-              fontWeight: 950,
-            }}
+            style={darkActionStyle}
           >
             <span>
-              ▶ Open Real Media Execution
+              {">"} Open Real Media Execution
             </span>
 
             <span>
-              →
+              {"->"}
             </span>
           </Link>
         </section>
@@ -1489,35 +1403,14 @@ export default function FounderPage() {
 
           <Link
             href="/founder/market/public-intelligence-regression"
-            style={{
-              display: "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "space-between",
-              gap: 12,
-              minHeight: 52,
-              marginTop: 18,
-              padding:
-                "0 17px",
-              boxSizing:
-                "border-box",
-              borderRadius: 15,
-              background:
-                "#ffffff",
-              color:
-                "#0f172a",
-              textDecoration:
-                "none",
-              fontWeight: 950,
-            }}
+            style={darkActionStyle}
           >
             <span>
-              ▶ Open Public Market Intelligence
+              {">"} Open Public Market Intelligence
             </span>
 
             <span>
-              →
+              {"->"}
             </span>
           </Link>
         </section>
@@ -1743,22 +1636,20 @@ export default function FounderPage() {
                     }}
                   >
                     <Tag>
-                      👤{" "}
-                      {maskUserId(
-                        item.userId,
-                      )}
+                      {"👤 " +
+                        maskUserId(
+                          item.userId,
+                        )}
                     </Tag>
 
                     <Tag>
-                      📍{" "}
-                      {item.page}
+                      {"📍 " +
+                        item.page}
                     </Tag>
 
                     <Tag>
-                      🚀 v
-                      {
-                        item.runtimeVersion
-                      }
+                      {"🚀 v" +
+                        item.runtimeVersion}
                     </Tag>
                   </div>
                 </Link>
@@ -1808,6 +1699,15 @@ export default function FounderPage() {
             title={t.feedbackCenter}
             detail={
               t.feedbackCenterDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/integrations/github"
+            icon="🔗"
+            title={t.githubIntegration}
+            detail={
+              t.githubIntegrationDetail
             }
           />
 
@@ -2132,109 +2032,8 @@ function MetricLink({
         </span>
 
         <span>
-          →
+          {"->"}
         </span>
-      </div>
-    </Link>
-  );
-}
-
-function SystemLink({
-  href,
-  icon,
-  title,
-  value,
-  detail,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: "block",
-        padding: 18,
-        borderRadius: 18,
-        background:
-          "#0f172a",
-        color:
-          "#ffffff",
-        textDecoration:
-          "none",
-      }}
-    >
-      <div
-        style={{
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "space-between",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 22,
-          }}
-        >
-          {icon}
-        </span>
-
-        <span
-          style={{
-            color:
-              "#64748b",
-            fontSize: 18,
-          }}
-        >
-          →
-        </span>
-      </div>
-
-      <div
-        style={{
-          marginTop: 13,
-          color:
-            "#94a3b8",
-          fontSize: 12,
-          fontWeight: 900,
-          letterSpacing:
-            "0.08em",
-          textTransform:
-            "uppercase",
-        }}
-      >
-        {title}
-      </div>
-
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 21,
-          fontWeight: 950,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {value}
-      </div>
-
-      <div
-        style={{
-          marginTop: 6,
-          color:
-            "#94a3b8",
-          fontSize: 12,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {detail}
       </div>
     </Link>
   );
@@ -2400,7 +2199,7 @@ function ActionLink({
           fontSize: 20,
         }}
       >
-        →
+        {"->"}
       </div>
     </Link>
   );
@@ -2434,45 +2233,66 @@ function Tag({
   );
 }
 
-const buttonStyle =
-  {
-    height: 43,
-    padding:
-      "0 16px",
-    border:
-      "1px solid #cbd5e1",
-    borderRadius: 13,
-    background:
-      "#ffffff",
-    color:
-      "#334155",
-    fontWeight: 900,
-    cursor:
-      "pointer",
-  } as const;
+const buttonStyle = {
+  height: 43,
+  padding:
+    "0 16px",
+  border:
+    "1px solid #cbd5e1",
+  borderRadius: 13,
+  background:
+    "#ffffff",
+  color:
+    "#334155",
+  fontWeight: 900,
+  cursor:
+    "pointer",
+} as const;
 
-const secondaryLinkStyle =
-  {
-    minWidth: 88,
-    minHeight: 42,
-    display: "flex",
-    alignItems:
-      "center",
-    justifyContent:
-      "center",
-    padding:
-      "0 13px",
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #bfdbfe",
-    borderRadius: 13,
-    background:
-      "#eff6ff",
-    color:
-      "#2563eb",
-    fontSize: 13,
-    fontWeight: 900,
-    textDecoration:
-      "none",
-  } as const;
+const secondaryLinkStyle = {
+  minWidth: 88,
+  minHeight: 42,
+  display: "flex",
+  alignItems:
+    "center",
+  justifyContent:
+    "center",
+  padding:
+    "0 13px",
+  boxSizing:
+    "border-box",
+  border:
+    "1px solid #bfdbfe",
+  borderRadius: 13,
+  background:
+    "#eff6ff",
+  color:
+    "#2563eb",
+  fontSize: 13,
+  fontWeight: 900,
+  textDecoration:
+    "none",
+} as const;
+
+const darkActionStyle = {
+  display: "flex",
+  alignItems:
+    "center",
+  justifyContent:
+    "space-between",
+  gap: 12,
+  minHeight: 52,
+  marginTop: 18,
+  padding:
+    "0 17px",
+  boxSizing:
+    "border-box",
+  borderRadius: 15,
+  background:
+    "#ffffff",
+  color:
+    "#0f172a",
+  textDecoration:
+    "none",
+  fontWeight: 950,
+} as const;
