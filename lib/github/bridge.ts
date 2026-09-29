@@ -1,10 +1,18 @@
 import "server-only";
 
+import type { NextRequest } from "next/server";
+
+import {
+  ensureUserGitHubConnection,
+  readUserGitHubConnection,
+} from "@/lib/integrations/github/user-github";
+
 export interface GitHubBridgeConfig {
-  token: string;
+  token?: string;
   apiBaseUrl: string;
   defaultRepo: string;
   defaultBranch: string;
+  authMode: "oauth" | "token";
 }
 
 export interface GitHubBridgeResult<T> {
@@ -37,59 +45,206 @@ export type GitHubReadFileResult =
   | GitHubReadFileSuccess
   | GitHubReadFileFailure;
 
-function getConfig(): GitHubBridgeConfig {
-  const token =
-    process.env.GITHUB_TOKEN?.trim();
+export interface GitHubBridgeAuthContext {
+  accessToken?: string;
+  authMode: "oauth" | "token";
+  account?: {
+    id: number;
+    login: string;
+  };
+}
 
-  if (!token) {
+const DEFAULT_REPOSITORY =
+  "Vivi9max/AIOS-Alpha";
+
+const DEFAULT_BRANCH =
+  "main";
+
+const DEFAULT_API_URL =
+  "https://api.github.com";
+
+const GITHUB_API_VERSION =
+  "2022-11-28";
+
+function getStaticConfig(): Omit<
+  GitHubBridgeConfig,
+  "authMode"
+> {
+  return {
+    token:
+      process.env.GITHUB_TOKEN?.trim() ||
+      undefined,
+
+    apiBaseUrl:
+      process.env.GITHUB_API_URL?.trim() ||
+      DEFAULT_API_URL,
+
+    defaultRepo:
+      process.env.GITHUB_REPOSITORY?.trim() ||
+      DEFAULT_REPOSITORY,
+
+    defaultBranch:
+      process.env.GITHUB_DEFAULT_BRANCH?.trim() ||
+      DEFAULT_BRANCH,
+  };
+}
+
+function getConfig(): GitHubBridgeConfig {
+  const config =
+    getStaticConfig();
+
+  if (!config.token) {
     throw new Error(
-      "GITHUB_TOKEN is not configured.",
+      "GitHub authentication is not configured.",
     );
   }
 
   return {
-    token,
-    apiBaseUrl:
-      process.env.GITHUB_API_URL?.trim() ||
-      "https://api.github.com",
-    defaultRepo:
-      process.env.GITHUB_REPOSITORY?.trim() ||
-      "Vivi9max/AIOS-Alpha",
-    defaultBranch:
-      process.env.GITHUB_DEFAULT_BRANCH?.trim() ||
-      "main",
+    ...config,
+    authMode: "token",
+  };
+}
+
+export function getGitHubBridgeConfig(): GitHubBridgeConfig {
+  const config =
+    getStaticConfig();
+
+  return {
+    ...config,
+    authMode:
+      config.token
+        ? "token"
+        : "oauth",
+  };
+}
+
+export async function resolveGitHubBridgeAuth(
+  request?: NextRequest,
+): Promise<GitHubBridgeAuthContext> {
+  if (request) {
+    const connection =
+      readUserGitHubConnection(
+        request,
+      );
+
+    if (connection) {
+      if (
+        connection.accessExpiresAt >
+        Date.now() + 60_000
+      ) {
+        return {
+          accessToken:
+            connection.accessToken,
+
+          authMode:
+            "oauth",
+
+          account: {
+            id:
+              connection.githubUserId,
+            login:
+              connection.login,
+          },
+        };
+      }
+
+      const response =
+        new Response();
+
+      const refreshed =
+        await ensureUserGitHubConnection(
+          request,
+          response,
+        );
+
+      if (refreshed) {
+        return {
+          accessToken:
+            refreshed.accessToken,
+
+          authMode:
+            "oauth",
+
+          account: {
+            id:
+              refreshed.githubUserId,
+            login:
+              refreshed.login,
+          },
+        };
+      }
+    }
+  }
+
+  const staticConfig =
+    getStaticConfig();
+
+  if (staticConfig.token) {
+    return {
+      accessToken:
+        staticConfig.token,
+      authMode:
+        "token",
+    };
+  }
+
+  return {
+    authMode:
+      "oauth",
   };
 }
 
 async function githubFetch<T>(
   path: string,
   init: RequestInit = {},
+  accessToken?: string,
 ): Promise<
   GitHubBridgeResult<T>
 > {
   const config =
-    getConfig();
+    getStaticConfig();
+
+  const token =
+    accessToken ||
+    config.token;
+
+  if (!token) {
+    return {
+      success: false,
+      error:
+        "GitHub authentication is not configured.",
+      status: 503,
+    };
+  }
 
   const response =
     await fetch(
       `${config.apiBaseUrl}${path}`,
       {
         ...init,
-        cache: "no-store",
+
+        cache:
+          "no-store",
+
         headers: {
           Accept:
             "application/vnd.github+json",
+
           Authorization:
-            `Bearer ${config.token}`,
+            `Bearer ${token}`,
+
           "X-GitHub-Api-Version":
-            "2022-11-28",
+            GITHUB_API_VERSION,
+
           ...(init.body
             ? {
                 "Content-Type":
                   "application/json",
               }
             : {}),
-          ...(init.headers || {}),
+
+          ...(init.headers ||
+            {}),
         },
       },
     );
@@ -99,8 +254,7 @@ async function githubFetch<T>(
 
   let data:
     | unknown
-    | undefined =
-    undefined;
+    | undefined;
 
   if (text) {
     try {
@@ -113,14 +267,16 @@ async function githubFetch<T>(
 
   if (!response.ok) {
     const message =
-      typeof data === "object" &&
+      typeof data ===
+        "object" &&
       data !== null &&
       "message" in data &&
       typeof (
         data as {
           message?: unknown;
         }
-      ).message === "string"
+      ).message ===
+        "string"
         ? (
             data as {
               message: string;
@@ -130,7 +286,8 @@ async function githubFetch<T>(
 
     return {
       success: false,
-      error: message,
+      error:
+        message,
       status:
         response.status,
     };
@@ -173,16 +330,51 @@ function encodeRepo(
     );
 }
 
-export async function githubBridgeStatus() {
+export async function githubBridgeStatus(
+  request?: NextRequest,
+) {
   const config =
-    getConfig();
+    getStaticConfig();
+
+  const auth =
+    await resolveGitHubBridgeAuth(
+      request,
+    );
+
+  if (!auth.accessToken) {
+    return {
+      success: false,
+      tokenConfigured:
+        Boolean(
+          config.token,
+        ),
+      oauthConnected:
+        false,
+      authenticated:
+        false,
+      authMode:
+        auth.authMode,
+      repository:
+        config.defaultRepo,
+      branch:
+        config.defaultBranch,
+      error:
+        "GitHub authentication is not configured or connected.",
+      status:
+        503,
+    };
+  }
 
   const identity =
     await githubFetch<{
       login: string;
       id: number;
       type: string;
-    }>("/user");
+    }>(
+      "/user",
+      {},
+      auth.accessToken,
+    );
 
   if (
     !identity.success ||
@@ -190,7 +382,17 @@ export async function githubBridgeStatus() {
   ) {
     return {
       success: false,
-      tokenConfigured: true,
+      tokenConfigured:
+        Boolean(
+          config.token,
+        ),
+      oauthConnected:
+        auth.authMode ===
+        "oauth",
+      authenticated:
+        false,
+      authMode:
+        auth.authMode,
       repository:
         config.defaultRepo,
       branch:
@@ -205,8 +407,17 @@ export async function githubBridgeStatus() {
 
   return {
     success: true,
-    tokenConfigured: true,
-    authenticated: true,
+    tokenConfigured:
+      Boolean(
+        config.token,
+      ),
+    oauthConnected:
+      auth.authMode ===
+      "oauth",
+    authenticated:
+      true,
+    authMode:
+      auth.authMode,
     account: {
       login:
         identity.data.login,
@@ -227,12 +438,13 @@ export async function readGitHubFile(
     repo?: string;
     path: string;
     ref?: string;
+    accessToken?: string;
   },
 ): Promise<
   GitHubReadFileResult
 > {
   const config =
-    getConfig();
+    getStaticConfig();
 
   const repo =
     encodeRepo(
@@ -263,6 +475,8 @@ export async function readGitHubFile(
       html_url?: string;
     }>(
       `/repos/${repo}/contents/${path}?ref=${ref}`,
+      {},
+      options.accessToken,
     );
 
   if (!result.success) {
@@ -334,10 +548,11 @@ export async function writeGitHubFile(
     message: string;
     branch?: string;
     sha?: string;
+    accessToken?: string;
   },
 ) {
   const config =
-    getConfig();
+    getStaticConfig();
 
   const repo =
     encodeRepo(
@@ -370,6 +585,7 @@ export async function writeGitHubFile(
     {
       message:
         options.message.trim(),
+
       content:
         Buffer.from(
           options.content,
@@ -377,6 +593,7 @@ export async function writeGitHubFile(
         ).toString(
           "base64",
         ),
+
       branch,
     };
 
@@ -398,12 +615,15 @@ export async function writeGitHubFile(
   }>(
     `/repos/${repo}/contents/${path}`,
     {
-      method: "PUT",
+      method:
+        "PUT",
+
       body:
         JSON.stringify(
           body,
         ),
     },
+    options.accessToken,
   );
 }
 
@@ -412,10 +632,11 @@ export async function listGitHubPath(
     repo?: string;
     path?: string;
     ref?: string;
+    accessToken?: string;
   },
 ) {
   const config =
-    getConfig();
+    getStaticConfig();
 
   const repo =
     encodeRepo(
@@ -447,16 +668,19 @@ export async function listGitHubPath(
     }>
   >(
     `/repos/${repo}/contents${path}?ref=${ref}`,
+    {},
+    options.accessToken,
   );
 }
 
 export async function getGitHubRepository(
   options?: {
     repo?: string;
+    accessToken?: string;
   },
 ) {
   const config =
-    getConfig();
+    getStaticConfig();
 
   const repo =
     encodeRepo(
@@ -476,5 +700,7 @@ export async function getGitHubRepository(
     };
   }>(
     `/repos/${repo}`,
+    {},
+    options?.accessToken,
   );
 }
