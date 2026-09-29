@@ -10,37 +10,70 @@ import {
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
 
-export async function GET(
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
+function redirectToFounder(
   request: NextRequest,
+  params: Record<string, string>,
 ) {
   const url =
     new URL(
+      "/founder/integrations/github",
       request.url,
     );
 
+  for (
+    const [key, value] of
+    Object.entries(params)
+  ) {
+    url.searchParams.set(
+      key,
+      value,
+    );
+  }
+
+  return NextResponse.redirect(
+    url,
+  );
+}
+
+export async function GET(
+  request: NextRequest,
+) {
   const code =
-    url.searchParams.get(
+    request.nextUrl.searchParams.get(
       "code",
     );
 
   const state =
-    url.searchParams.get(
+    request.nextUrl.searchParams.get(
       "state",
     );
 
   const error =
-    url.searchParams.get(
+    request.nextUrl.searchParams.get(
       "error",
     );
 
+  const errorDescription =
+    request.nextUrl.searchParams.get(
+      "error_description",
+    );
+
   if (error) {
-    return NextResponse.redirect(
-      new URL(
-        `/founder/integrations/github?github=error&reason=${encodeURIComponent(
+    return redirectToFounder(
+      request,
+      {
+        github:
+          "error",
+        reason:
+          errorDescription ||
           error,
-        )}`,
-        request.url,
-      ),
+      },
     );
   }
 
@@ -48,11 +81,14 @@ export async function GET(
     !code ||
     !state
   ) {
-    return NextResponse.redirect(
-      new URL(
-        "/founder/integrations/github?github=error&reason=missing_callback",
-        request.url,
-      ),
+    return redirectToFounder(
+      request,
+      {
+        github:
+          "error",
+        reason:
+          "missing_callback",
+      },
     );
   }
 
@@ -70,18 +106,20 @@ export async function GET(
       response,
       code,
       state,
+      FOUNDER_GITHUB_USER_ID,
     );
 
   if (
     !result.success
   ) {
-    return NextResponse.redirect(
-      new URL(
-        `/founder/integrations/github?github=error&reason=${encodeURIComponent(
+    return redirectToFounder(
+      request,
+      {
+        github:
+          "error",
+        reason:
           result.error,
-        )}`,
-        request.url,
-      ),
+      },
     );
   }
 
@@ -89,11 +127,14 @@ export async function GET(
     result.connection.userId !==
     FOUNDER_GITHUB_USER_ID
   ) {
-    return NextResponse.redirect(
-      new URL(
-        "/founder/integrations/github?github=error&reason=invalid_founder_connection",
-        request.url,
-      ),
+    return redirectToFounder(
+      request,
+      {
+        github:
+          "error",
+        reason:
+          "invalid_founder_connection",
+      },
     );
   }
 
