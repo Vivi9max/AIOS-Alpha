@@ -1,5 +1,6 @@
 import "server-only";
 
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import {
@@ -142,6 +143,7 @@ export async function resolveGitHubBridgeAuth(
           account: {
             id:
               connection.githubUserId,
+
             login:
               connection.login,
           },
@@ -149,7 +151,7 @@ export async function resolveGitHubBridgeAuth(
       }
 
       const response =
-        new Response();
+        NextResponse.next();
 
       const refreshed =
         await ensureUserGitHubConnection(
@@ -168,6 +170,7 @@ export async function resolveGitHubBridgeAuth(
           account: {
             id:
               refreshed.githubUserId,
+
             login:
               refreshed.login,
           },
@@ -183,6 +186,7 @@ export async function resolveGitHubBridgeAuth(
     return {
       accessToken:
         staticConfig.token,
+
       authMode:
         "token",
     };
