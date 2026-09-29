@@ -211,22 +211,24 @@ export async function POST(
       action === "create"
     ) {
       const task =
-        createAutonomousDevelopmentTask({
-          objective:
-            String(
-              body?.objective ??
-                "",
-            ),
+        createAutonomousDevelopmentTask(
+          {
+            objective:
+              String(
+                body?.objective ??
+                  "",
+              ),
 
-          targetPaths:
-            Array.isArray(
-              body?.targetPaths,
-            )
-              ? body.targetPaths.map(
-                  String,
-                )
-              : [],
-        });
+            targetPaths:
+              Array.isArray(
+                body?.targetPaths,
+              )
+                ? body.targetPaths.map(
+                    String,
+                  )
+                : [],
+          },
+        );
 
       return json(
         {
@@ -256,17 +258,6 @@ export async function POST(
       });
     }
 
-    /*
-     * C142.3
-     *
-     * Planner
-     *   →
-     * Eligibility
-     *   →
-     * Autonomous Development Task
-     *   →
-     * Claim
-     */
     if (
       action ===
       "dispatch-planner"
@@ -297,35 +288,6 @@ export async function POST(
       });
     }
 
-    /*
-     * C142.4
-     *
-     * Planner
-     *   →
-     * Development Intent
-     *   →
-     * Target Path
-     *   →
-     * Eligibility
-     *   →
-     * Claim
-     *   →
-     * READ
-     *   →
-     * ANALYZE
-     *   →
-     * PLAN
-     *   →
-     * GENERATE
-     *   →
-     * C141 WRITE
-     *   →
-     * COMMIT
-     *   →
-     * READBACK
-     *   →
-     * VERIFY
-     */
     if (
       action ===
       "execute-planner"
@@ -370,13 +332,6 @@ export async function POST(
       );
     }
 
-    /*
-     * C142.2
-     *
-     * Manual Founder autonomous execution.
-     *
-     * This existing path remains available.
-     */
     if (
       action === "execute"
     ) {
@@ -440,12 +395,14 @@ export async function POST(
       }
 
       const task =
-        createAutonomousDevelopmentTask({
-          objective,
-          targetPaths: [
-            path,
-          ],
-        });
+        createAutonomousDevelopmentTask(
+          {
+            objective,
+            targetPaths: [
+              path,
+            ],
+          },
+        );
 
       const claimed =
         claimAutonomousDevelopmentTask(
@@ -473,6 +430,7 @@ export async function POST(
             content,
             commitMessage,
             contract,
+            request,
           });
       } catch (error) {
         const reason =
@@ -539,7 +497,8 @@ export async function POST(
 
       const commitSha =
         github.write
-          ?.commitSha || "";
+          ?.commitSha ||
+        "";
 
       const readbackVerified =
         github.write
