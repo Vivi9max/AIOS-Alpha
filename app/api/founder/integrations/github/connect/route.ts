@@ -75,19 +75,13 @@ export async function GET(
         FOUNDER_GITHUB_USER_ID,
       );
 
-    const body =
-      JSON.stringify({
+    return NextResponse.json(
+      {
         success: true,
         authorizationUrl,
-      });
-
-    return new NextResponse(
-      body,
+      },
       {
-        status: 200,
         headers: {
-          "Content-Type":
-            "application/json",
           "Cache-Control":
             "no-store",
         },
