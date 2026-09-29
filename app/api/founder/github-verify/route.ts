@@ -1,87 +1,137 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isFounderConfigured, isFounderRequest } from "@/lib/founder/auth";
-import { createFounderDevelopmentContract } from "@/lib/github/founder-development-contract";
-import { dispatchGitHubTask } from "@/lib/github/task-dispatch";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+import {
+  isFounderConfigured,
+  isFounderRequest,
+} from "@/lib/founder/auth";
 
-const TEST_REPO = "Vivi9max/AIOS-Alpha";
-const TEST_BRANCH = "main";
+import {
+  createFounderDevelopmentContract,
+} from "@/lib/github/founder-development-contract";
 
-const READ_PATH = "docs/C141-GITHUB-DIRECT-BRIDGE.md";
-const TEST_PATH = "docs/runtime/c141-live-test.json";
+import {
+  dispatchGitHubTask,
+} from "@/lib/github/task-dispatch";
 
-function json(body: Record<string, unknown>, status = 200) {
-  return NextResponse.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
+const TEST_REPO =
+  "Vivi9max/AIOS-Alpha";
+
+const TEST_BRANCH =
+  "main";
+
+const READ_PATH =
+  "docs/C141-GITHUB-DIRECT-BRIDGE.md";
+
+const TEST_PATH =
+  "docs/runtime/c141-live-test.json";
+
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(
+    body,
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
     },
-  });
+  );
 }
 
-export async function POST(request: NextRequest) {
-  if (!isFounderConfigured()) {
+export async function POST(
+  request: NextRequest,
+) {
+  if (
+    !isFounderConfigured()
+  ) {
     return json(
       {
         success: false,
-        error: "Founder access is not configured.",
-        code: "FOUNDER_NOT_CONFIGURED",
+        error:
+          "Founder access is not configured.",
+        code:
+          "FOUNDER_NOT_CONFIGURED",
       },
       503,
     );
   }
 
-  if (!isFounderRequest(request)) {
+  if (
+    !isFounderRequest(request)
+  ) {
     return json(
       {
         success: false,
-        error: "Founder authorization failed.",
-        code: "FOUNDER_UNAUTHORIZED",
+        error:
+          "Founder authorization failed.",
+        code:
+          "FOUNDER_UNAUTHORIZED",
       },
       401,
     );
   }
 
-  const startedAt = Date.now();
-  const timestamp = new Date().toISOString();
+  const startedAt =
+    Date.now();
+
+  const timestamp =
+    new Date().toISOString();
 
   const commitMessage =
     "test(C141.10): verify founder contract GitHub bridge";
 
   try {
-    const contract = createFounderDevelopmentContract({
-      objective:
-        "C141.10 live verification of Founder Contract governed GitHub read, write, commit, and readback.",
-      requestedFiles: [
-        READ_PATH,
-        TEST_PATH,
-      ],
-      actions: [
-        "read",
-        "write",
-        "verify",
-      ],
-      verification: [
-        "readback",
-        "build",
-        "production",
-      ],
-      commitMessage,
-    });
+    const contract =
+      createFounderDevelopmentContract({
+        objective:
+          "C141.10 live verification of Founder Contract governed GitHub read, write, commit, and readback.",
+
+        requestedFiles: [
+          READ_PATH,
+          TEST_PATH,
+        ],
+
+        actions: [
+          "read",
+          "write",
+          "verify",
+        ],
+
+        verification: [
+          "readback",
+          "build",
+          "production",
+        ],
+
+        commitMessage,
+      });
 
     const readResult =
       await dispatchGitHubTask({
         action: "read",
-        repo: TEST_REPO,
-        branch: TEST_BRANCH,
-        path: READ_PATH,
+        repo:
+          TEST_REPO,
+        branch:
+          TEST_BRANCH,
+        path:
+          READ_PATH,
         contract,
         commitMessage,
+        request,
       });
 
-    if (!readResult.success) {
+    if (
+      !readResult.success
+    ) {
       return json(
         {
           success: false,
@@ -95,11 +145,15 @@ export async function POST(request: NextRequest) {
             commit: "NOT_RUN",
             readback: "NOT_RUN",
           },
-          error: readResult.error,
-          code: readResult.code,
-          read: readResult.read,
+          error:
+            readResult.error,
+          code:
+            readResult.code,
+          read:
+            readResult.read,
           durationMs:
-            Date.now() - startedAt,
+            Date.now() -
+            startedAt,
         },
         502,
       );
@@ -110,15 +164,19 @@ export async function POST(request: NextRequest) {
         {
           test:
             "C141.10 Founder Contract Live Verification",
-          status: "passed",
+          status:
+            "passed",
           timestamp,
           environment:
             process.env.VERCEL_ENV ||
             process.env.NODE_ENV ||
             "unknown",
-          repository: TEST_REPO,
-          branch: TEST_BRANCH,
-          readPath: READ_PATH,
+          repository:
+            TEST_REPO,
+          branch:
+            TEST_BRANCH,
+          readPath:
+            READ_PATH,
         },
         null,
         2,
@@ -127,15 +185,22 @@ export async function POST(request: NextRequest) {
     const writeResult =
       await dispatchGitHubTask({
         action: "write",
-        repo: TEST_REPO,
-        branch: TEST_BRANCH,
-        path: TEST_PATH,
-        content: payload,
+        repo:
+          TEST_REPO,
+        branch:
+          TEST_BRANCH,
+        path:
+          TEST_PATH,
+        content:
+          payload,
         commitMessage,
         contract,
+        request,
       });
 
-    if (!writeResult.success) {
+    if (
+      !writeResult.success
+    ) {
       return json(
         {
           success: false,
@@ -149,12 +214,17 @@ export async function POST(request: NextRequest) {
             commit: "NOT_RUN",
             readback: "FAIL",
           },
-          error: writeResult.error,
-          code: writeResult.code,
-          read: readResult.read,
-          write: writeResult.write,
+          error:
+            writeResult.error,
+          code:
+            writeResult.code,
+          read:
+            readResult.read,
+          write:
+            writeResult.write,
           durationMs:
-            Date.now() - startedAt,
+            Date.now() -
+            startedAt,
         },
         502,
       );
@@ -162,7 +232,8 @@ export async function POST(request: NextRequest) {
 
     return json({
       success: true,
-      phase: "complete",
+      phase:
+        "complete",
       checks: {
         connection: "PASS",
         authentication: "PASS",
@@ -176,10 +247,14 @@ export async function POST(request: NextRequest) {
             ? "PASS"
             : "FAIL",
       },
-      repository: TEST_REPO,
-      branch: TEST_BRANCH,
-      read: readResult.read,
-      write: writeResult.write,
+      repository:
+        TEST_REPO,
+      branch:
+        TEST_BRANCH,
+      read:
+        readResult.read,
+      write:
+        writeResult.write,
       commit: {
         sha:
           writeResult.write
@@ -190,7 +265,8 @@ export async function POST(request: NextRequest) {
       },
       timestamp,
       durationMs:
-        Date.now() - startedAt,
+        Date.now() -
+        startedAt,
     });
   } catch (error) {
     return json(
@@ -204,7 +280,8 @@ export async function POST(request: NextRequest) {
             ? error.message
             : "C141 Live Verification failed.",
         durationMs:
-          Date.now() - startedAt,
+          Date.now() -
+          startedAt,
       },
       500,
     );
