@@ -39,6 +39,10 @@ export async function GET(
       },
       {
         status: 401,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
   }
@@ -56,6 +60,10 @@ export async function GET(
       },
       {
         status: 503,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
   }
@@ -82,40 +90,16 @@ export async function GET(
         FOUNDER_GITHUB_USER_ID,
       );
 
-    response.headers.set(
-      "Content-Type",
-      "application/json",
-    );
-
-    response.headers.set(
-      "Cache-Control",
-      "no-store",
-    );
-
-    response.headers.set(
-      "X-AIOS-GitHub-OAuth",
-      "ready",
-    );
-
-    const body =
-      JSON.stringify({
+    return NextResponse.json(
+      {
         success: true,
         authorizationUrl,
-      });
-
-    return new NextResponse(
-      body,
+      },
       {
         status: 200,
         headers: {
-          "Content-Type":
-            "application/json",
           "Cache-Control":
             "no-store",
-          "Set-Cookie":
-            response.headers.get(
-              "Set-Cookie",
-            ) || "",
           "X-AIOS-GitHub-OAuth":
             "ready",
         },
@@ -136,6 +120,10 @@ export async function GET(
       },
       {
         status: 500,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
       },
     );
   }
