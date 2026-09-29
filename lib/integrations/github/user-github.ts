@@ -23,7 +23,7 @@ const GITHUB_API =
   "https://api.github.com";
 
 const GITHUB_API_VERSION =
-  "2026-03-10";
+  "2022-11-28";
 
 const OAUTH_STATE_MAX_AGE =
   10 * 60;
@@ -54,6 +54,13 @@ interface GitHubAppConfig {
   appId: string;
   appSlug: string;
   sessionSecret: string;
+}
+
+interface GitHubTokenResponse {
+  access_token: string;
+  expires_in?: number;
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
 }
 
 function getConfig():
@@ -165,9 +172,7 @@ function unseal<T>(
       );
 
     const encrypted =
-      raw.subarray(
-        28,
-      );
+      raw.subarray(28);
 
     const decipher =
       createDecipheriv(
@@ -186,9 +191,7 @@ function unseal<T>(
           encrypted,
         ),
         decipher.final(),
-      ]).toString(
-        "utf8",
-      );
+      ]).toString("utf8");
 
     return JSON.parse(
       plaintext,
@@ -247,17 +250,10 @@ async function githubFetch<T>(
       `${GITHUB_API}${path}`,
       {
         ...init,
-
-        cache:
-          "no-store",
-
+        cache: "no-store",
         headers: {
-          ...githubHeaders(
-            token,
-          ),
-
-          ...(init.headers ||
-            {}),
+          ...githubHeaders(token),
+          ...(init.headers || {}),
         },
       },
     );
@@ -280,16 +276,14 @@ async function githubFetch<T>(
 
   if (!response.ok) {
     const message =
-      typeof data ===
-        "object" &&
+      typeof data === "object" &&
       data !== null &&
       "message" in data &&
       typeof (
         data as {
           message?: unknown;
         }
-      ).message ===
-        "string"
+      ).message === "string"
         ? (
             data as {
               message: string;
@@ -350,11 +344,15 @@ export function isUserGitHubConfigured():
   );
 }
 
+export interface GitHubConnectStart {
+  authorizationUrl: string;
+  stateCookieValue: string;
+}
+
 export function beginUserGitHubConnect(
   request: NextRequest,
-  response: NextResponse,
   userId: string,
-): string {
+): GitHubConnectStart {
   const config =
     getConfig();
 
@@ -377,16 +375,11 @@ export function beginUserGitHubConnect(
     codeVerifier,
   };
 
-  response.cookies.set(
-    STATE_COOKIE,
+  const stateCookieValue =
     seal(
       statePayload,
       config.sessionSecret,
-    ),
-    cookieOptions(
-      OAUTH_STATE_MAX_AGE,
-    ),
-  );
+    );
 
   const callbackUrl =
     getCallbackUrl(
@@ -425,7 +418,24 @@ export function beginUserGitHubConnect(
     "S256",
   );
 
-  return url.toString();
+  return {
+    authorizationUrl:
+      url.toString(),
+    stateCookieValue,
+  };
+}
+
+export function setGitHubOAuthStateCookie(
+  response: NextResponse,
+  stateCookieValue: string,
+): void {
+  response.cookies.set(
+    STATE_COOKIE,
+    stateCookieValue,
+    cookieOptions(
+      OAUTH_STATE_MAX_AGE,
+    ),
+  );
 }
 
 export function readUserGitHubConnection(
@@ -498,9 +508,7 @@ export function persistUserGitHubConnection(
       connection,
       config.sessionSecret,
     ),
-    cookieOptions(
-      maxAge,
-    ),
+    cookieOptions(maxAge),
   );
 }
 
@@ -563,8 +571,7 @@ export async function completeUserGitHubConnect(
 
   if (
     !statePayload ||
-    statePayload.state !==
-      state ||
+    statePayload.state !== state ||
     !statePayload.codeVerifier
   ) {
     return {
@@ -595,36 +602,24 @@ export async function completeUserGitHubConnect(
     new URLSearchParams({
       client_id:
         config.clientId,
-
       client_secret:
         config.clientSecret,
-
       code,
-
       redirect_uri:
         callbackUrl,
-
       code_verifier:
         statePayload.codeVerifier,
     });
 
   const tokenResult =
-    await githubFetch<{
-      access_token: string;
-      expires_in?: number;
-      refresh_token?: string;
-      refresh_token_expires_in?: number;
-    }>(
+    await githubFetch<GitHubTokenResponse>(
       "/login/oauth/access_token",
       {
-        method:
-          "POST",
-
+        method: "POST",
         headers: {
           "Content-Type":
             "application/x-www-form-urlencoded",
         },
-
         body:
           body.toString(),
       },
@@ -643,8 +638,7 @@ export async function completeUserGitHubConnect(
   }
 
   const accessToken =
-    tokenResult.data
-      .access_token;
+    tokenResult.data.access_token;
 
   const userResult =
     await githubFetch<{
@@ -665,18 +659,6 @@ export async function completeUserGitHubConnect(
       error:
         userResult.message ||
         "GitHub user verification failed.",
-    };
-  }
-
-  if (
-    expectedUserId &&
-    statePayload.userId !==
-      expectedUserId
-  ) {
-    return {
-      success: false,
-      error:
-        "GitHub authorization user context is invalid.",
     };
   }
 
@@ -713,8 +695,7 @@ export async function completeUserGitHubConnect(
         (installation) =>
           String(
             installation.app_id,
-          ) ===
-          config.appId,
+          ) === config.appId,
       )
       .map(
         (installation) =>
@@ -735,8 +716,7 @@ export async function completeUserGitHubConnect(
     accessToken,
 
     refreshToken:
-      tokenResult.data
-        .refresh_token,
+      tokenResult.data.refresh_token,
 
     accessExpiresAt:
       Date.now() +
@@ -758,18 +738,6 @@ export async function completeUserGitHubConnect(
 
     installationIds,
   };
-
-  if (
-    expectedUserId &&
-    connection.userId !==
-      expectedUserId
-  ) {
-    return {
-      success: false,
-      error:
-        "GitHub authorization user context is invalid.",
-    };
-  }
 
   persistUserGitHubConnection(
     response,
@@ -816,34 +784,23 @@ export async function refreshUserGitHubConnection(
     new URLSearchParams({
       client_id:
         config.clientId,
-
       client_secret:
         config.clientSecret,
-
       grant_type:
         "refresh_token",
-
       refresh_token:
         connection.refreshToken,
     });
 
   const result =
-    await githubFetch<{
-      access_token: string;
-      expires_in?: number;
-      refresh_token?: string;
-      refresh_token_expires_in?: number;
-    }>(
+    await githubFetch<GitHubTokenResponse>(
       "/login/oauth/access_token",
       {
-        method:
-          "POST",
-
+        method: "POST",
         headers: {
           "Content-Type":
             "application/x-www-form-urlencoded",
         },
-
         body:
           body.toString(),
       },
