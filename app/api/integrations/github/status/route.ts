@@ -4,86 +4,41 @@ import {
 } from "next/server";
 
 import {
-  ensureUserGitHubConnection,
-  isUserGitHubConfigured,
-} from "@/lib/integrations/github/user-github";
+  isFounderRequest,
+} from "@/lib/founder/auth";
 
 export async function GET(
   request: NextRequest,
 ) {
   if (
-    !isUserGitHubConfigured()
+    !isFounderRequest(
+      request,
+    )
   ) {
     return NextResponse.json(
       {
-        success: true,
-        configured: false,
-        connected: false,
-        provider:
-          "github-app",
+        success: false,
+        code:
+          "FOUNDER_ONLY",
+        error:
+          "GitHub integration is available only in the Founder Console.",
       },
       {
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
+        status: 403,
       },
     );
-  }
-
-  const response =
-    NextResponse.json(
-      {
-        success: true,
-        configured: true,
-        connected: false,
-        provider:
-          "github-app",
-      },
-      {
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
-    );
-
-  const connection =
-    await ensureUserGitHubConnection(
-      request,
-      response,
-    );
-
-  if (!connection) {
-    return response;
   }
 
   return NextResponse.json(
     {
-      success: true,
-      configured: true,
-      connected: true,
-      provider:
-        "github-app",
-
-      account: {
-        id:
-          connection.githubUserId,
-        login:
-          connection.login,
-      },
-
-      installationCount:
-        connection.installationIds.length,
-
-      accessExpiresAt:
-        connection.accessExpiresAt,
+      success: false,
+      code:
+        "LEGACY_GITHUB_ROUTE",
+      error:
+        "Use the Founder GitHub integration route.",
     },
     {
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
+      status: 410,
     },
   );
 }
