@@ -25,6 +25,12 @@ const GITHUB_API =
 const GITHUB_API_VERSION =
   "2026-03-10";
 
+const OAUTH_STATE_MAX_AGE =
+  10 * 60;
+
+const DEFAULT_ACCESS_TOKEN_TTL =
+  8 * 60 * 60;
+
 export interface UserGitHubConnection {
   userId: string;
   githubUserId: number;
@@ -39,6 +45,7 @@ export interface UserGitHubConnection {
 interface OAuthState {
   state: string;
   userId: string;
+  codeVerifier: string;
 }
 
 interface GitHubAppConfig {
@@ -323,6 +330,19 @@ function getCallbackUrl(
   ).toString();
 }
 
+function createCodeVerifier(): string {
+  return randomBytes(32)
+    .toString("base64url");
+}
+
+function createCodeChallenge(
+  codeVerifier: string,
+): string {
+  return createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+}
+
 export function isUserGitHubConfigured():
   boolean {
   return (
@@ -347,10 +367,14 @@ export function beginUserGitHubConnect(
   const state =
     randomUUID();
 
+  const codeVerifier =
+    createCodeVerifier();
+
   const statePayload:
     OAuthState = {
     state,
     userId,
+    codeVerifier,
   };
 
   response.cookies.set(
@@ -359,15 +383,30 @@ export function beginUserGitHubConnect(
       statePayload,
       config.sessionSecret,
     ),
-    cookieOptions(600),
+    cookieOptions(
+      OAUTH_STATE_MAX_AGE,
+    ),
   );
+
+  const callbackUrl =
+    getCallbackUrl(
+      request,
+    );
 
   const url =
     new URL(
-      `https://github.com/apps/${encodeURIComponent(
-        config.appSlug,
-      )}/installations/new`,
+      "https://github.com/login/oauth/authorize",
     );
+
+  url.searchParams.set(
+    "client_id",
+    config.clientId,
+  );
+
+  url.searchParams.set(
+    "redirect_uri",
+    callbackUrl,
+  );
 
   url.searchParams.set(
     "state",
@@ -375,10 +414,15 @@ export function beginUserGitHubConnect(
   );
 
   url.searchParams.set(
-    "redirect_uri",
-    getCallbackUrl(
-      request,
+    "code_challenge",
+    createCodeChallenge(
+      codeVerifier,
     ),
+  );
+
+  url.searchParams.set(
+    "code_challenge_method",
+    "S256",
   );
 
   return url.toString();
@@ -414,7 +458,9 @@ export function readUserGitHubConnection(
   if (
     !connection ||
     !connection.userId ||
-    !connection.githubUserId
+    !connection.githubUserId ||
+    !connection.login ||
+    !connection.accessToken
   ) {
     return null;
   }
@@ -479,6 +525,7 @@ export async function completeUserGitHubConnect(
   response: NextResponse,
   code: string,
   state: string,
+  expectedUserId?: string,
 ):
   Promise<
     | {
@@ -517,14 +564,32 @@ export async function completeUserGitHubConnect(
   if (
     !statePayload ||
     statePayload.state !==
-      state
+      state ||
+    !statePayload.codeVerifier
   ) {
     return {
       success: false,
       error:
-        "GitHub authorization state is invalid.",
+        "GitHub authorization state is invalid or expired.",
     };
   }
+
+  if (
+    expectedUserId &&
+    statePayload.userId !==
+      expectedUserId
+  ) {
+    return {
+      success: false,
+      error:
+        "GitHub authorization user context is invalid.",
+    };
+  }
+
+  const callbackUrl =
+    getCallbackUrl(
+      request,
+    );
 
   const body =
     new URLSearchParams({
@@ -535,6 +600,12 @@ export async function completeUserGitHubConnect(
         config.clientSecret,
 
       code,
+
+      redirect_uri:
+        callbackUrl,
+
+      code_verifier:
+        statePayload.codeVerifier,
     });
 
   const tokenResult =
@@ -594,6 +665,18 @@ export async function completeUserGitHubConnect(
       error:
         userResult.message ||
         "GitHub user verification failed.",
+    };
+  }
+
+  if (
+    expectedUserId &&
+    statePayload.userId !==
+      expectedUserId
+  ) {
+    return {
+      success: false,
+      error:
+        "GitHub authorization user context is invalid.",
     };
   }
 
@@ -660,7 +743,7 @@ export async function completeUserGitHubConnect(
       (
         tokenResult.data
           .expires_in ||
-        28800
+        DEFAULT_ACCESS_TOKEN_TTL
       ) *
         1000,
 
@@ -675,6 +758,18 @@ export async function completeUserGitHubConnect(
 
     installationIds,
   };
+
+  if (
+    expectedUserId &&
+    connection.userId !==
+      expectedUserId
+  ) {
+    return {
+      success: false,
+      error:
+        "GitHub authorization user context is invalid.",
+    };
+  }
 
   persistUserGitHubConnection(
     response,
@@ -776,7 +871,7 @@ export async function refreshUserGitHubConnection(
       (
         result.data
           .expires_in ||
-        28800
+        DEFAULT_ACCESS_TOKEN_TTL
       ) *
         1000,
 
