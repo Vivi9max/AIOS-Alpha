@@ -68,21 +68,23 @@ export async function GET(
     );
   }
 
-  const response =
-    NextResponse.json(
-      {
-        success: false,
-      },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
-      },
-    );
-
   try {
+    const response =
+      new NextResponse(
+        null,
+        {
+          status: 200,
+          headers: {
+            "Cache-Control":
+              "no-store",
+            "Content-Type":
+              "application/json",
+            "X-AIOS-GitHub-OAuth":
+              "ready",
+          },
+        },
+      );
+
     const authorizationUrl =
       beginUserGitHubConnect(
         request,
@@ -90,18 +92,26 @@ export async function GET(
         FOUNDER_GITHUB_USER_ID,
       );
 
-    return NextResponse.json(
-      {
+    response.body;
+
+    return new NextResponse(
+      JSON.stringify({
         success: true,
         authorizationUrl,
-      },
+      }),
       {
         status: 200,
         headers: {
           "Cache-Control":
             "no-store",
+          "Content-Type":
+            "application/json",
           "X-AIOS-GitHub-OAuth":
             "ready",
+          "Set-Cookie":
+            response.headers.get(
+              "Set-Cookie",
+            ) || "",
         },
       },
     );
