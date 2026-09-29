@@ -15,6 +15,12 @@ import {
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
 
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -55,15 +61,13 @@ export async function GET(
   }
 
   const response =
-    new NextResponse(
-      JSON.stringify({
+    NextResponse.json(
+      {
         success: false,
-      }),
+      },
       {
         status: 200,
         headers: {
-          "Content-Type":
-            "application/json",
           "Cache-Control":
             "no-store",
         },
@@ -78,7 +82,20 @@ export async function GET(
         FOUNDER_GITHUB_USER_ID,
       );
 
-    response.body;
+    response.headers.set(
+      "Content-Type",
+      "application/json",
+    );
+
+    response.headers.set(
+      "Cache-Control",
+      "no-store",
+    );
+
+    response.headers.set(
+      "X-AIOS-GitHub-OAuth",
+      "ready",
+    );
 
     const body =
       JSON.stringify({
@@ -99,6 +116,8 @@ export async function GET(
             response.headers.get(
               "Set-Cookie",
             ) || "",
+          "X-AIOS-GitHub-OAuth":
+            "ready",
         },
       },
     );
