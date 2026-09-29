@@ -7,6 +7,9 @@ import {
   completeUserGitHubConnect,
 } from "@/lib/integrations/github/user-github";
 
+const FOUNDER_GITHUB_USER_ID =
+  "founder:aios-alpha";
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -33,7 +36,7 @@ export async function GET(
   if (error) {
     return NextResponse.redirect(
       new URL(
-        `/settings?github=error&reason=${encodeURIComponent(
+        `/founder/integrations/github?github=error&reason=${encodeURIComponent(
           error,
         )}`,
         request.url,
@@ -47,7 +50,7 @@ export async function GET(
   ) {
     return NextResponse.redirect(
       new URL(
-        "/settings?github=error&reason=missing_callback",
+        "/founder/integrations/github?github=error&reason=missing_callback",
         request.url,
       ),
     );
@@ -56,7 +59,7 @@ export async function GET(
   const response =
     NextResponse.redirect(
       new URL(
-        "/settings?github=connected",
+        "/founder/integrations/github?github=connected",
         request.url,
       ),
     );
@@ -74,9 +77,21 @@ export async function GET(
   ) {
     return NextResponse.redirect(
       new URL(
-        `/settings?github=error&reason=${encodeURIComponent(
+        `/founder/integrations/github?github=error&reason=${encodeURIComponent(
           result.error,
         )}`,
+        request.url,
+      ),
+    );
+  }
+
+  if (
+    result.connection.userId !==
+    FOUNDER_GITHUB_USER_ID
+  ) {
+    return NextResponse.redirect(
+      new URL(
+        "/founder/integrations/github?github=error&reason=invalid_founder_connection",
         request.url,
       ),
     );
