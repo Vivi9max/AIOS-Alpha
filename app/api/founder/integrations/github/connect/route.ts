@@ -55,12 +55,15 @@ export async function GET(
   }
 
   const response =
-    NextResponse.json(
-      {
+    new NextResponse(
+      JSON.stringify({
         success: false,
-      },
+      }),
       {
+        status: 200,
         headers: {
+          "Content-Type":
+            "application/json",
           "Cache-Control":
             "no-store",
         },
@@ -75,15 +78,27 @@ export async function GET(
         FOUNDER_GITHUB_USER_ID,
       );
 
-    return NextResponse.json(
-      {
+    response.body;
+
+    const body =
+      JSON.stringify({
         success: true,
         authorizationUrl,
-      },
+      });
+
+    return new NextResponse(
+      body,
       {
+        status: 200,
         headers: {
+          "Content-Type":
+            "application/json",
           "Cache-Control":
             "no-store",
+          "Set-Cookie":
+            response.headers.get(
+              "Set-Cookie",
+            ) || "",
         },
       },
     );
