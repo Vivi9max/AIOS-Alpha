@@ -2,20 +2,65 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
 import {
   isFounderRequest,
 } from "@/lib/founder/auth";
+
 import {
   beginUserGitHubConnect,
   isUserGitHubConfigured,
   setGitHubOAuthStateCookie,
 } from "@/lib/integrations/github/user-github";
+
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
+
 export const dynamic =
   "force-dynamic";
+
 export const runtime =
   "nodejs";
+
+function getClientConfigurationError():
+  string | null {
+  const clientId =
+    process.env.GITHUB_APP_CLIENT_ID?.trim();
+
+  const appId =
+    process.env.GITHUB_APP_ID?.trim();
+
+  if (!clientId) {
+    return (
+      "GITHUB_APP_CLIENT_ID is missing."
+    );
+  }
+
+  if (!appId) {
+    return (
+      "GITHUB_APP_ID is missing."
+    );
+  }
+
+  if (
+    clientId === appId
+  ) {
+    return (
+      "GITHUB_APP_CLIENT_ID must be the GitHub App Client ID, not GITHUB_APP_ID."
+    );
+  }
+
+  if (
+    /^\d+$/.test(clientId)
+  ) {
+    return (
+      "GITHUB_APP_CLIENT_ID appears to be a numeric App ID. Use the GitHub App Client ID instead."
+    );
+  }
+
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -41,6 +86,7 @@ export async function GET(
       },
     );
   }
+
   if (
     !isUserGitHubConfigured()
   ) {
@@ -61,6 +107,29 @@ export async function GET(
       },
     );
   }
+
+  const configurationError =
+    getClientConfigurationError();
+
+  if (configurationError) {
+    return NextResponse.json(
+      {
+        success: false,
+        code:
+          "GITHUB_OAUTH_CLIENT_CONFIGURATION_INVALID",
+        error:
+          configurationError,
+      },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      },
+    );
+  }
+
   try {
     const {
       authorizationUrl,
@@ -70,6 +139,7 @@ export async function GET(
         request,
         FOUNDER_GITHUB_USER_ID,
       );
+
     const response =
       NextResponse.json(
         {
@@ -86,10 +156,12 @@ export async function GET(
           },
         },
       );
+
     setGitHubOAuthStateCookie(
       response,
       stateCookieValue,
     );
+
     return response;
   } catch (
     error
