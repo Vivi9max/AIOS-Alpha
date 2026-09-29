@@ -595,53 +595,6 @@ export default function SettingsPage() {
             配置。
           </p>
         </section>
-
-        <section
-          style={{
-            padding:
-              18,
-            border:
-              "1px solid #dbe3f0",
-            borderRadius:
-              16,
-            background:
-              "#f8fafc",
-          }}
-        >
-          <p
-            style={{
-              margin:
-                0,
-              color:
-                "#64748b",
-              fontSize:
-                12,
-              fontWeight:
-                900,
-              letterSpacing:
-                "0.08em",
-            }}
-          >
-            PRODUCT BOUNDARY
-          </p>
-
-          <p
-            style={{
-              margin:
-                "9px 0 0",
-              color:
-                "#475569",
-              fontSize:
-                13,
-              lineHeight:
-                1.65,
-            }}
-          >
-            GitHub、部署、代码仓库和 Founder Engineering
-            Integrations 不属于普通用户 Workspace。
-            这些能力仅通过 Founder Console 暴露。
-          </p>
-        </section>
       </div>
     </WorkspaceShell>
   );
