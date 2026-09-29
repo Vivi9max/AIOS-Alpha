@@ -59,11 +59,23 @@ export default function WorkspacePage() {
 
           .aios-global-page textarea:focus {
             border-color: #94a3b8 !important;
-            box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12) !important;
+            box-shadow:
+              0 0 0 3px rgba(148, 163, 184, 0.12) !important;
           }
 
           .aios-global-page button {
             -webkit-tap-highlight-color: transparent;
+          }
+
+          .aios-global-page section > header
+            > div:first-child
+            > div:last-child {
+            display: none !important;
+          }
+
+          .aios-global-page section > header
+            > div:nth-child(2) {
+            display: none !important;
           }
 
           @media (max-width: 700px) {
