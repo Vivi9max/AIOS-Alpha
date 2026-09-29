@@ -1028,10 +1028,10 @@ export default function FounderPage() {
             href="/founder/feedback?rating=1"
             icon="⚠️"
             label={t.negative}
-            value={
-              overview?.feedback
-                ?.negative ?? 0
-            }
+value={
+  overview?.feedback
+    ?.critical ?? 0
+}
             detail={
               t.negativeDetail
             }
