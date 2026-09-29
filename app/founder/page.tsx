@@ -163,150 +163,113 @@ const copy: Record<
 > = {
   en: {
     access: "PRIVATE FOUNDER ACCESS",
-
     title: "Founder Console",
-
     description:
       "AIOS Alpha runtime, feedback and deployment center",
-
     logout: "Log out",
-
     refresh: "Refresh Founder data",
-
     refreshing: "Refreshing...",
 
     allFeedback: "All feedback",
-
     allFeedbackDetail:
       "View all user feedback",
 
     bugs: "Bugs",
-
     bugsDetail:
       "Needs priority review",
 
     negative: "Negative feedback",
-
     negativeDetail:
       "Ratings 1-2",
 
     positive: "Positive feedback",
-
     positiveDetail:
       "Ratings 4-5",
 
     users: "Feedback users",
-
     usersDetail:
       "Unique anonymous users",
 
     average: "Average rating",
-
     averageDetail:
       "Out of 5",
 
     runtime: "Runtime",
-
     online: "Online",
-
     runtimeDetail:
       "Open Runtime Status",
 
     storage: "Storage",
 
     dashboard: "Dashboard",
-
     dashboardValue:
       "Operating Center",
-
     dashboardDetail:
       "View current AIOS operating state",
 
     planner: "Planner",
-
     plannerValue: "Snapshot",
-
     plannerDetail:
       "View current tasks and execution queue",
 
     deploy: "Deploy",
-
     branch: "Branch",
 
     latestFeedback:
       "Latest user feedback",
-
     latestFeedbackDescription:
       "New feedback appears here. Only the Founder API can read this data.",
-
     viewAll: "View all ->",
-
     noFeedback:
       "No global feedback yet. New feedback will appear here after deployment.",
-
     anonymousUser: "Anonymous user",
 
     userWorkspace: "User Workspace",
-
     userWorkspaceDetail:
       "Open the user workspace",
 
     taskCenter: "Task Center",
-
     taskCenterDetail:
       "View current tasks and completion",
 
     memoryCenter: "Memory Center",
-
     memoryCenterDetail:
       "View current long-term memory",
 
     feedbackCenter: "Feedback Center",
-
     feedbackCenterDetail:
       "Search, filter and analyze user feedback",
 
     githubIntegration:
       "GitHub Integration",
-
     githubIntegrationDetail:
       "Founder-only repository integration and engineering access",
 
     mediaExecution:
       "Real Media Execution",
-
     mediaExecutionDetail:
       "Run the Founder-only live Veo verification",
-
     mediaExecutionDescription:
       "Runtime -> Google Veo -> real media operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
-
     publicMarketIntelligenceDetail:
       "Open the public Market Intelligence boundary and regression verification",
 
     enterKey:
       "Founder access required",
-
     loginDescription:
       "This area is restricted to the AIOS Alpha founder.",
-
     keyPlaceholder:
       "Enter Founder Access Key",
-
     verifying: "Verifying...",
-
     enterConsole:
       "Enter Founder Console",
-
     invalidKey:
       "Please enter the Founder Access Key.",
-
     loadingFailed:
       "Founder Console loading failed.",
-
     userNoMessage:
       "No written feedback was provided.",
 
@@ -319,163 +282,121 @@ const copy: Record<
     },
 
     localeDate: "en-US",
-
     release: "Release",
-
     environment: "Environment",
-
     commit: "Commit",
-
     branchLabel: "Branch",
-
     workspace: "Workspace",
   },
 
   "zh-CN": {
     access: "PRIVATE FOUNDER ACCESS",
-
     title: "Founder Console",
-
     description:
       "AIOS Alpha 运行、反馈与部署中心",
-
     logout: "退出",
-
     refresh: "刷新 Founder 数据",
-
     refreshing: "数据刷新中...",
 
     allFeedback: "全部反馈",
-
     allFeedbackDetail:
       "查看全部用户反馈",
 
     bugs: "Bug",
-
     bugsDetail:
       "需要优先检查",
 
     negative: "负面反馈",
-
     negativeDetail:
       "评分 1-2",
 
     positive: "正面反馈",
-
     positiveDetail:
       "评分 4-5",
 
     users: "反馈用户",
-
     usersDetail:
       "独立匿名用户",
 
     average: "平均评分",
-
     averageDetail:
       "满分 5 分",
 
     runtime: "Runtime",
-
     online: "Online",
-
     runtimeDetail:
       "打开 Runtime Status",
 
     storage: "Storage",
 
     dashboard: "Dashboard",
-
     dashboardValue:
       "Operating Center",
-
     dashboardDetail:
       "查看 AIOS 当前运行状态",
 
     planner: "Planner",
-
     plannerValue: "Snapshot",
-
     plannerDetail:
       "查看当前任务与执行队列",
 
     deploy: "Deploy",
-
     branch: "Branch",
 
     latestFeedback:
       "最新用户反馈",
-
     latestFeedbackDescription:
       "所有新提交反馈会进入这里，仅 Founder API 可读取。",
-
     viewAll: "查看全部 ->",
-
     noFeedback:
       "暂无全局反馈。部署后新提交的反馈会显示在这里。",
-
     anonymousUser: "匿名用户",
 
     userWorkspace: "用户 Workspace",
-
     userWorkspaceDetail:
       "进入用户端工作空间",
 
     taskCenter: "任务中心",
-
     taskCenterDetail:
       "查看当前任务与完成情况",
 
     memoryCenter: "记忆中心",
-
     memoryCenterDetail:
       "查看当前用户长期记忆",
 
     feedbackCenter: "反馈中心",
-
     feedbackCenterDetail:
       "搜索、筛选并分析用户反馈",
 
     githubIntegration:
       "GitHub 工程集成",
-
     githubIntegrationDetail:
       "Founder 专用仓库连接与工程访问",
 
     mediaExecution: "真实媒体执行",
-
     mediaExecutionDetail:
       "运行 Founder 专用 Veo 实时验证",
-
     mediaExecutionDescription:
       "Runtime -> Google Veo -> 真实媒体 Operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
-
     publicMarketIntelligenceDetail:
       "打开 Public Market Intelligence 公共边界并执行 Regression 验证",
 
     enterKey:
       "请输入 Founder Access Key",
-
     loginDescription:
       "仅限 AIOS Alpha Founder 访问。",
-
     keyPlaceholder:
       "输入 Founder Access Key",
-
     verifying: "验证中...",
-
     enterConsole:
       "进入 Founder Console",
-
     invalidKey:
       "请输入 Founder Access Key。",
-
     loadingFailed:
       "Founder Console 加载失败。",
-
     userNoMessage:
       "用户未填写文字反馈。",
 
@@ -488,171 +409,129 @@ const copy: Record<
     },
 
     localeDate: "zh-CN",
-
     release: "Release",
-
     environment: "环境",
-
     commit: "Commit",
-
     branchLabel: "Branch",
-
     workspace: "Workspace",
   },
 
   ja: {
     access: "PRIVATE FOUNDER ACCESS",
-
     title: "Founder Console",
-
     description:
       "AIOS Alpha の Runtime、フィードバック、デプロイ管理センター",
-
     logout: "ログアウト",
-
     refresh:
       "Founder データを更新",
-
     refreshing: "更新中...",
 
     allFeedback:
       "すべてのフィードバック",
-
     allFeedbackDetail:
       "ユーザーフィードバックを表示",
 
     bugs: "Bug",
-
     bugsDetail:
       "優先確認が必要",
 
     negative: "低評価",
-
     negativeDetail:
       "評価 1-2",
 
     positive: "高評価",
-
     positiveDetail:
       "評価 4-5",
 
     users:
       "フィードバックユーザー",
-
     usersDetail:
       "匿名ユーザー数",
 
     average: "平均評価",
-
     averageDetail:
       "5 点満点",
 
     runtime: "Runtime",
-
     online: "Online",
-
     runtimeDetail:
       "Runtime Status を開く",
 
     storage: "Storage",
 
     dashboard: "Dashboard",
-
     dashboardValue:
       "Operating Center",
-
     dashboardDetail:
       "現在の AIOS 稼働状態を確認",
 
     planner: "Planner",
-
     plannerValue: "Snapshot",
-
     plannerDetail:
       "現在のタスクと実行キューを確認",
 
     deploy: "Deploy",
-
     branch: "Branch",
 
     latestFeedback:
       "最新のユーザーフィードバック",
-
     latestFeedbackDescription:
       "新しいフィードバックがここに表示されます。Founder API のみが読み取れます。",
-
     viewAll: "すべて表示 ->",
-
     noFeedback:
       "グローバルフィードバックはまだありません。",
-
     anonymousUser:
       "匿名ユーザー",
 
     userWorkspace:
       "ユーザーワークスペース",
-
     userWorkspaceDetail:
       "ユーザーワークスペースを開く",
 
     taskCenter: "タスクセンター",
-
     taskCenterDetail:
       "現在のタスクと完了状況を確認",
 
     memoryCenter:
       "メモリーセンター",
-
     memoryCenterDetail:
       "現在の長期メモリーを確認",
 
     feedbackCenter:
       "フィードバックセンター",
-
     feedbackCenterDetail:
       "ユーザーフィードバックを検索、絞り込み、分析",
 
     githubIntegration:
       "GitHub エンジニアリング連携",
-
     githubIntegrationDetail:
       "Founder 専用リポジトリ接続とエンジニアリングアクセス",
 
     mediaExecution:
       "リアルメディア実行",
-
     mediaExecutionDetail:
       "Founder 専用の Veo ライブ検証を実行",
-
     mediaExecutionDescription:
       "Runtime -> Google Veo -> 実際の Media Operation",
 
     publicMarketIntelligence:
       "C147.21.1 Public Market Intelligence",
-
     publicMarketIntelligenceDetail:
       "Public Market Intelligence の公開境界と Regression を確認",
 
     enterKey:
       "Founder Access Key が必要です",
-
     loginDescription:
       "AIOS Alpha Founder のみアクセスできます。",
-
     keyPlaceholder:
       "Founder Access Key を入力",
-
     verifying: "確認中...",
-
     enterConsole:
       "Founder Console に入る",
-
     invalidKey:
       "Founder Access Key を入力してください。",
-
     loadingFailed:
       "Founder Console を読み込めませんでした。",
-
     userNoMessage:
       "文字フィードバックはありません。",
 
@@ -665,15 +544,10 @@ const copy: Record<
     },
 
     localeDate: "ja-JP",
-
     release: "Release",
-
     environment: "環境",
-
     commit: "Commit",
-
     branchLabel: "Branch",
-
     workspace: "Workspace",
   },
 };
@@ -1028,10 +902,10 @@ export default function FounderPage() {
             href="/founder/feedback?rating=1"
             icon="⚠️"
             label={t.negative}
-value={
-  overview?.feedback
-    ?.critical ?? 0
-}
+            value={
+              overview?.feedback
+                ?.critical ?? 0
+            }
             detail={
               t.negativeDetail
             }
