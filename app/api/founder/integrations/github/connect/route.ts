@@ -10,6 +10,7 @@ import {
 import {
   beginUserGitHubConnect,
   isUserGitHubConfigured,
+  setGitHubOAuthStateCookie,
 } from "@/lib/integrations/github/user-github";
 
 const FOUNDER_GITHUB_USER_ID =
@@ -69,52 +70,38 @@ export async function GET(
   }
 
   try {
+    const {
+      authorizationUrl,
+      stateCookieValue,
+    } =
+      beginUserGitHubConnect(
+        request,
+        FOUNDER_GITHUB_USER_ID,
+      );
+
     const response =
-      new NextResponse(
-        null,
+      NextResponse.json(
+        {
+          success: true,
+          authorizationUrl,
+        },
         {
           status: 200,
           headers: {
             "Cache-Control":
               "no-store",
-            "Content-Type":
-              "application/json",
             "X-AIOS-GitHub-OAuth":
               "ready",
           },
         },
       );
 
-    const authorizationUrl =
-      beginUserGitHubConnect(
-        request,
-        response,
-        FOUNDER_GITHUB_USER_ID,
-      );
-
-    response.body;
-
-    return new NextResponse(
-      JSON.stringify({
-        success: true,
-        authorizationUrl,
-      }),
-      {
-        status: 200,
-        headers: {
-          "Cache-Control":
-            "no-store",
-          "Content-Type":
-            "application/json",
-          "X-AIOS-GitHub-OAuth":
-            "ready",
-          "Set-Cookie":
-            response.headers.get(
-              "Set-Cookie",
-            ) || "",
-        },
-      },
+    setGitHubOAuthStateCookie(
+      response,
+      stateCookieValue,
     );
+
+    return response;
   } catch (
     error
   ) {
