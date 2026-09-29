@@ -1,9 +1,11 @@
 import "server-only";
 
+import type { NextRequest } from "next/server";
+
 import {
   getGitHubRepository,
-  githubBridgeStatus,
   readGitHubFile,
+  resolveGitHubBridgeAuth,
   writeGitHubFile,
 } from "@/lib/github/bridge";
 
@@ -16,7 +18,9 @@ import { assertC14113AutonomousSafetyBeforeWrite } from "./c141.13-safety-runtim
 
 import type { FounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
-export type GitHubTaskAction = "read" | "write";
+export type GitHubTaskAction =
+  | "read"
+  | "write";
 
 export interface GitHubTaskRequest {
   action: GitHubTaskAction;
@@ -26,6 +30,7 @@ export interface GitHubTaskRequest {
   content?: string;
   commitMessage?: string;
   contract: FounderDevelopmentContract;
+  request?: NextRequest;
 }
 
 export interface GitHubTaskResult {
@@ -49,14 +54,26 @@ export interface GitHubTaskResult {
   error?: string;
 }
 
-const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
-const DEFAULT_BRANCH = "main";
+const DEFAULT_REPOSITORY =
+  "Vivi9max/AIOS-Alpha";
 
-function normalizePath(path: string): string {
-  return path.trim().replace(/^\/+/, "");
+const DEFAULT_BRANCH =
+  "main";
+
+function normalizePath(
+  path: string,
+): string {
+  return path
+    .trim()
+    .replace(
+      /^\/+/,
+      "",
+    );
 }
 
-function isSafePath(path: string): boolean {
+function isSafePath(
+  path: string,
+): boolean {
   if (!path) {
     return false;
   }
@@ -69,17 +86,27 @@ function isSafePath(path: string): boolean {
     return false;
   }
 
-  if (path.includes("\\") || path.includes("\0")) {
+  if (
+    path.includes("\\") ||
+    path.includes("\0")
+  ) {
     return false;
   }
 
   return true;
 }
 
-function getRepository(repo?: string): string {
-  const repository = repo?.trim() || DEFAULT_REPOSITORY;
+function getRepository(
+  repo?: string,
+): string {
+  const repository =
+    repo?.trim() ||
+    DEFAULT_REPOSITORY;
 
-  if (repository !== DEFAULT_REPOSITORY) {
+  if (
+    repository !==
+    DEFAULT_REPOSITORY
+  ) {
     throw new Error(
       "Repository is outside the Founder GitHub development boundary.",
     );
@@ -88,10 +115,17 @@ function getRepository(repo?: string): string {
   return repository;
 }
 
-function getBranch(branch?: string): string {
-  const targetBranch = branch?.trim() || DEFAULT_BRANCH;
+function getBranch(
+  branch?: string,
+): string {
+  const targetBranch =
+    branch?.trim() ||
+    DEFAULT_BRANCH;
 
-  if (targetBranch !== DEFAULT_BRANCH) {
+  if (
+    targetBranch !==
+    DEFAULT_BRANCH
+  ) {
     throw new Error(
       "Branch is outside the Founder GitHub development boundary.",
     );
@@ -100,11 +134,20 @@ function getBranch(branch?: string): string {
   return targetBranch;
 }
 
-function assertSafeWritePath(path: string): void {
-  const normalizedPath = normalizePath(path);
+function assertSafeWritePath(
+  path: string,
+): void {
+  const normalizedPath =
+    normalizePath(path);
 
-  if (!isSafePath(normalizedPath)) {
-    throw new Error("Unsafe GitHub write path.");
+  if (
+    !isSafePath(
+      normalizedPath,
+    )
+  ) {
+    throw new Error(
+      "Unsafe GitHub write path.",
+    );
   }
 
   const blockedPaths = [
@@ -120,8 +163,11 @@ function assertSafeWritePath(path: string): void {
   if (
     blockedPaths.some(
       (blockedPath) =>
-        normalizedPath === blockedPath ||
-        normalizedPath.startsWith(blockedPath),
+        normalizedPath ===
+          blockedPath ||
+        normalizedPath.startsWith(
+          blockedPath,
+        ),
     )
   ) {
     throw new Error(
@@ -136,15 +182,21 @@ function enforceContract(
   branch: string,
   path: string,
 ): void {
-  const task: FounderContractTask = {
-    contract: request.contract,
-    action: request.action,
-    repo: repository,
+  const task:
+    FounderContractTask = {
+    contract:
+      request.contract,
+    action:
+      request.action,
+    repo:
+      repository,
     branch,
     path,
   };
 
-  enforceFounderContract(task);
+  enforceFounderContract(
+    task,
+  );
 }
 
 export async function dispatchGitHubTask(
@@ -154,16 +206,32 @@ export async function dispatchGitHubTask(
   let branch: string;
 
   try {
-    repository = getRepository(request.repo);
-    branch = getBranch(request.branch);
+    repository =
+      getRepository(
+        request.repo,
+      );
+
+    branch =
+      getBranch(
+        request.branch,
+      );
   } catch (error) {
     return {
       success: false,
-      action: request.action,
-      repository: request.repo?.trim() || DEFAULT_REPOSITORY,
-      branch: request.branch?.trim() || DEFAULT_BRANCH,
-      path: normalizePath(request.path),
-      code: "GITHUB_TARGET_REJECTED",
+      action:
+        request.action,
+      repository:
+        request.repo?.trim() ||
+        DEFAULT_REPOSITORY,
+      branch:
+        request.branch?.trim() ||
+        DEFAULT_BRANCH,
+      path:
+        normalizePath(
+          request.path,
+        ),
+      code:
+        "GITHUB_TARGET_REJECTED",
       error:
         error instanceof Error
           ? error.message
@@ -171,25 +239,28 @@ export async function dispatchGitHubTask(
     };
   }
 
-  const path = normalizePath(request.path);
+  const path =
+    normalizePath(
+      request.path,
+    );
 
-  if (!isSafePath(path)) {
+  if (
+    !isSafePath(path)
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "UNSAFE_GITHUB_PATH",
-      error: "Unsafe GitHub path.",
+      code:
+        "UNSAFE_GITHUB_PATH",
+      error:
+        "Unsafe GitHub path.",
     };
   }
 
-  /*
-   * Founder Contract Runtime Gate.
-   *
-   * Contract enforcement must happen before any GitHub I/O.
-   */
   try {
     enforceContract(
       request,
@@ -200,11 +271,13 @@ export async function dispatchGitHubTask(
   } catch (error) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "FOUNDER_CONTRACT_REJECTED",
+      code:
+        "FOUNDER_CONTRACT_REJECTED",
       error:
         error instanceof Error
           ? error.message
@@ -212,102 +285,128 @@ export async function dispatchGitHubTask(
     };
   }
 
-  /*
-   * The actual GitHub bridge remains the single source
-   * of GitHub authentication and API access.
-   */
-  const status = await githubBridgeStatus();
+  const auth =
+    await resolveGitHubBridgeAuth(
+      request.request,
+    );
 
-  if (!status.success) {
+  if (
+    !auth.accessToken
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "GITHUB_BRIDGE_UNAVAILABLE",
+      code:
+        "GITHUB_BRIDGE_UNAVAILABLE",
       error:
-        status.error ||
-        "GitHub authentication failed.",
+        "GitHub OAuth connection is not available and no legacy GitHub token fallback is configured.",
     };
   }
 
   const repositoryResult =
     await getGitHubRepository({
-      repo: repository,
+      repo:
+        repository,
+      accessToken:
+        auth.accessToken,
     });
 
-  if (!repositoryResult.success) {
+  if (
+    !repositoryResult.success
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "GITHUB_REPOSITORY_ACCESS_FAILED",
+      code:
+        "GITHUB_REPOSITORY_ACCESS_FAILED",
       error:
         repositoryResult.error ||
         "GitHub repository access failed.",
     };
   }
 
-  /*
-   * READ
-   */
-  if (request.action === "read") {
+  if (
+    request.action ===
+    "read"
+  ) {
     const result =
       await readGitHubFile({
-        repo: repository,
+        repo:
+          repository,
         path,
-        ref: branch,
+        ref:
+          branch,
+        accessToken:
+          auth.accessToken,
       });
 
-    if (!result.success || !result.data) {
+    if (
+      !result.success ||
+      !result.data
+    ) {
       const readError =
         "error" in result &&
-        typeof result.error === "string"
+        typeof result.error ===
+          "string"
           ? result.error
           : "GitHub read failed.";
 
       return {
         success: false,
-        action: request.action,
+        action:
+          request.action,
         repository,
         branch,
         path,
-        code: "GITHUB_READ_FAILED",
-        error: readError,
+        code:
+          "GITHUB_READ_FAILED",
+        error:
+          readError,
       };
     }
 
     return {
       success: true,
-      action: "read",
+      action:
+        "read",
       repository,
       branch,
       path,
-      code: "GITHUB_READ_SUCCESS",
+      code:
+        "GITHUB_READ_SUCCESS",
       read: {
-        sha: result.data.sha,
-        size: result.data.size,
-        content: result.data.content,
+        sha:
+          result.data.sha,
+        size:
+          result.data.size,
+        content:
+          result.data.content,
       },
     };
   }
 
-  /*
-   * WRITE
-   */
   try {
-    assertSafeWritePath(path);
+    assertSafeWritePath(
+      path,
+    );
   } catch (error) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "UNSAFE_GITHUB_WRITE_PATH",
+      code:
+        "UNSAFE_GITHUB_WRITE_PATH",
       error:
         error instanceof Error
           ? error.message
@@ -315,75 +414,89 @@ export async function dispatchGitHubTask(
     };
   }
 
-  if (typeof request.content !== "string") {
+  if (
+    typeof request.content !==
+    "string"
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "WRITE_CONTENT_REQUIRED",
-      error: "Write content is required.",
+      code:
+        "WRITE_CONTENT_REQUIRED",
+      error:
+        "Write content is required.",
     };
   }
 
-  if (request.content.length > 200_000) {
+  if (
+    request.content.length >
+    200_000
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "WRITE_PAYLOAD_TOO_LARGE",
+      code:
+        "WRITE_PAYLOAD_TOO_LARGE",
       error:
         "Autonomous write payload exceeds the 200000 character limit.",
     };
   }
 
-  /*
-   * Read existing content first.
-   *
-   * This establishes the pre-write state and obtains
-   * the SHA required by GitHub for an update.
-   */
   const existing =
     await readGitHubFile({
-      repo: repository,
+      repo:
+        repository,
       path,
-      ref: branch,
+      ref:
+        branch,
+      accessToken:
+        auth.accessToken,
     });
 
-  /*
-   * C141.13 Autonomous Safety Runtime Gate.
-   *
-   * This gate must execute before writeGitHubFile.
-   */
   const safetyCheck =
-    await assertC14113AutonomousSafetyBeforeWrite({
-      request,
-      repository,
-      branch,
-      path,
-      existingFileSha:
-        existing.success && existing.data
-          ? existing.data.sha
-          : undefined,
-      existingContent:
-        existing.success && existing.data
-          ? existing.data.content
-          : undefined,
-      contract: request.contract,
-    });
+    await assertC14113AutonomousSafetyBeforeWrite(
+      {
+        request,
+        repository,
+        branch,
+        path,
+        existingFileSha:
+          existing.success &&
+          existing.data
+            ? existing.data.sha
+            : undefined,
+        existingContent:
+          existing.success &&
+          existing.data
+            ? existing.data.content
+            : undefined,
+        contract:
+          request.contract,
+      },
+    );
 
-  if (!safetyCheck.allowed) {
+  if (
+    !safetyCheck.allowed
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "AUTONOMOUS_SAFETY_GATE_DENIED",
-      error: safetyCheck.reason,
+      code:
+        "AUTONOMOUS_SAFETY_GATE_DENIED",
+      error:
+        safetyCheck.reason,
     };
   }
 
@@ -391,108 +504,138 @@ export async function dispatchGitHubTask(
     request.commitMessage?.trim() ||
     "feat(C141.10): founder contract governed GitHub write";
 
-  /*
-   * Real GitHub write.
-   */
   const write =
     await writeGitHubFile({
-      repo: repository,
+      repo:
+        repository,
       path,
-      content: request.content,
-      message: commitMessage,
+      content:
+        request.content,
+      message:
+        commitMessage,
       branch,
       sha:
-        existing.success && existing.data
+        existing.success &&
+        existing.data
           ? existing.data.sha
           : undefined,
+      accessToken:
+        auth.accessToken,
     });
 
-  if (!write.success || !write.data) {
+  if (
+    !write.success ||
+    !write.data
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "GITHUB_WRITE_FAILED",
+      code:
+        "GITHUB_WRITE_FAILED",
       error:
         write.error ||
         "GitHub write failed.",
     };
   }
 
-  const commitSha = write.data.commit.sha;
-  const commitUrl = write.data.commit.html_url;
-  const contentSha = write.data.content?.sha;
+  const commitSha =
+    write.data.commit.sha;
 
-  /*
-   * REAL READBACK VERIFICATION.
-   *
-   * Do not report a verified write until the file is
-   * read again from the target branch and its content matches.
-   */
+  const commitUrl =
+    write.data.commit.html_url;
+
+  const contentSha =
+    write.data.content?.sha;
+
   const readback =
-  await readGitHubFile({
-    repo: repository,
-    path,
-    ref: commitSha,
-  });
+    await readGitHubFile({
+      repo:
+        repository,
+      path,
+      ref:
+        commitSha,
+      accessToken:
+        auth.accessToken,
+    });
 
-  if (!readback.success || !readback.data) {
+  if (
+    !readback.success ||
+    !readback.data
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "READBACK_VERIFICATION_FAILED",
+      code:
+        "READBACK_VERIFICATION_FAILED",
       error:
         "GitHub write succeeded, but readback verification failed.",
       write: {
-        sha: contentSha,
+        sha:
+          contentSha,
         commitSha,
         commitUrl,
-        readbackVerified: false,
+        readbackVerified:
+          false,
       },
     };
   }
 
   const readbackContent =
-    typeof readback.data.content === "string"
+    typeof readback.data.content ===
+    "string"
       ? readback.data.content
       : undefined;
 
-  if (readbackContent !== request.content) {
+  if (
+    readbackContent !==
+    request.content
+  ) {
     return {
       success: false,
-      action: request.action,
+      action:
+        request.action,
       repository,
       branch,
       path,
-      code: "READBACK_CONTENT_MISMATCH",
+      code:
+        "READBACK_CONTENT_MISMATCH",
       error:
         "GitHub write succeeded, but readback content does not match the requested content.",
       write: {
-        sha: contentSha,
+        sha:
+          contentSha,
         commitSha,
         commitUrl,
-        readbackVerified: false,
+        readbackVerified:
+          false,
       },
     };
   }
 
   return {
     success: true,
-    action: "write",
+    action:
+      "write",
     repository,
     branch,
     path,
-    code: "GITHUB_WRITE_VERIFIED",
+    code:
+      "GITHUB_WRITE_VERIFIED",
     write: {
-      sha: contentSha,
+      sha:
+        contentSha,
       commitSha,
       commitUrl,
-      readbackVerified: true,
+      readbackVerified:
+        true,
     },
   };
 }
