@@ -2,15 +2,20 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
 import {
   completeUserGitHubConnect,
 } from "@/lib/integrations/github/user-github";
+
 const FOUNDER_GITHUB_USER_ID =
   "founder:aios-alpha";
+
 export const dynamic =
   "force-dynamic";
+
 export const runtime =
   "nodejs";
+
 function redirectToFounder(
   request: NextRequest,
   params: Record<string, string>,
@@ -20,6 +25,7 @@ function redirectToFounder(
       "/founder/integrations/github",
       request.url,
     );
+
   for (
     const [key, value] of
     Object.entries(params)
@@ -29,6 +35,7 @@ function redirectToFounder(
       value,
     );
   }
+
   return NextResponse.redirect(
     url,
     {
@@ -40,6 +47,7 @@ function redirectToFounder(
     },
   );
 }
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -47,18 +55,22 @@ export async function GET(
     request.nextUrl.searchParams.get(
       "code",
     );
+
   const state =
     request.nextUrl.searchParams.get(
       "state",
     );
+
   const error =
     request.nextUrl.searchParams.get(
       "error",
     );
+
   const errorDescription =
     request.nextUrl.searchParams.get(
       "error_description",
     );
+
   if (error) {
     return redirectToFounder(
       request,
@@ -71,6 +83,7 @@ export async function GET(
       },
     );
   }
+
   if (
     !code ||
     !state
@@ -85,6 +98,7 @@ export async function GET(
       },
     );
   }
+
   const response =
     NextResponse.redirect(
       new URL(
@@ -99,6 +113,7 @@ export async function GET(
         },
       },
     );
+
   const result =
     await completeUserGitHubConnect(
       request,
@@ -107,6 +122,7 @@ export async function GET(
       state,
       FOUNDER_GITHUB_USER_ID,
     );
+
   if (
     !result.success
   ) {
@@ -120,6 +136,7 @@ export async function GET(
       },
     );
   }
+
   if (
     result.connection.userId !==
     FOUNDER_GITHUB_USER_ID
@@ -134,5 +151,6 @@ export async function GET(
       },
     );
   }
+
   return response;
 }
