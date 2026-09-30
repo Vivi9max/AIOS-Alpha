@@ -8,6 +8,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import type { CSSProperties } from "react";
 
 interface ExecutionTask {
   id: string;
@@ -77,6 +78,7 @@ type ExecutionAction =
 
 export default function OutcomeExecutionCenter() {
   const { t } = useLanguage();
+
   const [
     data,
     setData,
@@ -728,7 +730,7 @@ function clampProgress(
 
 function taskStatusDotStyle(
   status: ExecutionTask["status"]
-): React.CSSProperties {
+): CSSProperties {
   const background =
     status === "done"
       ? "#22c55e"
@@ -750,7 +752,7 @@ function taskStatusDotStyle(
   };
 }
 
-const panelStyle: React.CSSProperties = {
+const panelStyle: CSSProperties = {
   marginBottom: 24,
   padding: 20,
   border:
@@ -763,7 +765,7 @@ const panelStyle: React.CSSProperties = {
   color: "#f8fafc",
 };
 
-const headerStyle: React.CSSProperties = {
+const headerStyle: CSSProperties = {
   display: "flex",
   justifyContent:
     "space-between",
@@ -773,7 +775,7 @@ const headerStyle: React.CSSProperties = {
   marginBottom: 18,
 };
 
-const eyebrowStyle: React.CSSProperties = {
+const eyebrowStyle: CSSProperties = {
   margin: 0,
   color: "#60a5fa",
   fontSize: 11,
@@ -781,27 +783,27 @@ const eyebrowStyle: React.CSSProperties = {
   letterSpacing: "0.14em",
 };
 
-const titleStyle: React.CSSProperties = {
+const titleStyle: CSSProperties = {
   margin: "7px 0 0",
   fontSize: 24,
   lineHeight: 1.25,
 };
 
-const subtitleStyle: React.CSSProperties = {
+const subtitleStyle: CSSProperties = {
   margin: "8px 0 0",
   maxWidth: 620,
   color: "#94a3b8",
   lineHeight: 1.6,
 };
 
-const headerActionsStyle: React.CSSProperties = {
+const headerActionsStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 9,
   flexWrap: "wrap",
 };
 
-const refreshButtonStyle: React.CSSProperties = {
+const refreshButtonStyle: CSSProperties = {
   minHeight: 40,
   padding: "0 14px",
   border:
@@ -814,7 +816,7 @@ const refreshButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const outcomeLinkStyle: React.CSSProperties = {
+const outcomeLinkStyle: CSSProperties = {
   minHeight: 40,
   display: "inline-flex",
   alignItems: "center",
@@ -827,7 +829,7 @@ const outcomeLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
-const outcomeCardStyle: React.CSSProperties = {
+const outcomeCardStyle: CSSProperties = {
   padding: 18,
   border:
     "1px solid rgba(148, 163, 184, 0.18)",
@@ -836,7 +838,7 @@ const outcomeCardStyle: React.CSSProperties = {
     "rgba(255,255,255,0.04)",
 };
 
-const outcomeTopStyle: React.CSSProperties = {
+const outcomeTopStyle: CSSProperties = {
   display: "flex",
   justifyContent:
     "space-between",
@@ -844,13 +846,13 @@ const outcomeTopStyle: React.CSSProperties = {
   gap: 16,
 };
 
-const badgeRowStyle: React.CSSProperties = {
+const badgeRowStyle: CSSProperties = {
   display: "flex",
   gap: 7,
   flexWrap: "wrap",
 };
 
-const activeBadgeStyle: React.CSSProperties = {
+const activeBadgeStyle: CSSProperties = {
   padding: "5px 9px",
   borderRadius: 999,
   background:
@@ -860,7 +862,7 @@ const activeBadgeStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
-const priorityBadgeStyle: React.CSSProperties = {
+const priorityBadgeStyle: CSSProperties = {
   padding: "5px 9px",
   borderRadius: 999,
   background:
@@ -870,18 +872,18 @@ const priorityBadgeStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
-const outcomeTitleStyle: React.CSSProperties = {
+const outcomeTitleStyle: CSSProperties = {
   margin: "10px 0 0",
   fontSize: 21,
   lineHeight: 1.35,
 };
 
-const progressValueStyle: React.CSSProperties = {
+const progressValueStyle: CSSProperties = {
   color: "#93c5fd",
   fontSize: 24,
 };
 
-const progressTrackStyle: React.CSSProperties = {
+const progressTrackStyle: CSSProperties = {
   height: 9,
   marginTop: 17,
   overflow: "hidden",
@@ -890,7 +892,7 @@ const progressTrackStyle: React.CSSProperties = {
     "rgba(148, 163, 184, 0.15)",
 };
 
-const progressBarStyle: React.CSSProperties = {
+const progressBarStyle: CSSProperties = {
   display: "block",
   height: "100%",
   borderRadius: 999,
@@ -899,7 +901,7 @@ const progressBarStyle: React.CSSProperties = {
   transition: "width 300ms ease",
 };
 
-const metricGridStyle: React.CSSProperties = {
+const metricGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns:
     "repeat(auto-fit, minmax(110px, 1fr))",
@@ -907,26 +909,26 @@ const metricGridStyle: React.CSSProperties = {
   marginTop: 16,
 };
 
-const metricCardStyle: React.CSSProperties = {
+const metricCardStyle: CSSProperties = {
   padding: 12,
   borderRadius: 14,
   background:
     "rgba(15, 23, 42, 0.48)",
 };
 
-const metricValueStyle: React.CSSProperties = {
+const metricValueStyle: CSSProperties = {
   display: "block",
   fontSize: 20,
 };
 
-const metricLabelStyle: React.CSSProperties = {
+const metricLabelStyle: CSSProperties = {
   display: "block",
   marginTop: 4,
   color: "#94a3b8",
   fontSize: 12,
 };
 
-const nextActionStyle: React.CSSProperties = {
+const nextActionStyle: CSSProperties = {
   display: "flex",
   justifyContent:
     "space-between",
@@ -942,7 +944,7 @@ const nextActionStyle: React.CSSProperties = {
     "linear-gradient(135deg, rgba(37, 99, 235, 0.17), rgba(14, 165, 233, 0.07))",
 };
 
-const cardEyebrowStyle: React.CSSProperties = {
+const cardEyebrowStyle: CSSProperties = {
   margin: 0,
   color: "#60a5fa",
   fontSize: 11,
@@ -950,19 +952,19 @@ const cardEyebrowStyle: React.CSSProperties = {
   letterSpacing: "0.12em",
 };
 
-const nextActionTitleStyle: React.CSSProperties = {
+const nextActionTitleStyle: CSSProperties = {
   margin: "7px 0 0",
   fontSize: 20,
 };
 
-const nextActionTextStyle: React.CSSProperties = {
+const nextActionTextStyle: CSSProperties = {
   margin: "7px 0 0",
   maxWidth: 680,
   color: "#cbd5e1",
   lineHeight: 1.55,
 };
 
-const milestoneStyle: React.CSSProperties = {
+const milestoneStyle: CSSProperties = {
   display: "flex",
   gap: 8,
   flexWrap: "wrap",
@@ -971,13 +973,13 @@ const milestoneStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
-const nextButtonsStyle: React.CSSProperties = {
+const nextButtonsStyle: CSSProperties = {
   display: "flex",
   gap: 9,
   flexWrap: "wrap",
 };
 
-const startButtonStyle: React.CSSProperties = {
+const startButtonStyle: CSSProperties = {
   minHeight: 44,
   display: "inline-flex",
   justifyContent: "center",
@@ -992,7 +994,7 @@ const startButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const completeButtonStyle: React.CSSProperties = {
+const completeButtonStyle: CSSProperties = {
   minHeight: 44,
   padding: "0 17px",
   border:
@@ -1005,7 +1007,7 @@ const completeButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const queueGridStyle: React.CSSProperties = {
+const queueGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns:
     "repeat(auto-fit, minmax(230px, 1fr))",
@@ -1013,7 +1015,7 @@ const queueGridStyle: React.CSSProperties = {
   marginTop: 14,
 };
 
-const queueColumnStyle: React.CSSProperties = {
+const queueColumnStyle: CSSProperties = {
   minWidth: 0,
   padding: 14,
   border:
@@ -1023,7 +1025,7 @@ const queueColumnStyle: React.CSSProperties = {
     "rgba(255,255,255,0.025)",
 };
 
-const queueHeaderStyle: React.CSSProperties = {
+const queueHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent:
     "space-between",
@@ -1031,7 +1033,7 @@ const queueHeaderStyle: React.CSSProperties = {
   gap: 10,
 };
 
-const queueCountStyle: React.CSSProperties = {
+const queueCountStyle: CSSProperties = {
   minWidth: 25,
   padding: "3px 7px",
   borderRadius: 999,
@@ -1042,13 +1044,13 @@ const queueCountStyle: React.CSSProperties = {
   fontSize: 11,
 };
 
-const taskListStyle: React.CSSProperties = {
+const taskListStyle: CSSProperties = {
   display: "grid",
   gap: 8,
   marginTop: 12,
 };
 
-const taskCardStyle: React.CSSProperties = {
+const taskCardStyle: CSSProperties = {
   display: "flex",
   gap: 10,
   padding: 11,
@@ -1057,21 +1059,21 @@ const taskCardStyle: React.CSSProperties = {
     "rgba(15, 23, 42, 0.52)",
 };
 
-const taskTitleStyle: React.CSSProperties = {
+const taskTitleStyle: CSSProperties = {
   display: "block",
   color: "#f8fafc",
   fontSize: 13,
   lineHeight: 1.45,
 };
 
-const taskDescriptionStyle: React.CSSProperties = {
+const taskDescriptionStyle: CSSProperties = {
   margin: "5px 0 0",
   color: "#94a3b8",
   fontSize: 12,
   lineHeight: 1.45,
 };
 
-const queueEmptyStyle: React.CSSProperties = {
+const queueEmptyStyle: CSSProperties = {
   margin: 0,
   padding: "13px 4px",
   color: "#64748b",
@@ -1079,37 +1081,37 @@ const queueEmptyStyle: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-const emptyStyle: React.CSSProperties = {
+const emptyStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 15,
   flexWrap: "wrap",
 };
 
-const emptyIconStyle: React.CSSProperties = {
+const emptyIconStyle: CSSProperties = {
   fontSize: 32,
 };
 
-const emptyTitleStyle: React.CSSProperties = {
+const emptyTitleStyle: CSSProperties = {
   margin: "5px 0 0",
   fontSize: 20,
 };
 
-const emptyTextStyle: React.CSSProperties = {
+const emptyTextStyle: CSSProperties = {
   margin: "7px 0 0",
   maxWidth: 600,
   color: "#94a3b8",
   lineHeight: 1.55,
 };
 
-const emptyActionsStyle: React.CSSProperties = {
+const emptyActionsStyle: CSSProperties = {
   display: "flex",
   gap: 8,
   flexWrap: "wrap",
   marginLeft: "auto",
 };
 
-const primaryLinkStyle: React.CSSProperties = {
+const primaryLinkStyle: CSSProperties = {
   minHeight: 42,
   display: "inline-flex",
   alignItems: "center",
@@ -1121,7 +1123,7 @@ const primaryLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   minHeight: 42,
   padding: "0 15px",
   border:
@@ -1134,7 +1136,7 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const messageStyle: React.CSSProperties = {
+const messageStyle: CSSProperties = {
   margin: "13px 0 0",
   padding: "10px 12px",
   borderRadius: 12,
@@ -1145,13 +1147,13 @@ const messageStyle: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-const loadingStyle: React.CSSProperties = {
+const loadingStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 13,
 };
 
-const pulseStyle: React.CSSProperties = {
+const pulseStyle: CSSProperties = {
   width: 13,
   height: 13,
   borderRadius: 999,
@@ -1160,7 +1162,7 @@ const pulseStyle: React.CSSProperties = {
     "0 0 0 7px rgba(59, 130, 246, 0.12)",
 };
 
-const mutedTextStyle: React.CSSProperties = {
+const mutedTextStyle: CSSProperties = {
   margin: "5px 0 0",
   color: "#94a3b8",
   fontSize: 13,
