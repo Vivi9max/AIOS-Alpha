@@ -1,5 +1,6 @@
 import "server-only";
 
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 
 import { isFounderConfigured, isFounderRequest } from "@/lib/founder/auth";
@@ -21,6 +22,7 @@ import { createFounderDevelopmentContract } from "@/lib/github/founder-developme
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 800;
 
 const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const DEFAULT_BRANCH = "main";
@@ -28,7 +30,9 @@ const DEFAULT_BRANCH = "main";
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
     status,
-    headers: { "Cache-Control": "no-store" },
+    headers: {
+      "Cache-Control": "no-store",
+    },
   });
 }
 
@@ -65,7 +69,9 @@ function requireFounder(
     };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+  };
 }
 
 function createContract(input: {
@@ -86,41 +92,78 @@ function createContract(input: {
 
 export async function GET(request: NextRequest) {
   const auth = requireFounder(request);
-  if (!auth.ok) return auth.response;
+
+  if (!auth.ok) {
+    return auth.response;
+  }
 
   const taskId = request.nextUrl.searchParams.get("taskId");
+  const objective = request.nextUrl.searchParams.get("objective");
 
   if (taskId) {
     const task = getAutonomousDevelopmentTask(taskId);
 
     if (!task) {
       return json(
-        { ok: false, code: "TASK_NOT_FOUND" },
+        {
+          ok: false,
+          code: "TASK_NOT_FOUND",
+        },
         404,
       );
     }
 
-    return json({ ok: true, task });
+    return json({
+      ok: true,
+      task,
+    });
+  }
+
+  const tasks = listAutonomousDevelopmentTasks();
+
+  if (objective?.trim()) {
+    const matchingTasks = tasks
+      .filter(
+        (task) =>
+          task.objective.trim() === objective.trim(),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() -
+          new Date(a.createdAt).getTime(),
+      );
+
+    return json({
+      ok: true,
+      repository: DEFAULT_REPOSITORY,
+      branch: DEFAULT_BRANCH,
+      tasks: matchingTasks,
+    });
   }
 
   return json({
     ok: true,
     repository: DEFAULT_REPOSITORY,
     branch: DEFAULT_BRANCH,
-    tasks: listAutonomousDevelopmentTasks(),
+    tasks,
   });
 }
 
 export async function POST(request: NextRequest) {
   const auth = requireFounder(request);
-  if (!auth.ok) return auth.response;
+
+  if (!auth.ok) {
+    return auth.response;
+  }
 
   try {
     const body = await request.json();
     const action = body?.action;
 
     if (action === "autonomous") {
-      const objective = String(body?.objective ?? "").trim();
+      const objective = String(
+        body?.objective ?? "",
+      ).trim();
 
       if (!objective) {
         return json(
@@ -133,16 +176,29 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await executeAutonomousDevelopmentAgent({
-        objective,
+      after(async () => {
+        try {
+          await executeAutonomousDevelopmentAgent({
+            objective,
+          });
+        } catch {
+          return;
+        }
       });
 
       return json(
         {
-          ok: result.success,
-          ...result,
+          ok: true,
+          success: true,
+          code: "AUTONOMOUS_DEVELOPMENT_STARTED",
+          repository: DEFAULT_REPOSITORY,
+          branch: DEFAULT_BRANCH,
+          objective,
+          status: "running",
+          message:
+            "Autonomous development started. The AIOS agent is running in the background.",
         },
-        result.success ? 200 : 409,
+        202,
       );
     }
 
@@ -155,7 +211,11 @@ export async function POST(request: NextRequest) {
       });
 
       return json(
-        { ok: true, action, task },
+        {
+          ok: true,
+          action,
+          task,
+        },
         201,
       );
     }
@@ -165,11 +225,16 @@ export async function POST(request: NextRequest) {
         String(body?.taskId ?? ""),
       );
 
-      return json({ ok: true, action, task });
+      return json({
+        ok: true,
+        action,
+        task,
+      });
     }
 
     if (action === "dispatch-planner") {
-      const dispatch = await dispatchNextPlannerDevelopmentTask();
+      const dispatch =
+        await dispatchNextPlannerDevelopmentTask();
 
       return json(
         {
@@ -177,16 +242,26 @@ export async function POST(request: NextRequest) {
           action,
           ...dispatch,
         },
-        dispatch.eligibility === "blocked" ? 409 : 200,
+        dispatch.eligibility === "blocked"
+          ? 409
+          : 200,
       );
     }
 
     if (action === "execute-planner") {
-      const dispatch = await dispatchNextPlannerDevelopmentTask();
+      const dispatch =
+        await dispatchNextPlannerDevelopmentTask();
 
-      if (!dispatch.success || !dispatch.autonomousTask?.id) {
+      if (
+        !dispatch.success ||
+        !dispatch.autonomousTask?.id
+      ) {
         return json(
-          { ok: false, action, ...dispatch },
+          {
+            ok: false,
+            action,
+            ...dispatch,
+          },
           409,
         );
       }
@@ -208,24 +283,39 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "execute") {
-      const objective = String(body?.objective ?? "").trim();
-      const path = String(body?.path ?? "").trim();
-      const content =
-        typeof body?.content === "string" ? body.content : null;
+      const objective = String(
+        body?.objective ?? "",
+      ).trim();
 
-      if (!objective || !path || content === null) {
+      const path = String(
+        body?.path ?? "",
+      ).trim();
+
+      const content =
+        typeof body?.content === "string"
+          ? body.content
+          : null;
+
+      if (
+        !objective ||
+        !path ||
+        content === null
+      ) {
         return json(
           {
             ok: false,
             code: "EXECUTE_INPUT_REQUIRED",
-            error: "objective, path and content are required.",
+            error:
+              "objective, path and content are required.",
           },
           400,
         );
       }
 
       const commitMessage =
-        String(body?.commitMessage ?? "").trim() ||
+        String(
+          body?.commitMessage ?? "",
+        ).trim() ||
         "feat(C167.12): founder autonomous development";
 
       const contract = createContract({
@@ -234,16 +324,17 @@ export async function POST(request: NextRequest) {
         commitMessage,
       });
 
-      const result = await dispatchGitHubTask({
-        action: "write",
-        repo: DEFAULT_REPOSITORY,
-        branch: DEFAULT_BRANCH,
-        path,
-        content,
-        commitMessage,
-        contract,
-        request,
-      });
+      const result =
+        await dispatchGitHubTask({
+          action: "write",
+          repo: DEFAULT_REPOSITORY,
+          branch: DEFAULT_BRANCH,
+          path,
+          content,
+          commitMessage,
+          contract,
+          request,
+        });
 
       return json(
         {
@@ -255,30 +346,45 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "complete") {
-      const receipt = completeAutonomousDevelopmentTask(
-        String(body?.taskId ?? ""),
-        {
-          commitSha: String(body?.commitSha ?? ""),
-          readbackVerified: body?.readbackVerified === true,
-          verificationPassed: body?.verificationPassed === true,
-        },
-      );
+      const receipt =
+        completeAutonomousDevelopmentTask(
+          String(body?.taskId ?? ""),
+          {
+            commitSha: String(
+              body?.commitSha ?? "",
+            ),
+            readbackVerified:
+              body?.readbackVerified === true,
+            verificationPassed:
+              body?.verificationPassed === true,
+          },
+        );
 
       return json({
-        ok: receipt.status === "completed",
+        ok:
+          receipt.status ===
+          "completed",
         action,
         receipt,
       });
     }
 
     if (action === "block") {
-      const receipt = blockAutonomousDevelopmentTask(
-        String(body?.taskId ?? ""),
-        String(body?.reason ?? "Blocked by Founder."),
-      );
+      const receipt =
+        blockAutonomousDevelopmentTask(
+          String(body?.taskId ?? ""),
+          String(
+            body?.reason ??
+              "Blocked by Founder.",
+          ),
+        );
 
       return json(
-        { ok: false, action, receipt },
+        {
+          ok: false,
+          action,
+          receipt,
+        },
         409,
       );
     }
@@ -287,7 +393,8 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         code: "UNKNOWN_ACTION",
-        error: "Unsupported autonomous development action.",
+        error:
+          "Unsupported autonomous development action.",
         allowedActions: [
           "autonomous",
           "create",
@@ -305,7 +412,8 @@ export async function POST(request: NextRequest) {
     return json(
       {
         ok: false,
-        code: "AUTONOMOUS_DEVELOPMENT_REQUEST_FAILED",
+        code:
+          "AUTONOMOUS_DEVELOPMENT_REQUEST_FAILED",
         error:
           error instanceof Error
             ? error.message
