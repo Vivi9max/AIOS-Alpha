@@ -39,23 +39,16 @@ export default function WorkspaceShell({
   ] = useState(false);
 
   const closeMenu =
-    useCallback(
-      () => {
-        setMenuOpen(false);
-      },
-      [],
-    );
+    useCallback(() => {
+      setMenuOpen(false);
+    }, []);
 
   const toggleMenu =
-    useCallback(
-      () => {
-        setMenuOpen(
-          (current) =>
-            !current,
-        );
-      },
-      [],
-    );
+    useCallback(() => {
+      setMenuOpen(
+        (current) => !current,
+      );
+    }, []);
 
   useEffect(() => {
     closeMenu();
@@ -123,9 +116,6 @@ export default function WorkspaceShell({
               ? "aios-sidebar-container is-open"
               : "aios-sidebar-container"
           }
-          aria-hidden={
-            !menuOpen
-          }
         >
           <Sidebar />
         </aside>
@@ -147,7 +137,7 @@ export default function WorkspaceShell({
             menuOpen
               ? 0
               : -1
-          }
+        }
         />
 
         <main
