@@ -1,6 +1,6 @@
 import "server-only";
 
-import { runBrain } from "@/lib/brain";
+import { chat } from "@/lib/ai";
 import { listGitHubPath, readGitHubFile } from "@/lib/github/bridge";
 import {
   blockAutonomousDevelopmentTask,
@@ -10,7 +10,10 @@ import {
 } from "@/lib/github/autonomous-development-control-plane";
 import { dispatchGitHubTask } from "@/lib/github/task-dispatch";
 import { createFounderDevelopmentContract } from "@/lib/github/founder-development-contract";
-import { verifyVercelBuildForCommit, type VercelBuildVerificationResult } from "@/lib/github/autonomous-build-verification";
+import {
+  verifyVercelBuildForCommit,
+  type VercelBuildVerificationResult,
+} from "@/lib/github/autonomous-build-verification";
 
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
@@ -79,108 +82,400 @@ const REPAIR_SYSTEM_PROMPT = [
   "每个文件严格使用 AIOS_FILE_BEGIN / PATH / CONTENT_BEGIN / CONTENT_END / AIOS_FILE_END。",
 ].join("\n");
 
+async function runAutonomousBrain(input: {
+  prompt: string;
+  systemPrompt: string;
+}): Promise<{
+  success: boolean;
+  content: string;
+  error?: string;
+}> {
+  return chat(input.prompt, {
+    systemPrompt: input.systemPrompt,
+    historyLimit: 0,
+  });
+}
+
 function normalizePath(value: string): string {
   return value.trim().replace(/^\/+/, "").replace(/\\+/g, "/");
 }
 
 function isSafePath(path: string): boolean {
   const normalized = normalizePath(path);
-  if (!normalized || normalized.includes("..") || normalized.includes("\0")) return false;
-  if (normalized.startsWith(".git/") || normalized.startsWith(".env") || normalized.startsWith(".github/")) return false;
-  if (["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "vercel.json"].includes(normalized)) return false;
-  return ["app", "components", "docs", "lib", "scripts", "tests", "test", "public", "styles"].some(
-    (root) => normalized === root || normalized.startsWith(`${root}/`),
+
+  if (
+    !normalized ||
+    normalized.includes("..") ||
+    normalized.includes("\0")
+  ) {
+    return false;
+  }
+
+  if (
+    normalized.startsWith(".git/") ||
+    normalized.startsWith(".env") ||
+    normalized.startsWith(".github/")
+  ) {
+    return false;
+  }
+
+  if (
+    [
+      "package.json",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "vercel.json",
+    ].includes(normalized)
+  ) {
+    return false;
+  }
+
+  return [
+    "app",
+    "components",
+    "docs",
+    "lib",
+    "scripts",
+    "tests",
+    "test",
+    "public",
+    "styles",
+  ].some(
+    (root) =>
+      normalized === root ||
+      normalized.startsWith(`${root}/`),
   );
 }
 
 function objectiveTokens(objective: string): string[] {
-  return Array.from(new Set(objective.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff/_-]+/gi, " ").split(/\s+/).filter((token) => token.length >= 2)));
+  return Array.from(
+    new Set(
+      objective
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9\u4e00-\u9fff/_-]+/gi,
+          " ",
+        )
+        .split(/\s+/)
+        .filter(
+          (token) => token.length >= 2,
+        ),
+    ),
+  );
 }
 
-function scorePath(path: string, tokens: string[]): number {
+function scorePath(
+  path: string,
+  tokens: string[],
+): number {
   const lower = path.toLowerCase();
   let score = 0;
-  for (const token of tokens) if (lower.includes(token)) score += 5;
-  if (/page\.(tsx|ts)$/.test(lower)) score += 2;
-  if (/route\.(tsx|ts)$/.test(lower)) score += 2;
-  if (/types?\.(tsx|ts)$/.test(lower)) score += 2;
-  if (/index\.(tsx|ts)$/.test(lower)) score += 1;
-  return score;
-}
 
-async function discoverRepositoryPaths(objective: string): Promise<string[]> {
-  const roots = ["app", "components", "docs", "lib", "scripts", "tests", "test", "public", "styles"];
-  const queue: Array<{ path: string; depth: number }> = roots.map((root) => ({ path: root, depth: 0 }));
-  const discovered = new Set<string>();
-
-  while (queue.length && discovered.size < MAX_DISCOVERY_ENTRIES) {
-    const current = queue.shift();
-    if (!current) break;
-    const result = await listGitHubPath({ repo: REPOSITORY, path: current.path, ref: BRANCH });
-    if (!result.success || !result.data) continue;
-    for (const entry of result.data) {
-      if (discovered.size >= MAX_DISCOVERY_ENTRIES) break;
-      const path = normalizePath(entry.path);
-      if (!isSafePath(path)) continue;
-      if (entry.type === "dir") {
-        if (current.depth < 3) queue.push({ path, depth: current.depth + 1 });
-        continue;
-      }
-      if (entry.type === "file") discovered.add(path);
+  for (const token of tokens) {
+    if (lower.includes(token)) {
+      score += 5;
     }
   }
 
-  const tokens = objectiveTokens(objective);
-  return Array.from(discovered).sort((a, b) => scorePath(b, tokens) - scorePath(a, tokens) || a.localeCompare(b));
+  if (/page\.(tsx|ts)$/.test(lower)) {
+    score += 2;
+  }
+
+  if (/route\.(tsx|ts)$/.test(lower)) {
+    score += 2;
+  }
+
+  if (/types?\.(tsx|ts)$/.test(lower)) {
+    score += 2;
+  }
+
+  if (/index\.(tsx|ts)$/.test(lower)) {
+    score += 1;
+  }
+
+  return score;
 }
 
-async function readContext(paths: string[]): Promise<Array<{ path: string; content: string; sha?: string }>> {
-  const context: Array<{ path: string; content: string; sha?: string }> = [];
+async function discoverRepositoryPaths(
+  objective: string,
+): Promise<string[]> {
+  const roots = [
+    "app",
+    "components",
+    "docs",
+    "lib",
+    "scripts",
+    "tests",
+    "test",
+    "public",
+    "styles",
+  ];
+
+  const queue: Array<{
+    path: string;
+    depth: number;
+  }> = roots.map((root) => ({
+    path: root,
+    depth: 0,
+  }));
+
+  const discovered = new Set<string>();
+
+  while (
+    queue.length &&
+    discovered.size < MAX_DISCOVERY_ENTRIES
+  ) {
+    const current = queue.shift();
+
+    if (!current) {
+      break;
+    }
+
+    const result = await listGitHubPath({
+      repo: REPOSITORY,
+      path: current.path,
+      ref: BRANCH,
+    });
+
+    if (!result.success || !result.data) {
+      continue;
+    }
+
+    for (const entry of result.data) {
+      if (
+        discovered.size >=
+        MAX_DISCOVERY_ENTRIES
+      ) {
+        break;
+      }
+
+      const path = normalizePath(
+        entry.path,
+      );
+
+      if (!isSafePath(path)) {
+        continue;
+      }
+
+      if (entry.type === "dir") {
+        if (current.depth < 3) {
+          queue.push({
+            path,
+            depth: current.depth + 1,
+          });
+        }
+
+        continue;
+      }
+
+      if (entry.type === "file") {
+        discovered.add(path);
+      }
+    }
+  }
+
+  const tokens =
+    objectiveTokens(objective);
+
+  return Array.from(discovered).sort(
+    (a, b) =>
+      scorePath(b, tokens) -
+        scorePath(a, tokens) ||
+      a.localeCompare(b),
+  );
+}
+
+async function readContext(
+  paths: string[],
+): Promise<
+  Array<{
+    path: string;
+    content: string;
+    sha?: string;
+  }>
+> {
+  const context: Array<{
+    path: string;
+    content: string;
+    sha?: string;
+  }> = [];
+
   let total = 0;
-  for (const path of paths.slice(0, MAX_CONTEXT_FILES)) {
-    const result = await readGitHubFile({ repo: REPOSITORY, path, ref: BRANCH });
-    if (!result.success || !result.data) continue;
-    const content = result.data.content.slice(0, MAX_CONTEXT_FILE_CHARS);
-    if (total + content.length > MAX_CONTEXT_CHARS) break;
-    context.push({ path, content, sha: result.data.sha });
+
+  for (const path of paths.slice(
+    0,
+    MAX_CONTEXT_FILES,
+  )) {
+    const result =
+      await readGitHubFile({
+        repo: REPOSITORY,
+        path,
+        ref: BRANCH,
+      });
+
+    if (
+      !result.success ||
+      !result.data
+    ) {
+      continue;
+    }
+
+    const content =
+      result.data.content.slice(
+        0,
+        MAX_CONTEXT_FILE_CHARS,
+      );
+
+    if (
+      total + content.length >
+      MAX_CONTEXT_CHARS
+    ) {
+      break;
+    }
+
+    context.push({
+      path,
+      content,
+      sha: result.data.sha,
+    });
+
     total += content.length;
   }
+
   return context;
 }
 
-function extractPlan(content: string): string[] {
-  const match = content.match(/AIOS_PLAN_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PLAN_END/);
-  if (!match) throw new Error("AIOS_REPOSITORY_PLAN_FORMAT_INVALID");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(match[1]?.trim() ?? "");
-  } catch {
-    throw new Error("AIOS_REPOSITORY_PLAN_JSON_INVALID");
+function extractPlan(
+  content: string,
+): string[] {
+  const match = content.match(
+    /AIOS_PLAN_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PLAN_END/,
+  );
+
+  if (!match) {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_FORMAT_INVALID",
+    );
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { targetPaths?: unknown }).targetPaths)) throw new Error("AIOS_REPOSITORY_PLAN_TARGETS_INVALID");
-  const paths = (parsed as { targetPaths: unknown[] }).targetPaths.map(String).map(normalizePath).filter(isSafePath);
-  const unique = Array.from(new Set(paths));
-  if (!unique.length) throw new Error("AIOS_REPOSITORY_PLAN_EMPTY");
-  return unique.slice(0, MAX_TARGET_FILES);
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(
+      match[1]?.trim() ?? "",
+    );
+  } catch {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_JSON_INVALID",
+    );
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !Array.isArray(
+      (
+        parsed as {
+          targetPaths?: unknown;
+        }
+      ).targetPaths,
+    )
+  ) {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
+    );
+  }
+
+  const paths = (
+    parsed as {
+      targetPaths: unknown[];
+    }
+  ).targetPaths
+    .map(String)
+    .map(normalizePath)
+    .filter(isSafePath);
+
+  const unique =
+    Array.from(new Set(paths));
+
+  if (!unique.length) {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_EMPTY",
+    );
+  }
+
+  return unique.slice(
+    0,
+    MAX_TARGET_FILES,
+  );
 }
 
-function buildPlannerPrompt(objective: string, paths: string[], context: Array<{ path: string; content: string }>): string {
+function buildPlannerPrompt(
+  objective: string,
+  paths: string[],
+  context: Array<{
+    path: string;
+    content: string;
+  }>,
+): string {
   return [
-    "AUTONOMOUS DEVELOPMENT REQUEST", "", `Repository: ${REPOSITORY}`, `Branch: ${BRANCH}`, "",
-    "USER REQUIREMENT:", objective, "", "REPOSITORY DISCOVERY INDEX:", paths.join("\n"), "",
+    "AUTONOMOUS DEVELOPMENT REQUEST",
+    "",
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    "",
+    "USER REQUIREMENT:",
+    objective,
+    "",
+    "REPOSITORY DISCOVERY INDEX:",
+    paths.join("\n"),
+    "",
     "RELEVANT SOURCE CONTEXT:",
-    ...context.flatMap((file) => [`FILE: ${file.path}`, "CONTENT_BEGIN", file.content, "CONTENT_END", ""]),
+    ...context.flatMap(
+      (file) => [
+        `FILE: ${file.path}`,
+        "CONTENT_BEGIN",
+        file.content,
+        "CONTENT_END",
+        "",
+      ],
+    ),
     "Determine the smallest coherent set of files that must be changed to satisfy the requirement.",
     "Return only AIOS_PLAN_BEGIN / AIOS_PLAN_END with valid JSON.",
   ].join("\n");
 }
 
-function buildGenerationPrompt(objective: string, targetPaths: string[], context: Array<{ path: string; content: string }>): string {
+function buildGenerationPrompt(
+  objective: string,
+  targetPaths: string[],
+  context: Array<{
+    path: string;
+    content: string;
+  }>,
+): string {
   return [
-    "AUTONOMOUS DEVELOPMENT REQUEST", "", `Repository: ${REPOSITORY}`, `Branch: ${BRANCH}`, "",
-    "USER REQUIREMENT:", objective, "", "TARGET FILES SELECTED BY REPOSITORY AGENT:", targetPaths.join("\n"), "",
+    "AUTONOMOUS DEVELOPMENT REQUEST",
+    "",
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    "",
+    "USER REQUIREMENT:",
+    objective,
+    "",
+    "TARGET FILES SELECTED BY REPOSITORY AGENT:",
+    targetPaths.join("\n"),
+    "",
     "REAL REPOSITORY SOURCE CONTEXT:",
-    ...context.flatMap((file) => [`FILE: ${file.path}`, "CONTENT_BEGIN", file.content, "CONTENT_END", ""]),
+    ...context.flatMap(
+      (file) => [
+        `FILE: ${file.path}`,
+        "CONTENT_BEGIN",
+        file.content,
+        "CONTENT_END",
+        "",
+      ],
+    ),
     "Generate complete replacement contents for every required target file.",
     "If a selected file does not exist yet, generate it as a complete new file.",
     "Do not omit any selected file that must change.",
@@ -188,79 +483,221 @@ function buildGenerationPrompt(objective: string, targetPaths: string[], context
   ].join("\n");
 }
 
-function extractGeneratedFiles(content: string, allowedPaths: string[]): Array<{ path: string; content: string }> {
-  const allowed = new Set(allowedPaths.map(normalizePath));
-  const results: Array<{ path: string; content: string }> = [];
-  const pattern = /AIOS_FILE_BEGIN\s*\r?\nPATH:\s*([^\r\n]+)\r?\nCONTENT_BEGIN\r?\n([\s\S]*?)\r?\nCONTENT_END\r?\nAIOS_FILE_END/g;
+function extractGeneratedFiles(
+  content: string,
+  allowedPaths: string[],
+): Array<{
+  path: string;
+  content: string;
+}> {
+  const allowed = new Set(
+    allowedPaths.map(normalizePath),
+  );
+
+  const results: Array<{
+    path: string;
+    content: string;
+  }> = [];
+
+  const pattern =
+    /AIOS_FILE_BEGIN\s*\r?\nPATH:\s*([^\r\n]+)\r?\nCONTENT_BEGIN\r?\n([\s\S]*?)\r?\nCONTENT_END\r?\nAIOS_FILE_END/g;
+
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(content)) !== null) {
-    const path = normalizePath(match[1] ?? "");
-    const fileContent = match[2] ?? "";
-    if (!allowed.has(path) || !isSafePath(path)) throw new Error(`AIOS_GENERATED_PATH_REJECTED: ${path}`);
-    if (!fileContent.trim()) throw new Error(`AIOS_GENERATED_CONTENT_EMPTY: ${path}`);
-    if (fileContent.length > MAX_GENERATED_FILE_CHARS) throw new Error(`AIOS_GENERATED_CONTENT_TOO_LARGE: ${path}`);
-    results.push({ path, content: fileContent });
+
+  while (
+    (match = pattern.exec(content)) !==
+    null
+  ) {
+    const path = normalizePath(
+      match[1] ?? "",
+    );
+
+    const fileContent =
+      match[2] ?? "";
+
+    if (
+      !allowed.has(path) ||
+      !isSafePath(path)
+    ) {
+      throw new Error(
+        `AIOS_GENERATED_PATH_REJECTED: ${path}`,
+      );
+    }
+
+    if (!fileContent.trim()) {
+      throw new Error(
+        `AIOS_GENERATED_CONTENT_EMPTY: ${path}`,
+      );
+    }
+
+    if (
+      fileContent.length >
+      MAX_GENERATED_FILE_CHARS
+    ) {
+      throw new Error(
+        `AIOS_GENERATED_CONTENT_TOO_LARGE: ${path}`,
+      );
+    }
+
+    results.push({
+      path,
+      content: fileContent,
+    });
   }
-  const unique = new Map(results.map((item) => [item.path, item]));
-  if (!unique.size) throw new Error("AIOS_GENERATED_FILES_EMPTY");
-  return Array.from(unique.values());
+
+  const unique = new Map(
+    results.map((item) => [
+      item.path,
+      item,
+    ]),
+  );
+
+  if (!unique.size) {
+    throw new Error(
+      "AIOS_GENERATED_FILES_EMPTY",
+    );
+  }
+
+  return Array.from(
+    unique.values(),
+  );
 }
 
 function buildRepairPrompt(
   objective: string,
   targetPaths: string[],
-  context: Array<{ path: string; content: string }>,
+  context: Array<{
+    path: string;
+    content: string;
+  }>,
   verification: VercelBuildVerificationResult,
   round: number,
 ): string {
   return [
-    "AUTONOMOUS BUILD REPAIR REQUEST", "", `Repair round: ${round}`, `Repository: ${REPOSITORY}`, `Branch: ${BRANCH}`, "",
-    "ORIGINAL USER REQUIREMENT:", objective, "",
-    "TARGET FILES:", targetPaths.join("\n"), "",
-    "VERCEL BUILD STATE:", verification.readyState || verification.status, "",
-    "VERCEL ERROR:", verification.errorCode || "unknown", verification.errorMessage || "", "",
-    "VERCEL BUILD LOGS:", verification.buildLogs || "No build logs were returned.", "",
+    "AUTONOMOUS BUILD REPAIR REQUEST",
+    "",
+    `Repair round: ${round}`,
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    "",
+    "ORIGINAL USER REQUIREMENT:",
+    objective,
+    "",
+    "TARGET FILES:",
+    targetPaths.join("\n"),
+    "",
+    "VERCEL BUILD STATE:",
+    verification.readyState ||
+      verification.status,
+    "",
+    "VERCEL ERROR:",
+    verification.errorCode ||
+      "unknown",
+    verification.errorMessage || "",
+    "",
+    "VERCEL BUILD LOGS:",
+    verification.buildLogs ||
+      "No build logs were returned.",
+    "",
     "CURRENT REAL REPOSITORY CONTEXT:",
-    ...context.flatMap((file) => [`FILE: ${file.path}`, "CONTENT_BEGIN", file.content, "CONTENT_END", ""]),
+    ...context.flatMap(
+      (file) => [
+        `FILE: ${file.path}`,
+        "CONTENT_BEGIN",
+        file.content,
+        "CONTENT_END",
+        "",
+      ],
+    ),
     "Identify the concrete root cause from the build evidence and repair only the necessary files.",
     "Return only complete AIOS_FILE_BEGIN blocks.",
   ].join("\n");
 }
 
-async function writeGeneratedFiles(input: {
-  objective: string;
-  targetPaths: string[];
-  generatedFiles: Array<{ path: string; content: string }>;
-  commitMessage: string;
-}): Promise<{ changedPaths: string[]; commitShas: string[]; readbackVerified: boolean }> {
+async function writeGeneratedFiles(
+  input: {
+    objective: string;
+    targetPaths: string[];
+    generatedFiles: Array<{
+      path: string;
+      content: string;
+    }>;
+    commitMessage: string;
+  },
+): Promise<{
+  changedPaths: string[];
+  commitShas: string[];
+  readbackVerified: boolean;
+}> {
   const changedPaths: string[] = [];
   const commitShas: string[] = [];
   let readbackVerified = true;
 
-  for (const file of input.generatedFiles) {
-    const contract = createFounderDevelopmentContract({
-      objective: input.objective,
-      requestedFiles: input.targetPaths,
-      actions: ["read", "write", "verify"],
-      verification: ["readback", "build", "production"],
-      commitMessage: input.commitMessage,
-    });
-    const write = await dispatchGitHubTask({
-      action: "write",
-      repo: REPOSITORY,
-      branch: BRANCH,
-      path: file.path,
-      content: file.content,
-      commitMessage: input.commitMessage,
-      contract,
-    });
-    if (!write.success) throw new Error(write.error || write.code || `GitHub write failed: ${file.path}`);
-    changedPaths.push(file.path);
-    if (write.write?.commitSha) commitShas.push(write.write.commitSha);
-    readbackVerified = readbackVerified && write.write?.readbackVerified === true;
+  for (
+    const file of input.generatedFiles
+  ) {
+    const contract =
+      createFounderDevelopmentContract({
+        objective: input.objective,
+        requestedFiles:
+          input.targetPaths,
+        actions: [
+          "read",
+          "write",
+          "verify",
+        ],
+        verification: [
+          "readback",
+          "build",
+          "production",
+        ],
+        commitMessage:
+          input.commitMessage,
+      });
+
+    const write =
+      await dispatchGitHubTask({
+        action: "write",
+        repo: REPOSITORY,
+        branch: BRANCH,
+        path: file.path,
+        content: file.content,
+        commitMessage:
+          input.commitMessage,
+        contract,
+      });
+
+    if (!write.success) {
+      throw new Error(
+        write.error ||
+          write.code ||
+          `GitHub write failed: ${file.path}`,
+      );
+    }
+
+    changedPaths.push(
+      file.path,
+    );
+
+    if (
+      write.write?.commitSha
+    ) {
+      commitShas.push(
+        write.write.commitSha,
+      );
+    }
+
+    readbackVerified =
+      readbackVerified &&
+      write.write
+        ?.readbackVerified === true;
   }
 
-  return { changedPaths, commitShas, readbackVerified };
+  return {
+    changedPaths,
+    commitShas,
+    readbackVerified,
+  };
 }
 
 export interface AutonomousDevelopmentAgentResult {
@@ -276,139 +713,374 @@ export interface AutonomousDevelopmentAgentResult {
   commitShas: string[];
   readbackVerified: boolean;
   verificationPassed: boolean;
-  buildVerification: "NOT_EXECUTED" | "PASS" | "FAIL" | "NOT_CONFIGURED" | "TIMEOUT";
+  buildVerification:
+    | "NOT_EXECUTED"
+    | "PASS"
+    | "FAIL"
+    | "NOT_CONFIGURED"
+    | "TIMEOUT";
   buildVerificationResult?: VercelBuildVerificationResult;
   repairRounds: number;
   reason?: string;
 }
 
-export async function executeAutonomousDevelopmentAgent(input: { objective: string }): Promise<AutonomousDevelopmentAgentResult> {
-  const objective = input.objective.trim().slice(0, MAX_OBJECTIVE_LENGTH);
+export async function executeAutonomousDevelopmentAgent(
+  input: {
+    objective: string;
+  },
+): Promise<AutonomousDevelopmentAgentResult> {
+  const objective =
+    input.objective
+      .trim()
+      .slice(
+        0,
+        MAX_OBJECTIVE_LENGTH,
+      );
+
   if (!objective) {
     return {
-      success: false, code: "AUTONOMOUS_OBJECTIVE_REQUIRED", repository: REPOSITORY, branch: BRANCH, objective: "",
-      discoveredPaths: [], targetPaths: [], changedPaths: [], commitShas: [], readbackVerified: false,
-      verificationPassed: false, buildVerification: "NOT_EXECUTED", repairRounds: 0, reason: "Development objective is required.",
+      success: false,
+      code:
+        "AUTONOMOUS_OBJECTIVE_REQUIRED",
+      repository: REPOSITORY,
+      branch: BRANCH,
+      objective: "",
+      discoveredPaths: [],
+      targetPaths: [],
+      changedPaths: [],
+      commitShas: [],
+      readbackVerified: false,
+      verificationPassed: false,
+      buildVerification:
+        "NOT_EXECUTED",
+      repairRounds: 0,
+      reason:
+        "Development objective is required.",
     };
   }
 
   let activeTaskId = "";
-  const allChangedPaths: string[] = [];
-  const allCommitShas: string[] = [];
+  const allChangedPaths: string[] =
+    [];
+  const allCommitShas: string[] =
+    [];
   let allReadbackVerified = true;
-  let lastVerification: VercelBuildVerificationResult | undefined;
+  let lastVerification:
+    | VercelBuildVerificationResult
+    | undefined;
   let repairRounds = 0;
 
   try {
-    const discoveredPaths = await discoverRepositoryPaths(objective);
-    const discoveryContext = await readContext(discoveredPaths);
-    const plan = await runBrain({ prompt: buildPlannerPrompt(objective, discoveredPaths, discoveryContext), systemPrompt: PLANNER_SYSTEM_PROMPT, historyLimit: 0 });
-    if (!plan.success) throw new Error(plan.error || "Repository planning failed.");
+    const discoveredPaths =
+      await discoverRepositoryPaths(
+        objective,
+      );
 
-    const targetPaths = extractPlan(plan.content);
-    const targetContext = await readContext(targetPaths);
-    const task = createAutonomousDevelopmentTask({ objective, targetPaths });
-    claimAutonomousDevelopmentTask(task.id);
-    activeTaskId = task.id;
+    const discoveryContext =
+      await readContext(
+        discoveredPaths,
+      );
 
-    const generation = await runBrain({ prompt: buildGenerationPrompt(objective, targetPaths, targetContext), systemPrompt: GENERATION_SYSTEM_PROMPT, historyLimit: 0 });
-    if (!generation.success) throw new Error(generation.error || "Autonomous source generation failed.");
-    const generatedFiles = extractGeneratedFiles(generation.content, targetPaths);
-    const generatedSet = new Set(generatedFiles.map((file) => file.path));
-    const missing = targetPaths.filter((path) => !generatedSet.has(path));
-    if (missing.length) throw new Error(`AIOS_GENERATED_FILES_INCOMPLETE: ${missing.join(", ")}`);
-
-    const initialWrite = await writeGeneratedFiles({
-      objective,
-      targetPaths,
-      generatedFiles,
-      commitMessage: "feat(C167.13): autonomous build verification",
-    });
-    allChangedPaths.push(...initialWrite.changedPaths);
-    allCommitShas.push(...initialWrite.commitShas);
-    allReadbackVerified = allReadbackVerified && initialWrite.readbackVerified;
-
-    if (!allCommitShas.length) throw new Error("AUTONOMOUS_COMMIT_SHA_MISSING");
-
-    lastVerification = await verifyVercelBuildForCommit({ commitSha: allCommitShas[allCommitShas.length - 1] });
-
-    while (lastVerification.status === "FAIL" && repairRounds < MAX_REPAIR_ROUNDS) {
-      repairRounds += 1;
-      const repairContext = await readContext(targetPaths);
-      const repair = await runBrain({
-        prompt: buildRepairPrompt(objective, targetPaths, repairContext, lastVerification, repairRounds),
-        systemPrompt: REPAIR_SYSTEM_PROMPT,
-        historyLimit: 0,
+    const plan =
+      await runAutonomousBrain({
+        prompt:
+          buildPlannerPrompt(
+            objective,
+            discoveredPaths,
+            discoveryContext,
+          ),
+        systemPrompt:
+          PLANNER_SYSTEM_PROMPT,
       });
-      if (!repair.success) throw new Error(repair.error || "Autonomous build repair generation failed.");
 
-      const repairFiles = extractGeneratedFiles(repair.content, targetPaths);
-      const repairWrite = await writeGeneratedFiles({
-        objective: `${objective}\n\nVercel build repair round ${repairRounds}.`,
-        targetPaths,
-        generatedFiles: repairFiles,
-        commitMessage: `fix(C167.13): autonomous build repair ${repairRounds}`,
-      });
-      allChangedPaths.push(...repairWrite.changedPaths);
-      allCommitShas.push(...repairWrite.commitShas);
-      allReadbackVerified = allReadbackVerified && repairWrite.readbackVerified;
-      if (!repairWrite.commitShas.length) throw new Error("AUTONOMOUS_REPAIR_COMMIT_SHA_MISSING");
-
-      lastVerification = await verifyVercelBuildForCommit({ commitSha: repairWrite.commitShas[repairWrite.commitShas.length - 1] });
+    if (!plan.success) {
+      throw new Error(
+        plan.error ||
+          "Repository planning failed.",
+      );
     }
 
-    const buildPassed = lastVerification.status === "PASS";
-    const verificationPassed = allReadbackVerified && buildPassed;
-    const receipt = completeAutonomousDevelopmentTask(task.id, {
-      commitSha: allCommitShas[allCommitShas.length - 1] || "",
-      readbackVerified: allReadbackVerified,
-      verificationPassed,
-    });
+    const targetPaths =
+      extractPlan(
+        plan.content,
+      );
+
+    const targetContext =
+      await readContext(
+        targetPaths,
+      );
+
+    const task =
+      createAutonomousDevelopmentTask(
+        {
+          objective,
+          targetPaths,
+        },
+      );
+
+    claimAutonomousDevelopmentTask(
+      task.id,
+    );
+
+    activeTaskId = task.id;
+
+    const generation =
+      await runAutonomousBrain({
+        prompt:
+          buildGenerationPrompt(
+            objective,
+            targetPaths,
+            targetContext,
+          ),
+        systemPrompt:
+          GENERATION_SYSTEM_PROMPT,
+      });
+
+    if (!generation.success) {
+      throw new Error(
+        generation.error ||
+          "Autonomous source generation failed.",
+      );
+    }
+
+    const generatedFiles =
+      extractGeneratedFiles(
+        generation.content,
+        targetPaths,
+      );
+
+    const generatedSet =
+      new Set(
+        generatedFiles.map(
+          (file) => file.path,
+        ),
+      );
+
+    const missing =
+      targetPaths.filter(
+        (path) =>
+          !generatedSet.has(path),
+      );
+
+    if (missing.length) {
+      throw new Error(
+        `AIOS_GENERATED_FILES_INCOMPLETE: ${missing.join(", ")}`,
+      );
+    }
+
+    const initialWrite =
+      await writeGeneratedFiles({
+        objective,
+        targetPaths,
+        generatedFiles,
+        commitMessage:
+          "feat(C167.14): autonomous development provider routing",
+      });
+
+    allChangedPaths.push(
+      ...initialWrite.changedPaths,
+    );
+
+    allCommitShas.push(
+      ...initialWrite.commitShas,
+    );
+
+    allReadbackVerified =
+      allReadbackVerified &&
+      initialWrite.readbackVerified;
+
+    if (!allCommitShas.length) {
+      throw new Error(
+        "AUTONOMOUS_COMMIT_SHA_MISSING",
+      );
+    }
+
+    lastVerification =
+      await verifyVercelBuildForCommit(
+        {
+          commitSha:
+            allCommitShas[
+              allCommitShas.length - 1
+            ],
+        },
+      );
+
+    while (
+      lastVerification.status ===
+        "FAIL" &&
+      repairRounds <
+        MAX_REPAIR_ROUNDS
+    ) {
+      repairRounds += 1;
+
+      const repairContext =
+        await readContext(
+          targetPaths,
+        );
+
+      const repair =
+        await runAutonomousBrain({
+          prompt:
+            buildRepairPrompt(
+              objective,
+              targetPaths,
+              repairContext,
+              lastVerification,
+              repairRounds,
+            ),
+          systemPrompt:
+            REPAIR_SYSTEM_PROMPT,
+        });
+
+      if (!repair.success) {
+        throw new Error(
+          repair.error ||
+            "Autonomous build repair generation failed.",
+        );
+      }
+
+      const repairFiles =
+        extractGeneratedFiles(
+          repair.content,
+          targetPaths,
+        );
+
+      const repairWrite =
+        await writeGeneratedFiles({
+          objective:
+            `${objective}\n\nVercel build repair round ${repairRounds}.`,
+          targetPaths,
+          generatedFiles:
+            repairFiles,
+          commitMessage:
+            `fix(C167.14): autonomous build repair ${repairRounds}`,
+        });
+
+      allChangedPaths.push(
+        ...repairWrite.changedPaths,
+      );
+
+      allCommitShas.push(
+        ...repairWrite.commitShas,
+      );
+
+      allReadbackVerified =
+        allReadbackVerified &&
+        repairWrite.readbackVerified;
+
+      if (
+        !repairWrite.commitShas
+          .length
+      ) {
+        throw new Error(
+          "AUTONOMOUS_REPAIR_COMMIT_SHA_MISSING",
+        );
+      }
+
+      lastVerification =
+        await verifyVercelBuildForCommit(
+          {
+            commitSha:
+              repairWrite.commitShas[
+                repairWrite
+                  .commitShas.length - 1
+              ],
+          },
+        );
+    }
+
+    const buildPassed =
+      lastVerification.status ===
+      "PASS";
+
+    const verificationPassed =
+      allReadbackVerified &&
+      buildPassed;
+
+    const receipt =
+      completeAutonomousDevelopmentTask(
+        task.id,
+        {
+          commitSha:
+            allCommitShas[
+              allCommitShas.length - 1
+            ] || "",
+          readbackVerified:
+            allReadbackVerified,
+          verificationPassed,
+        },
+      );
 
     return {
-      success: receipt.status === "completed" && verificationPassed,
-      code: verificationPassed ? "AUTONOMOUS_DEVELOPMENT_BUILD_VERIFIED" : "AUTONOMOUS_DEVELOPMENT_BUILD_FAILED",
+      success:
+        receipt.status ===
+          "completed" &&
+        verificationPassed,
+      code: verificationPassed
+        ? "AUTONOMOUS_DEVELOPMENT_BUILD_VERIFIED"
+        : "AUTONOMOUS_DEVELOPMENT_BUILD_FAILED",
       taskId: task.id,
       repository: REPOSITORY,
       branch: BRANCH,
       objective,
       discoveredPaths,
       targetPaths,
-      changedPaths: allChangedPaths,
-      commitShas: allCommitShas,
-      readbackVerified: allReadbackVerified,
+      changedPaths:
+        allChangedPaths,
+      commitShas:
+        allCommitShas,
+      readbackVerified:
+        allReadbackVerified,
       verificationPassed,
-      buildVerification: lastVerification.status,
-      buildVerificationResult: lastVerification,
+      buildVerification:
+        lastVerification.status,
+      buildVerificationResult:
+        lastVerification,
       repairRounds,
       reason: verificationPassed
         ? "Commit, Vercel build, readback and final verification completed."
         : lastVerification.reason,
     };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Autonomous development agent failed.";
+    const reason =
+      error instanceof Error
+        ? error.message
+        : "Autonomous development agent failed.";
+
     if (activeTaskId) {
       try {
-        blockAutonomousDevelopmentTask(activeTaskId, reason);
+        blockAutonomousDevelopmentTask(
+          activeTaskId,
+          reason,
+        );
       } catch {
         // Preserve the original agent failure.
       }
     }
+
     return {
       success: false,
-      code: "AUTONOMOUS_DEVELOPMENT_FAILED",
-      taskId: activeTaskId || undefined,
+      code:
+        "AUTONOMOUS_DEVELOPMENT_FAILED",
+      taskId:
+        activeTaskId || undefined,
       repository: REPOSITORY,
       branch: BRANCH,
       objective,
       discoveredPaths: [],
       targetPaths: [],
-      changedPaths: allChangedPaths,
-      commitShas: allCommitShas,
-      readbackVerified: allReadbackVerified,
+      changedPaths:
+        allChangedPaths,
+      commitShas:
+        allCommitShas,
+      readbackVerified:
+        allReadbackVerified,
       verificationPassed: false,
-      buildVerification: lastVerification?.status || "NOT_EXECUTED",
-      buildVerificationResult: lastVerification,
+      buildVerification:
+        lastVerification?.status ||
+        "NOT_EXECUTED",
+      buildVerificationResult:
+        lastVerification,
       repairRounds,
       reason,
     };
