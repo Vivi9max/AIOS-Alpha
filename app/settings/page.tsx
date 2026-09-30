@@ -28,7 +28,9 @@ interface RuntimeStatus {
   stage?: string;
   version: string;
   versionLabel?: string;
-  status: "online" | "offline";
+  status:
+    | "online"
+    | "offline";
   provider: string;
   memoryCount: number;
   timestamp: number;
@@ -41,10 +43,14 @@ const defaultSettings: LocalSettings = {
 
 const initialRuntime: RuntimeStatus = {
   success: false,
-  runtime: APP_CONFIG.runtimeId,
-  stage: APP_CONFIG.stage,
-  version: APP_CONFIG.version,
-  versionLabel: APP_VERSION_LABEL,
+  runtime:
+    APP_CONFIG.runtimeId,
+  stage:
+    APP_CONFIG.stage,
+  version:
+    APP_CONFIG.version,
+  versionLabel:
+    APP_VERSION_LABEL,
   status: "offline",
   provider: "unknown",
   memoryCount: 0,
@@ -52,24 +58,34 @@ const initialRuntime: RuntimeStatus = {
 };
 
 export default function SettingsPage() {
-  const [settings, setSettings] =
-    useState<LocalSettings>(
-      defaultSettings,
-    );
+  const [
+    settings,
+    setSettings,
+  ] = useState<LocalSettings>(
+    defaultSettings,
+  );
 
-  const [runtime, setRuntime] =
-    useState<RuntimeStatus>(
-      initialRuntime,
-    );
+  const [
+    runtime,
+    setRuntime,
+  ] = useState<RuntimeStatus>(
+    initialRuntime,
+  );
 
-  const [runtimeLoading, setRuntimeLoading] =
-    useState(true);
+  const [
+    runtimeLoading,
+    setRuntimeLoading,
+  ] = useState(true);
 
-  const [runtimeError, setRuntimeError] =
-    useState("");
+  const [
+    runtimeError,
+    setRuntimeError,
+  ] = useState("");
 
-  const [saved, setSaved] =
-    useState(false);
+  const [
+    saved,
+    setSaved,
+  ] = useState(false);
 
   useEffect(() => {
     try {
@@ -101,7 +117,10 @@ export default function SettingsPage() {
   const loadRuntime =
     useCallback(
       async () => {
-        setRuntimeLoading(true);
+        setRuntimeLoading(
+          true,
+        );
+
         setRuntimeError("");
 
         try {
@@ -132,7 +151,7 @@ export default function SettingsPage() {
           );
 
           setRuntimeError(
-            "无法读取 Runtime 状态。",
+            "Unable to read Runtime status.",
           );
         } finally {
           setRuntimeLoading(
@@ -192,158 +211,91 @@ export default function SettingsPage() {
 
   return (
     <WorkspaceShell>
-      <div
+      <main
         style={{
-          width:
-            "100%",
-          maxWidth:
-            820,
-          margin:
-            "0 auto",
-          color:
-            "#111827",
+          width: "100%",
+          maxWidth: 900,
+          margin: "0 auto",
+          padding:
+            "22px 12px 42px",
+          boxSizing:
+            "border-box",
+          color: "#111827",
         }}
       >
         <header
           style={{
-            marginBottom:
-              24,
-          }}
-        >
-          <p
-            style={{
-              margin:
-                0,
-              color:
-                "#6b7280",
-              fontSize:
-                14,
-              fontWeight:
-                700,
-            }}
-          >
-            {APP_FULL_TITLE}
-          </p>
-
-          <h1
-            style={{
-              margin:
-                "7px 0 0",
-              fontSize:
-                30,
-            }}
-          >
-            ⚙️ Settings
-          </h1>
-
-          <p
-            style={{
-              margin:
-                "10px 0 0",
-              color:
-                "#6b7280",
-              lineHeight:
-                1.6,
-            }}
-          >
-            管理当前 AIOS Workspace 的 Runtime
-            和本机设置。
-          </p>
-        </header>
-
-        {runtimeError && (
-          <div
-            style={{
-              marginBottom:
-                16,
-              padding:
-                "12px 14px",
-              border:
-                "1px solid #fecaca",
-              borderRadius:
-                12,
-              background:
-                "#fff7f7",
-              color:
-                "#b91c1c",
-              lineHeight:
-                1.5,
-            }}
-          >
-            {runtimeError}
-          </div>
-        )}
-
-        <section
-          style={{
-            padding:
-              18,
-            marginBottom:
-              16,
-            background:
-              "#ffffff",
-            border:
-              "1px solid #e5e7eb",
-            borderRadius:
-              16,
+            marginBottom: 20,
           }}
         >
           <div
             style={{
-              display:
-                "flex",
-              flexWrap:
-                "wrap",
-              justifyContent:
-                "space-between",
+              display: "flex",
               alignItems:
                 "center",
-              gap:
-                12,
+              justifyContent:
+                "space-between",
+              gap: 12,
+              flexWrap:
+                "wrap",
             }}
           >
             <div>
               <p
                 style={{
-                  margin:
-                    0,
+                  margin: 0,
                   color:
                     "#6b7280",
-                  fontSize:
-                    13,
-                  fontWeight:
-                    700,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing:
+                    "0.10em",
+                  textTransform:
+                    "uppercase",
                 }}
               >
-                ACTIVE RUNTIME
+                AIOS Workspace
               </p>
 
-              <strong
+              <h1
                 style={{
-                  display:
-                    "block",
-                  marginTop:
-                    7,
+                  margin:
+                    "6px 0 0",
                   fontSize:
-                    25,
-                  textTransform:
-                    "capitalize",
+                    "clamp(26px, 6vw, 34px)",
+                  lineHeight: 1.1,
+                  letterSpacing:
+                    "-0.03em",
                 }}
               >
-                {runtimeLoading
-                  ? "读取中…"
-                  : runtime.provider}
-              </strong>
+                Settings
+              </h1>
+
+              <p
+                style={{
+                  margin:
+                    "8px 0 0",
+                  color:
+                    "#6b7280",
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  maxWidth: 620,
+                }}
+              >
+                Configure your AIOS
+                workspace without
+                exposing Founder
+                engineering controls.
+              </p>
             </div>
 
-            <span
+            <div
               style={{
                 display:
                   "inline-flex",
                 alignItems:
                   "center",
-                gap:
-                  7,
+                gap: 7,
                 padding:
                   "8px 11px",
                 borderRadius:
@@ -356,18 +308,14 @@ export default function SettingsPage() {
                   isOnline
                     ? "#047857"
                     : "#b91c1c",
-                fontSize:
-                  13,
-                fontWeight:
-                  800,
+                fontSize: 12,
+                fontWeight: 800,
               }}
             >
               <span
                 style={{
-                  width:
-                    8,
-                  height:
-                    8,
+                  width: 7,
+                  height: 7,
                   borderRadius:
                     "50%",
                   background:
@@ -377,10 +325,118 @@ export default function SettingsPage() {
                 }}
               />
 
-              {isOnline
-                ? "Online"
-                : "Offline"}
-            </span>
+              {runtimeLoading
+                ? "Checking"
+                : isOnline
+                  ? "Runtime Online"
+                  : "Runtime Offline"}
+            </div>
+          </div>
+        </header>
+
+        {runtimeError && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding:
+                "11px 13px",
+              border:
+                "1px solid #fecaca",
+              borderRadius: 12,
+              background:
+                "#fff7f7",
+              color:
+                "#b91c1c",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            {runtimeError}
+          </div>
+        )}
+
+        <section
+          style={{
+            padding: 17,
+            marginBottom: 14,
+            border:
+              "1px solid #e5e7eb",
+            borderRadius: 17,
+            background:
+              "#ffffff",
+            boxShadow:
+              "0 8px 28px rgba(15,23,42,0.05)",
+          }}
+        >
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "flex-start",
+              justifyContent:
+                "space-between",
+              gap: 14,
+              flexWrap:
+                "wrap",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color:
+                    "#6b7280",
+                  fontSize: 10,
+                  fontWeight: 850,
+                  letterSpacing:
+                    "0.10em",
+                }}
+              >
+                ACTIVE RUNTIME
+              </div>
+
+              <strong
+                style={{
+                  display:
+                    "block",
+                  marginTop: 6,
+                  fontSize: 23,
+                  textTransform:
+                    "capitalize",
+                }}
+              >
+                {runtimeLoading
+                  ? "Loading"
+                  : runtime.provider}
+              </strong>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  color:
+                    "#6b7280",
+                  fontSize: 12,
+                }}
+              >
+                {APP_FULL_TITLE}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding:
+                  "8px 11px",
+                borderRadius: 10,
+                background:
+                  "#f8fafc",
+                color:
+                  "#475569",
+                fontSize: 12,
+                fontWeight: 750,
+              }}
+            >
+              {versionLabel}
+            </div>
           </div>
 
           <div
@@ -388,11 +444,9 @@ export default function SettingsPage() {
               display:
                 "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(180px, 1fr))",
-              gap:
-                10,
-              marginTop:
-                18,
+                "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 9,
+              marginTop: 16,
             }}
           >
             <InfoCard
@@ -422,74 +476,87 @@ export default function SettingsPage() {
           <p
             style={{
               margin:
-                "14px 0 0",
+                "13px 0 0",
               color:
-                "#6b7280",
-              fontSize:
-                13,
-              lineHeight:
-                1.55,
+                "#9ca3af",
+              fontSize: 11,
+              lineHeight: 1.5,
             }}
           >
-            Provider 和 Runtime 状态由服务端控制。
-            普通用户 Settings 不包含 Founder 工程集成。
+            Runtime provider,
+            service status and
+            Founder engineering
+            controls remain
+            server-side.
           </p>
         </section>
 
         <section
           style={{
-            padding:
-              18,
-            marginBottom:
-              16,
-            background:
-              "#ffffff",
+            padding: 17,
+            marginBottom: 14,
             border:
               "1px solid #e5e7eb",
-            borderRadius:
-              16,
+            borderRadius: 17,
+            background:
+              "#ffffff",
+            boxShadow:
+              "0 8px 28px rgba(15,23,42,0.05)",
           }}
         >
           <div
             style={{
-              marginBottom:
-                16,
+              marginBottom: 8,
             }}
           >
-            <p
+            <div
               style={{
-                margin:
-                  0,
                 color:
                   "#6b7280",
-                fontSize:
-                  13,
-                fontWeight:
-                  700,
+                fontSize: 10,
+                fontWeight: 850,
+                letterSpacing:
+                  "0.10em",
               }}
             >
-              RUNTIME MODULES
-            </p>
+              WORKSPACE MODULES
+            </div>
 
             <h2
               style={{
                 margin:
-                  "7px 0 0",
-                fontSize:
-                  20,
+                  "6px 0 0",
+                fontSize: 19,
               }}
             >
               Workspace Settings
             </h2>
+
+            <p
+              style={{
+                margin:
+                  "6px 0 0",
+                color:
+                  "#6b7280",
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              Control which local
+              workspace modules are
+              enabled for this browser.
+            </p>
           </div>
 
           <SettingRow
             label="Memory"
-            description="允许当前 Workspace 使用本机设置中的 Memory 模块。"
+            description="Allow this workspace to use its local Memory module."
             enabled={
               settings.memoryEnabled
             }
-            onChange={(enabled) =>
+            onChange={(
+              enabled,
+            ) =>
               updateSettings({
                 memoryEnabled:
                   enabled,
@@ -499,8 +566,7 @@ export default function SettingsPage() {
 
           <div
             style={{
-              height:
-                1,
+              height: 1,
               background:
                 "#eef2f7",
             }}
@@ -508,11 +574,13 @@ export default function SettingsPage() {
 
           <SettingRow
             label="Tasks"
-            description="允许当前 Workspace 使用任务与执行状态模块。"
+            description="Allow this workspace to use Tasks and execution state modules."
             enabled={
               settings.taskEnabled
             }
-            onChange={(enabled) =>
+            onChange={(
+              enabled,
+            ) =>
               updateSettings({
                 taskEnabled:
                   enabled,
@@ -524,14 +592,12 @@ export default function SettingsPage() {
             style={{
               display:
                 "flex",
-              justifyContent:
-                "flex-end",
               alignItems:
                 "center",
-              gap:
-                10,
-              marginTop:
-                18,
+              justifyContent:
+                "flex-end",
+              gap: 10,
+              marginTop: 16,
               flexWrap:
                 "wrap",
             }}
@@ -541,13 +607,11 @@ export default function SettingsPage() {
                 style={{
                   color:
                     "#047857",
-                  fontSize:
-                    13,
-                  fontWeight:
-                    700,
+                  fontSize: 12,
+                  fontWeight: 750,
                 }}
               >
-                已保存
+                Saved
               </span>
             )}
 
@@ -557,45 +621,96 @@ export default function SettingsPage() {
                 handleSave
               }
               style={{
-                minHeight:
-                  42,
+                minHeight: 40,
                 padding:
                   "0 15px",
-                border:
-                  0,
-                borderRadius:
-                  11,
+                border: 0,
+                borderRadius: 10,
                 background:
                   "#111827",
                 color:
                   "#ffffff",
-                fontWeight:
-                  800,
+                fontSize: 13,
+                fontWeight: 800,
                 cursor:
                   "pointer",
               }}
             >
-              保存设置
+              Save Settings
             </button>
           </div>
 
           <p
             style={{
               margin:
-                "14px 0 0",
+                "12px 0 0",
               color:
                 "#9ca3af",
-              fontSize:
-                12,
-              lineHeight:
-                1.5,
+              fontSize: 11,
+              lineHeight: 1.5,
             }}
           >
-            当前开关保存于本机浏览器，不改变服务端 Runtime
-            配置。
+            These switches are
+            stored in this browser.
+            They do not change
+            server-side Runtime
+            configuration.
           </p>
         </section>
-      </div>
+
+        <section
+          style={{
+            padding:
+              "13px 15px",
+            border:
+              "1px solid #e5e7eb",
+            borderRadius: 14,
+            background:
+              "#f8fafc",
+          }}
+        >
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "flex-start",
+              gap: 10,
+            }}
+          >
+            <span
+              style={{
+                flexShrink: 0,
+                width: 7,
+                height: 7,
+                marginTop: 5,
+                borderRadius:
+                  "50%",
+                background:
+                  "#22c55e",
+              }}
+            />
+
+            <p
+              style={{
+                margin: 0,
+                color:
+                  "#64748b",
+                fontSize: 11,
+                lineHeight: 1.6,
+              }}
+            >
+              AIOS normal-user
+              Settings intentionally
+              excludes Founder
+              GitHub, deployment,
+              repository and
+              autonomous-development
+              controls.
+            </p>
+          </div>
+        </section>
+      </main>
     </WorkspaceShell>
   );
 }
@@ -610,12 +725,11 @@ function InfoCard({
   return (
     <div
       style={{
-        padding:
-          13,
+        minWidth: 0,
+        padding: 12,
         border:
           "1px solid #e5e7eb",
-        borderRadius:
-          13,
+        borderRadius: 12,
         background:
           "#f9fafb",
       }}
@@ -624,10 +738,10 @@ function InfoCard({
         style={{
           color:
             "#6b7280",
-          fontSize:
-            11,
-          fontWeight:
-            800,
+          fontSize: 10,
+          fontWeight: 850,
+          letterSpacing:
+            "0.06em",
           textTransform:
             "uppercase",
         }}
@@ -637,10 +751,11 @@ function InfoCard({
 
       <div
         style={{
-          marginTop:
-            6,
-          fontWeight:
-            850,
+          marginTop: 5,
+          color:
+            "#111827",
+          fontSize: 13,
+          fontWeight: 800,
           overflowWrap:
             "anywhere",
         }}
@@ -673,24 +788,23 @@ function SettingRow({
           "center",
         justifyContent:
           "space-between",
-        gap:
-          16,
+        gap: 16,
         padding:
           "14px 0",
       }}
     >
       <div
         style={{
-          minWidth:
-            0,
+          minWidth: 0,
         }}
       >
         <strong
           style={{
             display:
               "block",
-            fontSize:
-              15,
+            color:
+              "#111827",
+            fontSize: 14,
           }}
         >
           {label}
@@ -702,10 +816,8 @@ function SettingRow({
               "5px 0 0",
             color:
               "#6b7280",
-            fontSize:
-              12,
-            lineHeight:
-              1.5,
+            fontSize: 12,
+            lineHeight: 1.5,
           }}
         >
           {description}
@@ -717,22 +829,21 @@ function SettingRow({
         aria-pressed={
           enabled
         }
+        aria-label={
+          `${label} ${enabled ? "enabled" : "disabled"}`
+        }
         onClick={() =>
           onChange(
             !enabled,
           )
         }
         style={{
-          width:
-            50,
-          height:
-            30,
+          width: 50,
+          height: 30,
           flex:
             "0 0 auto",
-          padding:
-            3,
-          border:
-            0,
+          padding: 3,
+          border: 0,
           borderRadius:
             999,
           background:
@@ -747,10 +858,8 @@ function SettingRow({
           style={{
             display:
               "block",
-            width:
-              24,
-            height:
-              24,
+            width: 24,
+            height: 24,
             borderRadius:
               "50%",
             background:
