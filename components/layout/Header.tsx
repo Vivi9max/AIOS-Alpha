@@ -38,35 +38,38 @@ interface RuntimeState {
   status: RuntimeStatus;
 }
 
-const pageTitles: Record<
-  string,
-  MessageKey
-> = {
-  "/":
-    "page.workspace",
-  "/workspace":
-    "page.workspace",
-  "/dashboard":
-    "nav.dashboard",
-  "/memory":
-    "nav.memory",
-  "/tasks":
-    "nav.tasks",
-  "/projects":
-    "nav.projects",
-  "/settings":
-    "nav.settings",
-  "/brain":
-    "page.runtime",
-  "/runtime":
-    "page.runtime",
-  "/planner":
-    "planner.title",
-  "/execution":
-    "page.runtime",
-  "/release":
-    "page.release",
+const pageTitles: Record<string, MessageKey> = {
+  "/": "page.workspace",
+  "/workspace": "page.workspace",
+  "/dashboard": "nav.dashboard",
+  "/memory": "nav.memory",
+  "/tasks": "nav.tasks",
+  "/projects": "nav.projects",
+  "/settings": "nav.settings",
+  "/brain": "page.runtime",
+  "/runtime": "page.runtime",
+  "/planner": "planner.title",
+  "/execution": "page.runtime",
+  "/release": "page.release",
 };
+
+const localPageTitles = {
+  en: {
+    global: "AIOS Global",
+    cn: "AIOS CN",
+    market: "Market Research",
+  },
+  "zh-CN": {
+    global: "AIOS Global",
+    cn: "AIOS CN",
+    market: "市场研究",
+  },
+  ja: {
+    global: "AIOS Global",
+    cn: "AIOS CN",
+    market: "市場リサーチ",
+  },
+} as const;
 
 const initialStatus: RuntimeState = {
   status: "checking",
@@ -74,58 +77,34 @@ const initialStatus: RuntimeState = {
 
 const productCopy = {
   en: {
-    global:
-      "AIOS Global",
-    globalDescription:
-      "Global AIOS",
-    cn:
-      "AIOS CN",
-    cnDescription:
-      "China AIOS",
-    online:
-      "Online",
-    degraded:
-      "Degraded",
-    offline:
-      "Offline",
-    checking:
-      "Checking",
+    global: "AIOS Global",
+    globalDescription: "Global AIOS",
+    cn: "AIOS CN",
+    cnDescription: "China AIOS",
+    online: "Online",
+    degraded: "Degraded",
+    offline: "Offline",
+    checking: "Checking",
   },
   "zh-CN": {
-    global:
-      "AIOS Global",
-    globalDescription:
-      "全球 AIOS",
-    cn:
-      "AIOS CN",
-    cnDescription:
-      "中国 AIOS",
-    online:
-      "运行正常",
-    degraded:
-      "服务降级",
-    offline:
-      "运行离线",
-    checking:
-      "检查中",
+    global: "AIOS Global",
+    globalDescription: "全球 AIOS",
+    cn: "AIOS CN",
+    cnDescription: "中国 AIOS",
+    online: "运行正常",
+    degraded: "服务降级",
+    offline: "离线",
+    checking: "检查中",
   },
   ja: {
-    global:
-      "AIOS Global",
-    globalDescription:
-      "グローバル AIOS",
-    cn:
-      "AIOS CN",
-    cnDescription:
-      "中国向け AIOS",
-    online:
-      "稼働中",
-    degraded:
-      "一部制限",
-    offline:
-      "停止中",
-    checking:
-      "確認中",
+    global: "AIOS Global",
+    globalDescription: "グローバル AIOS",
+    cn: "AIOS CN",
+    cnDescription: "中国向け AIOS",
+    online: "稼働中",
+    degraded: "一部制限",
+    offline: "オフライン",
+    checking: "確認中",
   },
 } as const;
 
@@ -135,86 +114,73 @@ export default function Header() {
     t,
   } = useLanguage();
 
-  const pathname =
-    usePathname();
+  const pathname = usePathname();
 
   const [
     runtime,
     setRuntime,
-  ] = useState<RuntimeState>(
-    initialStatus,
-  );
+  ] = useState<RuntimeState>(initialStatus);
 
-  const copy =
-    runtimeStatusCopy[locale];
-
-  const pageTitle =
-    t(
-      pageTitles[pathname] ??
-        "page.default",
-    );
+  const copy = runtimeStatusCopy[locale];
+  const product = productCopy[locale];
+  const localTitles = localPageTitles[locale];
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith(
-      "/cn/",
-    );
+    pathname.startsWith("/cn/");
 
-  const product =
-    productCopy[locale];
+  const pageTitle =
+    isCN
+      ? localTitles.cn
+      : pathname === "/market-intelligence"
+        ? localTitles.market
+        : pathname === "/" ||
+            pathname === "/workspace"
+          ? localTitles.global
+          : t(
+              pageTitles[pathname] ??
+                "page.default",
+            );
 
   useEffect(() => {
-    let active =
-      true;
+    let active = true;
 
     async function loadRuntimeStatus() {
       try {
-        const response =
-          await fetch(
-            "/api/runtime/status",
-            {
-              cache:
-                "no-store",
-              credentials:
-                "same-origin",
-            },
-          );
+        const response = await fetch(
+          "/api/runtime/status",
+          {
+            cache: "no-store",
+            credentials: "same-origin",
+          },
+        );
 
         if (!response.ok) {
-          throw new Error(
-            copy.unavailable,
-          );
+          throw new Error(copy.unavailable);
         }
 
-        const data =
-          await response.json();
+        const data = await response.json();
 
         if (!active) {
           return;
         }
 
-        const status =
-          data.status;
+        const status = data.status;
 
-        const normalizedStatus:
-          RuntimeStatus =
-          status ===
-          "online"
+        const normalizedStatus: RuntimeStatus =
+          status === "online"
             ? "online"
-            : status ===
-                "degraded"
+            : status === "degraded"
               ? "degraded"
               : "offline";
 
         setRuntime({
-          status:
-            normalizedStatus,
+          status: normalizedStatus,
         });
       } catch {
         if (active) {
           setRuntime({
-            status:
-              "offline",
+            status: "offline",
           });
         }
       }
@@ -222,45 +188,32 @@ export default function Header() {
 
     void loadRuntimeStatus();
 
-    const interval =
-      window.setInterval(
-        loadRuntimeStatus,
-        30000,
-      );
+    const interval = window.setInterval(
+      loadRuntimeStatus,
+      30000,
+    );
 
     return () => {
-      active =
-        false;
-
-      window.clearInterval(
-        interval,
-      );
+      active = false;
+      window.clearInterval(interval);
     };
-  }, [
-    copy.unavailable,
-  ]);
+  }, [copy.unavailable]);
 
   const statusLabel =
-    runtime.status ===
-    "checking"
+    runtime.status === "checking"
       ? product.checking
-      : runtime.status ===
-          "online"
+      : runtime.status === "online"
         ? product.online
-        : runtime.status ===
-            "degraded"
+        : runtime.status === "degraded"
           ? product.degraded
           : product.offline;
 
   const statusTone =
-    runtime.status ===
-    "online"
+    runtime.status === "online"
       ? "online"
-      : runtime.status ===
-          "degraded"
+      : runtime.status === "degraded"
         ? "degraded"
-        : runtime.status ===
-            "checking"
+        : runtime.status === "checking"
           ? "checking"
           : "offline";
 
@@ -301,7 +254,10 @@ export default function Header() {
 
         <div className="aios-header-meta">
           <span
-            className={`aios-runtime-pill ${statusTone}`}
+            className={
+              "aios-runtime-pill " +
+              statusTone
+            }
           >
             <span
               className="aios-runtime-dot"
@@ -346,8 +302,14 @@ export default function Header() {
 
         <div
           className="aios-user-avatar"
-          title={`${APP_CONFIG.stage} User`}
-          aria-label={`${APP_CONFIG.stage} User`}
+          title={
+            APP_CONFIG.stage +
+            " User"
+          }
+          aria-label={
+            APP_CONFIG.stage +
+            " User"
+          }
         >
           V
         </div>
