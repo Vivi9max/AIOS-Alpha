@@ -22,7 +22,7 @@ import { createFounderDevelopmentContract } from "@/lib/github/founder-developme
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const DEFAULT_BRANCH = "main";
