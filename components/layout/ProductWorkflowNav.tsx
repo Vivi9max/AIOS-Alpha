@@ -45,133 +45,57 @@ export default function ProductWorkflowNav() {
   const labels = copy[locale];
 
   return (
-    <nav
-      aria-label={labels.workflow}
-      style={{
-        borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
-        background: "rgba(248, 250, 252, 0.88)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "1440px",
-          margin: "0 auto",
-          padding: "8px 20px",
-          boxSizing: "border-box",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            minWidth: 0,
-          }}
-        >
-          <div
-            style={{
-              flex: "0 0 auto",
-              fontSize: "10px",
-              lineHeight: 1,
-              fontWeight: 700,
-              letterSpacing: "0.14em",
-              color: "#64748b",
-              whiteSpace: "nowrap",
-              textTransform: "uppercase",
-            }}
-          >
-            {labels.workflow}
-          </div>
+    <nav className="aios-product-workflow" aria-label={labels.workflow}>
+      <div className="aios-product-workflow-inner">
+        <div className="aios-product-workflow-label">
+          <span className="aios-product-workflow-dot" aria-hidden="true" />
+          <span>{labels.workflow}</span>
+        </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              minWidth: 0,
-              overflowX: "auto",
-              scrollbarWidth: "none",
-              paddingBottom: "1px",
-            }}
-          >
-            {steps.map((step, index) => {
-              const active =
-                pathname === step.href ||
-                (step.href === "/planner" &&
-                  pathname.startsWith("/planner/"));
+        <div className="aios-product-workflow-scroll">
+          {steps.map((step, index) => {
+            const active =
+              pathname === step.href ||
+              (step.href === "/planner" &&
+                pathname.startsWith("/planner/"));
 
-              const label = labels[step.key];
+            const label = labels[step.key];
 
-              return (
-                <div
-                  key={`${step.number}-${step.key}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    flex: "0 0 auto",
-                  }}
-                >
-                  {index > 0 ? (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        color: "#94a3b8",
-                        fontSize: "12px",
-                        lineHeight: 1,
-                      }}
-                    >
-                      →
-                    </span>
-                  ) : null}
-
-                  <Link
-                    href={step.href}
-                    aria-current={active ? "page" : undefined}
-                    title={active ? labels.current : label}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "7px",
-                      minHeight: "30px",
-                      padding: "0 10px",
-                      borderRadius: "999px",
-                      border: active
-                        ? "1px solid rgba(37, 99, 235, 0.28)"
-                        : "1px solid rgba(148, 163, 184, 0.2)",
-                      background: active
-                        ? "rgba(37, 99, 235, 0.08)"
-                        : "rgba(255, 255, 255, 0.58)",
-                      color: active ? "#1d4ed8" : "#475569",
-                      textDecoration: "none",
-                      whiteSpace: "nowrap",
-                      fontSize: "12px",
-                      lineHeight: 1,
-                      fontWeight: active ? 700 : 600,
-                      transition:
-                        "background 160ms ease, border-color 160ms ease, color 160ms ease",
-                    }}
+            return (
+              <div
+                key={`${step.number}-${step.key}`}
+                className="aios-product-workflow-step"
+              >
+                {index > 0 ? (
+                  <span
+                    className="aios-product-workflow-arrow"
+                    aria-hidden="true"
                   >
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        fontSize: "9px",
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        opacity: active ? 0.9 : 0.6,
-                      }}
-                    >
-                      {step.number}
-                    </span>
-                    <span>{label}</span>
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
+                    →
+                  </span>
+                ) : null}
+
+                <Link
+                  href={step.href}
+                  aria-current={active ? "page" : undefined}
+                  title={active ? labels.current : label}
+                  className={
+                    active
+                      ? "aios-product-workflow-link is-active"
+                      : "aios-product-workflow-link"
+                  }
+                >
+                  <span
+                    className="aios-product-workflow-number"
+                    aria-hidden="true"
+                  >
+                    {step.number}
+                  </span>
+                  <span>{label}</span>
+                </Link>
+              </div>
+            );
+          })}
         </div>
       </div>
     </nav>
