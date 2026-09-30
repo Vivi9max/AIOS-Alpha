@@ -25,6 +25,7 @@ const MAX_CONTEXT_CHARS = 120000;
 const MAX_TARGET_FILES = 8;
 const MAX_GENERATED_FILE_CHARS = 200000;
 const MAX_REPAIR_ROUNDS = 2;
+const MAX_GENERATION_RECOVERY_ROUNDS = 2;
 
 const GENERATION_SYSTEM_PROMPT = [
   "AIOS Autonomous Development Agent",
@@ -42,6 +43,8 @@ const GENERATION_SYSTEM_PROMPT = [
   "7. 不要输出 Markdown code fence。",
   "8. 不要输出解释、分析、前言或后记。",
   "9. 只能输出目标文件集合，每个文件严格使用 AIOS_FILE_BEGIN 格式。",
+  "10. 必须输出所有指定目标文件，不能因为文件较长而省略。",
+  "11. 如果一次输出无法完整覆盖全部文件，必须优先保证当前指定文件集合全部有完整内容。",
   "",
   "格式：",
   "AIOS_FILE_BEGIN",
@@ -80,6 +83,24 @@ const REPAIR_SYSTEM_PROMPT = [
   "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
   "必须保持现有类型、接口、架构和 Founder 安全边界。",
   "每个文件严格使用 AIOS_FILE_BEGIN / PATH / CONTENT_BEGIN / CONTENT_END / AIOS_FILE_END。",
+].join("\n");
+
+const GENERATION_RECOVERY_SYSTEM_PROMPT = [
+  "AIOS Autonomous Generation Recovery Agent",
+  "",
+  "你负责恢复一次不完整的 Autonomous Development 源码生成。",
+  "上一次生成已经成功生成部分文件，但缺少指定文件。",
+  "",
+  "严格规则：",
+  "1. 只生成当前指定的缺失文件。",
+  "2. 必须输出完整文件内容。",
+  "3. 必须基于真实仓库源码上下文。",
+  "4. 不得输出 diff。",
+  "5. 不得输出 Markdown code fence。",
+  "6. 不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
+  "7. 必须保持现有项目架构、类型、接口和 import 路径兼容。",
+  "8. 不得省略文件内容。",
+  "9. 每个文件严格使用 AIOS_FILE_BEGIN / PATH / CONTENT_BEGIN / CONTENT_END / AIOS_FILE_END。",
 ].join("\n");
 
 async function runAutonomousBrain(input: {
@@ -479,7 +500,50 @@ function buildGenerationPrompt(
     "Generate complete replacement contents for every required target file.",
     "If a selected file does not exist yet, generate it as a complete new file.",
     "Do not omit any selected file that must change.",
+    "Every target path must have exactly one complete AIOS_FILE_BEGIN block.",
     "Return only AIOS_FILE_BEGIN blocks.",
+  ].join("\n");
+}
+
+function buildMissingFileRecoveryPrompt(
+  objective: string,
+  missingPath: string,
+  targetPaths: string[],
+  context: Array<{
+    path: string;
+    content: string;
+  }>,
+): string {
+  return [
+    "AUTONOMOUS DEVELOPMENT GENERATION RECOVERY",
+    "",
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    "",
+    "ORIGINAL USER REQUIREMENT:",
+    objective,
+    "",
+    "ALL TARGET FILES:",
+    targetPaths.join("\n"),
+    "",
+    "MISSING FILE THAT MUST BE GENERATED:",
+    missingPath,
+    "",
+    "REAL REPOSITORY SOURCE CONTEXT:",
+    ...context.flatMap(
+      (file) => [
+        `FILE: ${file.path}`,
+        "CONTENT_BEGIN",
+        file.content,
+        "CONTENT_END",
+        "",
+      ],
+    ),
+    "Generate only the missing file listed above.",
+    "The file must be complete and production-ready.",
+    "If the file already exists in the repository, preserve its existing architecture and interfaces while implementing the user requirement.",
+    "Do not output any other file.",
+    "Return exactly one AIOS_FILE_BEGIN block for the missing file.",
   ].join("\n");
 }
 
@@ -561,6 +625,177 @@ function extractGeneratedFiles(
   return Array.from(
     unique.values(),
   );
+}
+
+function findMissingTargetPaths(
+  targetPaths: string[],
+  generatedFiles: Array<{
+    path: string;
+    content: string;
+  }>,
+): string[] {
+  const generatedSet =
+    new Set(
+      generatedFiles.map(
+        (file) => normalizePath(file.path),
+      ),
+    );
+
+  return targetPaths.filter(
+    (path) =>
+      !generatedSet.has(
+        normalizePath(path),
+      ),
+  );
+}
+
+function mergeGeneratedFiles(
+  generatedFiles: Array<{
+    path: string;
+    content: string;
+  }>,
+  recoveryFiles: Array<{
+    path: string;
+    content: string;
+  }>,
+): Array<{
+  path: string;
+  content: string;
+}> {
+  const merged = new Map<
+    string,
+    {
+      path: string;
+      content: string;
+    }
+  >();
+
+  for (const file of [
+    ...generatedFiles,
+    ...recoveryFiles,
+  ]) {
+    merged.set(
+      normalizePath(file.path),
+      {
+        path: normalizePath(file.path),
+        content: file.content,
+      },
+    );
+  }
+
+  return Array.from(
+    merged.values(),
+  );
+}
+
+async function recoverIncompleteGeneration(
+  input: {
+    objective: string;
+    targetPaths: string[];
+    generatedFiles: Array<{
+      path: string;
+      content: string;
+    }>;
+    targetContext: Array<{
+      path: string;
+      content: string;
+    }>;
+  },
+): Promise<
+  Array<{
+    path: string;
+    content: string;
+  }>
+> {
+  let generatedFiles =
+    input.generatedFiles;
+
+  for (
+    let round = 1;
+    round <=
+      MAX_GENERATION_RECOVERY_ROUNDS;
+    round += 1
+  ) {
+    const missing =
+      findMissingTargetPaths(
+        input.targetPaths,
+        generatedFiles,
+      );
+
+    if (!missing.length) {
+      return generatedFiles;
+    }
+
+    const recoveryFiles: Array<{
+      path: string;
+      content: string;
+    }> = [];
+
+    for (const missingPath of missing) {
+      const recovery =
+        await runAutonomousBrain({
+          prompt:
+            buildMissingFileRecoveryPrompt(
+              input.objective,
+              missingPath,
+              input.targetPaths,
+              input.targetContext,
+            ),
+          systemPrompt:
+            GENERATION_RECOVERY_SYSTEM_PROMPT,
+        });
+
+      if (!recovery.success) {
+        throw new Error(
+          recovery.error ||
+            `Autonomous generation recovery failed: ${missingPath}`,
+        );
+      }
+
+      const extracted =
+        extractGeneratedFiles(
+          recovery.content,
+          [missingPath],
+        );
+
+      const exact =
+        extracted.find(
+          (file) =>
+            normalizePath(file.path) ===
+            normalizePath(missingPath),
+        );
+
+      if (!exact) {
+        throw new Error(
+          `AIOS_GENERATION_RECOVERY_FILE_MISSING: ${missingPath}`,
+        );
+      }
+
+      recoveryFiles.push(
+        exact,
+      );
+    }
+
+    generatedFiles =
+      mergeGeneratedFiles(
+        generatedFiles,
+        recoveryFiles,
+      );
+  }
+
+  const finalMissing =
+    findMissingTargetPaths(
+      input.targetPaths,
+      generatedFiles,
+    );
+
+  if (finalMissing.length) {
+    throw new Error(
+      `AIOS_GENERATED_FILES_INCOMPLETE: ${finalMissing.join(", ")}`,
+    );
+  }
+
+  return generatedFiles;
 }
 
 function buildRepairPrompt(
@@ -843,28 +1078,30 @@ export async function executeAutonomousDevelopmentAgent(
       );
     }
 
-    const generatedFiles =
+    const initialGeneratedFiles =
       extractGeneratedFiles(
         generation.content,
         targetPaths,
       );
 
-    const generatedSet =
-      new Set(
-        generatedFiles.map(
-          (file) => file.path,
-        ),
+    const generatedFiles =
+      await recoverIncompleteGeneration({
+        objective,
+        targetPaths,
+        generatedFiles:
+          initialGeneratedFiles,
+        targetContext,
+      });
+
+    const finalMissing =
+      findMissingTargetPaths(
+        targetPaths,
+        generatedFiles,
       );
 
-    const missing =
-      targetPaths.filter(
-        (path) =>
-          !generatedSet.has(path),
-      );
-
-    if (missing.length) {
+    if (finalMissing.length) {
       throw new Error(
-        `AIOS_GENERATED_FILES_INCOMPLETE: ${missing.join(", ")}`,
+        `AIOS_GENERATED_FILES_INCOMPLETE: ${finalMissing.join(", ")}`,
       );
     }
 
@@ -874,7 +1111,7 @@ export async function executeAutonomousDevelopmentAgent(
         targetPaths,
         generatedFiles,
         commitMessage:
-          "feat(C167.14): autonomous development provider routing",
+          "fix(C167.15): recover incomplete autonomous generation",
       });
 
     allChangedPaths.push(
@@ -945,15 +1182,38 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths,
         );
 
+      const repairedFiles =
+        await recoverIncompleteGeneration({
+          objective:
+            `${objective}\n\nVercel build repair round ${repairRounds}.`,
+          targetPaths,
+          generatedFiles:
+            repairFiles,
+          targetContext:
+            repairContext,
+        });
+
+      const repairMissing =
+        findMissingTargetPaths(
+          targetPaths,
+          repairedFiles,
+        );
+
+      if (repairMissing.length) {
+        throw new Error(
+          `AIOS_REPAIR_FILES_INCOMPLETE: ${repairMissing.join(", ")}`,
+        );
+      }
+
       const repairWrite =
         await writeGeneratedFiles({
           objective:
             `${objective}\n\nVercel build repair round ${repairRounds}.`,
           targetPaths,
           generatedFiles:
-            repairFiles,
+            repairedFiles,
           commitMessage:
-            `fix(C167.14): autonomous build repair ${repairRounds}`,
+            `fix(C167.15): autonomous build repair ${repairRounds}`,
         });
 
       allChangedPaths.push(
