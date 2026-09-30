@@ -32,32 +32,70 @@ const copy = {
 } as const;
 
 const steps = [
-  { key: "planner", href: "/planner", number: "01" },
-  { key: "dashboard", href: "/dashboard", number: "02" },
-  { key: "tasks", href: "/tasks", number: "03" },
-  { key: "planner", href: "/planner", number: "04" },
-  { key: "execution", href: "/execution", number: "05" },
+  {
+    key: "planner",
+    href: "/planner",
+    number: "01",
+  },
+  {
+    key: "dashboard",
+    href: "/dashboard",
+    number: "02",
+  },
+  {
+    key: "tasks",
+    href: "/tasks",
+    number: "03",
+  },
+  {
+    key: "planner",
+    href: "/planner",
+    number: "04",
+  },
+  {
+    key: "execution",
+    href: "/execution",
+    number: "05",
+  },
 ] as const;
 
 export default function ProductWorkflowNav() {
   const pathname = usePathname();
   const { locale } = useLanguage();
+
   const labels = copy[locale];
 
   return (
-    <nav className="aios-product-workflow" aria-label={labels.workflow}>
+    <nav
+      className="aios-product-workflow"
+      aria-label={labels.workflow}
+    >
       <div className="aios-product-workflow-inner">
         <div className="aios-product-workflow-label">
-          <span className="aios-product-workflow-dot" aria-hidden="true" />
+          <span
+            className="aios-product-workflow-dot"
+            aria-hidden="true"
+          />
+
           <span>{labels.workflow}</span>
         </div>
 
         <div className="aios-product-workflow-scroll">
           {steps.map((step, index) => {
+            const isPlannerRoute =
+              step.href === "/planner" &&
+              (pathname === "/planner" ||
+                pathname.startsWith("/planner/"));
+
+            const isExecutionRoute =
+              step.href === "/execution" &&
+              (pathname === "/execution" ||
+                pathname.startsWith("/execution/"));
+
             const active =
               pathname === step.href ||
-              (step.href === "/planner" &&
-                pathname.startsWith("/planner/"));
+              isPlannerRoute ||
+              isExecutionRoute;
 
             const label = labels[step.key];
 
@@ -77,8 +115,14 @@ export default function ProductWorkflowNav() {
 
                 <Link
                   href={step.href}
-                  aria-current={active ? "page" : undefined}
-                  title={active ? labels.current : label}
+                  aria-current={
+                    active ? "page" : undefined
+                  }
+                  title={
+                    active
+                      ? labels.current
+                      : label
+                  }
                   className={
                     active
                       ? "aios-product-workflow-link is-active"
@@ -91,6 +135,7 @@ export default function ProductWorkflowNav() {
                   >
                     {step.number}
                   </span>
+
                   <span>{label}</span>
                 </Link>
               </div>
