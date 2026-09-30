@@ -135,7 +135,10 @@ function scorePath(path: string, tokens: string[]): number {
 }
 
 async function discoverRepositoryPaths(objective: string): Promise<string[]> {
-  const queue = APPROVED_ROOTS.map((root) => ({ path: root, depth: 0 }));
+const queue: Array<{ path: string; depth: number }> = APPROVED_ROOTS.map((root) => ({
+  path: root,
+  depth: 0,
+}));
   const discovered = new Set<string>();
 
   while (queue.length && discovered.size < MAX_DISCOVERY_ENTRIES) {
