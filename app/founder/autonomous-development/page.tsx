@@ -2,114 +2,425 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
-const STORAGE_KEY = "aios-founder-access-key";
+const STORAGE_KEY =
+  "aios-founder-access-key";
+
+type TaskStatus =
+  | "todo"
+  | "running"
+  | "completed"
+  | "failed"
+  | "blocked";
+
+type Task = {
+  id: string;
+  objective: string;
+  repository: string;
+  branch: string;
+  targetPaths: string[];
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type Result = {
   ok?: boolean;
   success?: boolean;
   code?: string;
   error?: string;
-  reason?: string;
-  taskId?: string;
+  message?: string;
+  objective?: string;
+  status?: TaskStatus | "starting";
   repository?: string;
   branch?: string;
-  objective?: string;
-  discoveredPaths?: string[];
-  targetPaths?: string[];
-  changedPaths?: string[];
-  commitShas?: string[];
-  readbackVerified?: boolean;
-  verificationPassed?: boolean;
-  buildVerification?: "NOT_EXECUTED" | "PASS";
+  taskId?: string;
+  tasks?: Task[];
 };
 
 const DEFAULT_OBJECTIVE =
   "例如：把 /cn 页面做成正常用户可用的 AIOS CN 工作区，并保持现有 API 与 Founder 权限边界不变。";
 
+const POLL_INTERVAL_MS = 2500;
+const MAX_POLL_ROUNDS = 240;
+
 export default function FounderAutonomousDevelopmentPage() {
-  const [accessKey, setAccessKey] = useState("");
-  const [objective, setObjective] = useState("");
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const [error, setError] = useState("");
+  const [accessKey, setAccessKey] =
+    useState("");
+
+  const [objective, setObjective] =
+    useState("");
+
+  const [running, setRunning] =
+    useState(false);
+
+  const [result, setResult] =
+    useState<Result | null>(null);
+
+  const [error, setError] =
+    useState("");
+
+  const pollTimerRef =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
+
+  const pollRoundsRef =
+    useRef(0);
 
   useEffect(() => {
-    const storedKey = window.sessionStorage.getItem(STORAGE_KEY);
-    if (storedKey) setAccessKey(storedKey);
+    const storedKey =
+      window.sessionStorage.getItem(
+        STORAGE_KEY,
+      );
+
+    if (storedKey) {
+      setAccessKey(storedKey);
+    }
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(
+          pollTimerRef.current,
+        );
+      }
+    };
   }, []);
 
+  const getHeaders = (key: string) => ({
+    "Content-Type":
+      "application/json",
+    Accept: "application/json",
+    Authorization: `Bearer ${key}`,
+  });
+
+  const findLatestTask = (
+    tasks: Task[],
+    requestObjective: string,
+  ) => {
+    return (
+      tasks
+        .filter(
+          (task) =>
+            task.objective.trim() ===
+            requestObjective.trim(),
+        )
+        .sort(
+          (a, b) =>
+            new Date(
+              b.createdAt,
+            ).getTime() -
+            new Date(
+              a.createdAt,
+            ).getTime(),
+        )[0] ?? null
+    );
+  };
+
+  const pollTask = async (
+    key: string,
+    requestObjective: string,
+  ): Promise<void> => {
+    if (
+      pollRoundsRef.current >=
+      MAX_POLL_ROUNDS
+    ) {
+      setRunning(false);
+      setError(
+        "AIOS 任务仍在后台执行。页面轮询已停止，可稍后重新打开 Founder Autonomous Development 查看任务状态。",
+      );
+      return;
+    }
+
+    pollRoundsRef.current += 1;
+
+    try {
+      const response =
+        await fetch(
+          `/api/founder/autonomous-development?objective=${encodeURIComponent(
+            requestObjective,
+          )}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              Accept:
+                "application/json",
+              Authorization: `Bearer ${key}`,
+            },
+          },
+        );
+
+      const data =
+        (await response.json()) as Result;
+
+      if (!response.ok) {
+        if (
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
+        ) {
+          window.sessionStorage.removeItem(
+            STORAGE_KEY,
+          );
+        }
+
+        setRunning(false);
+        setError(
+          data.error ||
+            `Task status request failed (${response.status})`,
+        );
+        return;
+      }
+
+      const task =
+        findLatestTask(
+          data.tasks ?? [],
+          requestObjective,
+        );
+
+      if (!task) {
+        setResult({
+          ok: true,
+          success: true,
+          code:
+            "AUTONOMOUS_DEVELOPMENT_PLANNING",
+          objective:
+            requestObjective,
+          status: "starting",
+          message:
+            "AIOS 正在读取真实 GitHub 仓库并进行 Planner 判断。",
+        });
+
+        pollTimerRef.current =
+          setTimeout(() => {
+            void pollTask(
+              key,
+              requestObjective,
+            );
+          }, POLL_INTERVAL_MS);
+
+        return;
+      }
+
+      setResult({
+        ok:
+          task.status ===
+          "completed",
+        success:
+          task.status ===
+          "completed",
+        code:
+          task.status ===
+          "completed"
+            ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+            : task.status ===
+                "running"
+              ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
+              : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+        objective:
+          task.objective,
+        repository:
+          task.repository,
+        branch:
+          task.branch,
+        taskId: task.id,
+        status:
+          task.status,
+        tasks: [task],
+      });
+
+      if (
+        task.status ===
+          "completed" ||
+        task.status ===
+          "failed" ||
+        task.status ===
+          "blocked"
+      ) {
+        setRunning(false);
+
+        if (
+          task.status !==
+          "completed"
+        ) {
+          setError(
+            `AIOS Autonomous Development ${task.status}.`,
+          );
+        }
+
+        return;
+      }
+
+      pollTimerRef.current =
+        setTimeout(() => {
+          void pollTask(
+            key,
+            requestObjective,
+          );
+        }, POLL_INTERVAL_MS);
+    } catch (pollError) {
+      setRunning(false);
+      setError(
+        pollError instanceof Error
+          ? pollError.message
+          : "Task status request failed.",
+      );
+    }
+  };
+
   const handleRun = async () => {
-    const key = accessKey.trim();
-    const requestObjective = objective.trim();
+    const key =
+      accessKey.trim();
+
+    const requestObjective =
+      objective.trim();
 
     if (!key) {
-      setError("请输入 Founder Access Key，或先在 Founder Console 完成验证。");
+      setError(
+        "请输入 Founder Access Key，或先在 Founder Console 完成验证。",
+      );
       return;
     }
 
     if (!requestObjective) {
-      setError("请先告诉 AIOS 你想实现什么，不需要填写 Target Path。");
+      setError(
+        "请先告诉 AIOS 你想实现什么，不需要填写 Target Path。",
+      );
       return;
     }
 
-    window.sessionStorage.setItem(STORAGE_KEY, key);
+    if (pollTimerRef.current) {
+      clearTimeout(
+        pollTimerRef.current,
+      );
+    }
+
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      key,
+    );
+
+    pollRoundsRef.current = 0;
+
     setRunning(true);
     setError("");
-    setResult(null);
+    setResult({
+      ok: true,
+      success: true,
+      code:
+        "AUTONOMOUS_DEVELOPMENT_STARTING",
+      objective:
+        requestObjective,
+      status: "starting",
+      message:
+        "正在启动 AIOS Autonomous Development。",
+    });
 
     try {
-      const response = await fetch(
-        "/api/founder/autonomous-development",
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            Authorization: `Bearer ${key}`,
+      const response =
+        await fetch(
+          "/api/founder/autonomous-development",
+          {
+            method: "POST",
+            cache: "no-store",
+            headers:
+              getHeaders(key),
+            body: JSON.stringify({
+              action:
+                "autonomous",
+              objective:
+                requestObjective,
+            }),
           },
-          body: JSON.stringify({
-            action: "autonomous",
-            objective: requestObjective,
-          }),
-        },
-      );
+        );
 
-      const data = (await response.json()) as Result;
-      setResult(data);
+      let data: Result = {};
+
+      try {
+        data =
+          (await response.json()) as Result;
+      } catch {
+        data = {
+          ok: false,
+          success: false,
+          code:
+            "AUTONOMOUS_RESPONSE_INVALID",
+          error:
+            "AIOS returned an invalid response.",
+        };
+      }
 
       if (!response.ok) {
         if (
-          data.code === "FOUNDER_UNAUTHORIZED" ||
-          data.code === "FOUNDER_NOT_CONFIGURED"
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
         ) {
-          window.sessionStorage.removeItem(STORAGE_KEY);
+          window.sessionStorage.removeItem(
+            STORAGE_KEY,
+          );
         }
-        setError(data.error || data.reason || `Request failed (${response.status})`);
+
+        setRunning(false);
+        setError(
+          data.error ||
+            `Request failed (${response.status})`,
+        );
+        setResult(data);
+        return;
       }
+
+      setResult(data);
+
+      pollTimerRef.current =
+        setTimeout(() => {
+          void pollTask(
+            key,
+            requestObjective,
+          );
+        }, 500);
     } catch (requestError) {
+      setRunning(false);
+
       setError(
         requestError instanceof Error
           ? requestError.message
           : "Autonomous development request failed.",
       );
-    } finally {
-      setRunning(false);
     }
   };
 
-  const success = result?.success === true || result?.ok === true;
+  const currentTask =
+    result?.tasks?.[0];
+
+  const status =
+    currentTask?.status ||
+    result?.status ||
+    "starting";
+
+  const success =
+    status === "completed";
+
+  const isTerminal =
+    status === "completed" ||
+    status === "failed" ||
+    status === "blocked";
 
   return (
     <main
       style={{
         minHeight: "100vh",
         background: "#f6f7fb",
-        padding: "20px 14px 44px",
-        boxSizing: "border-box",
+        padding:
+          "20px 14px 44px",
+        boxSizing:
+          "border-box",
       }}
     >
       <div
@@ -119,20 +430,27 @@ export default function FounderAutonomousDevelopmentPage() {
           margin: "0 auto",
         }}
       >
-        <header style={{ marginBottom: 16 }}>
+        <header
+          style={{
+            marginBottom: 16,
+          }}
+        >
           <div
             style={{
               color: "#dc2626",
               fontSize: 10,
               fontWeight: 900,
-              letterSpacing: "0.14em",
+              letterSpacing:
+                "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.12
+            FOUNDER ONLY · C167.18
           </div>
+
           <h1
             style={{
-              margin: "8px 0 7px",
+              margin:
+                "8px 0 7px",
               fontSize: 28,
               lineHeight: 1.1,
               fontWeight: 850,
@@ -141,6 +459,7 @@ export default function FounderAutonomousDevelopmentPage() {
           >
             AIOS Autonomous Development
           </h1>
+
           <p
             style={{
               margin: 0,
@@ -149,23 +468,26 @@ export default function FounderAutonomousDevelopmentPage() {
               lineHeight: 1.6,
             }}
           >
-            你只说需求。AIOS 自动发现仓库 → 读取代码 → 判断目标文件 → 生成完整文件 → GitHub 写入 → Commit → Readback。
+            你只说需求。AIOS 自动发现真实仓库、读取代码、判断目标文件、生成、写入 GitHub、Commit、Readback 并执行 Build Verification。
           </p>
         </header>
 
         <section
           style={{
             padding: 16,
-            border: "1px solid #e2e8f0",
+            border:
+              "1px solid #e2e8f0",
             borderRadius: 18,
             background: "#ffffff",
-            boxShadow: "0 8px 26px rgba(15, 23, 42, 0.05)",
+            boxShadow:
+              "0 8px 26px rgba(15, 23, 42, 0.05)",
           }}
         >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gridTemplateColumns:
+                "repeat(4, minmax(0, 1fr))",
               gap: 7,
               marginBottom: 16,
             }}
@@ -179,57 +501,82 @@ export default function FounderAutonomousDevelopmentPage() {
               "Write",
               "Commit",
               "Verify",
-            ].map((step, index) => (
-              <div
-                key={step}
-                style={{
-                  padding: "8px 5px",
-                  borderRadius: 9,
-                  background: "#f8fafc",
-                  textAlign: "center",
-                  color: "#475569",
-                  fontSize: 9,
-                  fontWeight: 750,
-                }}
-              >
-                <span
+            ].map(
+              (
+                step,
+                index,
+              ) => (
+                <div
+                  key={step}
                   style={{
-                    display: "block",
-                    marginBottom: 3,
-                    color: "#94a3b8",
-                    fontSize: 8,
+                    padding:
+                      "8px 5px",
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    textAlign:
+                      "center",
+                    color:
+                      "#475569",
+                    fontSize: 9,
+                    fontWeight:
+                      750,
                   }}
                 >
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                {step}
-              </div>
-            ))}
+                  <span
+                    style={{
+                      display:
+                        "block",
+                      marginBottom:
+                        3,
+                      color:
+                        "#94a3b8",
+                      fontSize: 8,
+                    }}
+                  >
+                    {String(
+                      index + 1,
+                    ).padStart(
+                      2,
+                      "0",
+                    )}
+                  </span>
+                  {step}
+                </div>
+              ),
+            )}
           </div>
 
           <div
             style={{
               padding: 12,
               borderRadius: 12,
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              background:
+                "#f8fafc",
+              border:
+                "1px solid #e2e8f0",
               marginBottom: 12,
             }}
           >
             <div
               style={{
                 marginBottom: 5,
-                color: "#94a3b8",
+                color:
+                  "#94a3b8",
                 fontSize: 10,
                 fontWeight: 850,
-                letterSpacing: "0.08em",
+                letterSpacing:
+                  "0.08em",
               }}
             >
               FOUNDER AUTH SESSION
             </div>
+
             <div
               style={{
-                color: accessKey ? "#15803d" : "#64748b",
+                color: accessKey
+                  ? "#15803d"
+                  : "#64748b",
                 fontSize: 13,
                 fontWeight: 700,
               }}
@@ -243,9 +590,11 @@ export default function FounderAutonomousDevelopmentPage() {
           <label
             htmlFor="autonomous-objective"
             style={{
-              display: "block",
+              display:
+                "block",
               marginBottom: 7,
-              color: "#334155",
+              color:
+                "#334155",
               fontSize: 12,
               fontWeight: 750,
             }}
@@ -256,30 +605,41 @@ export default function FounderAutonomousDevelopmentPage() {
           <textarea
             id="autonomous-objective"
             value={objective}
-            onChange={(event) => setObjective(event.target.value)}
-            placeholder={DEFAULT_OBJECTIVE}
+            onChange={(event) =>
+              setObjective(
+                event.target.value,
+              )
+            }
+            placeholder={
+              DEFAULT_OBJECTIVE
+            }
             disabled={running}
             rows={7}
             spellCheck={false}
             style={{
               width: "100%",
-              boxSizing: "border-box",
+              boxSizing:
+                "border-box",
               padding: 12,
-              border: "1px solid #cbd5e1",
+              border:
+                "1px solid #cbd5e1",
               borderRadius: 10,
               outline: "none",
               color: "#111827",
-              background: "#ffffff",
+              background:
+                "#ffffff",
               fontSize: 14,
               lineHeight: 1.6,
-              resize: "vertical",
+              resize:
+                "vertical",
             }}
           />
 
           <div
             style={{
               marginTop: 7,
-              color: "#94a3b8",
+              color:
+                "#94a3b8",
               fontSize: 11,
               lineHeight: 1.5,
             }}
@@ -290,40 +650,31 @@ export default function FounderAutonomousDevelopmentPage() {
           <button
             type="button"
             disabled={running}
-            onClick={() => void handleRun()}
+            onClick={() =>
+              void handleRun()
+            }
             style={{
               width: "100%",
               minHeight: 48,
               marginTop: 12,
               border: "none",
               borderRadius: 10,
-              background: running ? "#94a3b8" : "#111827",
-              color: "#ffffff",
+              background: running
+                ? "#94a3b8"
+                : "#111827",
+              color:
+                "#ffffff",
               fontSize: 13,
               fontWeight: 850,
-              cursor: running ? "default" : "pointer",
+              cursor: running
+                ? "default"
+                : "pointer",
             }}
           >
-            {running ? "AIOS Autonomous Development Running..." : "Start Autonomous Development"}
+            {running
+              ? "AIOS Autonomous Development Running..."
+              : "Start Autonomous Development"}
           </button>
-
-          {error && (
-            <div
-              role="alert"
-              style={{
-                marginTop: 10,
-                padding: 11,
-                border: "1px solid #fecaca",
-                borderRadius: 10,
-                background: "#fef2f2",
-                color: "#b91c1c",
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {error}
-            </div>
-          )}
 
           {result && (
             <div
@@ -331,87 +682,196 @@ export default function FounderAutonomousDevelopmentPage() {
                 marginTop: 12,
                 padding: 13,
                 borderRadius: 12,
-                border: success
-                  ? "1px solid #bbf7d0"
-                  : "1px solid #fecaca",
-                background: success ? "#f0fdf4" : "#fef2f2",
+                border:
+                  success
+                    ? "1px solid #bbf7d0"
+                    : isTerminal
+                      ? "1px solid #fecaca"
+                      : "1px solid #bfdbfe",
+                background:
+                  success
+                    ? "#f0fdf4"
+                    : isTerminal
+                      ? "#fef2f2"
+                      : "#eff6ff",
               }}
             >
               <div
                 style={{
                   marginBottom: 8,
-                  color: success ? "#15803d" : "#b91c1c",
+                  color:
+                    success
+                      ? "#15803d"
+                      : isTerminal
+                        ? "#b91c1c"
+                        : "#1d4ed8",
                   fontSize: 12,
                   fontWeight: 850,
                 }}
               >
-                {success ? "AUTONOMOUS DEVELOPMENT COMPLETED" : "AUTONOMOUS DEVELOPMENT BLOCKED"}
+                {success
+                  ? "AUTONOMOUS DEVELOPMENT COMPLETED"
+                  : status ===
+                      "running"
+                    ? "AUTONOMOUS DEVELOPMENT RUNNING"
+                    : status ===
+                        "starting"
+                      ? "AIOS IS PLANNING"
+                      : "AUTONOMOUS DEVELOPMENT BLOCKED"}
               </div>
 
               {result.code && (
-                <div style={{ color: "#475569", fontSize: 12 }}>
-                  <strong>Code:</strong> {result.code}
+                <div
+                  style={{
+                    color:
+                      "#475569",
+                    fontSize: 12,
+                  }}
+                >
+                  <strong>
+                    Code:
+                  </strong>{" "}
+                  {result.code}
                 </div>
               )}
 
-              {result.taskId && (
-                <div style={{ marginTop: 5, color: "#475569", fontSize: 12 }}>
-                  <strong>Task:</strong> {result.taskId}
+              {(
+                currentTask?.id ||
+                result.taskId
+              ) && (
+                <div
+                  style={{
+                    marginTop: 5,
+                    color:
+                      "#475569",
+                    fontSize: 12,
+                  }}
+                >
+                  <strong>
+                    Task:
+                  </strong>{" "}
+                  {currentTask?.id ||
+                    result.taskId}
                 </div>
               )}
 
-              {result.targetPaths?.length ? (
-                <div style={{ marginTop: 9 }}>
-                  <div style={{ color: "#64748b", fontSize: 11, fontWeight: 800 }}>
-                    AIOS SELECTED FILES
-                  </div>
-                  {result.targetPaths.map((path) => (
-                    <div
-                      key={path}
-                      style={{
-                        marginTop: 4,
-                        padding: "5px 7px",
-                        borderRadius: 7,
-                        background: "#ffffff",
-                        color: "#334155",
-                        fontSize: 11,
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {path}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {result.changedPaths?.length ? (
-                <div style={{ marginTop: 9, color: "#475569", fontSize: 12 }}>
-                  <strong>Written:</strong> {result.changedPaths.length} file(s)
-                </div>
-              ) : null}
-
-              <div style={{ marginTop: 5, color: "#475569", fontSize: 12 }}>
-                <strong>Readback:</strong> {result.readbackVerified ? "VERIFIED" : "NOT VERIFIED"}
-              </div>
-
-              <div style={{ marginTop: 5, color: "#475569", fontSize: 12 }}>
-                <strong>Build:</strong> {result.buildVerification || "NOT EXECUTED"}
-              </div>
-
-              {result.reason && (
+              {currentTask?.targetPaths
+                ?.length ? (
                 <div
                   style={{
                     marginTop: 9,
-                    paddingTop: 9,
-                    borderTop: "1px solid #e2e8f0",
-                    color: "#64748b",
-                    fontSize: 11,
-                    lineHeight: 1.55,
                   }}
                 >
-                  {result.reason}
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    AIOS SELECTED FILES
+                  </div>
+
+                  {currentTask.targetPaths.map(
+                    (path) => (
+                      <div
+                        key={path}
+                        style={{
+                          marginTop: 4,
+                          padding:
+                            "5px 7px",
+                          borderRadius:
+                            7,
+                          background:
+                            "#ffffff",
+                          color:
+                            "#334155",
+                          fontSize:
+                            11,
+                          overflowWrap:
+                            "anywhere",
+                        }}
+                      >
+                        {path}
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : null}
+
+              {currentTask && (
+                <div
+                  style={{
+                    marginTop: 9,
+                    color:
+                      "#475569",
+                    fontSize: 12,
+                  }}
+                >
+                  <strong>
+                    Status:
+                  </strong>{" "}
+                  {currentTask.status.toUpperCase()}
                 </div>
               )}
+
+              {result.message && (
+                <div
+                  style={{
+                    marginTop: 9,
+                    color:
+                      "#64748b",
+                    fontSize: 11,
+                    lineHeight:
+                      1.55,
+                  }}
+                >
+                  {result.message}
+                </div>
+              )}
+
+              {error && (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: 9,
+                    paddingTop: 9,
+                    borderTop:
+                      "1px solid #fecaca",
+                    color:
+                      "#b91c1c",
+                    fontSize: 11,
+                    lineHeight:
+                      1.55,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && !result && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 10,
+                padding: 11,
+                border:
+                  "1px solid #fecaca",
+                borderRadius: 10,
+                background:
+                  "#fef2f2",
+                color:
+                  "#b91c1c",
+                fontSize: 12,
+                lineHeight:
+                  1.5,
+              }}
+            >
+              {error}
             </div>
           )}
         </section>
