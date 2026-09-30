@@ -35,12 +35,13 @@ type RuntimeStatus =
   | "offline";
 
 interface RuntimeState {
-  status:
-    RuntimeStatus;
+  status: RuntimeStatus;
 }
 
-const pageTitles:
-  Record<string, MessageKey> = {
+const pageTitles: Record<
+  string,
+  MessageKey
+> = {
   "/":
     "page.workspace",
   "/workspace":
@@ -57,46 +58,74 @@ const pageTitles:
     "nav.settings",
   "/brain":
     "page.runtime",
+  "/runtime":
+    "page.runtime",
+  "/planner":
+    "planner.title",
+  "/execution":
+    "page.runtime",
   "/release":
     "page.release",
 };
 
-const initialStatus:
-  RuntimeState = {
-  status:
-    "checking",
-  };
+const initialStatus: RuntimeState = {
+  status: "checking",
+};
 
 const productCopy = {
   en: {
     global:
       "AIOS Global",
     globalDescription:
-      "Global AIOS Runtime",
+      "Global AIOS",
     cn:
       "AIOS CN",
     cnDescription:
-      "China AIOS Runtime",
+      "China AIOS",
+    online:
+      "Online",
+    degraded:
+      "Degraded",
+    offline:
+      "Offline",
+    checking:
+      "Checking",
   },
   "zh-CN": {
     global:
       "AIOS Global",
     globalDescription:
-      "全球 AIOS Runtime",
+      "全球 AIOS",
     cn:
       "AIOS CN",
     cnDescription:
-      "中国 AIOS Runtime",
+      "中国 AIOS",
+    online:
+      "运行正常",
+    degraded:
+      "服务降级",
+    offline:
+      "运行离线",
+    checking:
+      "检查中",
   },
   ja: {
     global:
       "AIOS Global",
     globalDescription:
-      "グローバル AIOS Runtime",
+      "グローバル AIOS",
     cn:
       "AIOS CN",
     cnDescription:
-      "中国向け AIOS Runtime",
+      "中国向け AIOS",
+    online:
+      "稼働中",
+    degraded:
+      "一部制限",
+    offline:
+      "停止中",
+    checking:
+      "確認中",
   },
 } as const;
 
@@ -151,9 +180,7 @@ export default function Header() {
             },
           );
 
-        if (
-          !response.ok
-        ) {
+        if (!response.ok) {
           throw new Error(
             copy.unavailable,
           );
@@ -216,240 +243,111 @@ export default function Header() {
   const statusLabel =
     runtime.status ===
     "checking"
-      ? copy.checking
+      ? product.checking
       : runtime.status ===
           "online"
-        ? copy.online
+        ? product.online
         : runtime.status ===
             "degraded"
-          ? copy.degraded
-          : copy.offline;
+          ? product.degraded
+          : product.offline;
 
-  const statusIsHealthy =
+  const statusTone =
     runtime.status ===
-    "online";
-
-  const statusIsChecking =
-    runtime.status ===
-    "checking";
+    "online"
+      ? "online"
+      : runtime.status ===
+          "degraded"
+        ? "degraded"
+        : runtime.status ===
+            "checking"
+          ? "checking"
+          : "offline";
 
   return (
     <header
-      style={{
-        minHeight:
-          72,
-        boxSizing:
-          "border-box",
-        background:
-          "#111827",
-        color:
-          "#ffffff",
-        display:
-          "flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "space-between",
-        gap:
-          16,
-        padding:
-          "12px 20px",
-        borderBottom:
-          "1px solid #1f2937",
-      }}
+      className={
+        isCN
+          ? "aios-product-header is-cn"
+          : "aios-product-header is-global"
+      }
     >
-      <div
-        style={{
-          minWidth:
-            0,
-          overflow:
-            "hidden",
-        }}
-      >
-        <div
-          style={{
-            display:
-              "flex",
-            flexWrap:
-              "wrap",
-            alignItems:
-              "center",
-            gap:
-              9,
-          }}
-        >
-          <h2
-            style={{
-              margin:
-                0,
-              fontSize:
-                20,
-              fontWeight:
-                800,
-              lineHeight:
-                1.25,
-              whiteSpace:
-                "nowrap",
-                overflow:
-                "hidden",
-              textOverflow:
-                "ellipsis",
-            }}
-          >
-            {pageTitle}
-          </h2>
+      <div className="aios-header-main">
+        <div className="aios-header-title-row">
+          <div className="aios-header-product-mark">
+            <span
+              className="aios-header-product-dot"
+              aria-hidden="true"
+            />
+
+            <span>
+              {isCN
+                ? product.cn
+                : product.global}
+            </span>
+          </div>
 
           <span
-            style={{
-              display:
-                "inline-flex",
-              alignItems:
-                "center",
-              padding:
-                "4px 9px",
-              borderRadius:
-                999,
-              background:
-                isCN
-                  ? "rgba(239, 68, 68, 0.16)"
-                  : "rgba(59, 130, 246, 0.16)",
-              border:
-                isCN
-                  ? "1px solid rgba(252, 165, 165, 0.35)"
-                  : "1px solid rgba(147, 197, 253, 0.35)",
-              color:
-                isCN
-                  ? "#fecaca"
-                  : "#bfdbfe",
-              fontSize:
-                11,
-              fontWeight:
-                800,
-            }}
+            className="aios-header-divider"
+            aria-hidden="true"
           >
-            {isCN
-              ? product.cn
-              : product.global}
+            /
           </span>
+
+          <h1 className="aios-header-page-title">
+            {pageTitle}
+          </h1>
         </div>
 
-        <div
-          style={{
-            display:
-              "flex",
-            flexWrap:
-              "wrap",
-            alignItems:
-              "center",
-            gap:
-              8,
-            marginTop:
-              6,
-            color:
-              "#cbd5e1",
-            fontSize:
-              11,
-          }}
-        >
+        <div className="aios-header-meta">
           <span
-            style={{
-              display:
-                "inline-flex",
-              alignItems:
-                "center",
-              gap:
-                5,
-            }}
+            className={`aios-runtime-pill ${statusTone}`}
           >
             <span
-              style={{
-                width:
-                  7,
-                height:
-                  7,
-                borderRadius:
-                  "50%",
-                background:
-                  statusIsChecking
-                    ? "#f59e0b"
-                    : statusIsHealthy
-                      ? "#22c55e"
-                      : runtime.status ===
-                          "degraded"
-                        ? "#f59e0b"
-                        : "#ef4444",
-              }}
+              className="aios-runtime-dot"
+              aria-hidden="true"
             />
 
             {statusLabel}
           </span>
 
-          <span>
-            ·
-          </span>
-
-          <span>
+          <span className="aios-header-meta-text">
             {isCN
               ? product.cnDescription
               : product.globalDescription}
           </span>
 
-          <span>
+          <span
+            className="aios-header-meta-separator"
+            aria-hidden="true"
+          >
             ·
           </span>
 
-          <span>
+          <span className="aios-header-meta-text">
             {APP_CONFIG.codename}
           </span>
 
-          <span>
+          <span
+            className="aios-header-meta-separator"
+            aria-hidden="true"
+          >
             ·
           </span>
 
-          <span>
+          <span className="aios-header-meta-text">
             {APP_BADGE}
           </span>
         </div>
       </div>
 
-      <div
-        style={{
-          flexShrink:
-            0,
-          display:
-            "flex",
-          alignItems:
-            "center",
-          gap:
-            10,
-        }}
-      >
+      <div className="aios-header-actions">
         <LanguageSwitcher />
 
         <div
+          className="aios-user-avatar"
           title={`${APP_CONFIG.stage} User`}
-          style={{
-            width:
-              42,
-            height:
-              42,
-            borderRadius:
-              "50%",
-            background:
-              "#374151",
-            display:
-              "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            fontWeight:
-              800,
-            fontSize:
-              16,
-            border:
-              "1px solid #4b5563",
-          }}
+          aria-label={`${APP_CONFIG.stage} User`}
         >
           V
         </div>
