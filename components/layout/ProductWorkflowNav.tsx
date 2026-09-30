@@ -41,10 +41,8 @@ const steps = [
 
 export default function ProductWorkflowNav() {
   const pathname = usePathname();
-  const { language } = useLanguage();
-
-  const labels =
-    copy[language as keyof typeof copy] ?? copy.en;
+  const { locale } = useLanguage();
+  const labels = copy[locale];
 
   return (
     <nav
@@ -105,10 +103,7 @@ export default function ProductWorkflowNav() {
                 (step.href === "/planner" &&
                   pathname.startsWith("/planner/"));
 
-              const label =
-                labels[
-                  step.key as keyof typeof labels
-                ];
+              const label = labels[step.key];
 
               return (
                 <div
@@ -135,14 +130,8 @@ export default function ProductWorkflowNav() {
 
                   <Link
                     href={step.href}
-                    aria-current={
-                      active ? "page" : undefined
-                    }
-                    title={
-                      active
-                        ? labels.current
-                        : label
-                    }
+                    aria-current={active ? "page" : undefined}
+                    title={active ? labels.current : label}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -156,9 +145,7 @@ export default function ProductWorkflowNav() {
                       background: active
                         ? "rgba(37, 99, 235, 0.08)"
                         : "rgba(255, 255, 255, 0.58)",
-                      color: active
-                        ? "#1d4ed8"
-                        : "#475569",
+                      color: active ? "#1d4ed8" : "#475569",
                       textDecoration: "none",
                       whiteSpace: "nowrap",
                       fontSize: "12px",
