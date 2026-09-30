@@ -790,3 +790,189 @@ a {
     transition: none;
   }
 }
+
+.aios-product-workflow {
+  position: sticky;
+  top: 76px;
+  z-index: 800;
+  width: 100%;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.92);
+  color: #475569;
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.aios-product-workflow-inner {
+  width: 100%;
+  max-width: 1440px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.aios-product-workflow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.aios-product-workflow-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow:
+    0 0 0 4px
+    rgba(99, 102, 241, 0.1);
+}
+
+.aios-product-workflow-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.aios-product-workflow-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.aios-product-workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.aios-product-workflow-arrow {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.aios-product-workflow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #475569;
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 650;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.aios-product-workflow-link:hover {
+  border-color: rgba(99, 102, 241, 0.28);
+  background: #ffffff;
+  color: #334155;
+  transform: translateY(-1px);
+}
+
+.aios-product-workflow-link.is-active {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.aios-product-workflow-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #64748b;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.aios-product-workflow-link.is-active
+  .aios-product-workflow-number {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+@media (max-width: 900px) {
+  .aios-product-workflow {
+    top: 68px;
+  }
+
+  .aios-product-workflow-inner {
+    padding: 7px 14px;
+  }
+
+  .aios-product-workflow-label {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .aios-product-workflow {
+    position: relative;
+    top: auto;
+    z-index: 600;
+  }
+
+  .aios-product-workflow-inner {
+    padding: 7px 10px;
+  }
+
+  .aios-product-workflow-scroll {
+    width: 100%;
+  }
+
+  .aios-product-workflow-link {
+    min-height: 34px;
+    padding: 0 9px;
+    font-size: 11px;
+  }
+
+  .aios-product-workflow-number {
+    min-width: 21px;
+    height: 18px;
+    font-size: 8px;
+  }
+
+  .aios-product-workflow-arrow {
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aios-product-workflow-link {
+    transition: none;
+  }
+}
