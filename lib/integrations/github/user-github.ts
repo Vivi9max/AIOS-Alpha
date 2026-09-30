@@ -259,7 +259,8 @@ async function githubFetch<T>(
       `${GITHUB_API}${path}`,
       {
         ...init,
-        cache: "no-store",
+        cache:
+          "no-store",
         headers: {
           ...githubHeaders(token),
           ...(init.headers || {}),
@@ -283,7 +284,9 @@ async function githubFetch<T>(
     }
   }
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
     const message =
       typeof data === "object" &&
       data !== null &&
@@ -297,7 +300,8 @@ async function githubFetch<T>(
         : `GitHub API request failed with HTTP ${response.status}.`;
 
     return {
-      ok: false,
+      ok:
+        false,
       status:
         response.status,
       message,
@@ -305,12 +309,97 @@ async function githubFetch<T>(
   }
 
   return {
-    ok: true,
+    ok:
+      true,
     status:
       response.status,
     data:
       data as T,
   };
+}
+
+async function githubOAuthTokenRequest(
+  body: URLSearchParams,
+): Promise<{
+  ok: boolean;
+  status: number;
+  data?: GitHubTokenResponse;
+  message?: string;
+}> {
+  try {
+    const response =
+      await fetch(
+        GITHUB_OAUTH_TOKEN_URL,
+        {
+          method:
+            "POST",
+          cache:
+            "no-store",
+          headers: {
+            Accept:
+              "application/json",
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+          body:
+            body.toString(),
+        },
+      );
+
+    const text =
+      await response.text();
+
+    let data:
+      | GitHubTokenResponse
+      | undefined;
+
+    try {
+      data =
+        JSON.parse(
+          text,
+        ) as GitHubTokenResponse;
+    } catch {
+      data =
+        undefined;
+    }
+
+    if (
+      !response.ok
+    ) {
+      return {
+        ok:
+          false,
+        status:
+          response.status,
+        message:
+          data?.error_description ||
+          data?.error ||
+          text ||
+          `GitHub OAuth token request failed with HTTP ${response.status}.`,
+      };
+    }
+
+    return {
+      ok:
+        true,
+      status:
+        response.status,
+      data,
+    };
+  } catch (
+    error
+  ) {
+    return {
+      ok:
+        false,
+      status:
+        0,
+      message:
+        error instanceof Error
+          ? error.message
+          : "GitHub OAuth token request failed.",
+    };
+  }
 }
 
 function getCallbackUrl(
@@ -576,77 +665,38 @@ async function exchangeCodeForToken(
         codeVerifier,
     });
 
-  let response:
-    | Response;
-
-  try {
-    response =
-      await fetch(
-        GITHUB_OAUTH_TOKEN_URL,
-        {
-          method:
-            "POST",
-          cache:
-            "no-store",
-          headers: {
-            Accept:
-              "application/json",
-            "Content-Type":
-              "application/x-www-form-urlencoded",
-          },
-          body:
-            body.toString(),
-        },
-      );
-  } catch {
-    return {
-      success: false,
-      error:
-        "GitHub OAuth token exchange network request failed.",
-    };
-  }
-
-  const text =
-    await response.text();
-
-  let data:
-    | GitHubTokenResponse
-    | undefined;
-
-  try {
-    data =
-      JSON.parse(
-        text,
-      ) as GitHubTokenResponse;
-  } catch {
-    data =
-      undefined;
-  }
+  const result =
+    await githubOAuthTokenRequest(
+      body,
+    );
 
   if (
-    !response.ok
+    !result.ok
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
-        `GitHub OAuth token exchange failed: HTTP ${response.status}${data?.error ? ` (${data.error})` : ""}${data?.error_description ? ` - ${data.error_description}` : text ? ` - ${text}` : ""}`,
+        `GitHub OAuth token exchange failed: HTTP ${result.status}${result.message ? ` - ${result.message}` : ""}`,
     };
   }
 
   if (
-    !data?.access_token
+    !result.data?.access_token
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
-        `GitHub OAuth token exchange returned no access token${data?.error ? `: ${data.error}` : ""}${data?.error_description ? ` - ${data.error_description}` : ""}.`,
+        `GitHub OAuth token exchange returned no access token${result.data?.error ? `: ${result.data.error}` : ""}${result.data?.error_description ? ` - ${result.data.error_description}` : ""}.`,
     };
   }
 
   return {
-    success: true,
+    success:
+      true,
     token:
-      data,
+      result.data,
   };
 }
 
@@ -672,7 +722,8 @@ export async function completeUserGitHubConnect(
 
   if (!config) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub App is not configured.",
     };
@@ -685,7 +736,8 @@ export async function completeUserGitHubConnect(
 
   if (!stateCookie) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub OAuth state cookie is missing.",
     };
@@ -701,17 +753,20 @@ export async function completeUserGitHubConnect(
     !statePayload
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub OAuth state cookie could not be decrypted.",
     };
   }
 
   if (
-    statePayload.state !== state
+    statePayload.state !==
+    state
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub OAuth state does not match.",
     };
@@ -721,7 +776,8 @@ export async function completeUserGitHubConnect(
     !statePayload.codeVerifier
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub OAuth PKCE verifier is missing.",
     };
@@ -733,7 +789,8 @@ export async function completeUserGitHubConnect(
       expectedUserId
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub authorization user context is invalid.",
     };
@@ -758,7 +815,8 @@ export async function completeUserGitHubConnect(
 
   if (!accessToken) {
     return {
-      success: false,
+      success:
+        false,
       error:
         "GitHub OAuth did not return a user access token.",
     };
@@ -779,7 +837,8 @@ export async function completeUserGitHubConnect(
     !userResult.data
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         `GitHub user verification failed: HTTP ${userResult.status} - ${userResult.message || "Unknown error"}.`,
     };
@@ -801,7 +860,8 @@ export async function completeUserGitHubConnect(
     !installationsResult.ok
   ) {
     return {
-      success: false,
+      success:
+        false,
       error:
         `GitHub App installation verification failed: HTTP ${installationsResult.status} - ${installationsResult.message || "Unknown error"}.`,
     };
@@ -814,14 +874,20 @@ export async function completeUserGitHubConnect(
       []
     )
       .filter(
-        (installation) =>
+        (
+          installation,
+        ) =>
           String(
             installation.app_id,
           ) ===
-          String(config.appId),
+          String(
+            config.appId,
+          ),
       )
       .map(
-        (installation) =>
+        (
+          installation,
+        ) =>
           installation.id,
       );
 
@@ -875,7 +941,8 @@ export async function completeUserGitHubConnect(
   );
 
   return {
-    success: true,
+    success:
+      true,
     connection,
   };
 }
@@ -917,19 +984,8 @@ export async function refreshUserGitHubConnection(
     });
 
   const result =
-    await githubFetch<GitHubTokenResponse>(
-      "/login/oauth/access_token",
-      {
-        method: "POST",
-        headers: {
-          Accept:
-            "application/json",
-          "Content-Type":
-            "application/x-www-form-urlencoded",
-        },
-        body:
-          body.toString(),
-      },
+    await githubOAuthTokenRequest(
+      body,
     );
 
   if (
@@ -1044,8 +1100,10 @@ export async function listUserGitHubRepositories(
     !connection.installationIds.length
   ) {
     return {
-      success: true,
-      repositories: [],
+      success:
+        true,
+      repositories:
+        [],
     };
   }
 
@@ -1094,9 +1152,12 @@ export async function listUserGitHubRepositories(
         connection.accessToken,
       );
 
-    if (!result.ok) {
+    if (
+      !result.ok
+    ) {
       return {
-        success: false,
+        success:
+          false,
         error:
           `GitHub repository access failed: HTTP ${result.status} - ${result.message || "Unknown error"}.`,
       };
@@ -1132,7 +1193,9 @@ export async function listUserGitHubRepositories(
   const unique =
     new Map(
       repositories.map(
-        (repository) => [
+        (
+          repository,
+        ) => [
           repository.id,
           repository,
         ],
@@ -1140,12 +1203,16 @@ export async function listUserGitHubRepositories(
     );
 
   return {
-    success: true,
+    success:
+      true,
     repositories:
       Array.from(
         unique.values(),
       ).sort(
-        (a, b) =>
+        (
+          a,
+          b,
+        ) =>
           a.fullName.localeCompare(
             b.fullName,
           ),
