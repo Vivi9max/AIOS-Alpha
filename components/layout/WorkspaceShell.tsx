@@ -1,11 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { usePathname } from "next/navigation";
+
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import ProductWorkflowNav from "./ProductWorkflowNav";
+
 import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 export default function WorkspaceShell({
@@ -15,7 +21,9 @@ export default function WorkspaceShell({
 }) {
   const { t } = useLanguage();
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [menuOpen, setMenuOpen] =
+    useState(false);
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -34,20 +42,33 @@ export default function WorkspaceShell({
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const previousOverflow =
+      document.body.style.overflow;
 
-    function handleKeyDown(event: KeyboardEvent) {
+    document.body.style.overflow =
+      "hidden";
+
+    function handleKeyDown(
+      event: KeyboardEvent,
+    ) {
       if (event.key === "Escape") {
         closeMenu();
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
     };
   }, [menuOpen, closeMenu]);
 
@@ -69,7 +90,9 @@ export default function WorkspaceShell({
     >
       <Header />
 
-      {showProductWorkflow ? <ProductWorkflowNav /> : null}
+      {showProductWorkflow ? (
+        <ProductWorkflowNav />
+      ) : null}
 
       <div className="aios-workspace-body">
         <aside
@@ -92,7 +115,9 @@ export default function WorkspaceShell({
           }
           onClick={closeMenu}
           aria-label={t("nav.close")}
-          tabIndex={menuOpen ? 0 : -1}
+          tabIndex={
+            menuOpen ? 0 : -1
+          }
         />
 
         <main className="aios-workspace-main">
