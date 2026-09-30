@@ -1,14 +1,8 @@
 import "server-only";
 
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import {
-  isFounderConfigured,
-  isFounderRequest,
-} from "@/lib/founder/auth";
+import { isFounderConfigured, isFounderRequest } from "@/lib/founder/auth";
 
 import {
   blockAutonomousDevelopmentTask,
@@ -19,25 +13,11 @@ import {
   listAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
 
-import {
-  dispatchNextPlannerDevelopmentTask,
-} from "@/lib/github/planner-autonomous-dispatch";
-
-import {
-  executeClaimedAutonomousDevelopmentTask,
-} from "@/lib/github/autonomous-development-executor";
-
-import {
-  executeAutonomousDevelopmentAgent,
-} from "@/lib/github/autonomous-development-agent";
-
-import {
-  dispatchGitHubTask,
-} from "@/lib/github/task-dispatch";
-
-import {
-  createFounderDevelopmentContract,
-} from "@/lib/github/founder-development-contract";
+import { dispatchNextPlannerDevelopmentTask } from "@/lib/github/planner-autonomous-dispatch";
+import { executeClaimedAutonomousDevelopmentTask } from "@/lib/github/autonomous-development-executor";
+import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
+import { dispatchGitHubTask } from "@/lib/github/task-dispatch";
+import { createFounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,13 +28,13 @@ const DEFAULT_BRANCH = "main";
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
     status,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: { "Cache-Control": "no-store" },
   });
 }
 
-function requireFounder(request: NextRequest):
+function requireFounder(
+  request: NextRequest,
+):
   | { ok: true }
   | { ok: false; response: NextResponse } {
   if (!isFounderConfigured()) {
@@ -109,11 +89,17 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const taskId = request.nextUrl.searchParams.get("taskId");
+
   if (taskId) {
     const task = getAutonomousDevelopmentTask(taskId);
+
     if (!task) {
-      return json({ ok: false, code: "TASK_NOT_FOUND" }, 404);
+      return json(
+        { ok: false, code: "TASK_NOT_FOUND" },
+        404,
+      );
     }
+
     return json({ ok: true, task });
   }
 
@@ -135,6 +121,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "autonomous") {
       const objective = String(body?.objective ?? "").trim();
+
       if (!objective) {
         return json(
           {
@@ -153,7 +140,6 @@ export async function POST(request: NextRequest) {
       return json(
         {
           ok: result.success,
-          action,
           ...result,
         },
         result.success ? 200 : 409,
@@ -169,11 +155,7 @@ export async function POST(request: NextRequest) {
       });
 
       return json(
-        {
-          ok: true,
-          action,
-          task,
-        },
+        { ok: true, action, task },
         201,
       );
     }
@@ -183,15 +165,12 @@ export async function POST(request: NextRequest) {
         String(body?.taskId ?? ""),
       );
 
-      return json({
-        ok: true,
-        action,
-        task,
-      });
+      return json({ ok: true, action, task });
     }
 
     if (action === "dispatch-planner") {
       const dispatch = await dispatchNextPlannerDevelopmentTask();
+
       return json(
         {
           ok: dispatch.success,
@@ -204,20 +183,18 @@ export async function POST(request: NextRequest) {
 
     if (action === "execute-planner") {
       const dispatch = await dispatchNextPlannerDevelopmentTask();
+
       if (!dispatch.success || !dispatch.autonomousTask?.id) {
         return json(
-          {
-            ok: false,
-            action,
-            ...dispatch,
-          },
+          { ok: false, action, ...dispatch },
           409,
         );
       }
 
-      const execution = await executeClaimedAutonomousDevelopmentTask(
-        dispatch.autonomousTask.id,
-      );
+      const execution =
+        await executeClaimedAutonomousDevelopmentTask(
+          dispatch.autonomousTask.id,
+        );
 
       return json(
         {
@@ -233,7 +210,8 @@ export async function POST(request: NextRequest) {
     if (action === "execute") {
       const objective = String(body?.objective ?? "").trim();
       const path = String(body?.path ?? "").trim();
-      const content = typeof body?.content === "string" ? body.content : null;
+      const content =
+        typeof body?.content === "string" ? body.content : null;
 
       if (!objective || !path || content === null) {
         return json(
@@ -246,12 +224,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const commitMessage =
+        String(body?.commitMessage ?? "").trim() ||
+        "feat(C167.12): founder autonomous development";
+
       const contract = createContract({
         objective,
         path,
-        commitMessage:
-          String(body?.commitMessage ?? "").trim() ||
-          "feat(C167.12): founder autonomous development",
+        commitMessage,
       });
 
       const result = await dispatchGitHubTask({
@@ -260,9 +240,7 @@ export async function POST(request: NextRequest) {
         branch: DEFAULT_BRANCH,
         path,
         content,
-        commitMessage:
-          String(body?.commitMessage ?? "").trim() ||
-          "feat(C167.12): founder autonomous development",
+        commitMessage,
         contract,
         request,
       });
@@ -270,7 +248,6 @@ export async function POST(request: NextRequest) {
       return json(
         {
           ok: result.success,
-          action,
           ...result,
         },
         result.success ? 200 : 409,
@@ -300,11 +277,10 @@ export async function POST(request: NextRequest) {
         String(body?.reason ?? "Blocked by Founder."),
       );
 
-      return json({
-        ok: false,
-        action,
-        receipt,
-      }, 409);
+      return json(
+        { ok: false, action, receipt },
+        409,
+      );
     }
 
     return json(
