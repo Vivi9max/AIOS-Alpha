@@ -142,6 +142,10 @@ const copy: Record<
     publicMarketIntelligence: string;
     publicMarketIntelligenceDetail: string;
 
+    autonomousDevelopment: string;
+    autonomousDevelopmentDetail: string;
+    autonomousDevelopmentDescription: string;
+
     enterKey: string;
     loginDescription: string;
     keyPlaceholder: string;
@@ -289,6 +293,13 @@ const copy: Record<
       "C147.21.1 Public Market Intelligence",
     publicMarketIntelligenceDetail:
       "Open the public Market Intelligence boundary and regression verification",
+
+    autonomousDevelopment:
+      "AIOS Autonomous Development",
+    autonomousDevelopmentDetail:
+      "Founder-only AIOS engineering execution entry",
+    autonomousDevelopmentDescription:
+      "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
     enterKey:
       "Founder access required",
@@ -460,6 +471,13 @@ const copy: Record<
     publicMarketIntelligenceDetail:
       "打开 Public Market Intelligence 公共边界并执行 Regression 验证",
 
+    autonomousDevelopment:
+      "AIOS Autonomous Development",
+    autonomousDevelopmentDetail:
+      "Founder 专用 AIOS 自主工程执行入口",
+    autonomousDevelopmentDescription:
+      "Planner -> Development Intent -> GitHub -> Commit -> Readback",
+
     enterKey:
       "请输入 Founder Access Key",
     loginDescription:
@@ -629,6 +647,13 @@ const copy: Record<
       "C147.21.1 Public Market Intelligence",
     publicMarketIntelligenceDetail:
       "Public Market Intelligence の公開境界と Regression を確認",
+
+    autonomousDevelopment:
+      "AIOS Autonomous Development",
+    autonomousDevelopmentDetail:
+      "Founder 専用 AIOS 自律開発実行エントリー",
+    autonomousDevelopmentDescription:
+      "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
     enterKey:
       "Founder Access Key が必要です",
@@ -1484,6 +1509,145 @@ export default function FounderPage() {
             borderRadius:
               22,
             background:
+              "#111827",
+            color:
+              "#ffffff",
+            border:
+              "1px solid #334155",
+          }}
+        >
+          <div
+            style={{
+              display:
+                "flex",
+              alignItems:
+                "flex-start",
+              justifyContent:
+                "space-between",
+              gap:
+                14,
+            }}
+          >
+            <div
+              style={{
+                minWidth:
+                  0,
+              }}
+            >
+              <div
+                style={{
+                  color:
+                    "#a7f3d0",
+                  fontSize:
+                    12,
+                  fontWeight:
+                    950,
+                  letterSpacing:
+                    "0.12em",
+                }}
+              >
+                C167.12
+              </div>
+
+              <h2
+                style={{
+                  margin:
+                    "8px 0 0",
+                  fontSize:
+                    21,
+                }}
+              >
+                {
+                  t.autonomousDevelopment
+                }
+              </h2>
+
+              <p
+                style={{
+                  margin:
+                    "8px 0 0",
+                  color:
+                    "#cbd5e1",
+                  fontSize:
+                    13,
+                  lineHeight:
+                    1.6,
+                }}
+              >
+                {
+                  t.autonomousDevelopmentDescription
+                }
+              </p>
+            </div>
+
+            <div
+              style={{
+                flex:
+                  "0 0 auto",
+                width:
+                  48,
+                height:
+                  48,
+                display:
+                  "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                borderRadius:
+                  15,
+                background:
+                  "#1f2937",
+                fontSize:
+                  24,
+              }}
+            >
+              🤖
+            </div>
+          </div>
+
+          <p
+            style={{
+              margin:
+                "16px 0 0",
+              color:
+                "#94a3b8",
+              fontSize:
+                13,
+              lineHeight:
+                1.6,
+            }}
+          >
+            {
+              t.autonomousDevelopmentDetail
+            }
+          </p>
+
+          <Link
+            href="/founder/autonomous-development"
+            style={
+              darkActionStyle
+            }
+          >
+            <span>
+              {">"} Open AIOS Autonomous Development
+            </span>
+
+            <span>
+              {"->"}
+            </span>
+          </Link>
+        </section>
+
+        <section
+          style={{
+            marginTop:
+              18,
+            padding:
+              20,
+            borderRadius:
+              22,
+            background:
               "#0b1220",
             color:
               "#ffffff",
@@ -1971,6 +2135,17 @@ export default function FounderPage() {
             }
             detail={
               t.publicMarketIntelligenceDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/autonomous-development"
+            icon="🤖"
+            title={
+              t.autonomousDevelopment
+            }
+            detail={
+              t.autonomousDevelopmentDetail
             }
           />
         </section>
