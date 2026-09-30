@@ -32,10 +32,8 @@ const globalMenus = [
   },
   {
     icon: "⌁",
-    label:
-      "Market Research",
-    href:
-      "/market-intelligence",
+    label: "Market Research",
+    href: "/market-intelligence",
   },
   {
     icon: "✓",
@@ -66,102 +64,53 @@ const globalMenus = [
 const cnMenus = [
   {
     icon: "◉",
-    label:
-      "AIOS CN",
+    label: "AIOS CN",
     href: "/cn",
-  },
-  {
-    icon: "⌁",
-    label:
-      "CN Market Research",
-    href:
-      "/cn/market-research",
-  },
-  {
-    icon: "▣",
-    label:
-      "CN Memory",
-    href:
-      "/cn/memory",
-  },
-  {
-    icon: "⚙",
-    label:
-      "CN Settings",
-    href:
-      "/cn/settings",
   },
 ];
 
 const marketResearchLabels = {
-  en:
-    "Market Research",
-  "zh-CN":
-    "市场研究",
-  ja:
-    "市場リサーチ",
+  en: "Market Research",
+  "zh-CN": "市场研究",
+  ja: "市場リサーチ",
 } as const;
 
 const productCopy = {
   en: {
-    products:
-      "Products",
-    global:
-      "AIOS Global",
+    products: "Products",
+    global: "AIOS Global",
     globalDescription:
       "Global AIOS workspace",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "China AIOS workspace",
-    workspace:
-      "Workspace",
-    projects:
-      "Projects",
-    system:
-      "System",
-    online:
-      "Runtime online",
+    workspace: "Workspace",
+    projects: "Projects",
+    online: "Runtime online",
   },
   "zh-CN": {
-    products:
-      "产品",
-    global:
-      "AIOS Global",
+    products: "产品",
+    global: "AIOS Global",
     globalDescription:
       "全球 AIOS 工作空间",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "中国 AIOS 工作空间",
-    workspace:
-      "工作区",
-    projects:
-      "项目",
-    system:
-      "系统",
-    online:
-      "Runtime 运行正常",
+    workspace: "工作区",
+    projects: "项目",
+    online: "Runtime 运行正常",
   },
   ja: {
-    products:
-      "製品",
-    global:
-      "AIOS Global",
+    products: "製品",
+    global: "AIOS Global",
     globalDescription:
       "グローバル AIOS ワークスペース",
-    cn:
-      "AIOS CN",
+    cn: "AIOS CN",
     cnDescription:
       "中国向け AIOS ワークスペース",
-    workspace:
-      "ワークスペース",
-    projects:
-      "プロジェクト",
-    system:
-      "システム",
-    online:
-      "Runtime 稼働中",
+    workspace: "ワークスペース",
+    projects: "プロジェクト",
+    online: "Runtime 稼働中",
   },
 } as const;
 
@@ -171,9 +120,12 @@ function isProjectActive(
 ): boolean {
   return (
     pathname ===
-      `/projects/${projectId}` ||
+      "/projects/" +
+        projectId ||
     pathname.startsWith(
-      `/projects/${projectId}/`,
+      "/projects/" +
+        projectId +
+        "/",
     )
   );
 }
@@ -184,14 +136,11 @@ export default function Sidebar() {
     locale,
   } = useLanguage();
 
-  const pathname =
-    usePathname();
+  const pathname = usePathname();
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith(
-      "/cn/",
-    );
+    pathname.startsWith("/cn/");
 
   const menus =
     isCN
@@ -239,9 +188,7 @@ export default function Sidebar() {
         <ProductLink
           href="/workspace"
           active={!isCN}
-          title={
-            copy.global
-          }
+          title={copy.global}
           description={
             copy.globalDescription
           }
@@ -250,9 +197,7 @@ export default function Sidebar() {
         <ProductLink
           href="/cn"
           active={isCN}
-          title={
-            copy.cn
-          }
+          title={copy.cn}
           description={
             copy.cnDescription
           }
@@ -296,8 +241,13 @@ export default function Sidebar() {
                         key={
                           project.id
                         }
-                        href={`/projects/${project.id}`}
-                        prefetch={false}
+                        href={
+                          "/projects/" +
+                          project.id
+                        }
+                        prefetch={
+                          false
+                        }
                         className={
                           active
                             ? "aios-project-link active"
@@ -342,7 +292,8 @@ export default function Sidebar() {
                 pathname ===
                   item.href ||
                 pathname.startsWith(
-                  `${item.href}/`,
+                  item.href +
+                    "/",
                 ) ||
                 (
                   item.href ===
@@ -372,7 +323,9 @@ export default function Sidebar() {
                   href={
                     item.href
                   }
-                  prefetch={false}
+                  prefetch={
+                    false
+                  }
                   className={[
                     "aios-nav-link",
                     active
@@ -391,7 +344,9 @@ export default function Sidebar() {
                     className="aios-nav-icon"
                     aria-hidden="true"
                   >
-                    {item.icon}
+                    {
+                      item.icon
+                    }
                   </span>
 
                   <span className="aios-nav-label">
