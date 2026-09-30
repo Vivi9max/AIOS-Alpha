@@ -40,17 +40,20 @@ export default function WorkspaceShell({
 
   const closeMenu =
     useCallback(
-      () => setMenuOpen(false),
+      () => {
+        setMenuOpen(false);
+      },
       [],
     );
 
   const toggleMenu =
     useCallback(
-      () =>
+      () => {
         setMenuOpen(
           (current) =>
             !current,
-        ),
+        );
+      },
       [],
     );
 
@@ -147,7 +150,9 @@ export default function WorkspaceShell({
           }
         />
 
-        <main className="aios-workspace-main">
+        <main
+          className="aios-workspace-main"
+        >
           {children}
         </main>
       </div>
