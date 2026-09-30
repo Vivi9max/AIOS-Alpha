@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+
 import {
   usePathname,
 } from "next/navigation";
@@ -24,31 +25,38 @@ import type {
 
 const globalMenus = [
   {
-    icon: "CHAT",
+    icon: "◉",
     label:
       "nav.chat" as MessageKey,
     href: "/workspace",
   },
   {
-    icon: "MR",
+    icon: "⌁",
     label:
       "Market Research",
     href:
       "/market-intelligence",
   },
   {
-    icon: "TASK",
+    icon: "✓",
     label:
       "nav.tasks" as MessageKey,
     href: "/tasks",
   },
   {
-    icon: "PLAN",
-    label: "Plans",
-    href: "/billing",
+    icon: "◇",
+    label:
+      "planner.title" as MessageKey,
+    href: "/planner",
   },
   {
-    icon: "SET",
+    icon: "→",
+    label:
+      "execution.openOutcomes" as MessageKey,
+    href: "/execution",
+  },
+  {
+    icon: "⚙",
     label:
       "nav.settings" as MessageKey,
     href: "/settings",
@@ -57,26 +65,29 @@ const globalMenus = [
 
 const cnMenus = [
   {
-    icon: "CHAT",
-    label: "AIOS CN",
+    icon: "◉",
+    label:
+      "AIOS CN",
     href: "/cn",
   },
   {
-    icon: "MR",
+    icon: "⌁",
     label:
       "CN Market Research",
     href:
       "/cn/market-research",
   },
   {
-    icon: "MEM",
-    label: "CN Memory",
+    icon: "▣",
+    label:
+      "CN Memory",
     href:
       "/cn/memory",
   },
   {
-    icon: "SET",
-    label: "CN Settings",
+    icon: "⚙",
+    label:
+      "CN Settings",
     href:
       "/cn/settings",
   },
@@ -93,34 +104,64 @@ const marketResearchLabels = {
 
 const productCopy = {
   en: {
-    products: "Products",
-    global: "AIOS Global",
+    products:
+      "Products",
+    global:
+      "AIOS Global",
     globalDescription:
       "Global AIOS workspace",
-    cn: "AIOS CN",
+    cn:
+      "AIOS CN",
     cnDescription:
-      "China-oriented AIOS workspace",
-    current: "Workspace",
+      "China AIOS workspace",
+    workspace:
+      "Workspace",
+    projects:
+      "Projects",
+    system:
+      "System",
+    online:
+      "Runtime online",
   },
   "zh-CN": {
-    products: "产品",
-    global: "AIOS Global",
+    products:
+      "产品",
+    global:
+      "AIOS Global",
     globalDescription:
       "全球 AIOS 工作空间",
-    cn: "AIOS CN",
+    cn:
+      "AIOS CN",
     cnDescription:
       "中国 AIOS 工作空间",
-    current: "工作区",
+    workspace:
+      "工作区",
+    projects:
+      "项目",
+    system:
+      "系统",
+    online:
+      "Runtime 运行正常",
   },
   ja: {
-    products: "製品",
-    global: "AIOS Global",
+    products:
+      "製品",
+    global:
+      "AIOS Global",
     globalDescription:
       "グローバル AIOS ワークスペース",
-    cn: "AIOS CN",
+    cn:
+      "AIOS CN",
     cnDescription:
       "中国向け AIOS ワークスペース",
-    current: "ワークスペース",
+    workspace:
+      "ワークスペース",
+    projects:
+      "プロジェクト",
+    system:
+      "システム",
+    online:
+      "Runtime 稼働中",
   },
 } as const;
 
@@ -162,160 +203,82 @@ export default function Sidebar() {
 
   return (
     <aside
-      style={{
-        width: 250,
-        minHeight:
-          "100%",
-        boxSizing:
-          "border-box",
-        display:
-          "flex",
-        flexDirection:
-          "column",
-        background:
-          "#ffffff",
-        borderRight:
-          "1px solid #e5e7eb",
-        color:
-          "#111827",
-      }}
+      className={
+        isCN
+          ? "aios-sidebar is-cn"
+          : "aios-sidebar is-global"
+      }
     >
-      <div
-        style={{
-          padding:
-            "22px 18px",
-          borderBottom:
-            "1px solid #e5e7eb",
-        }}
-      >
+      <div className="aios-sidebar-brand">
         <Link
           href="/"
           prefetch={false}
-          style={{
-            display:
-              "inline-block",
-            color:
-              "#111827",
-            textDecoration:
-              "none",
-            fontSize:
-              25,
-            fontWeight:
-              850,
-          }}
+          className="aios-brand-link"
         >
-          {APP_NAME}
-        </Link>
+          <span className="aios-brand-symbol">
+            A
+          </span>
 
-        <p
-          style={{
-            margin:
-              "5px 0 0",
-            color:
-              "#9ca3af",
-            fontSize:
-              11,
-          }}
-        >
-          {APP_VERSION_LABEL}
-        </p>
+          <span className="aios-brand-copy">
+            <strong>
+              {APP_NAME}
+            </strong>
+
+            <span>
+              {APP_VERSION_LABEL}
+            </span>
+          </span>
+        </Link>
       </div>
 
-      <div
-        style={{
-          padding:
-            "14px 14px 8px",
-        }}
-      >
-        <p
-          style={{
-            margin:
-              "0 4px 9px",
-            color:
-              "#9ca3af",
-            fontSize:
-              11,
-            fontWeight:
-              800,
-            letterSpacing:
-              "0.08em",
-            textTransform:
-              "uppercase",
-          }}
-        >
+      <div className="aios-sidebar-products">
+        <div className="aios-sidebar-section-label">
           {copy.products}
-        </p>
-
-        <div
-          style={{
-            display:
-              "grid",
-            gap:
-              7,
-          }}
-        >
-          <ProductLink
-            href="/workspace"
-            active={!isCN}
-            title={
-              copy.global
-            }
-            description={
-              copy.globalDescription
-            }
-          />
-
-          <ProductLink
-            href="/cn"
-            active={isCN}
-            title={
-              copy.cn
-            }
-            description={
-              copy.cnDescription
-            }
-            cn
-          />
         </div>
+
+        <ProductLink
+          href="/workspace"
+          active={!isCN}
+          title={
+            copy.global
+          }
+          description={
+            copy.globalDescription
+          }
+        />
+
+        <ProductLink
+          href="/cn"
+          active={isCN}
+          title={
+            copy.cn
+          }
+          description={
+            copy.cnDescription
+          }
+          cn
+        />
       </div>
 
       {!isCN &&
         projects.length > 0 && (
-          <div
-            style={{
-              padding:
-                "10px 14px 8px",
-            }}
-          >
-            <p
-              style={{
-                margin:
-                  "0 4px 10px",
-                color:
-                  "#9ca3af",
-                fontSize:
-                  11,
-                fontWeight:
-                  800,
-                letterSpacing:
-                  "0.08em",
-                textTransform:
-                  "uppercase",
-              }}
-            >
-              {t(
-                "nav.projects",
-              )}
-            </p>
+          <div className="aios-sidebar-projects">
+            <div className="aios-sidebar-section-heading">
+              <span>
+                {copy.projects}
+              </span>
 
-            <div
-              style={{
-                display:
-                  "grid",
-                gap:
-                  7,
-              }}
-            >
+              <Link
+                href="/projects"
+                prefetch={false}
+              >
+                {t(
+                  "nav.allProjects",
+                )}
+              </Link>
+            </div>
+
+            <div className="aios-sidebar-project-list">
               {projects
                 .slice(0, 3)
                 .map(
@@ -335,32 +298,11 @@ export default function Sidebar() {
                         }
                         href={`/projects/${project.id}`}
                         prefetch={false}
-                        style={{
-                          display:
-                            "flex",
-                          alignItems:
-                            "center",
-                          gap:
-                            8,
-                          padding:
-                            "10px 12px",
-                          borderRadius:
-                            10,
-                          background:
-                            active
-                              ? "#eef2ff"
-                              : "#f8fafc",
-                          color:
-                            active
-                              ? "#3730a3"
-                              : "#374151",
-                          textDecoration:
-                            "none",
-                          fontSize:
-                            13,
-                          fontWeight:
-                            700,
-                        }}
+                        className={
+                          active
+                            ? "aios-project-link active"
+                            : "aios-project-link"
+                        }
                       >
                         <span>
                           {
@@ -368,16 +310,7 @@ export default function Sidebar() {
                           }
                         </span>
 
-                        <span
-                          style={{
-                            overflow:
-                              "hidden",
-                            textOverflow:
-                              "ellipsis",
-                            whiteSpace:
-                              "nowrap",
-                          }}
-                        >
+                        <span>
                           {
                             project.name
                           }
@@ -390,38 +323,18 @@ export default function Sidebar() {
           </div>
         )}
 
-      <div
-        style={{
-          padding:
-            "10px 14px 12px",
-        }}
-      >
-        <p
-          style={{
-            margin:
-              "0 4px 9px",
-            color:
-              "#9ca3af",
-            fontSize:
-              11,
-            fontWeight:
-              800,
-            letterSpacing:
-              "0.08em",
-            textTransform:
-              "uppercase",
-          }}
-        >
-          {copy.current}
-        </p>
+      <div className="aios-sidebar-navigation">
+        <div className="aios-sidebar-section-label">
+          {copy.workspace}
+        </div>
 
         <nav
-          style={{
-            display:
-              "grid",
-            gap:
-              5,
-          }}
+          className="aios-sidebar-nav"
+          aria-label={
+            isCN
+              ? "AIOS CN navigation"
+              : "AIOS Global navigation"
+          }
         >
           {menus.map(
             (item) => {
@@ -443,9 +356,7 @@ export default function Sidebar() {
                   ? marketResearchLabels[
                       locale
                     ]
-                  : typeof item.label ===
-                        "string" &&
-                    item.label.includes(
+                  : item.label.includes(
                       ".",
                     )
                     ? t(
@@ -462,37 +373,37 @@ export default function Sidebar() {
                     item.href
                   }
                   prefetch={false}
-                  style={{
-                    display:
-                      "block",
-                    padding:
-                      "11px 12px",
-                    borderRadius:
-                      10,
-                    background:
-                      active
-                        ? isCN
-                          ? "#fef2f2"
-                          : "#eef2ff"
-                        : "transparent",
-                    color:
-                      active
-                        ? isCN
-                          ? "#b91c1c"
-                          : "#3730a3"
-                        : "#374151",
-                    textDecoration:
-                      "none",
-                    fontSize:
-                      14,
-                    fontWeight:
-                      active
-                        ? 800
-                        : 600,
-                  }}
+                  className={[
+                    "aios-nav-link",
+                    active
+                      ? "active"
+                      : "",
+                    isCN
+                      ? "cn"
+                      : "global",
+                  ]
+                    .filter(
+                      Boolean,
+                    )
+                    .join(" ")}
                 >
-                  {item.icon}{" "}
-                  {label}
+                  <span
+                    className="aios-nav-icon"
+                    aria-hidden="true"
+                  >
+                    {item.icon}
+                  </span>
+
+                  <span className="aios-nav-label">
+                    {label}
+                  </span>
+
+                  {active && (
+                    <span
+                      className="aios-nav-active-dot"
+                      aria-hidden="true"
+                    />
+                  )}
                 </Link>
               );
             },
@@ -500,27 +411,23 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <div
-        style={{
-          marginTop:
-            "auto",
-          padding:
-            16,
-          borderTop:
-            "1px solid #e5e7eb",
-          color:
-            "#9ca3af",
-          fontSize:
-            11,
-        }}
-      >
-        {isCN
-          ? "AIOS CN"
-          : "AIOS Global"}{" "}
-        ·{" "}
-        {t(
-          "runtime.online",
-        )}
+      <div className="aios-sidebar-footer">
+        <div className="aios-sidebar-footer-status">
+          <span
+            className="aios-sidebar-status-dot"
+            aria-hidden="true"
+          />
+
+          <span>
+            {copy.online}
+          </span>
+        </div>
+
+        <span>
+          {isCN
+            ? "AIOS CN"
+            : "AIOS Global"}
+        </span>
       </div>
     </aside>
   );
@@ -543,58 +450,45 @@ function ProductLink({
     <Link
       href={href}
       prefetch={false}
-      style={{
-        display:
-          "block",
-        padding:
-          "10px 11px",
-        borderRadius:
-          10,
-        background:
-          active
-            ? cn
-              ? "#fef2f2"
-              : "#eef2ff"
-            : "#f8fafc",
-        color:
-          active
-            ? cn
-              ? "#b91c1c"
-              : "#3730a3"
-            : "#374151",
-        textDecoration:
-          "none",
-        border:
-          active
-            ? cn
-              ? "1px solid #fecaca"
-              : "1px solid #c7d2fe"
-            : "1px solid #e5e7eb",
-      }}
+      className={[
+        "aios-product-link",
+        active
+          ? "active"
+          : "",
+        cn
+          ? "cn"
+          : "global",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
-      <div
-        style={{
-          fontSize:
-            13,
-          fontWeight:
-            800,
-        }}
+      <span
+        className="aios-product-link-mark"
+        aria-hidden="true"
       >
-        {title}
-      </div>
+        {cn
+          ? "CN"
+          : "G"}
+      </span>
 
-      <div
-        style={{
-          marginTop:
-            3,
-          color:
-            "#94a3b8",
-          fontSize:
-            11,
-        }}
-      >
-        {description}
-      </div>
+      <span className="aios-product-link-copy">
+        <strong>
+          {title}
+        </strong>
+
+        <span>
+          {description}
+        </span>
+      </span>
+
+      {active && (
+        <span
+          className="aios-product-link-check"
+          aria-hidden="true"
+        >
+          ✓
+        </span>
+      )}
     </Link>
   );
 }
