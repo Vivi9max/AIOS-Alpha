@@ -26,8 +26,9 @@ export default function WorkspaceShell({
 }: {
   children: ReactNode;
 }) {
-  const { t } =
-    useLanguage();
+  const {
+    t,
+  } = useLanguage();
 
   const pathname =
     usePathname();
@@ -36,12 +37,6 @@ export default function WorkspaceShell({
     menuOpen,
     setMenuOpen,
   ] = useState(false);
-
-  const openMenu =
-    useCallback(
-      () => setMenuOpen(true),
-      [],
-    );
 
   const closeMenu =
     useCallback(
@@ -53,7 +48,8 @@ export default function WorkspaceShell({
     useCallback(
       () =>
         setMenuOpen(
-          (current) => !current,
+          (current) =>
+            !current,
         ),
       [],
     );
@@ -106,42 +102,6 @@ export default function WorkspaceShell({
     closeMenu,
   ]);
 
-  function handleMenuPointerDown(
-    event: React.PointerEvent<HTMLButtonElement>,
-  ) {
-    event.stopPropagation();
-
-    if (
-      event.pointerType ===
-      "touch"
-    ) {
-      toggleMenu();
-    }
-  }
-
-  function handleMenuClick(
-    event: React.MouseEvent<HTMLButtonElement>,
-  ) {
-    event.stopPropagation();
-
-    if (
-      event.detail === 0
-    ) {
-      toggleMenu();
-      return;
-    }
-
-    const pointerSupported =
-      typeof window !==
-        "undefined" &&
-      "PointerEvent" in
-        window;
-
-    if (!pointerSupported) {
-      toggleMenu();
-    }
-  }
-
   return (
     <div
       className={
@@ -152,49 +112,14 @@ export default function WorkspaceShell({
     >
       <Header />
 
-      <button
-        type="button"
-        className={
-          menuOpen
-            ? "aios-mobile-menu-button is-open"
-            : "aios-mobile-menu-button"
-        }
-        onPointerDown={
-          handleMenuPointerDown
-        }
-        onClick={
-          handleMenuClick
-        }
-        aria-label={
-          menuOpen
-            ? t("nav.close")
-            : t("nav.open")
-        }
-        aria-expanded={
-          menuOpen
-        }
-        aria-controls={
-          "aios-mobile-sidebar"
-        }
-      >
-        <span aria-hidden="true">
-          {menuOpen
-            ? "×"
-            : "☰"}
-        </span>
-      </button>
-
       <div className="aios-workspace-body">
         <aside
           id="aios-mobile-sidebar"
-          className={[
-            "aios-sidebar-container",
+          className={
             menuOpen
-              ? "is-open"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
+              ? "aios-sidebar-container is-open"
+              : "aios-sidebar-container"
+          }
           aria-hidden={
             !menuOpen
           }
@@ -204,21 +129,11 @@ export default function WorkspaceShell({
 
         <button
           type="button"
-          className={[
-            "aios-sidebar-overlay",
+          className={
             menuOpen
-              ? "is-visible"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onPointerDown={(
-            event,
-          ) => {
-            event.preventDefault();
-            event.stopPropagation();
-            closeMenu();
-          }}
+              ? "aios-sidebar-overlay is-visible"
+              : "aios-sidebar-overlay"
+          }
           onClick={
             closeMenu
           }
@@ -236,6 +151,37 @@ export default function WorkspaceShell({
           {children}
         </main>
       </div>
+
+      <button
+        type="button"
+        className={
+          menuOpen
+            ? "aios-mobile-menu-button is-open"
+            : "aios-mobile-menu-button"
+        }
+        onClick={
+          toggleMenu
+        }
+        aria-label={
+          menuOpen
+            ? t("nav.close")
+            : t("nav.open")
+        }
+        aria-expanded={
+          menuOpen
+        }
+        aria-controls={
+          "aios-mobile-sidebar"
+        }
+      >
+        <span
+          aria-hidden="true"
+        >
+          {menuOpen
+            ? "×"
+            : "☰"}
+        </span>
+      </button>
     </div>
   );
 }
