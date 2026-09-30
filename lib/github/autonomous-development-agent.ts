@@ -550,6 +550,7 @@ function buildMissingFileRecoveryPrompt(
 function extractGeneratedFiles(
   content: string,
   allowedPaths: string[],
+  allowEmpty = false,
 ): Array<{
   path: string;
   content: string;
@@ -616,7 +617,7 @@ function extractGeneratedFiles(
     ]),
   );
 
-  if (!unique.size) {
+  if (!unique.size && !allowEmpty) {
     throw new Error(
       "AIOS_GENERATED_FILES_EMPTY",
     );
@@ -1082,6 +1083,7 @@ export async function executeAutonomousDevelopmentAgent(
       extractGeneratedFiles(
         generation.content,
         targetPaths,
+        true,
       );
 
     const generatedFiles =
@@ -1111,7 +1113,7 @@ export async function executeAutonomousDevelopmentAgent(
         targetPaths,
         generatedFiles,
         commitMessage:
-          "fix(C167.15): recover incomplete autonomous generation",
+          "fix(C167.16): recover empty autonomous generation",
       });
 
     allChangedPaths.push(
@@ -1213,7 +1215,7 @@ export async function executeAutonomousDevelopmentAgent(
           generatedFiles:
             repairedFiles,
           commitMessage:
-            `fix(C167.15): autonomous build repair ${repairRounds}`,
+            `fix(C167.16): autonomous build repair ${repairRounds}`,
         });
 
       allChangedPaths.push(
