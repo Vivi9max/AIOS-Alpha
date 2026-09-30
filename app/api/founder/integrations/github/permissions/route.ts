@@ -1,4 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
 import {
   isFounderConfigured,
@@ -9,9 +12,11 @@ import {
   ensureUserGitHubConnection,
 } from "@/lib/integrations/github/user-github";
 
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
 
-export const runtime = "nodejs";
+export const runtime =
+  "nodejs";
 
 const TARGET_REPOSITORY =
   "Vivi9max/AIOS-Alpha";
@@ -48,19 +53,34 @@ interface GitHubRepository {
   };
 }
 
-function json(
+function createResponse(
   body: Record<string, unknown>,
   status = 200,
-) {
+): NextResponse {
   return NextResponse.json(
     body,
     {
       status,
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control":
+          "no-store",
       },
     },
   );
+}
+
+function copyCookies(
+  source: NextResponse,
+  target: NextResponse,
+): void {
+  for (
+    const cookie of
+    source.cookies.getAll()
+  ) {
+    target.cookies.set(
+      cookie,
+    );
+  }
 }
 
 async function githubFetch<T>(
@@ -77,8 +97,10 @@ async function githubFetch<T>(
       await fetch(
         `${GITHUB_API}${path}`,
         {
-          method: "GET",
-          cache: "no-store",
+          method:
+            "GET",
+          cache:
+            "no-store",
           headers: {
             Accept:
               "application/vnd.github+json",
@@ -103,15 +125,21 @@ async function githubFetch<T>(
     if (text) {
       try {
         data =
-          JSON.parse(text) as T;
+          JSON.parse(
+            text,
+          ) as T;
       } catch {
-        data = undefined;
+        data =
+          undefined;
       }
     }
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
       return {
-        ok: false,
+        ok:
+          false,
         status:
           response.status,
         message:
@@ -127,16 +155,21 @@ async function githubFetch<T>(
     }
 
     return {
-      ok: true,
+      ok:
+        true,
       status:
         response.status,
       data:
         data as T,
     };
-  } catch (error) {
+  } catch (
+    error
+  ) {
     return {
-      ok: false,
-      status: 0,
+      ok:
+        false,
+      status:
+        0,
       message:
         error instanceof Error
           ? error.message
@@ -151,9 +184,10 @@ export async function GET(
   if (
     !isFounderConfigured()
   ) {
-    return json(
+    return createResponse(
       {
-        success: false,
+        success:
+          false,
         code:
           "FOUNDER_NOT_CONFIGURED",
         error:
@@ -164,11 +198,14 @@ export async function GET(
   }
 
   if (
-    !isFounderRequest(request)
+    !isFounderRequest(
+      request,
+    )
   ) {
-    return json(
+    return createResponse(
       {
-        success: false,
+        success:
+          false,
         code:
           "FOUNDER_UNAUTHORIZED",
         error:
@@ -179,7 +216,15 @@ export async function GET(
   }
 
   const response =
-    NextResponse.next();
+    createResponse(
+      {
+        success:
+          false,
+        connected:
+          false,
+      },
+      200,
+    );
 
   const connection =
     await ensureUserGitHubConnection(
@@ -188,15 +233,23 @@ export async function GET(
     );
 
   if (!connection) {
-    return json(
+    return response;
+  }
+
+  if (
+    connection.userId !==
+    "founder:aios-alpha"
+  ) {
+    return createResponse(
       {
-        success: false,
+        success:
+          false,
         code:
-          "GITHUB_NOT_CONNECTED",
+          "GITHUB_FOUNDER_CONNECTION_INVALID",
         error:
-          "Founder GitHub connection is not available.",
+          "The GitHub connection is not bound to the Founder AIOS Alpha context.",
       },
-      401,
+      403,
     );
   }
 
@@ -212,19 +265,28 @@ export async function GET(
     if (
       !installationsResult.ok
     ) {
-      return json(
-        {
-          success: false,
-          code:
-            "GITHUB_INSTALLATIONS_READ_FAILED",
-          error:
-            installationsResult.message ||
-            "Unable to read GitHub App installations.",
-          status:
-            installationsResult.status,
-        },
-        502,
+      const result =
+        createResponse(
+          {
+            success:
+              false,
+            code:
+              "GITHUB_INSTALLATIONS_READ_FAILED",
+            error:
+              installationsResult.message ||
+              "Unable to read GitHub App installations.",
+            status:
+              installationsResult.status,
+          },
+          502,
+        );
+
+      copyCookies(
+        response,
+        result,
       );
+
+      return result;
     }
 
     const installations =
@@ -234,7 +296,9 @@ export async function GET(
 
     const matchedInstallations =
       installations.filter(
-        (installation) =>
+        (
+          installation,
+        ) =>
           connection.installationIds.includes(
             installation.id,
           ),
@@ -244,18 +308,27 @@ export async function GET(
       matchedInstallations.length ===
       0
     ) {
-      return json(
-        {
-          success: false,
-          code:
-            "GITHUB_INSTALLATION_NOT_FOUND",
-          error:
-            "The connected GitHub App installation could not be found in the current user authorization.",
-          installationIds:
-            connection.installationIds,
-        },
-        502,
+      const result =
+        createResponse(
+          {
+            success:
+              false,
+            code:
+              "GITHUB_INSTALLATION_NOT_FOUND",
+            error:
+              "The connected GitHub App installation could not be found in the current user authorization.",
+            installationIds:
+              connection.installationIds,
+          },
+          502,
+        );
+
+      copyCookies(
+        response,
+        result,
       );
+
+      return result;
     }
 
     const installation =
@@ -286,27 +359,36 @@ export async function GET(
     if (
       !repositoryResult.ok
     ) {
-      return json(
-        {
-          success: false,
-          code:
-            "GITHUB_INSTALLATION_REPOSITORIES_READ_FAILED",
-          error:
-            repositoryResult.message ||
-            "Unable to read repositories available to the GitHub App installation.",
-          status:
-            repositoryResult.status,
-          installation: {
-            id:
-              installation.id,
-            repositorySelection,
-            permissions:
-              installation.permissions ||
-              {},
+      const result =
+        createResponse(
+          {
+            success:
+              false,
+            code:
+              "GITHUB_INSTALLATION_REPOSITORIES_READ_FAILED",
+            error:
+              repositoryResult.message ||
+              "Unable to read repositories available to the GitHub App installation.",
+            status:
+              repositoryResult.status,
+            installation: {
+              id:
+                installation.id,
+              repositorySelection,
+              permissions:
+                installation.permissions ||
+                {},
+            },
           },
-        },
-        502,
+          502,
+        );
+
+      copyCookies(
+        response,
+        result,
       );
+
+      return result;
     }
 
     const targetRepository =
@@ -315,7 +397,9 @@ export async function GET(
           ?.repositories ||
         []
       ).find(
-        (repository) =>
+        (
+          repository,
+        ) =>
           repository.full_name.toLowerCase() ===
           TARGET_REPOSITORY.toLowerCase(),
       );
@@ -323,13 +407,29 @@ export async function GET(
     const repositoryPush =
       Boolean(
         targetRepository
-          ?.permissions?.push,
+          ?.permissions
+          ?.push,
       );
 
     const repositoryAdmin =
       Boolean(
         targetRepository
-          ?.permissions?.admin,
+          ?.permissions
+          ?.admin,
+      );
+
+    const repositoryMaintain =
+      Boolean(
+        targetRepository
+          ?.permissions
+          ?.maintain,
+      );
+
+    const repositoryPull =
+      Boolean(
+        targetRepository
+          ?.permissions
+          ?.pull,
       );
 
     const writeReady =
@@ -346,95 +446,112 @@ export async function GET(
           : "GITHUB_REPOSITORY_WRITE_NOT_AVAILABLE";
 
     const result =
-      json({
-        success: true,
-        diagnosis,
-        targetRepository:
-          TARGET_REPOSITORY,
-        account: {
-          login:
-            installation.account
-              ?.login ||
-            connection.login,
-          type:
-            installation.account
-              ?.type ||
-            "User",
-        },
-        installation: {
-          id:
-            installation.id,
-          appId:
-            installation.app_id,
-          appSlug:
-            installation.app_slug ||
-            "unknown",
-          repositorySelection,
-          permissions:
-            installation.permissions ||
-            {},
-        },
-        effectivePermissions: {
-          metadata:
-            metadataPermission,
-          contents:
-            contentsPermission,
-        },
-        targetRepositoryAccess: {
-          found:
-            Boolean(
-              targetRepository,
-            ),
-          defaultBranch:
-            targetRepository
-              ?.default_branch ||
-            null,
-          pull:
-            Boolean(
+      createResponse(
+        {
+          success:
+            true,
+          diagnosis,
+          targetRepository:
+            TARGET_REPOSITORY,
+          account: {
+            login:
+              installation.account
+                ?.login ||
+              connection.login,
+            type:
+              installation.account
+                ?.type ||
+              "User",
+          },
+          installation: {
+            id:
+              installation.id,
+            appId:
+              installation.app_id,
+            appSlug:
+              installation.app_slug ||
+              "unknown",
+            repositorySelection,
+            permissions:
+              installation.permissions ||
+              {},
+          },
+          effectivePermissions: {
+            metadata:
+              metadataPermission,
+            contents:
+              contentsPermission,
+          },
+          targetRepositoryAccess: {
+            found:
+              Boolean(
+                targetRepository,
+              ),
+            defaultBranch:
               targetRepository
-                ?.permissions
-                ?.pull,
-            ),
-          push:
-            repositoryPush,
-          maintain:
+                ?.default_branch ||
+              null,
+            pull:
+              repositoryPull,
+            push:
+              repositoryPush,
+            maintain:
+              repositoryMaintain,
+            admin:
+              repositoryAdmin,
+          },
+          writeReady,
+          legacyTokenFallbackConfigured:
             Boolean(
-              targetRepository
-                ?.permissions
-                ?.maintain,
+              process.env.GITHUB_TOKEN?.trim(),
             ),
-          admin:
-            repositoryAdmin,
+          connection: {
+            userId:
+              connection.userId,
+            login:
+              connection.login,
+            installationCount:
+              connection.installationIds.length,
+            accessTokenPresent:
+              Boolean(
+                connection.accessToken,
+              ),
+            accessExpiresAt:
+              connection.accessExpiresAt,
+          },
         },
-        writeReady,
-        legacyTokenFallbackConfigured:
-          Boolean(
-            process.env.GITHUB_TOKEN?.trim(),
-          ),
-      });
-
-    for (
-      const cookie of
-      response.cookies.getAll()
-    ) {
-      result.cookies.set(
-        cookie,
+        200,
       );
-    }
+
+    copyCookies(
+      response,
+      result,
+    );
 
     return result;
-  } catch (error) {
-    return json(
-      {
-        success: false,
-        code:
-          "GITHUB_PERMISSION_DIAGNOSTIC_ERROR",
-        error:
-          error instanceof Error
-            ? error.message
-            : "GitHub permission diagnostic failed.",
-      },
-      500,
+  } catch (
+    error
+  ) {
+    const result =
+      createResponse(
+        {
+          success:
+            false,
+          code:
+            "GITHUB_PERMISSION_DIAGNOSTIC_ERROR",
+          error:
+            error instanceof Error
+              ? error.message
+              : "GitHub permission diagnostic failed.",
+        },
+        500,
+      );
+
+    copyCookies(
+      response,
+      result,
     );
+
+    return result;
   }
 }
