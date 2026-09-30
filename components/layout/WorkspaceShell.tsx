@@ -1,102 +1,63 @@
 "use client";
 
-import type {
-  ReactNode,
-} from "react";
-
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  usePathname,
-} from "next/navigation";
-
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-
-import {
-  useLanguage,
-} from "@/components/i18n/LanguageProvider";
+import ProductWorkflowNav from "./ProductWorkflowNav";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 export default function WorkspaceShell({
   children,
 }: {
   children: ReactNode;
 }) {
-  const {
-    t,
-  } = useLanguage();
+  const { t } = useLanguage();
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const pathname =
-    usePathname();
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
 
-  const [
-    menuOpen,
-    setMenuOpen,
-  ] = useState(false);
-
-  const closeMenu =
-    useCallback(() => {
-      setMenuOpen(false);
-    }, []);
-
-  const toggleMenu =
-    useCallback(() => {
-      setMenuOpen(
-        (current) => !current,
-      );
-    }, []);
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((current) => !current);
+  }, []);
 
   useEffect(() => {
     closeMenu();
-  }, [
-    pathname,
-    closeMenu,
-  ]);
+  }, [pathname, closeMenu]);
 
   useEffect(() => {
     if (!menuOpen) {
       return;
     }
 
-    const previousOverflow =
-      document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
-    document.body.style.overflow =
-      "hidden";
-
-    function handleKeyDown(
-      event: KeyboardEvent,
-    ) {
-      if (
-        event.key ===
-        "Escape"
-      ) {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
         closeMenu();
       }
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown,
-    );
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.body.style.overflow =
-        previousOverflow;
-
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown,
-      );
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [
-    menuOpen,
-    closeMenu,
-  ]);
+  }, [menuOpen, closeMenu]);
+
+  const showProductWorkflow =
+    pathname === "/planner" ||
+    pathname.startsWith("/planner/") ||
+    pathname === "/dashboard" ||
+    pathname === "/tasks" ||
+    pathname === "/execution" ||
+    pathname.startsWith("/execution/");
 
   return (
     <div
@@ -107,6 +68,8 @@ export default function WorkspaceShell({
       }
     >
       <Header />
+
+      {showProductWorkflow ? <ProductWorkflowNav /> : null}
 
       <div className="aios-workspace-body">
         <aside
@@ -127,22 +90,12 @@ export default function WorkspaceShell({
               ? "aios-sidebar-overlay is-visible"
               : "aios-sidebar-overlay"
           }
-          onClick={
-            closeMenu
-          }
-          aria-label={t(
-            "nav.close",
-          )}
-          tabIndex={
-            menuOpen
-              ? 0
-              : -1
-        }
+          onClick={closeMenu}
+          aria-label={t("nav.close")}
+          tabIndex={menuOpen ? 0 : -1}
         />
 
-        <main
-          className="aios-workspace-main"
-        >
+        <main className="aios-workspace-main">
           {children}
         </main>
       </div>
@@ -154,27 +107,17 @@ export default function WorkspaceShell({
             ? "aios-mobile-menu-button is-open"
             : "aios-mobile-menu-button"
         }
-        onClick={
-          toggleMenu
-        }
+        onClick={toggleMenu}
         aria-label={
           menuOpen
             ? t("nav.close")
             : t("nav.open")
         }
-        aria-expanded={
-          menuOpen
-        }
-        aria-controls={
-          "aios-mobile-sidebar"
-        }
+        aria-expanded={menuOpen}
+        aria-controls="aios-mobile-sidebar"
       >
-        <span
-          aria-hidden="true"
-        >
-          {menuOpen
-            ? "×"
-            : "☰"}
+        <span aria-hidden="true">
+          {menuOpen ? "×" : "☰"}
         </span>
       </button>
     </div>
