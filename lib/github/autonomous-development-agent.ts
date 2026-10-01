@@ -876,7 +876,7 @@ function validateFinalSource(
   }
 
   if (
-    /(?:^|\n)\s*(?:\.\.\.|…)\s*(?:$|\n)/.test(
+    /(?:^|\n)\s*(?:\.\.\.|\u2026)\s*(?:$|\n)/.test(
       normalized,
     )
   ) {
@@ -900,7 +900,7 @@ function validateFinalSource(
 
   let quote:
     | "'"
-    | '"'
+    | "\""
     | "`"
     | null = null;
 
@@ -983,13 +983,13 @@ function validateFinalSource(
 
     if (
       current === "'" ||
-      current === '"' ||
+      current === "\"" ||
       current === "`"
     ) {
       quote =
         current as
           | "'"
-          | '"'
+          | "\""
           | "`";
 
       continue;
