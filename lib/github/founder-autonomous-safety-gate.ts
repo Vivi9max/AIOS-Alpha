@@ -9,6 +9,7 @@ export interface FounderAutonomousSafetyInput {
   currentContent: string;
   proposedContent: string;
   objective: string;
+  authorizedTargetPaths?: string[];
 }
 
 export interface FounderAutonomousSafetyAudit {
@@ -22,6 +23,7 @@ export interface FounderAutonomousSafetyAudit {
   changedBytes: number;
   currentBytes: number;
   proposedBytes: number;
+  changeScopeAuthorized: boolean;
 }
 
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
@@ -87,11 +89,28 @@ function byteLength(value: string): number {
 }
 
 function createRunId(): string {
-  return `c141.13-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `c141.13-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }
 
 function containsAny(content: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(content));
+}
+
+function isAuthorizedTargetPath(
+  path: string,
+  authorizedTargetPaths: string[] | undefined,
+): boolean {
+  if (!authorizedTargetPaths?.length) {
+    return false;
+  }
+
+  const normalizedPath = normalizePath(path);
+
+  return authorizedTargetPaths.some(
+    (targetPath) => normalizePath(targetPath) === normalizedPath,
+  );
 }
 
 export function evaluateFounderAutonomousSafety(
@@ -100,10 +119,16 @@ export function evaluateFounderAutonomousSafety(
   const runId = createRunId();
   const checks: string[] = [];
   const blockers: string[] = [];
+
   const path = normalizePath(input.path);
   const currentBytes = byteLength(input.currentContent);
   const proposedBytes = byteLength(input.proposedContent);
   const changedBytes = Math.abs(proposedBytes - currentBytes);
+
+  const changeScopeAuthorized = isAuthorizedTargetPath(
+    path,
+    input.authorizedTargetPaths,
+  );
 
   if (input.repository !== REPOSITORY) {
     blockers.push("repository-not-authorized");
@@ -131,8 +156,8 @@ export function evaluateFounderAutonomousSafety(
 
   if (
     PROTECTED_EXACT.has(path) ||
-    PROTECTED_PREFIXES.some((prefix) =>
-      path === prefix || path.startsWith(prefix),
+    PROTECTED_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(prefix),
     )
   ) {
     blockers.push("protected-core-path");
@@ -170,18 +195,27 @@ export function evaluateFounderAutonomousSafety(
     checks.push("dangerous-operation-scan");
   }
 
-  const ratioBase = Math.max(currentBytes, 1);
-  const changeRatio = changedBytes / ratioBase;
-  if (currentBytes > 0 && changeRatio > MAX_CHANGE_RATIO) {
-    blockers.push("change-scope-too-large");
+  if (changeScopeAuthorized) {
+    checks.push("change-scope-contract-authorized");
   } else {
-    checks.push("change-scope");
+    const ratioBase = Math.max(currentBytes, 1);
+    const changeRatio = changedBytes / ratioBase;
+
+    if (currentBytes > 0 && changeRatio > MAX_CHANGE_RATIO) {
+      blockers.push("change-scope-too-large");
+    } else {
+      checks.push("change-scope");
+    }
   }
 
   const decision: FounderAutonomousSafetyDecision =
     blockers.length === 0 ? "allow" : "deny";
 
-  checks.push(decision === "allow" ? "safety-gate-allow" : "safety-gate-deny");
+  checks.push(
+    decision === "allow"
+      ? "safety-gate-allow"
+      : "safety-gate-deny",
+  );
 
   return {
     runId,
@@ -194,5 +228,6 @@ export function evaluateFounderAutonomousSafety(
     changedBytes,
     currentBytes,
     proposedBytes,
+    changeScopeAuthorized,
   };
 }
