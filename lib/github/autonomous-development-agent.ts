@@ -19,6 +19,10 @@ import {
   verifyVercelBuildForCommit,
   type VercelBuildVerificationResult,
 } from "@/lib/github/autonomous-build-verification";
+import {
+  buildAutonomousDevelopmentPrompt,
+  extractExplicitRepositoryPaths,
+} from "@/lib/github/autonomous-development-prompt";
 
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
@@ -123,12 +127,6 @@ type PatchOperation = {
   replace: string;
 };
 
-type AppliedPatchResult = {
-  path: string;
-  content: string;
-  operationCount: number;
-};
-
 async function runBrain(
   prompt: string,
   systemPrompt: string,
@@ -139,18 +137,14 @@ async function runBrain(
   });
 }
 
-function normalizePath(
-  value: string,
-) {
+function normalizePath(value: string) {
   return value
     .trim()
     .replace(/^\/+/, "")
     .replace(/\\+/g, "/");
 }
 
-function isSafePath(
-  path: string,
-) {
+function isSafePath(path: string) {
   const normalized =
     normalizePath(path);
 
@@ -375,13 +369,13 @@ async function readFile(
     !result.success ||
     !result.data
   ) {
-throw new Error(
-  `AIOS_TARGET_READ_FAILED: ${path}: ${
-    "error" in result
-      ? result.error
-      : "GitHub file read failed."
-  }`,
-);
+    throw new Error(
+      `AIOS_TARGET_READ_FAILED: ${path}: ${
+        "error" in result
+          ? result.error
+          : "GitHub file read failed."
+      }`,
+    );
   }
 
   return result.data;
@@ -390,8 +384,16 @@ throw new Error(
 function buildPlannerPrompt(
   objective: string,
   discoveredPaths: string[],
+  developmentPrompt: string,
 ) {
+  const context =
+    discoveredPaths.join(
+      "\n",
+    );
+
   return [
+    developmentPrompt,
+    "",
     "AUTONOMOUS DEVELOPMENT REQUEST",
     `Repository: ${REPOSITORY}`,
     `Branch: ${BRANCH}`,
@@ -400,7 +402,10 @@ function buildPlannerPrompt(
     objective,
     "",
     "REAL REPOSITORY FILE INDEX:",
-    discoveredPaths.join("\n"),
+    context.slice(
+      0,
+      MAX_PLANNER_CONTEXT_CHARS,
+    ),
     "",
     "Select the smallest coherent set of existing files.",
     "Do not invent paths.",
@@ -583,7 +588,8 @@ function parsePlannerResult(
     );
 
   if (
-    unique.length === 0
+    unique.length ===
+    0
   ) {
     throw new Error(
       "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
@@ -597,6 +603,7 @@ function buildPatchPrompt(
   objective: string,
   targetPath: string,
   targetContent: string,
+  developmentPrompt: string,
 ) {
   const boundedContent =
     targetContent.slice(
@@ -605,6 +612,8 @@ function buildPatchPrompt(
     );
 
   return [
+    developmentPrompt,
+    "",
     "AUTONOMOUS DEVELOPMENT PATCH REQUEST",
     `Repository: ${REPOSITORY}`,
     `Branch: ${BRANCH}`,
@@ -618,7 +627,7 @@ function buildPatchPrompt(
     boundedContent,
     "CURRENT_FILE_END",
     "",
-    "Generate only the minimal SEARCH/REPLACE patch required by the objective.",
+    "Generate only the minimal SEARCH/REPLACE patch required by the development prompt.",
     "Do not regenerate the entire file.",
     "SEARCH must be copied exactly from CURRENT REAL FILE.",
     "SEARCH must occur exactly once.",
@@ -886,12 +895,15 @@ function validateFinalSource(
     );
   }
 
-  let stack: string[] = [];
+  const stack: string[] =
+    [];
+
   let quote:
     | "'"
     | '"'
     | "`"
     | null = null;
+
   let escaped = false;
   let lineComment = false;
   let blockComment = false;
@@ -903,6 +915,7 @@ function validateFinalSource(
   ) {
     const current =
       normalized[index];
+
     const next =
       normalized[index + 1];
 
@@ -912,6 +925,7 @@ function validateFinalSource(
       ) {
         lineComment = false;
       }
+
       continue;
     }
 
@@ -923,6 +937,7 @@ function validateFinalSource(
         blockComment = false;
         index += 1;
       }
+
       continue;
     }
 
@@ -976,6 +991,7 @@ function validateFinalSource(
           | "'"
           | '"'
           | "`";
+
       continue;
     }
 
@@ -987,6 +1003,7 @@ function validateFinalSource(
       stack.push(
         current,
       );
+
       continue;
     }
 
@@ -1033,6 +1050,7 @@ async function generatePatch(
   objective: string,
   targetPath: string,
   currentContent: string,
+  developmentPrompt: string,
   repairContext?: string,
 ) {
   let lastError =
@@ -1050,6 +1068,7 @@ async function generatePatch(
           objective,
           targetPath,
           currentContent,
+          developmentPrompt,
         ),
         repairContext
           ? [
@@ -1087,6 +1106,7 @@ async function generatePatch(
       lastError =
         response.error ||
         "AIOS patch generation failed.";
+
       continue;
     }
 
@@ -1228,6 +1248,7 @@ export interface AutonomousDevelopmentAgentResult {
   repository: string;
   branch: string;
   objective: string;
+  developmentPrompt: string;
   discoveredPaths: string[];
   targetPaths: string[];
   changedPaths: string[];
@@ -1268,6 +1289,9 @@ export async function executeAutonomousDevelopmentAgent(
   let taskId =
     input.taskId || "";
 
+  let developmentPrompt =
+    "";
+
   let discoveredPaths: string[] =
     [];
 
@@ -1287,6 +1311,7 @@ export async function executeAutonomousDevelopmentAgent(
     repository: REPOSITORY,
     branch: BRANCH,
     objective,
+    developmentPrompt,
     discoveredPaths,
     targetPaths,
     changedPaths,
@@ -1349,92 +1374,161 @@ export async function executeAutonomousDevelopmentAgent(
       );
     }
 
+    const explicitTargets =
+      extractExplicitRepositoryPaths(
+        objective,
+      )
+        .filter(isSafePath)
+        .slice(
+          0,
+          MAX_TARGET_FILES,
+        );
+
+    const hasExplicitTargets =
+      explicitTargets.length >
+      0;
+
+    developmentPrompt =
+      buildAutonomousDevelopmentPrompt(
+        {
+          objective,
+          targetPaths:
+            explicitTargets,
+          mode:
+            hasExplicitTargets
+              ? "EXPLICIT_TARGET_PATCH"
+              : "PLANNED_PATCH",
+        },
+      );
+
     updateAutonomousDevelopmentTask(
       taskId,
       {
-        phase:
-          "DISCOVERING",
+        targetPaths:
+          explicitTargets,
         reason:
-          "AIOS is discovering real repository paths.",
+          hasExplicitTargets
+            ? `AIOS generated its Development Prompt and resolved ${explicitTargets.length} explicit target file(s).`
+            : "AIOS generated its Development Prompt and will resolve targets from the real repository.",
       },
     );
-
-    discoveredPaths =
-      await discoverRepositoryPaths(
-        objective,
-      );
 
     if (
-      discoveredPaths.length ===
-      0
+      hasExplicitTargets
     ) {
-      throw new Error(
-        "AIOS_REPOSITORY_DISCOVERY_EMPTY",
+      targetPaths =
+        explicitTargets;
+
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          targetPaths,
+          phase:
+            "READING",
+          reason:
+            `AIOS skipped recursive discovery and planner because the objective explicitly identified ${targetPaths.length} repository target file(s).`,
+        },
       );
-    }
+    } else {
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "DISCOVERING",
+          reason:
+            "AIOS is discovering real repository paths because the objective did not provide an explicit target path.",
+        },
+      );
 
-    updateAutonomousDevelopmentTask(
-      taskId,
-      {
-        phase:
-          "PLANNING",
-        reason:
-          "AIOS is selecting the smallest valid repository target set.",
-      },
-    );
-
-    let plannerError =
-      "AIOS_REPOSITORY_PLAN_TARGETS_INVALID";
-
-    for (
-      let attempt = 1;
-      attempt <=
-      MAX_PLAN_ATTEMPTS;
-      attempt += 1
-    ) {
-      const response =
-        await runBrain(
-          [
-            buildPlannerPrompt(
-              objective,
-              discoveredPaths,
-            ),
-            attempt > 1
-              ? [
-                  "",
-                  `Previous planning attempt failed: ${plannerError}`,
-                  "Return exact existing repository paths only.",
-                ].join("\n")
-              : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
-          PLANNER_SYSTEM_PROMPT,
+      discoveredPaths =
+        await discoverRepositoryPaths(
+          objective,
         );
 
       if (
-        !response.success
+        discoveredPaths.length ===
+        0
       ) {
-        plannerError =
-          response.error ||
-          "AIOS planner failed.";
-        continue;
+        throw new Error(
+          "AIOS_REPOSITORY_DISCOVERY_EMPTY",
+        );
       }
 
-      try {
-        targetPaths =
-          parsePlannerResult(
-            response.content,
-            discoveredPaths,
-          );
-        break;
-      } catch (error) {
-        plannerError =
-          error instanceof Error
-            ? error.message
-            : "AIOS planner target validation failed.";
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "PLANNING",
+          reason:
+            "AIOS is selecting the smallest valid repository target set from its generated Development Prompt.",
+        },
+      );
 
-        targetPaths = [];
+      let plannerError =
+        "AIOS_REPOSITORY_PLAN_TARGETS_INVALID";
+
+      for (
+        let attempt = 1;
+        attempt <=
+        MAX_PLAN_ATTEMPTS;
+        attempt += 1
+      ) {
+        const response =
+          await runBrain(
+            [
+              buildPlannerPrompt(
+                objective,
+                discoveredPaths,
+                developmentPrompt,
+              ),
+              attempt > 1
+                ? [
+                    "",
+                    `Previous planning attempt failed: ${plannerError}`,
+                    "Return exact existing repository paths only.",
+                  ].join("\n")
+                : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            PLANNER_SYSTEM_PROMPT,
+          );
+
+        if (
+          !response.success
+        ) {
+          plannerError =
+            response.error ||
+            "AIOS planner failed.";
+
+          continue;
+        }
+
+        try {
+          targetPaths =
+            parsePlannerResult(
+              response.content,
+              discoveredPaths,
+            );
+
+          break;
+        } catch (error) {
+          plannerError =
+            error instanceof Error
+              ? error.message
+              : "AIOS planner target validation failed.";
+
+          targetPaths = [];
+        }
+      }
+
+      if (
+        targetPaths.length ===
+        0
+      ) {
+        throw new Error(
+          plannerError,
+        );
       }
     }
 
@@ -1443,7 +1537,7 @@ export async function executeAutonomousDevelopmentAgent(
       0
     ) {
       throw new Error(
-        plannerError,
+        "AIOS_TARGET_RESOLUTION_EMPTY",
       );
     }
 
@@ -1493,7 +1587,7 @@ export async function executeAutonomousDevelopmentAgent(
           phase:
             "GENERATING",
           reason:
-            `Generating a minimal SEARCH/REPLACE patch for ${targetPath}.`,
+            `AIOS is generating a minimal patch from its Development Prompt for ${targetPath}.`,
         },
       );
 
@@ -1502,6 +1596,7 @@ export async function executeAutonomousDevelopmentAgent(
           objective,
           targetPath,
           currentContent,
+          developmentPrompt,
         );
 
       const patchedContent =
@@ -1541,7 +1636,7 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths,
           targetPath,
           finalContent,
-          "feat(C167.27): execute autonomous source patches",
+          "feat(C167.28.1): enable AIOS self-generated development prompts",
         );
 
       changedPaths.push(
@@ -1678,6 +1773,7 @@ export async function executeAutonomousDevelopmentAgent(
           ].join("\n"),
           repairTarget,
           current.content,
+          developmentPrompt,
           repairContext,
         );
 
@@ -1718,7 +1814,7 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths,
           repairTarget,
           finalContent,
-          `fix(C167.27): autonomous build repair ${repairRounds}`,
+          `fix(C167.28.1): autonomous build repair ${repairRounds}`,
         );
 
       changedPaths.push(
@@ -1731,6 +1827,7 @@ export async function executeAutonomousDevelopmentAgent(
         commitShas.push(
           written.commitSha,
         );
+
         latestCommitSha =
           written.commitSha;
       }
@@ -1790,7 +1887,7 @@ export async function executeAutonomousDevelopmentAgent(
 
     const reason =
       verificationPassed
-        ? "Autonomous patch execution, GitHub readback and Vercel production verification completed."
+        ? "Autonomous self-generated development prompt, patch execution, GitHub readback and Vercel production verification completed."
         : verification?.errorMessage ||
           verification?.errorCode ||
           "Final autonomous verification failed.";
