@@ -30,6 +30,7 @@ const MAX_TARGET_FILES = 6;
 const MAX_GENERATED_FILE_CHARS = 200000;
 
 const MAX_GENERATION_ATTEMPTS = 2;
+const MAX_PLAN_ATTEMPTS = 2;
 const MAX_REPAIR_ROUNDS = 2;
 
 const PLANNER_SYSTEM_PROMPT = [
@@ -37,11 +38,20 @@ const PLANNER_SYSTEM_PROMPT = [
   "",
   "你负责根据用户自然语言需求和真实仓库索引/源码上下文，决定需要修改哪些文件。",
   "不要要求用户提供 Target Path。Target Path 必须由你从真实仓库上下文中发现。",
+  "只选择真实仓库中已经存在的文件。",
   "只选择 app/、components/、docs/、lib/、scripts/、tests/、test/、public/、styles/ 下的文件。",
   "不得选择 package.json、lockfile、vercel.json、.env、.git、.github。",
   "优先选择现有文件。",
   "最多选择 6 个文件。",
   "选择能够形成最小完整产品变更闭环的文件，不要为了覆盖范围而增加无关文件。",
+  "",
+  "必须返回 JSON。",
+  "首选格式：",
+  "{\"targetPaths\":[\"app/example/page.tsx\"]}",
+  "",
+  "也允许使用 target_paths、paths、files 或 targets 作为等价字段。",
+  "files 或 targets 数组中的对象可以使用 path 字段。",
+  "不要返回不存在于 REPOSITORY DISCOVERY INDEX 中的路径。",
   "只输出 AIOS_PLAN_BEGIN / AIOS_PLAN_END JSON。",
 ].join("\n");
 
@@ -177,9 +187,7 @@ function scorePath(
     score += 2;
   }
 
-  if (
-    /layout\.(tsx|ts)$/.test(lower)
-  ) {
+  if (/layout\.(tsx|ts)$/.test(lower)) {
     score += 1;
   }
 
@@ -385,12 +393,180 @@ async function readContext(
   return context;
 }
 
+function parsePlannerJson(
+  raw: string,
+): unknown {
+  const trimmed =
+    raw.trim();
+
+  const withoutFence =
+    trimmed
+      .replace(
+        /^```(?:json)?\s*/i,
+        "",
+      )
+      .replace(
+        /\s*```$/i,
+        "",
+      )
+      .trim();
+
+  try {
+    return JSON.parse(
+      withoutFence,
+    );
+  } catch {
+    const objectStart =
+      withoutFence.indexOf("{");
+    const objectEnd =
+      withoutFence.lastIndexOf("}");
+
+    if (
+      objectStart >= 0 &&
+      objectEnd > objectStart
+    ) {
+      return JSON.parse(
+        withoutFence.slice(
+          objectStart,
+          objectEnd + 1,
+        ),
+      );
+    }
+
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_JSON_INVALID",
+    );
+  }
+}
+
+function collectPlanCandidates(
+  value: unknown,
+): unknown[] {
+  if (
+    Array.isArray(value)
+  ) {
+    return value;
+  }
+
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return [];
+  }
+
+  const record =
+    value as Record<
+      string,
+      unknown
+    >;
+
+  const keys = [
+    "targetPaths",
+    "target_paths",
+    "paths",
+    "files",
+    "targets",
+    "targetFiles",
+    "target_files",
+  ];
+
+  for (
+    const key of keys
+  ) {
+    const candidate =
+      record[key];
+
+    if (
+      Array.isArray(
+        candidate,
+      )
+    ) {
+      return candidate;
+    }
+  }
+
+  for (
+    const key of [
+      "plan",
+      "result",
+      "data",
+      "selection",
+    ]
+  ) {
+    const nested =
+      record[key];
+
+    const candidates =
+      collectPlanCandidates(
+        nested,
+      );
+
+    if (
+      candidates.length
+    ) {
+      return candidates;
+    }
+  }
+
+  return [];
+}
+
+function candidateToPath(
+  value: unknown,
+) {
+  if (
+    typeof value ===
+    "string"
+  ) {
+    return normalizePath(
+      value,
+    );
+  }
+
+  if (
+    value &&
+    typeof value ===
+      "object"
+  ) {
+    const record =
+      value as Record<
+        string,
+        unknown
+      >;
+
+    for (
+      const key of [
+        "path",
+        "targetPath",
+        "target_path",
+        "file",
+        "filename",
+      ]
+    ) {
+      if (
+        typeof record[key] ===
+        "string"
+      ) {
+        return normalizePath(
+          record[key] as string,
+        );
+      }
+    }
+  }
+
+  return "";
+}
+
 function extractPlan(
   content: string,
+  discoveredPaths: string[],
+  objective: string,
 ) {
   const match =
     content.match(
-      /AIOS_PLAN_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PLAN_END/,
+      /AIOS_PLAN_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PLAN_END/i,
     );
 
   if (!match) {
@@ -402,55 +578,56 @@ function extractPlan(
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(
-      match[1]?.trim() ?? "",
-    );
+    parsed =
+      parsePlannerJson(
+        match[1] ?? "",
+      );
   } catch {
     throw new Error(
       "AIOS_REPOSITORY_PLAN_JSON_INVALID",
     );
   }
 
-  if (
-    !parsed ||
-    typeof parsed !==
-      "object" ||
-    !Array.isArray(
-      (
-        parsed as {
-          targetPaths?: unknown;
-        }
-      ).targetPaths,
-    )
-  ) {
-    throw new Error(
-      "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
+  const discoveredSet =
+    new Set(
+      discoveredPaths.map(
+        normalizePath,
+      ),
     );
-  }
 
-  const paths = (
-    parsed as {
-      targetPaths: unknown[];
-    }
-  ).targetPaths
-    .map(String)
-    .map(normalizePath)
-    .filter(isSafePath);
+  const rawCandidates =
+    collectPlanCandidates(
+      parsed,
+    );
+
+  const paths =
+    rawCandidates
+      .map(candidateToPath)
+      .filter(Boolean)
+      .filter(isSafePath)
+      .filter(
+        (path) =>
+          discoveredSet.has(
+            path,
+          ),
+      );
 
   const unique =
     Array.from(
       new Set(paths),
     );
 
-  if (!unique.length) {
-    throw new Error(
-      "AIOS_REPOSITORY_PLAN_EMPTY",
+  if (
+    unique.length
+  ) {
+    return unique.slice(
+      0,
+      MAX_TARGET_FILES,
     );
   }
 
-  return unique.slice(
-    0,
-    MAX_TARGET_FILES,
+  throw new Error(
+    "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
   );
 }
 
@@ -484,8 +661,11 @@ function plannerPrompt(
       ],
     ),
     "Choose the smallest coherent set of existing files required by the requirement.",
-    "Do not select files that are not necessary.",
+    "Every selected path MUST appear exactly in the REPOSITORY DISCOVERY INDEX.",
+    "Use the exact repository path spelling.",
     "Return only AIOS_PLAN_BEGIN / AIOS_PLAN_END with valid JSON.",
+    "Preferred JSON:",
+    "{\"targetPaths\":[\"exact/repository/path.tsx\"]}",
   ].join("\n");
 }
 
@@ -994,29 +1174,67 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
-    const plan =
-      await runBrain(
-        plannerPrompt(
-          objective,
-          discoveredPaths,
-          discoveryContext,
-        ),
-        PLANNER_SYSTEM_PROMPT,
-      );
+    let planError =
+      "AIOS_REPOSITORY_PLAN_TARGETS_INVALID";
 
-    if (
-      !plan.success
+    for (
+      let planAttempt = 1;
+      planAttempt <=
+      MAX_PLAN_ATTEMPTS;
+      planAttempt += 1
     ) {
-      throw new Error(
-        plan.error ||
-          "Repository planning failed.",
-      );
+      const plan =
+        await runBrain(
+          [
+            plannerPrompt(
+              objective,
+              discoveredPaths,
+              discoveryContext,
+            ),
+            "",
+            planAttempt > 1
+              ? `Previous planner result was rejected with: ${planError}. Regenerate using exact paths from the discovery index.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          PLANNER_SYSTEM_PROMPT,
+        );
+
+      if (
+        !plan.success
+      ) {
+        planError =
+          plan.error ||
+          "Repository planning failed.";
+        continue;
+      }
+
+      try {
+        targetPaths =
+          extractPlan(
+            plan.content,
+            discoveredPaths,
+            objective,
+          );
+        break;
+      } catch (error) {
+        planError =
+          error instanceof Error
+            ? error.message
+            : "Repository plan target validation failed.";
+        targetPaths = [];
+      }
     }
 
-    targetPaths =
-      extractPlan(
-        plan.content,
+    if (
+      targetPaths.length ===
+      0
+    ) {
+      throw new Error(
+        planError,
       );
+    }
 
     if (
       targetPaths.length >
@@ -1035,6 +1253,8 @@ export async function executeAutonomousDevelopmentAgent(
         targetPaths,
         phase:
           "READING",
+        reason:
+          `AIOS selected ${targetPaths.length} verified repository target file(s).`,
       },
     );
 
@@ -1089,7 +1309,7 @@ export async function executeAutonomousDevelopmentAgent(
           objective,
           targetPaths,
           file,
-          "feat(C167.23): stabilize autonomous development execution",
+          "feat(C167.24): stabilize autonomous planner target resolution",
         );
 
       changedPaths.push(
@@ -1154,6 +1374,8 @@ export async function executeAutonomousDevelopmentAgent(
         changedPaths,
         commitSha:
           latestCommitSha,
+        reason:
+          "Running Vercel production build verification.",
       },
     );
 
@@ -1237,7 +1459,7 @@ export async function executeAutonomousDevelopmentAgent(
           `${objective}\nVercel repair round ${repairRounds}.`,
           targetPaths,
           file,
-          `fix(C167.23): autonomous build repair ${repairRounds}`,
+          `fix(C167.24): autonomous build repair ${repairRounds}`,
         );
 
       changedPaths.push(
