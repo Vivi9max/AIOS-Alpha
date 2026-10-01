@@ -23,6 +23,9 @@ import {
   buildAutonomousDevelopmentPrompt,
   extractExplicitRepositoryPaths,
 } from "@/lib/github/autonomous-development-prompt";
+import {
+  runAutonomousDevelopmentSafetyGate,
+} from "@/lib/github/autonomous-development-safety-gate";
 
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
@@ -1128,6 +1131,73 @@ async function generatePatch(
   );
 }
 
+function buildAutonomousCommitMessage(
+  objective: string,
+  repairRound?: number,
+) {
+  const normalized = objective
+    .replace(/[^a-zA-Z0-9 _-]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const summary = normalized
+    .slice(0, 72)
+    .trim()
+    .replace(/\s+/g, "-")
+    .toLowerCase();
+
+  if (repairRound) {
+    return `fix(C167.28.4): autonomous build repair ${repairRound}${summary ? ` ${summary}` : ""}`;
+  }
+
+  return `feat(C167.28.4): autonomous development${summary ? ` ${summary}` : ""}`;
+}
+
+async function loadSafetyGateRepositoryContext(
+  targetPaths: string[],
+  originalContents: Record<string, string>,
+  patchedContents: Record<string, string>,
+) {
+  const i18nPath = "lib/i18n/index.ts";
+
+  if (
+    !targetPaths.includes(i18nPath) &&
+    !patchedContents[i18nPath]
+  ) {
+    const currentI18n =
+      await readFile(i18nPath);
+
+    originalContents[i18nPath] =
+      currentI18n.content;
+
+    patchedContents[i18nPath] =
+      currentI18n.content;
+  }
+}
+
+function runSafetyGateOrThrow(
+  objective: string,
+  targetPaths: string[],
+  originalContents: Record<string, string>,
+  patchedContents: Record<string, string>,
+) {
+  const gate =
+    runAutonomousDevelopmentSafetyGate({
+      objective,
+      targetPaths,
+      originalContents,
+      patchedContents,
+    });
+
+  if (!gate.passed) {
+    throw new Error(
+      `AUTONOMOUS_SAFETY_GATE_BLOCKED: ${gate.errors.join(" | ") || gate.reason}`,
+    );
+  }
+
+  return gate;
+}
+
 async function writeFinalFile(
   objective: string,
   targetPaths: string[],
@@ -1552,6 +1622,14 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
+    const originalContents:
+      Record<string, string> =
+      {};
+
+    const patchedContents:
+      Record<string, string> =
+      {};
+
     for (
       const targetPath of targetPaths
     ) {
@@ -1580,6 +1658,11 @@ export async function executeAutonomousDevelopmentAgent(
           `AIOS_TARGET_FILE_EMPTY: ${targetPath}`,
         );
       }
+
+      originalContents[
+        targetPath
+      ] =
+        currentContent;
 
       updateAutonomousDevelopmentTask(
         taskId,
@@ -1620,15 +1703,52 @@ export async function executeAutonomousDevelopmentAgent(
         );
       }
 
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          phase:
-            "WRITING",
-          reason:
-            `Writing verified patched source: ${targetPath}`,
-        },
-      );
+      patchedContents[
+        targetPath
+      ] =
+        finalContent;
+    }
+
+    await loadSafetyGateRepositoryContext(
+      targetPaths,
+      originalContents,
+      patchedContents,
+    );
+
+    updateAutonomousDevelopmentTask(
+      taskId,
+      {
+        phase:
+          "GENERATING",
+        reason:
+          "AIOS is running the cross-file Autonomous Development Safety Gate before any GitHub write.",
+      },
+    );
+
+    runSafetyGateOrThrow(
+      objective,
+      targetPaths,
+      originalContents,
+      patchedContents,
+    );
+
+    updateAutonomousDevelopmentTask(
+      taskId,
+      {
+        phase:
+          "WRITING",
+        reason:
+          "Autonomous Development Safety Gate passed. AIOS is now writing the prevalidated changes.",
+      },
+    );
+
+    for (
+      const targetPath of targetPaths
+    ) {
+      const finalContent =
+        patchedContents[
+          targetPath
+        ];
 
       const written =
         await writeFinalFile(
@@ -1636,7 +1756,9 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths,
           targetPath,
           finalContent,
-          "feat(C167.28.1): enable AIOS self-generated development prompts",
+          buildAutonomousCommitMessage(
+            objective,
+          ),
         );
 
       changedPaths.push(
@@ -1798,6 +1920,48 @@ export async function executeAutonomousDevelopmentAgent(
         );
       }
 
+      const repairOriginalContents:
+        Record<string, string> =
+        {
+          [repairTarget]:
+            current.content,
+        };
+
+      const repairPatchedContents:
+        Record<string, string> =
+        {
+          [repairTarget]:
+            finalContent,
+        };
+
+      await loadSafetyGateRepositoryContext(
+        [repairTarget],
+        repairOriginalContents,
+        repairPatchedContents,
+      );
+
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "GENERATING",
+          reason:
+            `AIOS is running the Autonomous Development Safety Gate for repair round ${repairRounds} before any GitHub write.`,
+        },
+      );
+
+      runSafetyGateOrThrow(
+        [
+          objective,
+          "",
+          "Repair the Vercel build failure.",
+          repairContext,
+        ].join("\n"),
+        [repairTarget],
+        repairOriginalContents,
+        repairPatchedContents,
+      );
+
       updateAutonomousDevelopmentTask(
         taskId,
         {
@@ -1814,7 +1978,10 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths,
           repairTarget,
           finalContent,
-          `fix(C167.28.1): autonomous build repair ${repairRounds}`,
+          buildAutonomousCommitMessage(
+            objective,
+            repairRounds,
+          ),
         );
 
       changedPaths.push(
@@ -1906,16 +2073,20 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
-    completeAutonomousDevelopmentTask(
-      taskId,
-      {
-        commitSha:
-          latestCommitSha,
-        readbackVerified,
-        verificationPassed,
-        reason,
-      },
-    );
+    if (
+      verificationPassed
+    ) {
+      completeAutonomousDevelopmentTask(
+        taskId,
+        {
+          commitSha:
+            latestCommitSha,
+          readbackVerified,
+          verificationPassed,
+          reason,
+        },
+      );
+    }
 
     return {
       success:
