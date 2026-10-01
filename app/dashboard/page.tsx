@@ -113,6 +113,9 @@ const COPY = {
       "Create a task and Planner will use it to establish the next execution path.",
     currentPriority:
       "Current highest-priority execution task.",
+    primaryActionLabel: "Primary action",
+    primaryActionHint:
+      "Start here — this is the next step AIOS recommends.",
 
     progress: "Overall Progress",
     completed: "completed",
@@ -297,6 +300,9 @@ const COPY = {
     missionDescription:
       "创建任务后，Planner 将根据真实执行情况建立下一条执行路径。",
     currentPriority: "当前最高优先级执行任务。",
+    primaryActionLabel: "主要操作",
+    primaryActionHint:
+      "从这里开始——这是 AIOS 建议的下一步。",
 
     progress: "总体进度",
     completed: "已完成",
@@ -485,6 +491,9 @@ const COPY = {
       "タスクを作成すると、Planner が実際の実行結果から次の実行経路を作成します。",
     currentPriority:
       "現在最も優先度の高い実行タスクです。",
+    primaryActionLabel: "主要アクション",
+    primaryActionHint:
+      "ここから開始 — これは AIOS が推奨する次のステップです。",
 
     progress: "全体の進捗",
     completed: "完了",
@@ -1451,29 +1460,58 @@ export default function DashboardPage() {
 
             <div
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 10,
                 marginTop: 19,
               }}
             >
-              <PrimaryLink
-                href={
-                  missionTask
-                    ? "/tasks"
-                    : "/workspace"
-                }
+              <p
+                style={{
+                  margin: "0 0 8px",
+                  color: "#4f46e5",
+                  fontSize: 11,
+                  fontWeight: 850,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                }}
               >
-                {missionTask
-                  ? copy.continue
-                  : copy.createGoal}
-              </PrimaryLink>
+                {copy.primaryActionLabel}
+              </p>
 
-              <SecondaryLink
-                href="/runtime/trace"
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
               >
-                {copy.executionTrace}
-              </SecondaryLink>
+                <PrimaryLink
+                  href={
+                    missionTask
+                      ? "/tasks"
+                      : "/workspace"
+                  }
+                >
+                  {missionTask
+                    ? copy.continue
+                    : copy.createGoal}
+                </PrimaryLink>
+
+                <SecondaryLink
+                  href="/runtime/trace"
+                >
+                  {copy.executionTrace}
+                </SecondaryLink>
+              </div>
+
+              <p
+                style={{
+                  margin: "9px 0 0",
+                  color: "#64748b",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                {copy.primaryActionHint}
+              </p>
             </div>
           </Panel>
         </section>
