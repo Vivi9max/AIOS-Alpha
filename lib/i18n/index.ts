@@ -62,6 +62,8 @@ const messages = {
     "tasks.guard": "Planner Execution Guard",
     "tasks.syncTitle": "Synchronizing execution policy",
     "tasks.syncReason": "Reading the Planner's current execution limits.",
+    "tasks.emptyHint": "Tip: describe the outcome, not just the action, so Planner can route it accurately.",
+SEARCH_END_REPLACE
     "tasks.concurrent": "Concurrent",
     "tasks.queue": "Task queue",
     "tasks.newTask": "New tasks",
@@ -212,6 +214,8 @@ const messages = {
     "tasks.guard": "Planner 执行守卫",
     "tasks.syncTitle": "正在同步执行策略",
     "tasks.syncReason": "正在读取 Planner 当前运行限制。",
+    "tasks.emptyHint": "提示：请描述最终结果，而不仅是一个动作，Planner 才能更准确地规划执行路径。",
+SEARCH_END_REPLACE
     "tasks.concurrent": "并行执行",
     "tasks.queue": "任务队列",
     "tasks.newTask": "新增任务",
@@ -362,6 +366,8 @@ const messages = {
     "tasks.guard": "Planner 実行ガード",
     "tasks.syncTitle": "実行ポリシーを同期中",
     "tasks.syncReason": "Planner の現在の実行制限を確認しています。",
+    "tasks.emptyHint": "ヒント：操作だけでなく最終成果を記述すると、Planner がより正確に実行経路を計画できます。",
+SEARCH_END_REPLACE
     "tasks.concurrent": "同時実行",
     "tasks.queue": "タスクキュー",
     "tasks.newTask": "新規タスク",
