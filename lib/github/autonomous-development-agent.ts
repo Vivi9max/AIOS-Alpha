@@ -23,11 +23,11 @@ const BRANCH = "main";
 const MAX_OBJECTIVE_LENGTH = 4000;
 const MAX_DISCOVERY_ENTRIES = 200;
 
-const MAX_CONTEXT_FILES = 6;
-const MAX_SUPPORTING_CONTEXT_FILES = 3;
-const MAX_CONTEXT_FILE_CHARS = 10000;
-const MAX_TARGET_CONTEXT_FILE_CHARS = 70000;
-const MAX_CONTEXT_CHARS = 110000;
+const MAX_CONTEXT_FILES = 4;
+const MAX_SUPPORTING_CONTEXT_FILES = 1;
+const MAX_CONTEXT_FILE_CHARS = 6000;
+const MAX_TARGET_CONTEXT_FILE_CHARS = 60000;
+const MAX_CONTEXT_CHARS = 68000;
 
 const MAX_TARGET_FILES = 6;
 const MAX_GENERATED_FILE_CHARS = 200000;
@@ -73,7 +73,7 @@ const FILE_SYSTEM_PROMPT = [
   "保持现有架构、类型、接口和 import 路径兼容。",
   "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
   "",
-  "推荐直接返回完整源码。",
+  "最优先：直接返回完整源码，不要代码围栏，不要解释。",
   "如果使用代码块，只允许一个完整源码代码块。",
   "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
 ].join("\n");
@@ -92,7 +92,7 @@ const REPAIR_SYSTEM_PROMPT = [
   "保持现有架构、类型、接口和 Founder 安全边界。",
   "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
   "",
-  "推荐直接返回完整源码。",
+  "最优先：直接返回完整源码，不要代码围栏，不要解释。",
   "如果使用代码块，只允许一个完整源码代码块。",
   "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
 ].join("\n");
@@ -818,7 +818,8 @@ function filePrompt(
     "Do not use TODO as a substitute for implementation.",
     "Do not use ... to represent omitted code.",
     "Return only the complete source file.",
-    "A single closed Markdown code block is acceptable.",
+    "Preferred output: raw source without Markdown fences.",
+    "A single closed Markdown code block is also acceptable.",
     "Do not include an explanation before or after the source.",
   ].join("\n");
 }
@@ -913,28 +914,9 @@ function repairPrompt(
     "Do not use TODO.",
     "Do not use placeholders.",
     "Do not use ... to represent omitted code.",
-    "A single closed Markdown code block is acceptable.",
+    "Preferred output: raw source without Markdown fences.",
+    "A single closed Markdown code block is also acceptable.",
   ].join("\n");
-}
-
-function stripOuterFence(
-  content: string,
-) {
-  const trimmed =
-    content.trim();
-
-  const fenceMatch =
-    trimmed.match(
-      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*\r?\n([\s\S]*?)\r?\n```$/i,
-    );
-
-  if (fenceMatch) {
-    return (
-      fenceMatch[1] ?? ""
-    ).trim();
-  }
-
-  return trimmed;
 }
 
 function removeLeadingExplanation(
@@ -944,9 +926,15 @@ function removeLeadingExplanation(
   let value =
     content.trim();
 
+  const escapedPath =
+    expectedPath.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+
   const pathHeading =
     new RegExp(
-      `^(?:FILE|PATH)\\s*:\\s*${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\r?\\n`,
+      `^(?:FILE|PATH)\\s*:\\s*${escapedPath}\\s*\\r?\\n`,
       "i",
     );
 
@@ -958,7 +946,7 @@ function removeLeadingExplanation(
 
   value =
     value.replace(
-      /^Here(?:'s| is) the complete (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
+      /^(?:Here(?:'s| is)|Below is|Here you go)[^:\n]*(?:complete|full|updated|source)?[^:\n]*:\s*\r?\n/i,
       "",
     );
 
@@ -968,7 +956,151 @@ function removeLeadingExplanation(
       "",
     );
 
+  value =
+    value.replace(
+      /^Full (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
+      "",
+    );
+
   return value.trim();
+}
+
+function hasBalancedDelimiters(
+  content: string,
+) {
+  const stack: string[] = [];
+
+  let quote:
+    | "'"
+    | '"'
+    | "`"
+    | null = null;
+
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (
+    let index = 0;
+    index < content.length;
+    index += 1
+  ) {
+    const current =
+      content[index];
+    const next =
+      content[index + 1];
+
+    if (lineComment) {
+      if (current === "\n") {
+        lineComment = false;
+      }
+      continue;
+    }
+
+    if (blockComment) {
+      if (
+        current === "*" &&
+        next === "/"
+      ) {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (
+        current === "\\"
+      ) {
+        escaped = true;
+        continue;
+      }
+
+      if (
+        current === quote
+      ) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "/"
+    ) {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "*"
+    ) {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "'" ||
+      current === '"' ||
+      current === "`"
+    ) {
+      quote =
+        current as
+          | "'"
+          | '"'
+          | "`";
+      continue;
+    }
+
+    if (
+      current === "{" ||
+      current === "(" ||
+      current === "["
+    ) {
+      stack.push(
+        current,
+      );
+      continue;
+    }
+
+    if (
+      current === "}" ||
+      current === ")" ||
+      current === "]"
+    ) {
+      const expected =
+        current === "}"
+          ? "{"
+          : current === ")"
+            ? "("
+            : "[";
+
+      if (
+        stack[
+          stack.length - 1
+        ] !== expected
+      ) {
+        return false;
+      }
+
+      stack.pop();
+    }
+  }
+
+  return (
+    !quote &&
+    !blockComment &&
+    stack.length === 0
+  );
 }
 
 function looksLikeSourceFile(
@@ -1016,6 +1148,14 @@ function looksLikeSourceFile(
     return false;
   }
 
+  if (
+    !hasBalancedDelimiters(
+      value,
+    )
+  ) {
+    return false;
+  }
+
   const lowerPath =
     expectedPath.toLowerCase();
 
@@ -1030,9 +1170,6 @@ function looksLikeSourceFile(
     return (
       /(?:import\s+|export\s+|const\s+|function\s+|interface\s+|type\s+|return\s*\(|return\s+|<)/.test(
         value,
-      ) &&
-      /[}\)>;]\s*$/.test(
-        value,
       )
     );
   }
@@ -1042,13 +1179,8 @@ function looksLikeSourceFile(
       lowerPath,
     )
   ) {
-    return (
-      /(?:import\s+|export\s+|const\s+|function\s+|class\s+|type\s+|interface\s+)/.test(
-        value,
-      ) &&
-      /[}\);,]\s*$/.test(
-        value,
-      )
+    return /(?:import\s+|export\s+|const\s+|function\s+|class\s+|type\s+|interface\s+)/.test(
+      value,
     );
   }
 
@@ -1106,6 +1238,164 @@ function extractStrictFile(
   };
 }
 
+function extractAnyCodeFence(
+  content: string,
+) {
+  const closedFence =
+    /```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?[ \t]*\r?\n([\s\S]*?)\r?\n```/gi;
+
+  const candidates: string[] =
+    [];
+
+  let match: RegExpExecArray | null =
+    null;
+
+  while (
+    (match =
+      closedFence.exec(
+        content,
+      )) !== null
+  ) {
+    const candidate =
+      (
+        match[1] ?? ""
+      ).trim();
+
+    if (candidate) {
+      candidates.push(
+        candidate,
+      );
+    }
+  }
+
+  if (
+    candidates.length
+  ) {
+    return (
+      candidates.find(
+        (candidate) =>
+          /(?:import\s+|export\s+|const\s+|function\s+|interface\s+|type\s+|return\s+|<)/.test(
+            candidate,
+          ),
+      ) ||
+      candidates[0]
+    );
+  }
+
+  const openFence =
+    content.match(
+      /```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?[ \t]*\r?\n/i,
+    );
+
+  if (
+    openFence &&
+    openFence.index !==
+      undefined
+  ) {
+    const start =
+      openFence.index +
+      openFence[0].length;
+
+    const remainder =
+      content
+        .slice(start)
+        .trim();
+
+    if (
+      remainder
+    ) {
+      return remainder;
+    }
+  }
+
+  return null;
+}
+
+function extractRawSource(
+  content: string,
+  expectedPath: string,
+) {
+  let value =
+    removeLeadingExplanation(
+      content,
+      expectedPath,
+    );
+
+  const lines =
+    value.split(/\r?\n/);
+
+  const sourceStart =
+    lines.findIndex(
+      (line) => {
+        const trimmed =
+          line.trim();
+
+        return (
+          /^["']use client["'];?$/.test(
+            trimmed,
+          ) ||
+          /^import\s/.test(
+            trimmed,
+          ) ||
+          /^export\s/.test(
+            trimmed,
+          ) ||
+          /^const\s/.test(
+            trimmed,
+          ) ||
+          /^type\s/.test(
+            trimmed,
+          ) ||
+          /^interface\s/.test(
+            trimmed,
+          ) ||
+          /^function\s/.test(
+            trimmed,
+          ) ||
+          /^class\s/.test(
+            trimmed,
+          ) ||
+          /^\/\*/.test(
+            trimmed,
+          ) ||
+          /^\/\//.test(
+            trimmed,
+          )
+        );
+      },
+    );
+
+  if (
+    sourceStart > 0
+  ) {
+    const prefix =
+      lines
+        .slice(
+          0,
+          sourceStart,
+        )
+        .join("\n")
+        .trim();
+
+    if (
+      !prefix ||
+      /^(?:Here|Below|Complete|Full|Updated|Source|Code)/i.test(
+        prefix,
+      )
+    ) {
+      value =
+        lines
+          .slice(
+            sourceStart,
+          )
+          .join("\n")
+          .trim();
+    }
+  }
+
+  return value;
+}
+
 function extractFile(
   content: string,
   expectedPath: string,
@@ -1120,19 +1410,43 @@ function extractFile(
     return strict;
   }
 
-  let normalized =
-    stripOuterFence(
+  const fenced =
+    extractAnyCodeFence(
       content,
     );
 
-  normalized =
-    removeLeadingExplanation(
-      normalized,
+  if (fenced) {
+    const candidate =
+      removeLeadingExplanation(
+        fenced,
+        expectedPath,
+      );
+
+    if (
+      looksLikeSourceFile(
+        candidate,
+        expectedPath,
+      )
+    ) {
+      return {
+        path:
+          normalizePath(
+            expectedPath,
+          ),
+        content:
+          candidate,
+      };
+    }
+  }
+
+  let raw =
+    extractRawSource(
+      content,
       expectedPath,
     );
 
   if (
-    normalized.startsWith(
+    raw.startsWith(
       "AIOS_FILE_BEGIN",
     )
   ) {
@@ -1141,28 +1455,27 @@ function extractFile(
     );
   }
 
-  const fenced =
-    normalized.match(
-      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*\r?\n([\s\S]*?)\r?\n```$/i,
+  raw =
+    raw.replace(
+      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*/i,
+      "",
     );
 
-  if (fenced) {
-    normalized =
-      (
-        fenced[1] ??
-        ""
-      ).trim();
-  }
+  raw =
+    raw.replace(
+      /\s*```\s*$/i,
+      "",
+    );
 
-  normalized =
+  raw =
     removeLeadingExplanation(
-      normalized,
+      raw,
       expectedPath,
     );
 
   if (
     !looksLikeSourceFile(
-      normalized,
+      raw,
       expectedPath,
     )
   ) {
@@ -1177,7 +1490,7 @@ function extractFile(
         expectedPath,
       ),
     content:
-      normalized,
+      raw,
   };
 }
 
@@ -1217,6 +1530,7 @@ async function generateFile(
             "",
             `Previous generation was rejected with: ${lastReason}`,
             "Return the entire complete source file again.",
+            "Return raw source only.",
             "Do not return a marker fragment.",
             "Do not return a partial file.",
             "Do not explain the correction.",
@@ -1660,41 +1974,8 @@ export async function executeAutonomousDevelopmentAgent(
         );
       }
 
-      const supportingPaths =
-        targetPaths
-          .filter(
-            (path) =>
-              normalizePath(
-                path,
-              ) !==
-              normalizePath(
-                targetPath,
-              ),
-          )
-          .slice(
-            0,
-            MAX_SUPPORTING_CONTEXT_FILES,
-          );
-
-      const supportingContext =
-        supportingPaths.length
-          ? await readContext(
-              supportingPaths,
-              [],
-              {
-                maxFiles:
-                  MAX_SUPPORTING_CONTEXT_FILES,
-                maxSupportingFiles:
-                  MAX_SUPPORTING_CONTEXT_FILES,
-              },
-            )
-          : [];
-
       const generationContext =
-        [
-          ...targetContext,
-          ...supportingContext,
-        ];
+        targetContext;
 
       const file =
         await generateFile(
@@ -1719,7 +2000,7 @@ export async function executeAutonomousDevelopmentAgent(
           objective,
           targetPaths,
           file,
-          "fix(C167.25): harden autonomous file generation",
+          "fix(C167.26): harden autonomous generation parsing",
         );
 
       changedPaths.push(
@@ -1840,40 +2121,8 @@ export async function executeAutonomousDevelopmentAgent(
           },
         );
 
-      const supportingPaths =
-        targetPaths
-          .filter(
-            (path) =>
-              normalizePath(
-                path,
-              ) !==
-              normalizePath(
-                repairTarget,
-              ),
-          )
-          .slice(
-            0,
-            MAX_SUPPORTING_CONTEXT_FILES,
-          );
-
-      const supportingContext =
-        supportingPaths.length
-          ? await readContext(
-              supportingPaths,
-              [],
-              {
-                maxFiles:
-                  MAX_SUPPORTING_CONTEXT_FILES,
-                maxSupportingFiles:
-                  MAX_SUPPORTING_CONTEXT_FILES,
-              },
-            )
-          : [];
-
-      const repairContext = [
-        ...targetContext,
-        ...supportingContext,
-      ];
+      const repairContext =
+        targetContext;
 
       const generation =
         await runBrain(
@@ -1908,7 +2157,7 @@ export async function executeAutonomousDevelopmentAgent(
           `${objective}\nVercel repair round ${repairRounds}.`,
           targetPaths,
           file,
-          `fix(C167.25): autonomous build repair ${repairRounds}`,
+          `fix(C167.26): autonomous build repair ${repairRounds}`,
         );
 
       changedPaths.push(
