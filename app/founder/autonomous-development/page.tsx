@@ -16,6 +16,19 @@ type TaskStatus =
   | "failed"
   | "blocked";
 
+type TaskPhase =
+  | "QUEUED"
+  | "DISCOVERING"
+  | "PLANNING"
+  | "READING"
+  | "GENERATING"
+  | "WRITING"
+  | "READBACK"
+  | "BUILD"
+  | "REPAIR"
+  | "COMPLETED"
+  | "BLOCKED";
+
 type Task = {
   id: string;
   objective: string;
@@ -23,6 +36,10 @@ type Task = {
   branch: string;
   targetPaths: string[];
   status: TaskStatus;
+  phase?: TaskPhase;
+  reason?: string;
+  commitSha?: string;
+  changedPaths?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -46,6 +63,23 @@ const DEFAULT_OBJECTIVE =
 
 const POLL_INTERVAL_MS = 2500;
 const MAX_POLL_ROUNDS = 240;
+
+const PHASE_LABELS: Record<
+  TaskPhase,
+  string
+> = {
+  QUEUED: "Queued",
+  DISCOVERING: "Discovering Repository",
+  PLANNING: "AIOS Planning",
+  READING: "Reading",
+  GENERATING: "Generating",
+  WRITING: "Writing GitHub",
+  READBACK: "GitHub Readback",
+  BUILD: "Vercel Build Verification",
+  REPAIR: "Build Repair",
+  COMPLETED: "Completed",
+  BLOCKED: "Blocked",
+};
 
 export default function FounderAutonomousDevelopmentPage() {
   const [accessKey, setAccessKey] =
@@ -249,7 +283,8 @@ export default function FounderAutonomousDevelopmentPage() {
           "completed"
         ) {
           setError(
-            `AIOS Autonomous Development ${task.status}.`,
+            task.reason ||
+              `AIOS Autonomous Development ${task.status}.`,
           );
         }
 
@@ -404,6 +439,9 @@ export default function FounderAutonomousDevelopmentPage() {
     result?.status ||
     "starting";
 
+  const phase =
+    currentTask?.phase;
+
   const success =
     status === "completed";
 
@@ -411,6 +449,13 @@ export default function FounderAutonomousDevelopmentPage() {
     status === "completed" ||
     status === "failed" ||
     status === "blocked";
+
+  const phaseLabel =
+    phase
+      ? PHASE_LABELS[phase]
+      : status === "starting"
+        ? "Starting"
+        : status.toUpperCase();
 
   return (
     <main
@@ -444,7 +489,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.18
+            FOUNDER ONLY · C167.20
           </div>
 
           <h1
@@ -755,11 +800,193 @@ export default function FounderAutonomousDevelopmentPage() {
                 </div>
               )}
 
+              {currentTask && (
+                <div
+                  style={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      "repeat(2, minmax(0, 1fr))",
+                    gap: 8,
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 9,
+                      borderRadius: 9,
+                      background:
+                        "#ffffff",
+                      border:
+                        "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize: 9,
+                        fontWeight:
+                          850,
+                        letterSpacing:
+                          "0.08em",
+                      }}
+                    >
+                      STATUS
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color:
+                          "#334155",
+                        fontSize:
+                          12,
+                        fontWeight:
+                          800,
+                      }}
+                    >
+                      {currentTask.status.toUpperCase()}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 9,
+                      borderRadius: 9,
+                      background:
+                        "#ffffff",
+                      border:
+                        "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize: 9,
+                        fontWeight:
+                          850,
+                        letterSpacing:
+                          "0.08em",
+                      }}
+                    >
+                      PHASE
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color:
+                          currentTask.phase ===
+                          "BLOCKED"
+                            ? "#b91c1c"
+                            : "#334155",
+                        fontSize:
+                          12,
+                        fontWeight:
+                          800,
+                      }}
+                    >
+                      {phaseLabel}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentTask?.reason && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 11,
+                    borderRadius: 10,
+                    border:
+                      "1px solid #fecaca",
+                    background:
+                      "#fff7f7",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#b91c1c",
+                      fontSize: 10,
+                      fontWeight:
+                        900,
+                      letterSpacing:
+                        "0.08em",
+                    }}
+                  >
+                    EXECUTION REASON
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color:
+                        "#7f1d1d",
+                      fontSize:
+                        12,
+                      lineHeight:
+                        1.6,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {currentTask.reason}
+                  </div>
+                </div>
+              )}
+
+              {currentTask?.commitSha && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 10,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                      letterSpacing:
+                        "0.08em",
+                    }}
+                  >
+                    LATEST COMMIT
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize:
+                        11,
+                      fontFamily:
+                        "monospace",
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {currentTask.commitSha}
+                  </div>
+                </div>
+              )}
+
               {currentTask?.targetPaths
                 ?.length ? (
                 <div
                   style={{
-                    marginTop: 9,
+                    marginTop: 10,
                   }}
                 >
                   <div
@@ -786,6 +1013,8 @@ export default function FounderAutonomousDevelopmentPage() {
                             7,
                           background:
                             "#ffffff",
+                          border:
+                            "1px solid #e2e8f0",
                           color:
                             "#334155",
                           fontSize:
@@ -801,21 +1030,51 @@ export default function FounderAutonomousDevelopmentPage() {
                 </div>
               ) : null}
 
-              {currentTask && (
+              {currentTask?.changedPaths
+                ?.length ? (
                 <div
                   style={{
-                    marginTop: 9,
-                    color:
-                      "#475569",
-                    fontSize: 12,
+                    marginTop: 10,
                   }}
                 >
-                  <strong>
-                    Status:
-                  </strong>{" "}
-                  {currentTask.status.toUpperCase()}
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    CHANGED PATHS
+                  </div>
+
+                  {currentTask.changedPaths.map(
+                    (path) => (
+                      <div
+                        key={path}
+                        style={{
+                          marginTop: 4,
+                          padding:
+                            "5px 7px",
+                          borderRadius:
+                            7,
+                          background:
+                            "#f8fafc",
+                          color:
+                            "#334155",
+                          fontSize:
+                            11,
+                          overflowWrap:
+                            "anywhere",
+                        }}
+                      >
+                        {path}
+                      </div>
+                    ),
+                  )}
                 </div>
-              )}
+              ) : null}
 
               {result.message && (
                 <div
@@ -845,6 +1104,8 @@ export default function FounderAutonomousDevelopmentPage() {
                     fontSize: 11,
                     lineHeight:
                       1.55,
+                    overflowWrap:
+                      "anywhere",
                   }}
                 >
                   {error}
@@ -867,8 +1128,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 color:
                   "#b91c1c",
                 fontSize: 12,
-                lineHeight:
-                  1.5,
+                lineHeight: 1.5,
               }}
             >
               {error}
