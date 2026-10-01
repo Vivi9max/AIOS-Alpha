@@ -7,6 +7,7 @@ export interface RuntimeStatusCopy {
   offline: string;
   provider: string;
   unavailable: string;
+  lastChecked: string;
 }
 
 export const runtimeStatusCopy: Record<
@@ -20,6 +21,7 @@ export const runtimeStatusCopy: Record<
     offline: "Runtime Offline",
     provider: "Provider",
     unavailable: "Runtime unavailable.",
+    lastChecked: "Last checked",
   },
 
   "zh-CN": {
@@ -29,6 +31,7 @@ export const runtimeStatusCopy: Record<
     offline: "运行离线",
     provider: "模型服务",
     unavailable: "运行时暂时不可用。",
+    lastChecked: "最近检查",
   },
 
   ja: {
@@ -38,5 +41,6 @@ export const runtimeStatusCopy: Record<
     offline: "ランタイム停止中",
     provider: "モデルプロバイダー",
     unavailable: "ランタイムを利用できません。",
+    lastChecked: "最終確認",
   },
 };
