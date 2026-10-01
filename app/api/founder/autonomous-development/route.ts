@@ -4,21 +4,13 @@ import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 
 import { isFounderConfigured, isFounderRequest } from "@/lib/founder/auth";
-
 import {
   blockAutonomousDevelopmentTask,
-  claimAutonomousDevelopmentTask,
-  completeAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
   getAutonomousDevelopmentTask,
   listAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
-
-import { dispatchNextPlannerDevelopmentTask } from "@/lib/github/planner-autonomous-dispatch";
-import { executeClaimedAutonomousDevelopmentTask } from "@/lib/github/autonomous-development-executor";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
-import { dispatchGitHubTask } from "@/lib/github/task-dispatch";
-import { createFounderDevelopmentContract } from "@/lib/github/founder-development-contract";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,20 +22,14 @@ const DEFAULT_BRANCH = "main";
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
     status,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: { "Cache-Control": "no-store" },
   });
 }
 
-function requireFounder(
-  request: NextRequest,
-):
-  | { ok: true }
-  | { ok: false; response: NextResponse } {
+function requireFounder(request: NextRequest) {
   if (!isFounderConfigured()) {
     return {
-      ok: false,
+      ok: false as const,
       response: json(
         {
           ok: false,
@@ -57,7 +43,7 @@ function requireFounder(
 
   if (!isFounderRequest(request)) {
     return {
-      ok: false,
+      ok: false as const,
       response: json(
         {
           ok: false,
@@ -69,76 +55,29 @@ function requireFounder(
     };
   }
 
-  return {
-    ok: true,
-  };
-}
-
-function createContract(input: {
-  objective: string;
-  path: string;
-  commitMessage?: string;
-}) {
-  return createFounderDevelopmentContract({
-    objective: input.objective,
-    requestedFiles: [input.path],
-    actions: ["read", "write", "verify"],
-    verification: ["readback", "build", "production"],
-    commitMessage:
-      input.commitMessage?.trim() ||
-      "feat(C167.12): founder autonomous development",
-  });
+  return { ok: true as const };
 }
 
 export async function GET(request: NextRequest) {
   const auth = requireFounder(request);
-
-  if (!auth.ok) {
-    return auth.response;
-  }
+  if (!auth.ok) return auth.response;
 
   const taskId = request.nextUrl.searchParams.get("taskId");
   const objective = request.nextUrl.searchParams.get("objective");
 
   if (taskId) {
     const task = getAutonomousDevelopmentTask(taskId);
-
     if (!task) {
-      return json(
-        {
-          ok: false,
-          code: "TASK_NOT_FOUND",
-        },
-        404,
-      );
+      return json({ ok: false, code: "TASK_NOT_FOUND" }, 404);
     }
-
-    return json({
-      ok: true,
-      task,
-    });
+    return json({ ok: true, task });
   }
 
-  const tasks = listAutonomousDevelopmentTasks();
-
+  let tasks = listAutonomousDevelopmentTasks();
   if (objective?.trim()) {
-    const matchingTasks = tasks
-      .filter(
-        (task) =>
-          task.objective.trim() === objective.trim(),
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime(),
-      );
-
-    return json({
-      ok: true,
-      repository: DEFAULT_REPOSITORY,
-      branch: DEFAULT_BRANCH,
-      tasks: matchingTasks,
-    });
+    tasks = tasks.filter(
+      (task) => task.objective.trim() === objective.trim(),
+    );
   }
 
   return json({
@@ -151,269 +90,78 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const auth = requireFounder(request);
-
-  if (!auth.ok) {
-    return auth.response;
-  }
+  if (!auth.ok) return auth.response;
 
   try {
     const body = await request.json();
-    const action = body?.action;
 
-    if (action === "autonomous") {
-      const objective = String(
-        body?.objective ?? "",
-      ).trim();
-
-      if (!objective) {
-        return json(
-          {
-            ok: false,
-            code: "AUTONOMOUS_OBJECTIVE_REQUIRED",
-            error: "Development objective is required.",
-          },
-          400,
-        );
-      }
-
-      after(async () => {
-        try {
-          await executeAutonomousDevelopmentAgent({
-            objective,
-          });
-        } catch {
-          return;
-        }
-      });
-
-      return json(
-        {
-          ok: true,
-          success: true,
-          code: "AUTONOMOUS_DEVELOPMENT_STARTED",
-          repository: DEFAULT_REPOSITORY,
-          branch: DEFAULT_BRANCH,
-          objective,
-          status: "running",
-          message:
-            "Autonomous development started. The AIOS agent is running in the background.",
-        },
-        202,
-      );
-    }
-
-    if (action === "create") {
-      const task = createAutonomousDevelopmentTask({
-        objective: String(body?.objective ?? ""),
-        targetPaths: Array.isArray(body?.targetPaths)
-          ? body.targetPaths.map(String)
-          : [],
-      });
-
-      return json(
-        {
-          ok: true,
-          action,
-          task,
-        },
-        201,
-      );
-    }
-
-    if (action === "claim") {
-      const task = claimAutonomousDevelopmentTask(
-        String(body?.taskId ?? ""),
-      );
-
-      return json({
-        ok: true,
-        action,
-        task,
-      });
-    }
-
-    if (action === "dispatch-planner") {
-      const dispatch =
-        await dispatchNextPlannerDevelopmentTask();
-
-      return json(
-        {
-          ok: dispatch.success,
-          action,
-          ...dispatch,
-        },
-        dispatch.eligibility === "blocked"
-          ? 409
-          : 200,
-      );
-    }
-
-    if (action === "execute-planner") {
-      const dispatch =
-        await dispatchNextPlannerDevelopmentTask();
-
-      if (
-        !dispatch.success ||
-        !dispatch.autonomousTask?.id
-      ) {
-        return json(
-          {
-            ok: false,
-            action,
-            ...dispatch,
-          },
-          409,
-        );
-      }
-
-      const execution =
-        await executeClaimedAutonomousDevelopmentTask(
-          dispatch.autonomousTask.id,
-        );
-
-      return json(
-        {
-          ok: execution.success,
-          action,
-          dispatch,
-          execution,
-        },
-        execution.success ? 200 : 409,
-      );
-    }
-
-    if (action === "execute") {
-      const objective = String(
-        body?.objective ?? "",
-      ).trim();
-
-      const path = String(
-        body?.path ?? "",
-      ).trim();
-
-      const content =
-        typeof body?.content === "string"
-          ? body.content
-          : null;
-
-      if (
-        !objective ||
-        !path ||
-        content === null
-      ) {
-        return json(
-          {
-            ok: false,
-            code: "EXECUTE_INPUT_REQUIRED",
-            error:
-              "objective, path and content are required.",
-          },
-          400,
-        );
-      }
-
-      const commitMessage =
-        String(
-          body?.commitMessage ?? "",
-        ).trim() ||
-        "feat(C167.12): founder autonomous development";
-
-      const contract = createContract({
-        objective,
-        path,
-        commitMessage,
-      });
-
-      const result =
-        await dispatchGitHubTask({
-          action: "write",
-          repo: DEFAULT_REPOSITORY,
-          branch: DEFAULT_BRANCH,
-          path,
-          content,
-          commitMessage,
-          contract,
-          request,
-        });
-
-      return json(
-        {
-          ok: result.success,
-          ...result,
-        },
-        result.success ? 200 : 409,
-      );
-    }
-
-    if (action === "complete") {
-      const receipt =
-        completeAutonomousDevelopmentTask(
-          String(body?.taskId ?? ""),
-          {
-            commitSha: String(
-              body?.commitSha ?? "",
-            ),
-            readbackVerified:
-              body?.readbackVerified === true,
-            verificationPassed:
-              body?.verificationPassed === true,
-          },
-        );
-
-      return json({
-        ok:
-          receipt.status ===
-          "completed",
-        action,
-        receipt,
-      });
-    }
-
-    if (action === "block") {
-      const receipt =
-        blockAutonomousDevelopmentTask(
-          String(body?.taskId ?? ""),
-          String(
-            body?.reason ??
-              "Blocked by Founder.",
-          ),
-        );
-
+    if (body?.action !== "autonomous") {
       return json(
         {
           ok: false,
-          action,
-          receipt,
+          code: "UNKNOWN_ACTION",
+          error: "Only the autonomous development action is exposed by this route.",
         },
-        409,
+        400,
       );
     }
 
+    const objective = String(body?.objective ?? "").trim();
+    if (!objective) {
+      return json(
+        {
+          ok: false,
+          code: "AUTONOMOUS_OBJECTIVE_REQUIRED",
+          error: "Development objective is required.",
+        },
+        400,
+      );
+    }
+
+    const task = createAutonomousDevelopmentTask({
+      objective,
+      targetPaths: [],
+    });
+
+    after(async () => {
+      try {
+        await executeAutonomousDevelopmentAgent({
+          objective,
+          taskId: task.id,
+        });
+      } catch (error) {
+        const reason =
+          error instanceof Error
+            ? error.message
+            : "Autonomous development execution failed.";
+        try {
+          blockAutonomousDevelopmentTask(task.id, reason);
+        } catch {
+          // Preserve the original execution failure.
+        }
+      }
+    });
+
     return json(
       {
-        ok: false,
-        code: "UNKNOWN_ACTION",
-        error:
-          "Unsupported autonomous development action.",
-        allowedActions: [
-          "autonomous",
-          "create",
-          "claim",
-          "dispatch-planner",
-          "execute-planner",
-          "execute",
-          "complete",
-          "block",
-        ],
+        ok: true,
+        success: true,
+        code: "AUTONOMOUS_DEVELOPMENT_RUNNING",
+        repository: DEFAULT_REPOSITORY,
+        branch: DEFAULT_BRANCH,
+        objective,
+        taskId: task.id,
+        status: "running",
+        message:
+          "Autonomous development started. AIOS is discovering the repository and executing the development loop.",
       },
-      400,
+      202,
     );
   } catch (error) {
     return json(
       {
         ok: false,
-        code:
-          "AUTONOMOUS_DEVELOPMENT_REQUEST_FAILED",
+        code: "AUTONOMOUS_DEVELOPMENT_REQUEST_FAILED",
         error:
           error instanceof Error
             ? error.message
