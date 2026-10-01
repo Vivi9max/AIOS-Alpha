@@ -1,7 +1,10 @@
 import "server-only";
 
 import { chat } from "@/lib/ai";
-import { listGitHubPath, readGitHubFile } from "@/lib/github/bridge";
+import {
+  listGitHubPath,
+  readGitHubFile,
+} from "@/lib/github/bridge";
 import {
   blockAutonomousDevelopmentTask,
   claimAutonomousDevelopmentTask,
@@ -21,81 +24,110 @@ const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
 
 const MAX_OBJECTIVE_LENGTH = 4000;
-const MAX_DISCOVERY_ENTRIES = 200;
-
-const MAX_CONTEXT_FILES = 4;
-const MAX_SUPPORTING_CONTEXT_FILES = 1;
-const MAX_CONTEXT_FILE_CHARS = 6000;
-const MAX_TARGET_CONTEXT_FILE_CHARS = 60000;
-const MAX_CONTEXT_CHARS = 68000;
-
+const MAX_DISCOVERY_ENTRIES = 220;
 const MAX_TARGET_FILES = 6;
-const MAX_GENERATED_FILE_CHARS = 200000;
 
-const MAX_GENERATION_ATTEMPTS = 2;
+const MAX_PLANNER_CONTEXT_CHARS = 24000;
+const MAX_TARGET_CONTEXT_CHARS = 120000;
+
+const MAX_PATCH_CHARS = 30000;
+const MAX_PATCH_OPERATIONS = 8;
+
 const MAX_PLAN_ATTEMPTS = 2;
+const MAX_PATCH_ATTEMPTS = 3;
 const MAX_REPAIR_ROUNDS = 2;
 
 const PLANNER_SYSTEM_PROMPT = [
   "AIOS Repository Development Planner",
   "",
-  "你负责根据用户自然语言需求和真实仓库索引/源码上下文，决定需要修改哪些文件。",
-  "不要要求用户提供 Target Path。Target Path 必须由你从真实仓库上下文中发现。",
-  "只选择真实仓库中已经存在的文件。",
-  "只选择 app/、components/、docs/、lib/、scripts/、tests/、test/、public/、styles/ 下的文件。",
+  "根据用户需求和真实仓库索引选择需要修改的现有文件。",
+  "只选择真实存在的文件。",
+  "只允许 app/、components/、docs/、lib/、scripts/、tests/、test/、public/、styles/。",
   "不得选择 package.json、lockfile、vercel.json、.env、.git、.github。",
-  "优先选择现有文件。",
+  "优先选择最小且完整的修改范围。",
   "最多选择 6 个文件。",
-  "选择能够形成最小完整产品变更闭环的文件，不要为了覆盖范围而增加无关文件。",
   "",
-  "必须返回 JSON。",
-  "首选格式：",
-  "{\"targetPaths\":[\"app/example/page.tsx\"]}",
+  "必须返回：",
+  "AIOS_PLAN_BEGIN",
+  "{\"targetPaths\":[\"exact/repository/path.tsx\"]}",
+  "AIOS_PLAN_END",
   "",
-  "也允许使用 target_paths、paths、files 或 targets 作为等价字段。",
-  "files 或 targets 数组中的对象可以使用 path 字段。",
-  "不要返回不存在于 REPOSITORY DISCOVERY INDEX 中的路径。",
-  "只输出 AIOS_PLAN_BEGIN / AIOS_PLAN_END JSON。",
+  "targetPaths 必须使用真实仓库中的精确路径。",
 ].join("\n");
 
-const FILE_SYSTEM_PROMPT = [
-  "AIOS Autonomous Single File Development Agent",
+const PATCH_SYSTEM_PROMPT = [
+  "AIOS Autonomous Development Patch Agent",
   "",
-  "你现在只负责生成一个指定的 exact repository file。",
-  "必须输出完整文件，从第一行到最后一行。",
-  "不要输出 diff。",
-  "不要输出解释。",
-  "不要输出 Markdown 说明文字。",
-  "不要输出 TODO。",
-  "不要输出 placeholder。",
-  "不要使用省略号代替代码。",
-  "不要省略任何未修改的现有代码。",
-  "保持现有架构、类型、接口和 import 路径兼容。",
-  "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
+  "你不是完整文件生成器。",
+  "你只负责针对现有真实源码生成精确 SEARCH/REPLACE patch。",
   "",
-  "最优先：直接返回完整源码，不要代码围栏，不要解释。",
-  "如果使用代码块，只允许一个完整源码代码块。",
-  "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
+  "禁止返回完整文件。",
+  "禁止返回 diff。",
+  "禁止返回 Markdown code fence。",
+  "禁止返回解释。",
+  "禁止使用 TODO。",
+  "禁止使用 placeholder。",
+  "禁止使用省略号。",
+  "",
+  "SEARCH 必须来自当前真实文件并且完全匹配。",
+  "SEARCH 必须足够独特，不能产生多个匹配。",
+  "REPLACE 是最终希望写入的源码。",
+  "如果只需要修改一个小区域，只返回一个 patch。",
+  "最多返回 8 个 patch。",
+  "每个 patch 必须严格使用：",
+  "",
+  "AIOS_PATCH_BEGIN",
+  "PATH: app/example/page.tsx",
+  "OPERATION: replace",
+  "SEARCH_BEGIN",
+  "exact existing source",
+  "SEARCH_END",
+  "REPLACE_BEGIN",
+  "replacement source",
+  "REPLACE_END",
+  "AIOS_PATCH_END",
+  "",
+  "优先修改最小必要范围。",
+  "保持现有 API、数据接口、类型和其他模块不变。",
 ].join("\n");
 
 const REPAIR_SYSTEM_PROMPT = [
-  "AIOS Autonomous Build Repair Agent",
+  "AIOS Autonomous Build Repair Patch Agent",
   "",
-  "根据真实 Vercel Build Error 修复当前指定源码文件。",
-  "必须输出完整文件，从第一行到最后一行。",
-  "不要输出 diff。",
+  "根据 Vercel Build Error 修复当前真实源码。",
+  "只生成 SEARCH/REPLACE patch。",
+  "不要生成完整文件。",
+  "不要生成 diff。",
   "不要输出解释。",
-  "不要输出 TODO。",
-  "不要输出 placeholder。",
-  "不要使用省略号代替代码。",
-  "不要省略任何未修改的现有代码。",
-  "保持现有架构、类型、接口和 Founder 安全边界。",
-  "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
+  "SEARCH 必须精确来自当前真实源码。",
+  "REPLACE 必须是完整可编译源码片段。",
+  "最多 8 个 patch。",
   "",
-  "最优先：直接返回完整源码，不要代码围栏，不要解释。",
-  "如果使用代码块，只允许一个完整源码代码块。",
-  "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
+  "格式：",
+  "AIOS_PATCH_BEGIN",
+  "PATH: exact/repository/path.tsx",
+  "OPERATION: replace",
+  "SEARCH_BEGIN",
+  "exact existing source",
+  "SEARCH_END",
+  "REPLACE_BEGIN",
+  "replacement source",
+  "REPLACE_END",
+  "AIOS_PATCH_END",
 ].join("\n");
+
+type PatchOperation = {
+  path: string;
+  operation: "replace";
+  search: string;
+  replace: string;
+};
+
+type AppliedPatchResult = {
+  path: string;
+  content: string;
+  operationCount: number;
+};
 
 async function runBrain(
   prompt: string,
@@ -107,25 +139,25 @@ async function runBrain(
   });
 }
 
-function normalizePath(value: string) {
+function normalizePath(
+  value: string,
+) {
   return value
     .trim()
     .replace(/^\/+/, "")
     .replace(/\\+/g, "/");
 }
 
-function isSafePath(path: string) {
-  const normalized = normalizePath(path);
+function isSafePath(
+  path: string,
+) {
+  const normalized =
+    normalizePath(path);
 
   if (
     !normalized ||
     normalized.includes("..") ||
-    normalized.includes("\0")
-  ) {
-    return false;
-  }
-
-  if (
+    normalized.includes("\0") ||
     normalized.startsWith(".git/") ||
     normalized.startsWith(".env") ||
     normalized.startsWith(".github/")
@@ -146,23 +178,23 @@ function isSafePath(path: string) {
   }
 
   return [
-    "app",
-    "components",
-    "docs",
-    "lib",
-    "scripts",
-    "tests",
-    "test",
-    "public",
-    "styles",
-  ].some(
-    (root) =>
-      normalized === root ||
-      normalized.startsWith(`${root}/`),
+    "app/",
+    "components/",
+    "docs/",
+    "lib/",
+    "scripts/",
+    "tests/",
+    "test/",
+    "public/",
+    "styles/",
+  ].some((prefix) =>
+    normalized.startsWith(prefix),
   );
 }
 
-function objectiveTokens(objective: string) {
+function objectiveTokens(
+  objective: string,
+) {
   return Array.from(
     new Set(
       objective
@@ -173,7 +205,8 @@ function objectiveTokens(objective: string) {
         )
         .split(/\s+/)
         .filter(
-          (token) => token.length >= 2,
+          (token) =>
+            token.length >= 2,
         ),
     ),
   );
@@ -183,26 +216,33 @@ function scorePath(
   path: string,
   tokens: string[],
 ) {
-  const lower = path.toLowerCase();
+  const lower =
+    path.toLowerCase();
 
   let score = 0;
 
   for (const token of tokens) {
-    if (lower.includes(token)) {
+    if (
+      lower.includes(token)
+    ) {
       score += 5;
     }
   }
 
-  if (/page\.(tsx|ts)$/.test(lower)) {
+  if (
+    /page\.(tsx|ts)$/.test(
+      lower,
+    )
+  ) {
     score += 2;
   }
 
-  if (/route\.(tsx|ts)$/.test(lower)) {
+  if (
+    /route\.(tsx|ts)$/.test(
+      lower,
+    )
+  ) {
     score += 2;
-  }
-
-  if (/layout\.(tsx|ts)$/.test(lower)) {
-    score += 1;
   }
 
   return score;
@@ -234,7 +274,7 @@ async function discoverRepositoryPaths(
     new Set<string>();
 
   while (
-    queue.length &&
+    queue.length > 0 &&
     discovered.size <
       MAX_DISCOVERY_ENTRIES
   ) {
@@ -267,7 +307,9 @@ async function discoverRepositoryPaths(
           entry.path,
         );
 
-      if (!isSafePath(path)) {
+      if (
+        !isSafePath(path)
+      ) {
         continue;
       }
 
@@ -275,7 +317,7 @@ async function discoverRepositoryPaths(
         entry.type === "dir"
       ) {
         if (
-          current.depth < 3
+          current.depth < 4
         ) {
           queue.push({
             path,
@@ -319,161 +361,76 @@ async function discoverRepositoryPaths(
   );
 }
 
-async function readContext(
-  paths: string[],
-  targetPaths: string[] = [],
-  options?: {
-    maxFiles?: number;
-    maxSupportingFiles?: number;
-  },
+async function readFile(
+  path: string,
 ) {
-  const targetSet =
-    new Set(
-      targetPaths.map(
-        normalizePath,
-      ),
-    );
-
-  const ordered = [
-    ...paths.filter(
-      (path) =>
-        targetSet.has(
-          normalizePath(path),
-        ),
-    ),
-    ...paths.filter(
-      (path) =>
-        !targetSet.has(
-          normalizePath(path),
-        ),
-    ),
-  ];
-
-  const maxFiles =
-    options?.maxFiles ??
-    MAX_CONTEXT_FILES;
-
-  const maxSupportingFiles =
-    options?.maxSupportingFiles ??
-    MAX_SUPPORTING_CONTEXT_FILES;
-
-  const context: Array<{
-    path: string;
-    content: string;
-    sha?: string;
-  }> = [];
-
-  let total = 0;
-  let supportingCount = 0;
-
-  for (
-    const path of ordered
-  ) {
-    const isTarget =
-      targetSet.has(
-        normalizePath(path),
-      );
-
-    if (
-      !isTarget &&
-      supportingCount >=
-        maxSupportingFiles
-    ) {
-      continue;
-    }
-
-    if (
-      context.length >=
-      maxFiles
-    ) {
-      break;
-    }
-
-    const result =
-      await readGitHubFile({
-        repo: REPOSITORY,
-        path,
-        ref: BRANCH,
-      });
-
-    if (
-      !result.success ||
-      !result.data
-    ) {
-      continue;
-    }
-
-    const limit =
-      isTarget
-        ? MAX_TARGET_CONTEXT_FILE_CHARS
-        : MAX_CONTEXT_FILE_CHARS;
-
-    const content =
-      result.data.content.slice(
-        0,
-        limit,
-      );
-
-    if (
-      total + content.length >
-      MAX_CONTEXT_CHARS
-    ) {
-      if (isTarget) {
-        const remaining =
-          MAX_CONTEXT_CHARS -
-          total;
-
-        if (
-          remaining <= 0
-        ) {
-          break;
-        }
-
-        context.push({
-          path,
-          content:
-            content.slice(
-              0,
-              remaining,
-            ),
-          sha:
-            result.data.sha,
-        });
-
-        break;
-      }
-
-      continue;
-    }
-
-    context.push({
+  const result =
+    await readGitHubFile({
+      repo: REPOSITORY,
       path,
-      content,
-      sha:
-        result.data.sha,
+      ref: BRANCH,
     });
 
-    total +=
-      content.length;
-
-    if (!isTarget) {
-      supportingCount += 1;
-    }
+  if (
+    !result.success ||
+    !result.data
+  ) {
+    throw new Error(
+      `AIOS_TARGET_READ_FAILED: ${path}: ${
+        result.error ||
+        "GitHub file read failed."
+      }`,
+    );
   }
 
-  return context;
+  return result.data;
 }
 
-function parsePlannerJson(
-  raw: string,
-): unknown {
-  const trimmed =
-    raw.trim();
+function buildPlannerPrompt(
+  objective: string,
+  discoveredPaths: string[],
+) {
+  return [
+    "AUTONOMOUS DEVELOPMENT REQUEST",
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    "",
+    "USER OBJECTIVE:",
+    objective,
+    "",
+    "REAL REPOSITORY FILE INDEX:",
+    discoveredPaths.join("\n"),
+    "",
+    "Select the smallest coherent set of existing files.",
+    "Do not invent paths.",
+    "Return only AIOS_PLAN_BEGIN / AIOS_PLAN_END.",
+  ].join("\n");
+}
 
-  const withoutFence =
-    trimmed
+function parsePlannerResult(
+  content: string,
+  discoveredPaths: string[],
+) {
+  const match =
+    content.match(
+      /AIOS_PLAN_BEGIN\s*([\s\S]*?)AIOS_PLAN_END/i,
+    );
+
+  if (!match) {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_FORMAT_INVALID",
+    );
+  }
+
+  let parsed:
+    | Record<string, unknown>
+    | null = null;
+
+  const raw =
+    (match[1] || "")
+      .trim()
       .replace(
-        /^```(?:json)?\s*/i,
+        /^```json\s*/i,
         "",
       )
       .replace(
@@ -483,515 +440,475 @@ function parsePlannerJson(
       .trim();
 
   try {
-    return JSON.parse(
-      withoutFence,
-    );
-  } catch {
-    const objectStart =
-      withoutFence.indexOf("{");
-    const objectEnd =
-      withoutFence.lastIndexOf("}");
-
-    if (
-      objectStart >= 0 &&
-      objectEnd > objectStart
-    ) {
-      return JSON.parse(
-        withoutFence.slice(
-          objectStart,
-          objectEnd + 1,
-        ),
-      );
-    }
-
-    throw new Error(
-      "AIOS_REPOSITORY_PLAN_JSON_INVALID",
-    );
-  }
-}
-
-function collectPlanCandidates(
-  value: unknown,
-): unknown[] {
-  if (
-    Array.isArray(value)
-  ) {
-    return value;
-  }
-
-  if (
-    !value ||
-    typeof value !==
-      "object"
-  ) {
-    return [];
-  }
-
-  const record =
-    value as Record<
-      string,
-      unknown
-    >;
-
-  const keys = [
-    "targetPaths",
-    "target_paths",
-    "paths",
-    "files",
-    "targets",
-    "targetFiles",
-    "target_files",
-  ];
-
-  for (
-    const key of keys
-  ) {
     const candidate =
-      record[key];
+      JSON.parse(raw);
 
     if (
-      Array.isArray(
-        candidate,
-      )
+      candidate &&
+      typeof candidate ===
+        "object"
     ) {
-      return candidate;
+      parsed =
+        candidate as Record<
+          string,
+          unknown
+        >;
     }
-  }
-
-  for (
-    const key of [
-      "plan",
-      "result",
-      "data",
-      "selection",
-    ]
-  ) {
-    const nested =
-      record[key];
-
-    const candidates =
-      collectPlanCandidates(
-        nested,
-      );
+  } catch {
+    const start =
+      raw.indexOf("{");
+    const end =
+      raw.lastIndexOf("}");
 
     if (
-      candidates.length
+      start >= 0 &&
+      end > start
     ) {
-      return candidates;
-    }
-  }
+      try {
+        const candidate =
+          JSON.parse(
+            raw.slice(
+              start,
+              end + 1,
+            ),
+          );
 
-  return [];
-}
-
-function candidateToPath(
-  value: unknown,
-) {
-  if (
-    typeof value ===
-    "string"
-  ) {
-    return normalizePath(
-      value,
-    );
-  }
-
-  if (
-    value &&
-    typeof value ===
-      "object"
-  ) {
-    const record =
-      value as Record<
-        string,
-        unknown
-      >;
-
-    for (
-      const key of [
-        "path",
-        "targetPath",
-        "target_path",
-        "file",
-        "filename",
-      ]
-    ) {
-      if (
-        typeof record[key] ===
-        "string"
-      ) {
-        return normalizePath(
-          record[key] as string,
-        );
+        if (
+          candidate &&
+          typeof candidate ===
+            "object"
+        ) {
+          parsed =
+            candidate as Record<
+              string,
+              unknown
+            >;
+        }
+      } catch {
+        parsed = null;
       }
     }
   }
 
-  return "";
-}
-
-function extractPlan(
-  content: string,
-  discoveredPaths: string[],
-) {
-  const match =
-    content.match(
-      /AIOS_PLAN_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PLAN_END/i,
-    );
-
-  if (!match) {
-    throw new Error(
-      "AIOS_REPOSITORY_PLAN_FORMAT_INVALID",
-    );
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed =
-      parsePlannerJson(
-        match[1] ?? "",
-      );
-  } catch {
+  if (!parsed) {
     throw new Error(
       "AIOS_REPOSITORY_PLAN_JSON_INVALID",
     );
   }
 
-  const discoveredSet =
+  const candidateValue =
+    parsed.targetPaths ??
+    parsed.target_paths ??
+    parsed.paths ??
+    parsed.files ??
+    parsed.targets;
+
+  const rawPaths =
+    Array.isArray(
+      candidateValue,
+    )
+      ? candidateValue
+      : [];
+
+  const discovered =
     new Set(
       discoveredPaths.map(
         normalizePath,
       ),
     );
 
-  const rawCandidates =
-    collectPlanCandidates(
-      parsed,
-    );
+  const targetPaths =
+    rawPaths
+      .map((value) => {
+        if (
+          typeof value ===
+          "string"
+        ) {
+          return normalizePath(
+            value,
+          );
+        }
 
-  const paths =
-    rawCandidates
-      .map(candidateToPath)
+        if (
+          value &&
+          typeof value ===
+            "object"
+        ) {
+          const record =
+            value as Record<
+              string,
+              unknown
+            >;
+
+          for (
+            const key of [
+              "path",
+              "targetPath",
+              "target_path",
+              "file",
+              "filename",
+            ]
+          ) {
+            if (
+              typeof record[
+                key
+              ] === "string"
+            ) {
+              return normalizePath(
+                record[
+                  key
+                ] as string,
+              );
+            }
+          }
+        }
+
+        return "";
+      })
       .filter(Boolean)
       .filter(isSafePath)
-      .filter(
-        (path) =>
-          discoveredSet.has(
-            path,
-          ),
+      .filter((path) =>
+        discovered.has(path),
       );
 
   const unique =
     Array.from(
-      new Set(paths),
-    );
-
-  if (
-    unique.length
-  ) {
-    return unique.slice(
+      new Set(
+        targetPaths,
+      ),
+    ).slice(
       0,
       MAX_TARGET_FILES,
     );
+
+  if (
+    unique.length === 0
+  ) {
+    throw new Error(
+      "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
+    );
   }
 
-  throw new Error(
-    "AIOS_REPOSITORY_PLAN_TARGETS_INVALID",
-  );
+  return unique;
 }
 
-function plannerPrompt(
-  objective: string,
-  paths: string[],
-  context: Array<{
-    path: string;
-    content: string;
-  }>,
-) {
-  return [
-    "AUTONOMOUS DEVELOPMENT REQUEST",
-    `Repository: ${REPOSITORY}`,
-    `Branch: ${BRANCH}`,
-    "",
-    "USER REQUIREMENT:",
-    objective,
-    "",
-    "REPOSITORY DISCOVERY INDEX:",
-    paths.join("\n"),
-    "",
-    "RELEVANT SOURCE CONTEXT:",
-    ...context.flatMap(
-      (file) => [
-        `FILE: ${file.path}`,
-        "CONTENT_BEGIN",
-        file.content,
-        "CONTENT_END",
-        "",
-      ],
-    ),
-    "Choose the smallest coherent set of existing files required by the requirement.",
-    "Every selected path MUST appear exactly in the REPOSITORY DISCOVERY INDEX.",
-    "Use the exact repository path spelling.",
-    "Return only AIOS_PLAN_BEGIN / AIOS_PLAN_END with valid JSON.",
-    "Preferred JSON:",
-    "{\"targetPaths\":[\"exact/repository/path.tsx\"]}",
-  ].join("\n");
-}
-
-function filePrompt(
+function buildPatchPrompt(
   objective: string,
   targetPath: string,
-  targetPaths: string[],
-  context: Array<{
-    path: string;
-    content: string;
-  }>,
+  targetContent: string,
 ) {
-  const targetContext =
-    context.find(
-      (file) =>
-        normalizePath(
-          file.path,
-        ) ===
-        normalizePath(
-          targetPath,
-        ),
-    );
-
-  const supportingContext =
-    context.filter(
-      (file) =>
-        normalizePath(
-          file.path,
-        ) !==
-        normalizePath(
-          targetPath,
-        ),
+  const boundedContent =
+    targetContent.slice(
+      0,
+      MAX_TARGET_CONTEXT_CHARS,
     );
 
   return [
-    "AUTONOMOUS DEVELOPMENT REQUEST",
+    "AUTONOMOUS DEVELOPMENT PATCH REQUEST",
     `Repository: ${REPOSITORY}`,
     `Branch: ${BRANCH}`,
+    `Target: ${targetPath}`,
     "",
-    "USER REQUIREMENT:",
+    "USER OBJECTIVE:",
     objective,
     "",
-    `CURRENT FILE TO GENERATE: ${targetPath}`,
+    "CURRENT REAL FILE:",
+    "CURRENT_FILE_BEGIN",
+    boundedContent,
+    "CURRENT_FILE_END",
     "",
-    "THE CURRENT TARGET FILE IS THE PRIMARY SOURCE OF TRUTH.",
-    "Read it completely before generating the replacement.",
-    "Preserve existing functionality unless the user requirement explicitly changes it.",
-    "",
-    ...(targetContext
-      ? [
-          `TARGET FILE: ${targetContext.path}`,
-          "TARGET_CONTENT_BEGIN",
-          targetContext.content,
-          "TARGET_CONTENT_END",
-          "",
-        ]
-      : []),
-    ...(supportingContext.length
-      ? [
-          "LIMITED SUPPORTING CONTEXT:",
-          ...supportingContext.flatMap(
-            (file) => [
-              `FILE: ${file.path}`,
-              "CONTENT_BEGIN",
-              file.content,
-              "CONTENT_END",
-              "",
-            ],
-          ),
-        ]
-      : []),
-    "FULL TARGET FILE SET:",
-    targetPaths.join("\n"),
-    "",
-    "Generate the complete file from the first line to the final line.",
-    "Do not shorten the file.",
-    "Do not omit unchanged code.",
-    "Do not invent imports.",
-    "Do not use placeholders.",
-    "Do not use TODO as a substitute for implementation.",
-    "Do not use ... to represent omitted code.",
-    "Return only the complete source file.",
-    "Preferred output: raw source without Markdown fences.",
-    "A single closed Markdown code block is also acceptable.",
-    "Do not include an explanation before or after the source.",
+    "Generate only the minimal SEARCH/REPLACE patch required by the objective.",
+    "Do not regenerate the entire file.",
+    "SEARCH must be copied exactly from CURRENT REAL FILE.",
+    "SEARCH must occur exactly once.",
+    "Keep unrelated code unchanged.",
+    "Preserve all existing API/data interfaces.",
+    "Preserve all existing imports unless the patch genuinely requires a new import.",
+    "If an import is required, include it through a separate small patch.",
+    "Return only AIOS_PATCH_BEGIN / AIOS_PATCH_END.",
   ].join("\n");
 }
 
-function repairPrompt(
-  objective: string,
-  targetPath: string,
-  targetPaths: string[],
-  context: Array<{
-    path: string;
-    content: string;
-  }>,
-  verification: VercelBuildVerificationResult,
-  round: number,
-) {
-  const targetContext =
-    context.find(
-      (file) =>
-        normalizePath(
-          file.path,
-        ) ===
-        normalizePath(
-          targetPath,
-        ),
-    );
-
-  const supportingContext =
-    context.filter(
-      (file) =>
-        normalizePath(
-          file.path,
-        ) !==
-        normalizePath(
-          targetPath,
-        ),
-    );
-
-  return [
-    "AUTONOMOUS BUILD REPAIR REQUEST",
-    `Repair round: ${round}`,
-    `Repository: ${REPOSITORY}`,
-    `Branch: ${BRANCH}`,
-    "",
-    "USER REQUIREMENT:",
-    objective,
-    "",
-    `CURRENT REPAIR FILE: ${targetPath}`,
-    "",
-    "VERCEL STATUS:",
-    verification.readyState ||
-      verification.status,
-    "VERCEL ERROR CODE:",
-    verification.errorCode ||
-      "unknown",
-    "VERCEL ERROR MESSAGE:",
-    verification.errorMessage ||
-      "",
-    "VERCEL BUILD LOGS:",
-    verification.buildLogs ||
-      "No build logs returned.",
-    "",
-    "CURRENT REPAIR FILE:",
-    ...(targetContext
-      ? [
-          "CONTENT_BEGIN",
-          targetContext.content,
-          "CONTENT_END",
-          "",
-        ]
-      : []),
-    ...(supportingContext.length
-      ? [
-          "LIMITED SUPPORTING CONTEXT:",
-          ...supportingContext.flatMap(
-            (file) => [
-              `FILE: ${file.path}`,
-              "CONTENT_BEGIN",
-              file.content,
-              "CONTENT_END",
-              "",
-            ],
-          ),
-        ]
-      : []),
-    "TARGET FILES:",
-    targetPaths.join("\n"),
-    "",
-    "Repair only the current repair file.",
-    "Return the entire file from the first line to the final line.",
-    "Do not return a diff.",
-    "Do not return an explanation.",
-    "Do not use TODO.",
-    "Do not use placeholders.",
-    "Do not use ... to represent omitted code.",
-    "Preferred output: raw source without Markdown fences.",
-    "A single closed Markdown code block is also acceptable.",
-  ].join("\n");
-}
-
-function removeLeadingExplanation(
+function parsePatchBlocks(
   content: string,
   expectedPath: string,
 ) {
-  let value =
-    content.trim();
-
-  const escapedPath =
-    expectedPath.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&",
+  if (
+    content.length >
+    MAX_PATCH_CHARS
+  ) {
+    throw new Error(
+      "AIOS_PATCH_RESPONSE_TOO_LARGE",
     );
+  }
 
-  const pathHeading =
-    new RegExp(
-      `^(?:FILE|PATH)\\s*:\\s*${escapedPath}\\s*\\r?\\n`,
-      "i",
+  const blocks: PatchOperation[] =
+    [];
+
+  const pattern =
+    /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
+
+  let match:
+    | RegExpExecArray
+    | null = null;
+
+  while (
+    (match =
+      pattern.exec(
+        content,
+      )) !== null
+  ) {
+    const block =
+      match[1] || "";
+
+    const pathMatch =
+      block.match(
+        /PATH:\s*([^\r\n]+)/i,
+      );
+
+    const operationMatch =
+      block.match(
+        /OPERATION:\s*([^\r\n]+)/i,
+      );
+
+    const searchMatch =
+      block.match(
+        /SEARCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nSEARCH_END/i,
+      );
+
+    const replaceMatch =
+      block.match(
+        /REPLACE_BEGIN\s*\r?\n([\s\S]*?)\r?\nREPLACE_END/i,
+      );
+
+    if (
+      !pathMatch ||
+      !operationMatch ||
+      !searchMatch ||
+      !replaceMatch
+    ) {
+      throw new Error(
+        "AIOS_PATCH_FORMAT_INVALID",
+      );
+    }
+
+    const path =
+      normalizePath(
+        pathMatch[1] ||
+          "",
+      );
+
+    const operation =
+      (
+        operationMatch[1] ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+
+    const search =
+      searchMatch[1] || "";
+
+    const replace =
+      replaceMatch[1] || "";
+
+    if (
+      path !==
+      normalizePath(
+        expectedPath,
+      )
+    ) {
+      throw new Error(
+        `AIOS_PATCH_PATH_REJECTED: ${path}`,
+      );
+    }
+
+    if (
+      !isSafePath(path)
+    ) {
+      throw new Error(
+        `AIOS_PATCH_UNSAFE_PATH: ${path}`,
+      );
+    }
+
+    if (
+      operation !==
+      "replace"
+    ) {
+      throw new Error(
+        `AIOS_PATCH_OPERATION_REJECTED: ${operation}`,
+      );
+    }
+
+    if (!search) {
+      throw new Error(
+        "AIOS_PATCH_SEARCH_EMPTY",
+      );
+    }
+
+    if (
+      search.length >
+      MAX_PATCH_CHARS
+    ) {
+      throw new Error(
+        "AIOS_PATCH_SEARCH_TOO_LARGE",
+      );
+    }
+
+    blocks.push({
+      path,
+      operation: "replace",
+      search,
+      replace,
+    });
+
+    if (
+      blocks.length >
+      MAX_PATCH_OPERATIONS
+    ) {
+      throw new Error(
+        "AIOS_PATCH_OPERATION_LIMIT_EXCEEDED",
+      );
+    }
+  }
+
+  if (
+    blocks.length === 0
+  ) {
+    throw new Error(
+      "AIOS_PATCH_EMPTY",
     );
+  }
 
-  value =
-    value.replace(
-      pathHeading,
-      "",
-    );
-
-  value =
-    value.replace(
-      /^(?:Here(?:'s| is)|Below is|Here you go)[^:\n]*(?:complete|full|updated|source)?[^:\n]*:\s*\r?\n/i,
-      "",
-    );
-
-  value =
-    value.replace(
-      /^Complete (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
-      "",
-    );
-
-  value =
-    value.replace(
-      /^Full (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
-      "",
-    );
-
-  return value.trim();
+  return blocks;
 }
 
-function hasBalancedDelimiters(
+function applyPatchOperations(
+  original: string,
+  operations: PatchOperation[],
+) {
+  let content =
+    original;
+
+  for (
+    const operation of operations
+  ) {
+    const firstIndex =
+      content.indexOf(
+        operation.search,
+      );
+
+    if (
+      firstIndex < 0
+    ) {
+      throw new Error(
+        `AIOS_PATCH_SEARCH_NOT_FOUND: ${operation.path}`,
+      );
+    }
+
+    const secondIndex =
+      content.indexOf(
+        operation.search,
+        firstIndex +
+          operation.search
+            .length,
+      );
+
+    if (
+      secondIndex >= 0
+    ) {
+      throw new Error(
+        `AIOS_PATCH_SEARCH_NOT_UNIQUE: ${operation.path}`,
+      );
+    }
+
+    content =
+      content.slice(
+        0,
+        firstIndex,
+      ) +
+      operation.replace +
+      content.slice(
+        firstIndex +
+          operation.search
+            .length,
+      );
+  }
+
+  return content;
+}
+
+function validateFinalSource(
+  path: string,
   content: string,
 ) {
-  const stack: string[] = [];
+  const normalized =
+    content.replace(
+      /\r\n/g,
+      "\n",
+    );
 
+  if (
+    !normalized.trim()
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_EMPTY: ${path}`,
+    );
+  }
+
+  if (
+    normalized.length >
+    200000
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_TOO_LARGE: ${path}`,
+    );
+  }
+
+  if (
+    /(?:^|\n)\s*(?:\.\.\.|…)\s*(?:$|\n)/.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_CONTAINS_ELLIPSIS: ${path}`,
+    );
+  }
+
+  if (
+    /\b(?:TRUNCATED|OMITTED FOR BREVITY)\b/i.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_INCOMPLETE: ${path}`,
+    );
+  }
+
+  let stack: string[] = [];
   let quote:
     | "'"
     | '"'
     | "`"
     | null = null;
-
   let escaped = false;
   let lineComment = false;
   let blockComment = false;
 
   for (
     let index = 0;
-    index < content.length;
+    index < normalized.length;
     index += 1
   ) {
     const current =
-      content[index];
+      normalized[index];
     const next =
-      content[index + 1];
+      normalized[index + 1];
 
     if (lineComment) {
-      if (current === "\n") {
+      if (
+        current === "\n"
+      ) {
         lineComment = false;
       }
       continue;
@@ -1089,493 +1006,112 @@ function hasBalancedDelimiters(
           stack.length - 1
         ] !== expected
       ) {
-        return false;
+        throw new Error(
+          `AIOS_FINAL_SOURCE_DELIMITER_INVALID: ${path}`,
+        );
       }
 
       stack.pop();
     }
   }
 
-  return (
-    !quote &&
-    !blockComment &&
-    stack.length === 0
-  );
-}
-
-function looksLikeSourceFile(
-  content: string,
-  expectedPath: string,
-) {
-  const value =
-    content.trim();
-
   if (
-    !value ||
-    value.length < 40
-  ) {
-    return false;
-  }
-
-  if (
-    value.length >
-    MAX_GENERATED_FILE_CHARS
-  ) {
-    return false;
-  }
-
-  if (
-    /(?:^|\n)\s*(?:\.\.\.|…)\s*(?:$|\n)/.test(
-      value,
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    /\b(?:truncated|truncation|omitted for brevity|rest of file omitted)\b/i.test(
-      value,
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    /(?:\/\/|\/\*|\*)\s*(?:TODO|FIXME|TRUNCATED|OMITTED)/i.test(
-      value,
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    !hasBalancedDelimiters(
-      value,
-    )
-  ) {
-    return false;
-  }
-
-  const lowerPath =
-    expectedPath.toLowerCase();
-
-  if (
-    lowerPath.endsWith(
-      ".tsx",
-    ) ||
-    lowerPath.endsWith(
-      ".jsx",
-    )
-  ) {
-    return (
-      /(?:import\s+|export\s+|const\s+|function\s+|interface\s+|type\s+|return\s*\(|return\s+|<)/.test(
-        value,
-      )
-    );
-  }
-
-  if (
-    /\.(ts|js|mjs|cjs)$/i.test(
-      lowerPath,
-    )
-  ) {
-    return /(?:import\s+|export\s+|const\s+|function\s+|class\s+|type\s+|interface\s+)/.test(
-      value,
-    );
-  }
-
-  return true;
-}
-
-function extractStrictFile(
-  content: string,
-  expectedPath: string,
-) {
-  const match =
-    content.match(
-      /AIOS_FILE_BEGIN\s*\r?\nPATH:\s*([^\r\n]+)\r?\nCONTENT_BEGIN\r?\n([\s\S]*?)\r?\nCONTENT_END\r?\nAIOS_FILE_END/i,
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  const path =
-    normalizePath(
-      match[1] ?? "",
-    );
-
-  if (
-    path !==
-      normalizePath(
-        expectedPath,
-      ) ||
-    !isSafePath(path)
+    quote ||
+    blockComment ||
+    stack.length > 0
   ) {
     throw new Error(
-      `AIOS_GENERATED_PATH_REJECTED: ${path}`,
+      `AIOS_FINAL_SOURCE_INCOMPLETE: ${path}`,
     );
   }
 
-  const fileContent =
-    match[2] ?? "";
-
-  if (
-    !looksLikeSourceFile(
-      fileContent,
-      expectedPath,
-    )
-  ) {
-    throw new Error(
-      `AIOS_GENERATED_CONTENT_INCOMPLETE: ${path}`,
-    );
-  }
-
-  return {
-    path,
-    content:
-      fileContent.trim(),
-  };
+  return normalized;
 }
 
-function extractAnyCodeFence(
-  content: string,
-) {
-  const closedFence =
-    /```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?[ \t]*\r?\n([\s\S]*?)\r?\n```/gi;
-
-  const candidates: string[] =
-    [];
-
-  let match: RegExpExecArray | null =
-    null;
-
-  while (
-    (match =
-      closedFence.exec(
-        content,
-      )) !== null
-  ) {
-    const candidate =
-      (
-        match[1] ?? ""
-      ).trim();
-
-    if (candidate) {
-      candidates.push(
-        candidate,
-      );
-    }
-  }
-
-  if (
-    candidates.length
-  ) {
-    return (
-      candidates.find(
-        (candidate) =>
-          /(?:import\s+|export\s+|const\s+|function\s+|interface\s+|type\s+|return\s+|<)/.test(
-            candidate,
-          ),
-      ) ||
-      candidates[0]
-    );
-  }
-
-  const openFence =
-    content.match(
-      /```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?[ \t]*\r?\n/i,
-    );
-
-  if (
-    openFence &&
-    openFence.index !==
-      undefined
-  ) {
-    const start =
-      openFence.index +
-      openFence[0].length;
-
-    const remainder =
-      content
-        .slice(start)
-        .trim();
-
-    if (
-      remainder
-    ) {
-      return remainder;
-    }
-  }
-
-  return null;
-}
-
-function extractRawSource(
-  content: string,
-  expectedPath: string,
-) {
-  let value =
-    removeLeadingExplanation(
-      content,
-      expectedPath,
-    );
-
-  const lines =
-    value.split(/\r?\n/);
-
-  const sourceStart =
-    lines.findIndex(
-      (line) => {
-        const trimmed =
-          line.trim();
-
-        return (
-          /^["']use client["'];?$/.test(
-            trimmed,
-          ) ||
-          /^import\s/.test(
-            trimmed,
-          ) ||
-          /^export\s/.test(
-            trimmed,
-          ) ||
-          /^const\s/.test(
-            trimmed,
-          ) ||
-          /^type\s/.test(
-            trimmed,
-          ) ||
-          /^interface\s/.test(
-            trimmed,
-          ) ||
-          /^function\s/.test(
-            trimmed,
-          ) ||
-          /^class\s/.test(
-            trimmed,
-          ) ||
-          /^\/\*/.test(
-            trimmed,
-          ) ||
-          /^\/\//.test(
-            trimmed,
-          )
-        );
-      },
-    );
-
-  if (
-    sourceStart > 0
-  ) {
-    const prefix =
-      lines
-        .slice(
-          0,
-          sourceStart,
-        )
-        .join("\n")
-        .trim();
-
-    if (
-      !prefix ||
-      /^(?:Here|Below|Complete|Full|Updated|Source|Code)/i.test(
-        prefix,
-      )
-    ) {
-      value =
-        lines
-          .slice(
-            sourceStart,
-          )
-          .join("\n")
-          .trim();
-    }
-  }
-
-  return value;
-}
-
-function extractFile(
-  content: string,
-  expectedPath: string,
-) {
-  const strict =
-    extractStrictFile(
-      content,
-      expectedPath,
-    );
-
-  if (strict) {
-    return strict;
-  }
-
-  const fenced =
-    extractAnyCodeFence(
-      content,
-    );
-
-  if (fenced) {
-    const candidate =
-      removeLeadingExplanation(
-        fenced,
-        expectedPath,
-      );
-
-    if (
-      looksLikeSourceFile(
-        candidate,
-        expectedPath,
-      )
-    ) {
-      return {
-        path:
-          normalizePath(
-            expectedPath,
-          ),
-        content:
-          candidate,
-      };
-    }
-  }
-
-  let raw =
-    extractRawSource(
-      content,
-      expectedPath,
-    );
-
-  if (
-    raw.startsWith(
-      "AIOS_FILE_BEGIN",
-    )
-  ) {
-    throw new Error(
-      "AIOS_GENERATED_FILES_INCOMPLETE",
-    );
-  }
-
-  raw =
-    raw.replace(
-      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*/i,
-      "",
-    );
-
-  raw =
-    raw.replace(
-      /\s*```\s*$/i,
-      "",
-    );
-
-  raw =
-    removeLeadingExplanation(
-      raw,
-      expectedPath,
-    );
-
-  if (
-    !looksLikeSourceFile(
-      raw,
-      expectedPath,
-    )
-  ) {
-    throw new Error(
-      "AIOS_GENERATED_FILES_EMPTY",
-    );
-  }
-
-  return {
-    path:
-      normalizePath(
-        expectedPath,
-      ),
-    content:
-      raw,
-  };
-}
-
-async function generateFile(
+async function generatePatch(
   objective: string,
   targetPath: string,
-  targetPaths: string[],
-  context: Array<{
-    path: string;
-    content: string;
-  }>,
+  currentContent: string,
+  repairContext?: string,
 ) {
-  let lastReason =
-    "AIOS_GENERATED_FILES_EMPTY";
+  let lastError =
+    "AIOS_PATCH_EMPTY";
 
   for (
     let attempt = 1;
     attempt <=
-    MAX_GENERATION_ATTEMPTS;
+    MAX_PATCH_ATTEMPTS;
     attempt += 1
   ) {
     const prompt =
-      attempt === 1
-        ? filePrompt(
-            objective,
-            targetPath,
-            targetPaths,
-            context,
-          )
-        : [
-            filePrompt(
-              objective,
-              targetPath,
-              targetPaths,
-              context,
-            ),
-            "",
-            `Previous generation was rejected with: ${lastReason}`,
-            "Return the entire complete source file again.",
-            "Return raw source only.",
-            "Do not return a marker fragment.",
-            "Do not return a partial file.",
-            "Do not explain the correction.",
-          ].join("\n");
+      [
+        buildPatchPrompt(
+          objective,
+          targetPath,
+          currentContent,
+        ),
+        repairContext
+          ? [
+              "",
+              "PREVIOUS PATCH FAILURE:",
+              repairContext,
+              "",
+              "Regenerate a smaller exact patch.",
+            ].join("\n")
+          : "",
+        attempt > 1
+          ? [
+              "",
+              "IMPORTANT:",
+              "The previous patch was rejected.",
+              "Do not output a complete file.",
+              "Return only exact SEARCH/REPLACE operations.",
+            ].join("\n")
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
-    const generation =
+    const response =
       await runBrain(
         prompt,
-        FILE_SYSTEM_PROMPT,
+        repairContext
+          ? REPAIR_SYSTEM_PROMPT
+          : PATCH_SYSTEM_PROMPT,
       );
 
     if (
-      !generation.success
+      !response.success
     ) {
-      lastReason =
-        generation.error ||
-        "AI generation failed.";
+      lastError =
+        response.error ||
+        "AIOS patch generation failed.";
       continue;
     }
 
     try {
-      return extractFile(
-        generation.content,
+      return parsePatchBlocks(
+        response.content,
         targetPath,
       );
     } catch (error) {
-      lastReason =
+      lastError =
         error instanceof Error
           ? error.message
-          : "Generated file could not be parsed.";
+          : "AIOS patch parsing failed.";
     }
   }
 
   throw new Error(
-    `AIOS_GENERATED_FILE_FAILED: ${targetPath}: ${lastReason}`,
+    `AIOS_PATCH_GENERATION_FAILED: ${targetPath}: ${lastError}`,
   );
 }
 
-async function writeFile(
+async function writeFinalFile(
   objective: string,
   targetPaths: string[],
-  file: {
-    path: string;
-    content: string;
-  },
+  path: string,
+  content: string,
   commitMessage: string,
 ) {
   const contract =
@@ -1601,22 +1137,24 @@ async function writeFile(
       action: "write",
       repo: REPOSITORY,
       branch: BRANCH,
-      path: file.path,
-      content: file.content,
+      path,
+      content,
       commitMessage,
       contract,
     });
 
-  if (!result.success) {
+  if (
+    !result.success
+  ) {
     throw new Error(
       result.error ||
         result.code ||
-        `GitHub write failed: ${file.path}`,
+        `GitHub write failed: ${path}`,
     );
   }
 
   return {
-    path: file.path,
+    path,
     commitSha:
       result.write
         ?.commitSha || "",
@@ -1641,7 +1179,7 @@ function selectRepairTarget(
     .join("\n")
     .toLowerCase();
 
-  const matched =
+  const exact =
     targetPaths.find(
       (path) =>
         logs.includes(
@@ -1649,36 +1187,37 @@ function selectRepairTarget(
         ),
     );
 
-  if (matched) {
-    return matched;
+  if (exact) {
+    return exact;
   }
 
-  const buildPathMatch =
+  const match =
     logs.match(
       /(?:\.\/)?((?:app|components|lib|docs|scripts|tests|test|public|styles)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|css))/,
     );
 
-  if (
-    buildPathMatch
-  ) {
-    const normalized =
+  if (match) {
+    const path =
       normalizePath(
-        buildPathMatch[1],
+        match[1],
       );
 
-    const exact =
+    const selected =
       targetPaths.find(
-        (path) =>
-          path ===
-          normalized,
+        (candidate) =>
+          candidate ===
+          path,
       );
 
-    if (exact) {
-      return exact;
+    if (selected) {
+      return selected;
     }
   }
 
-  return targetPaths[0] || null;
+  return (
+    targetPaths[0] ||
+    null
+  );
 }
 
 export interface AutonomousDevelopmentAgentResult {
@@ -1734,7 +1273,8 @@ export async function executeAutonomousDevelopmentAgent(
   let targetPaths: string[] =
     [];
 
-  let readbackVerified = true;
+  let readbackVerified =
+    true;
 
   let verification:
     | VercelBuildVerificationResult
@@ -1795,7 +1335,8 @@ export async function executeAutonomousDevelopmentAgent(
           targetPaths: [],
         });
 
-      taskId = task.id;
+      taskId =
+        task.id;
     }
 
     if (
@@ -1813,7 +1354,7 @@ export async function executeAutonomousDevelopmentAgent(
         phase:
           "DISCOVERING",
         reason:
-          undefined,
+          "AIOS is discovering real repository paths.",
       },
     );
 
@@ -1835,50 +1376,34 @@ export async function executeAutonomousDevelopmentAgent(
       taskId,
       {
         phase:
-          "READING",
-      },
-    );
-
-    const discoveryContext =
-      await readContext(
-        discoveredPaths,
-        [],
-        {
-          maxFiles:
-            MAX_CONTEXT_FILES,
-          maxSupportingFiles:
-            MAX_SUPPORTING_CONTEXT_FILES,
-        },
-      );
-
-    updateAutonomousDevelopmentTask(
-      taskId,
-      {
-        phase:
           "PLANNING",
+        reason:
+          "AIOS is selecting the smallest valid repository target set.",
       },
     );
 
-    let planError =
+    let plannerError =
       "AIOS_REPOSITORY_PLAN_TARGETS_INVALID";
 
     for (
-      let planAttempt = 1;
-      planAttempt <=
+      let attempt = 1;
+      attempt <=
       MAX_PLAN_ATTEMPTS;
-      planAttempt += 1
+      attempt += 1
     ) {
-      const plan =
+      const response =
         await runBrain(
           [
-            plannerPrompt(
+            buildPlannerPrompt(
               objective,
               discoveredPaths,
-              discoveryContext,
             ),
-            "",
-            planAttempt > 1
-              ? `Previous planner result was rejected with: ${planError}. Regenerate using exact paths from the discovery index.`
+            attempt > 1
+              ? [
+                  "",
+                  `Previous planning attempt failed: ${plannerError}`,
+                  "Return exact existing repository paths only.",
+                ].join("\n")
               : "",
           ]
             .filter(Boolean)
@@ -1887,26 +1412,27 @@ export async function executeAutonomousDevelopmentAgent(
         );
 
       if (
-        !plan.success
+        !response.success
       ) {
-        planError =
-          plan.error ||
-          "Repository planning failed.";
+        plannerError =
+          response.error ||
+          "AIOS planner failed.";
         continue;
       }
 
       try {
         targetPaths =
-          extractPlan(
-            plan.content,
+          parsePlannerResult(
+            response.content,
             discoveredPaths,
           );
         break;
       } catch (error) {
-        planError =
+        plannerError =
           error instanceof Error
             ? error.message
-            : "Repository plan target validation failed.";
+            : "AIOS planner target validation failed.";
+
         targetPaths = [];
       }
     }
@@ -1916,19 +1442,8 @@ export async function executeAutonomousDevelopmentAgent(
       0
     ) {
       throw new Error(
-        planError,
+        plannerError,
       );
-    }
-
-    if (
-      targetPaths.length >
-      MAX_TARGET_FILES
-    ) {
-      targetPaths =
-        targetPaths.slice(
-          0,
-          MAX_TARGET_FILES,
-        );
     }
 
     updateAutonomousDevelopmentTask(
@@ -1938,52 +1453,76 @@ export async function executeAutonomousDevelopmentAgent(
         phase:
           "READING",
         reason:
-          `AIOS selected ${targetPaths.length} verified repository target file(s).`,
-      },
-    );
-
-    updateAutonomousDevelopmentTask(
-      taskId,
-      {
-        phase:
-          "GENERATING",
-        reason:
-          `Generating ${targetPaths.length} target file(s) with target-first context.`,
+          `AIOS selected ${targetPaths.length} verified target file(s).`,
       },
     );
 
     for (
       const targetPath of targetPaths
     ) {
-      const targetContext =
-        await readContext(
-          [targetPath],
-          [targetPath],
-          {
-            maxFiles: 1,
-            maxSupportingFiles: 0,
-          },
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "READING",
+          reason:
+            `Reading the complete current file: ${targetPath}`,
+        },
+      );
+
+      const current =
+        await readFile(
+          targetPath,
         );
 
+      const currentContent =
+        current.content;
+
       if (
-        targetContext.length ===
-        0
+        !currentContent.trim()
       ) {
         throw new Error(
-          `AIOS_TARGET_CONTEXT_EMPTY: ${targetPath}`,
+          `AIOS_TARGET_FILE_EMPTY: ${targetPath}`,
         );
       }
 
-      const generationContext =
-        targetContext;
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "GENERATING",
+          reason:
+            `Generating a minimal SEARCH/REPLACE patch for ${targetPath}.`,
+        },
+      );
 
-      const file =
-        await generateFile(
+      const patches =
+        await generatePatch(
           objective,
           targetPath,
-          targetPaths,
-          generationContext,
+          currentContent,
         );
+
+      const patchedContent =
+        applyPatchOperations(
+          currentContent,
+          patches,
+        );
+
+      const finalContent =
+        validateFinalSource(
+          targetPath,
+          patchedContent,
+        );
+
+      if (
+        finalContent ===
+        currentContent
+      ) {
+        throw new Error(
+          `AIOS_PATCH_NO_CHANGE: ${targetPath}`,
+        );
+      }
 
       updateAutonomousDevelopmentTask(
         taskId,
@@ -1991,16 +1530,17 @@ export async function executeAutonomousDevelopmentAgent(
           phase:
             "WRITING",
           reason:
-            `Writing ${targetPath}`,
+            `Writing verified patched source: ${targetPath}`,
         },
       );
 
       const written =
-        await writeFile(
+        await writeFinalFile(
           objective,
           targetPaths,
-          file,
-          "fix(C167.26): harden autonomous generation parsing",
+          targetPath,
+          finalContent,
+          "feat(C167.27): execute autonomous source patches",
         );
 
       changedPaths.push(
@@ -2030,8 +1570,8 @@ export async function executeAutonomousDevelopmentAgent(
           changedPaths,
           reason:
             written.readbackVerified
-              ? `Readback verified: ${targetPath}`
-              : `Readback failed: ${targetPath}`,
+              ? `GitHub readback verified: ${targetPath}`
+              : `GitHub readback failed: ${targetPath}`,
         },
       );
 
@@ -2045,7 +1585,8 @@ export async function executeAutonomousDevelopmentAgent(
     }
 
     if (
-      !commitShas.length
+      commitShas.length ===
+      0
     ) {
       throw new Error(
         "AUTONOMOUS_COMMIT_SHA_MISSING",
@@ -2062,9 +1603,9 @@ export async function executeAutonomousDevelopmentAgent(
       {
         phase:
           "BUILD",
-        changedPaths,
         commitSha:
           latestCommitSha,
+        changedPaths,
         reason:
           "Running Vercel production build verification.",
       },
@@ -2096,68 +1637,87 @@ export async function executeAutonomousDevelopmentAgent(
         break;
       }
 
-      const repairReason =
-        verification.errorMessage ||
-        verification.errorCode ||
-        "Vercel build failed.";
-
       updateAutonomousDevelopmentTask(
         taskId,
         {
           phase:
             "REPAIR",
           reason:
-            `Repair round ${repairRounds}: ${repairTarget}. ${repairReason}`,
+            `Vercel build repair ${repairRounds}: ${repairTarget}`,
         },
       );
 
-      const targetContext =
-        await readContext(
-          [repairTarget],
-          [repairTarget],
-          {
-            maxFiles: 1,
-            maxSupportingFiles: 0,
-          },
-        );
-
-      const repairContext =
-        targetContext;
-
-      const generation =
-        await runBrain(
-          repairPrompt(
-            objective,
-            repairTarget,
-            targetPaths,
-            repairContext,
-            verification,
-            repairRounds,
-          ),
-          REPAIR_SYSTEM_PROMPT,
-        );
-
-      if (
-        !generation.success
-      ) {
-        throw new Error(
-          generation.error ||
-            `Repair generation failed: ${repairTarget}`,
-        );
-      }
-
-      const file =
-        extractFile(
-          generation.content,
+      const current =
+        await readFile(
           repairTarget,
         );
 
+      const repairContext = [
+        `Vercel status: ${verification.status}`,
+        `Vercel error code: ${
+          verification.errorCode ||
+          "unknown"
+        }`,
+        `Vercel error message: ${
+          verification.errorMessage ||
+          "unknown"
+        }`,
+        "Vercel build logs:",
+        verification.buildLogs ||
+          "No build logs returned.",
+      ].join("\n");
+
+      const patches =
+        await generatePatch(
+          [
+            objective,
+            "",
+            "Repair the Vercel build failure.",
+            repairContext,
+          ].join("\n"),
+          repairTarget,
+          current.content,
+          repairContext,
+        );
+
+      const patchedContent =
+        applyPatchOperations(
+          current.content,
+          patches,
+        );
+
+      const finalContent =
+        validateFinalSource(
+          repairTarget,
+          patchedContent,
+        );
+
+      if (
+        finalContent ===
+        current.content
+      ) {
+        throw new Error(
+          `AIOS_REPAIR_PATCH_NO_CHANGE: ${repairTarget}`,
+        );
+      }
+
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
+            "WRITING",
+          reason:
+            `Writing build repair patch: ${repairTarget}`,
+        },
+      );
+
       const written =
-        await writeFile(
+        await writeFinalFile(
           `${objective}\nVercel repair round ${repairRounds}.`,
           targetPaths,
-          file,
-          `fix(C167.26): autonomous build repair ${repairRounds}`,
+          repairTarget,
+          finalContent,
+          `fix(C167.27): autonomous build repair ${repairRounds}`,
         );
 
       changedPaths.push(
@@ -2178,23 +1738,7 @@ export async function executeAutonomousDevelopmentAgent(
         readbackVerified &&
         written.readbackVerified;
 
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          phase:
-            "READBACK",
-          commitSha:
-            written.commitSha,
-          changedPaths,
-          reason:
-            written.readbackVerified
-              ? `Repair readback verified: ${repairTarget}`
-              : `Repair readback failed: ${repairTarget}`,
-        },
-      );
-
       if (
-        !written.commitSha ||
         !written.readbackVerified
       ) {
         throw new Error(
@@ -2206,12 +1750,25 @@ export async function executeAutonomousDevelopmentAgent(
         taskId,
         {
           phase:
+            "READBACK",
+          commitSha:
+            latestCommitSha,
+          changedPaths,
+          reason:
+            `Repair readback verified: ${repairTarget}`,
+        },
+      );
+
+      updateAutonomousDevelopmentTask(
+        taskId,
+        {
+          phase:
             "BUILD",
           commitSha:
             latestCommitSha,
           changedPaths,
           reason:
-            `Verifying repair round ${repairRounds}.`,
+            `Verifying autonomous repair round ${repairRounds}.`,
         },
       );
 
@@ -2232,10 +1789,10 @@ export async function executeAutonomousDevelopmentAgent(
 
     const reason =
       verificationPassed
-        ? "Commit, GitHub readback and Vercel production build verification completed."
+        ? "Autonomous patch execution, GitHub readback and Vercel production verification completed."
         : verification?.errorMessage ||
           verification?.errorCode ||
-          "Final verification failed.";
+          "Final autonomous verification failed.";
 
     updateAutonomousDevelopmentTask(
       taskId,
@@ -2245,9 +1802,9 @@ export async function executeAutonomousDevelopmentAgent(
             ? "COMPLETED"
             : "BLOCKED",
         reason,
-        changedPaths,
         commitSha:
           latestCommitSha,
+        changedPaths,
       },
     );
 
