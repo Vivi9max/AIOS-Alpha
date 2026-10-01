@@ -1006,8 +1006,9 @@ export default function TasksPage() {
                   fontSize: 12,
                 }}
               >
-                Create the first
-                outcome above.
+                {t(
+                  "tasks.emptyHint",
+                )}
               </p>
             </div>
           ) : (
