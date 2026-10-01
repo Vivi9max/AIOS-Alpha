@@ -25,14 +25,18 @@ const messages = {
     "nav.allProjects": "All",
     "nav.open": "Open navigation menu",
     "nav.close": "Close navigation menu",
+
     "page.workspace": "Chat Workspace",
     "page.runtime": "AIOS Runtime",
     "page.release": "Release",
     "page.default": "AIOS Workspace",
+
     "runtime.online": "Runtime Online",
     "runtime.offline": "Runtime Offline",
     "runtime.provider": "Provider",
+
     "language.label": "Language",
+
     "handoff.eyebrow": "CONTINUITY CAPSULE",
     "handoff.title": "Independent Development Handoff",
     "handoff.description": "Everything another developer or AI needs to resume AIOS Alpha from the repository itself.",
@@ -43,6 +47,7 @@ const messages = {
     "handoff.capabilities": "Working capabilities",
     "handoff.loading": "Loading handoff snapshot…",
     "handoff.error": "The handoff snapshot could not be loaded.",
+
     "workspace.heroTitle": "What will you accomplish today?",
     "workspace.heroDescription": "Plan projects, manage tasks, preserve memory and keep work moving with AIOS.",
     "workspace.quickActions": "Quick actions",
@@ -57,11 +62,13 @@ const messages = {
     "workspace.action.projectsDescription": "Manage work already in motion",
     "workspace.action.ask": "Ask AIOS",
     "workspace.action.askDescription": "Plan, analyze or execute an action",
+
     "tasks.title": "Tasks",
     "tasks.description": "Create, update and complete your work tasks.",
     "tasks.guard": "Planner Execution Guard",
     "tasks.syncTitle": "Synchronizing execution policy",
     "tasks.syncReason": "Reading the Planner's current execution limits.",
+    "tasks.emptyHint": "Tip: describe the outcome, not just the action, so Planner can route it accurately.",
     "tasks.concurrent": "Concurrent",
     "tasks.queue": "Task queue",
     "tasks.newTask": "New tasks",
@@ -76,6 +83,7 @@ const messages = {
     "tasks.loading": "Loading tasks…",
     "tasks.empty": "No tasks yet. Create your first task.",
     "tasks.deleteConfirm": "Delete this task?",
+
     "runtime.title": "Runtime Control Center",
     "runtime.description": "Check whether AIOS is online, its active model, system modules and latest execution state.",
     "runtime.checking": "Checking…",
@@ -94,6 +102,7 @@ const messages = {
     "runtime.openConsoleDescription": "Submit a single task directly to Runtime",
     "runtime.openTrace": "View Execution Trace",
     "runtime.openTraceDescription": "Inspect the latest real execution path",
+
     "planner.title": "Strategic Planner",
     "planner.description": "Describe the final outcome. Planner will understand the goal, define stages, select capabilities and invoke Runtime when needed.",
     "planner.runtimeStatus": "Runtime status",
@@ -116,6 +125,7 @@ const messages = {
     "planner.planAndExecute": "Plan and execute",
     "planner.quickGoals": "Quick goals",
     "planner.tapToLoad": "Tap to load",
+
     "execution.loadError": "Execution plan could not be loaded.",
     "execution.connectionError": "Execution Engine is temporarily unavailable.",
     "execution.actionError": "Execution Engine could not complete the action.",
@@ -147,6 +157,7 @@ const messages = {
     "execution.noTodo": "No tasks are waiting",
     "execution.done": "Completed",
     "execution.noDone": "Completed tasks will appear here",
+
     "projects.eyebrow": "AIOS Project Center",
     "projects.title": "Projects",
     "projects.description": "Choose a project to enter its workspace and system modules.",
@@ -164,6 +175,7 @@ const messages = {
     "projects.moduleStatus.ready": "Ready",
     "projects.moduleStatus.planned": "Planned",
   },
+
   "zh-CN": {
     "nav.chat": "对话",
     "nav.memory": "记忆",
@@ -175,14 +187,18 @@ const messages = {
     "nav.allProjects": "全部",
     "nav.open": "打开导航菜单",
     "nav.close": "关闭导航菜单",
+
     "page.workspace": "对话工作区",
     "page.runtime": "AIOS 运行中心",
     "page.release": "发布中心",
     "page.default": "AIOS 工作区",
+
     "runtime.online": "运行正常",
     "runtime.offline": "运行离线",
     "runtime.provider": "模型服务",
+
     "language.label": "语言",
+
     "handoff.eyebrow": "持续开发胶囊",
     "handoff.title": "独立开发交接中心",
     "handoff.description": "让其他开发者或 AI 仅凭仓库即可继续推进 AIOS Alpha。",
@@ -193,6 +209,7 @@ const messages = {
     "handoff.capabilities": "已运行能力",
     "handoff.loading": "正在读取交接状态…",
     "handoff.error": "无法读取交接状态。",
+
     "workspace.heroTitle": "今天准备完成什么？",
     "workspace.heroDescription": "AIOS 可以帮助你规划项目、管理任务、保存记忆并持续推进工作。",
     "workspace.quickActions": "快捷操作",
@@ -207,11 +224,13 @@ const messages = {
     "workspace.action.projectsDescription": "管理正在推进的工作",
     "workspace.action.ask": "询问 AIOS",
     "workspace.action.askDescription": "规划、分析或执行操作",
+
     "tasks.title": "任务",
     "tasks.description": "创建、更新并完成你的工作任务。",
     "tasks.guard": "Planner 执行守卫",
     "tasks.syncTitle": "正在同步执行策略",
     "tasks.syncReason": "正在读取 Planner 当前运行限制。",
+    "tasks.emptyHint": "提示：请描述最终结果，而不仅是一个动作，Planner 才能更准确地规划执行路径。",
     "tasks.concurrent": "并行执行",
     "tasks.queue": "任务队列",
     "tasks.newTask": "新增任务",
@@ -226,6 +245,7 @@ const messages = {
     "tasks.loading": "正在读取任务……",
     "tasks.empty": "还没有任务，先创建第一项任务。",
     "tasks.deleteConfirm": "确定删除这项任务吗？",
+
     "runtime.title": "运行控制中心",
     "runtime.description": "查看 AIOS 是否在线、当前模型、系统模块和最近执行状态。",
     "runtime.checking": "检查中…",
@@ -244,6 +264,7 @@ const messages = {
     "runtime.openConsoleDescription": "直接向 Runtime 提交单次任务",
     "runtime.openTrace": "查看 Execution Trace",
     "runtime.openTraceDescription": "查看最近一次真实执行过程",
+
     "planner.title": "战略规划器",
     "planner.description": "描述你希望得到的最终结果。Planner 将理解目标、拆解阶段、选择能力，并在需要时调度 Runtime 执行。",
     "planner.runtimeStatus": "Runtime 状态",
@@ -266,6 +287,7 @@ const messages = {
     "planner.planAndExecute": "规划并执行",
     "planner.quickGoals": "快速目标",
     "planner.tapToLoad": "点击即可载入",
+
     "execution.loadError": "执行计划读取失败。",
     "execution.connectionError": "暂时无法连接 Execution Engine。",
     "execution.actionError": "Execution Engine 暂时无法完成操作。",
@@ -297,6 +319,7 @@ const messages = {
     "execution.noTodo": "目前没有等待任务",
     "execution.done": "已经完成",
     "execution.noDone": "完成的任务会显示在这里",
+
     "projects.eyebrow": "AIOS 项目中心",
     "projects.title": "项目",
     "projects.description": "选择项目，进入对应工作空间和系统模块。",
@@ -314,6 +337,7 @@ const messages = {
     "projects.moduleStatus.ready": "已就绪",
     "projects.moduleStatus.planned": "已规划",
   },
+
   ja: {
     "nav.chat": "チャット",
     "nav.memory": "メモリー",
@@ -325,14 +349,18 @@ const messages = {
     "nav.allProjects": "すべて",
     "nav.open": "ナビゲーションを開く",
     "nav.close": "ナビゲーションを閉じる",
+
     "page.workspace": "チャットワークスペース",
     "page.runtime": "AIOS ランタイム",
     "page.release": "リリース",
     "page.default": "AIOS ワークスペース",
+
     "runtime.online": "ランタイム稼働中",
     "runtime.offline": "ランタイム停止中",
     "runtime.provider": "プロバイダー",
+
     "language.label": "言語",
+
     "handoff.eyebrow": "継続開発カプセル",
     "handoff.title": "独立開発引継ぎセンター",
     "handoff.description": "リポジトリだけで、別の開発者や AI が AIOS Alpha の開発を再開できます。",
@@ -343,6 +371,7 @@ const messages = {
     "handoff.capabilities": "稼働中の機能",
     "handoff.loading": "引継ぎ情報を読み込み中…",
     "handoff.error": "引継ぎ情報を読み込めませんでした。",
+
     "workspace.heroTitle": "今日は何を達成しますか？",
     "workspace.heroDescription": "AIOS でプロジェクトを計画し、タスクとメモリーを管理して、仕事を前進させます。",
     "workspace.quickActions": "クイックアクション",
@@ -357,11 +386,13 @@ const messages = {
     "workspace.action.projectsDescription": "進行中の作業を管理",
     "workspace.action.ask": "AIOS に質問",
     "workspace.action.askDescription": "計画、分析、操作を実行",
+
     "tasks.title": "タスク",
     "tasks.description": "作業タスクを作成、更新、完了します。",
     "tasks.guard": "Planner 実行ガード",
     "tasks.syncTitle": "実行ポリシーを同期中",
     "tasks.syncReason": "Planner の現在の実行制限を確認しています。",
+    "tasks.emptyHint": "ヒント：操作だけでなく最終成果を記述すると、Planner がより正確に実行経路を計画できます。",
     "tasks.concurrent": "同時実行",
     "tasks.queue": "タスクキュー",
     "tasks.newTask": "新規タスク",
@@ -376,6 +407,7 @@ const messages = {
     "tasks.loading": "タスクを読み込み中…",
     "tasks.empty": "タスクはまだありません。最初のタスクを作成しましょう。",
     "tasks.deleteConfirm": "このタスクを削除しますか？",
+
     "runtime.title": "ランタイム管理センター",
     "runtime.description": "AIOS の稼働状況、使用中のモデル、システムモジュール、最新の実行状態を確認します。",
     "runtime.checking": "確認中…",
@@ -394,6 +426,7 @@ const messages = {
     "runtime.openConsoleDescription": "単一タスクを Runtime に直接送信します",
     "runtime.openTrace": "Execution Trace を表示",
     "runtime.openTraceDescription": "直近の実行経路を確認します",
+
     "planner.title": "戦略プランナー",
     "planner.description": "最終成果を説明してください。Planner が目標を理解し、段階と能力を選び、必要に応じて Runtime を実行します。",
     "planner.runtimeStatus": "Runtime 状態",
@@ -416,6 +449,7 @@ const messages = {
     "planner.planAndExecute": "計画して実行",
     "planner.quickGoals": "クイック目標",
     "planner.tapToLoad": "タップして読み込む",
+
     "execution.loadError": "実行計画を読み込めませんでした。",
     "execution.connectionError": "Execution Engine に一時的に接続できません。",
     "execution.actionError": "Execution Engine が操作を完了できませんでした。",
@@ -447,6 +481,7 @@ const messages = {
     "execution.noTodo": "待機中のタスクはありません",
     "execution.done": "完了済み",
     "execution.noDone": "完了したタスクがここに表示されます",
+
     "projects.eyebrow": "AIOS プロジェクトセンター",
     "projects.title": "プロジェクト",
     "projects.description": "プロジェクトを選び、ワークスペースとシステムモジュールを開きます。",
@@ -469,13 +504,23 @@ const messages = {
 export type MessageKey = keyof (typeof messages)["en"];
 
 export function isLocale(value: unknown): value is Locale {
-  return typeof value === "string" && supportedLocales.includes(value as Locale);
+  return (
+    typeof value === "string" &&
+    supportedLocales.includes(value as Locale)
+  );
 }
 
 export function detectLocale(language?: string): Locale {
   const value = language?.toLowerCase() ?? "";
-  if (value.startsWith("zh")) return "zh-CN";
-  if (value.startsWith("ja")) return "ja";
+
+  if (value.startsWith("zh")) {
+    return "zh-CN";
+  }
+
+  if (value.startsWith("ja")) {
+    return "ja";
+  }
+
   return DEFAULT_LOCALE;
 }
 
@@ -484,14 +529,18 @@ export function translate(locale: Locale, key: MessageKey): string {
 }
 
 type ProjectCopy = Pick<Project, "name" | "description"> & {
-  modules: Array<{ name: string; description: string }>;
+  modules: Array<{
+    name: string;
+    description: string;
+  }>;
 };
 
 const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
   en: {
     "aios-alpha": {
       name: "AIOS Alpha",
-      description: "AIOS Alpha Runtime, Memory, Tasks, Planner and unified workspace.",
+      description:
+        "AIOS Alpha Runtime, Memory, Tasks, Planner and unified workspace.",
       modules: [
         {
           name: "AIOS Workspace",
@@ -507,7 +556,8 @@ const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
         },
         {
           name: "Execution Trace",
-          description: "Inspect the latest execution and capability calls",
+          description:
+            "Inspect the latest execution and capability calls",
         },
         {
           name: "Memory",
@@ -519,13 +569,16 @@ const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
         },
       ],
     },
+
     "content-os": {
       name: "Content OS",
-      description: "A system for content research, production, publishing and growth validation.",
+      description:
+        "A system for content research, production, publishing and growth validation.",
       modules: [
         {
           name: "Content Production Workspace",
-          description: "Enter the content research and production workflow",
+          description:
+            "Enter the content research and production workflow",
         },
         {
           name: "Content Tasks",
@@ -533,13 +586,16 @@ const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
         },
       ],
     },
+
     "brain-engine": {
       name: "Brain Engine",
-      description: "The core for goal understanding, planning, capability routing and Runtime execution.",
+      description:
+        "The core for goal understanding, planning, capability routing and Runtime execution.",
       modules: [
         {
           name: "Planner Engine",
-          description: "Understand goals and generate execution workflows",
+          description:
+            "Understand goals and generate execution workflows",
         },
         {
           name: "Runtime Control Center",
@@ -551,26 +607,33 @@ const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
         },
         {
           name: "Execution Trace",
-          description: "Inspect the latest capability call records",
+          description:
+            "Inspect the latest capability call records",
         },
       ],
     },
+
     "film-studio": {
       name: "Film Studio",
-      description: "An AI multimodal system for concepts, shots, assets and content production.",
+      description:
+        "An AI multimodal system for concepts, shots, assets and content production.",
       modules: [
         {
           name: "Creative Production Workspace",
-          description: "Enter the AI multimodal creative production workflow",
+          description:
+            "Enter the AI multimodal creative production workflow",
         },
       ],
     },
   },
+
   "zh-CN": {},
+
   ja: {
     "aios-alpha": {
       name: "AIOS Alpha",
-      description: "AIOS Alpha の Runtime、Memory、Tasks、Planner、統合ワークスペース。",
+      description:
+        "AIOS Alpha の Runtime、Memory、Tasks、Planner、統合ワークスペース。",
       modules: [
         {
           name: "AIOS ワークスペース",
@@ -582,65 +645,82 @@ const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
         },
         {
           name: "Runtime 管理センター",
-          description: "システム、モデル、モジュールの状態を確認",
+          description:
+            "システム、モデル、モジュールの状態を確認",
         },
         {
           name: "実行トレース",
-          description: "最新の実行と機能呼び出しを確認",
+          description:
+            "最新の実行と機能呼び出しを確認",
         },
         {
           name: "メモリー",
-          description: "長期メモリーとユーザー情報を管理",
+          description:
+            "長期メモリーとユーザー情報を管理",
         },
         {
           name: "タスク",
-          description: "計画から生成された実行タスクを管理",
+          description:
+            "計画から生成された実行タスクを管理",
         },
       ],
     },
+
     "content-os": {
       name: "Content OS",
-      description: "コンテンツの調査、制作、公開、成長検証を行うシステム。",
+      description:
+        "コンテンツの調査、制作、公開、成長検証を行うシステム。",
       modules: [
         {
           name: "コンテンツ制作ワークスペース",
-          description: "コンテンツ調査と制作ワークフローを開く",
+          description:
+            "コンテンツ調査と制作ワークフローを開く",
         },
         {
           name: "コンテンツタスク",
-          description: "コンテンツ制作タスクを表示",
+          description:
+            "コンテンツ制作タスクを表示",
         },
       ],
     },
+
     "brain-engine": {
       name: "Brain Engine",
-      description: "目標理解、計画、機能ルーティング、Runtime 実行の中核。",
+      description:
+        "目標理解、計画、機能ルーティング、Runtime 実行の中核。",
       modules: [
         {
           name: "Planner Engine",
-          description: "目標を理解して実行ワークフローを生成",
+          description:
+            "目標を理解して実行ワークフローを生成",
         },
         {
           name: "Runtime 管理センター",
-          description: "AIOS Runtime の実際の状態を確認",
+          description:
+            "AIOS Runtime の実際の状態を確認",
         },
         {
           name: "Runtime Console",
-          description: "Runtime にタスクを直接送信",
+          description:
+            "Runtime にタスクを直接送信",
         },
         {
           name: "実行トレース",
-          description: "最新の機能呼び出し履歴を確認",
+          description:
+            "最新の機能呼び出し履歴を確認",
         },
       ],
     },
+
     "film-studio": {
       name: "Film Studio",
-      description: "AI マルチモーダルの企画、ショット、素材、コンテンツ制作システム。",
+      description:
+        "AI マルチモーダルの企画、ショット、素材、コンテンツ制作システム。",
       modules: [
         {
           name: "クリエイティブ制作ワークスペース",
-          description: "AI マルチモーダル制作ワークフローを開く",
+          description:
+            "AI マルチモーダル制作ワークフローを開く",
         },
       ],
     },
@@ -655,12 +735,10 @@ export function projectCopy(
     return {
       name: project.name,
       description: project.description,
-      modules: project.modules.map(
-        ({ name, description }) => ({
-          name,
-          description,
-        }),
-      ),
+      modules: project.modules.map(({ name, description }) => ({
+        name,
+        description,
+      })),
     };
   }
 
@@ -669,12 +747,10 @@ export function projectCopy(
     projectCopies.en[project.id] ?? {
       name: project.name,
       description: project.description,
-      modules: project.modules.map(
-        ({ name, description }) => ({
-          name,
-          description,
-        }),
-      ),
+      modules: project.modules.map(({ name, description }) => ({
+        name,
+        description,
+      })),
     }
   );
 }
