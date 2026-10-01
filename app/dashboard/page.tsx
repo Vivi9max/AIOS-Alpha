@@ -1062,6 +1062,24 @@ export default function DashboardPage() {
     !dashboard.provider
       .fallbackUsed;
 
+  const statusSummary = systemHealthy
+    ? copy.operating
+    : copy.attention;
+
+  const activeTaskCount = activeTasks.length;
+
+  const missionProgressLabel = `${completedTasks.length}/${tasks.length}`;
+
+  const hasMission = Boolean(missionTask);
+
+  const primaryMissionHref = hasMission
+    ? "/tasks"
+    : "/workspace";
+
+  const primaryMissionLabel = hasMission
+    ? copy.continue
+    : copy.createGoal;
+
   const healthItems =
     useMemo<HealthItem[]>(
       () => [
