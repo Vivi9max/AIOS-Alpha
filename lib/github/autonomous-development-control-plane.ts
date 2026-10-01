@@ -7,6 +7,19 @@ export type AutonomousDevelopmentTaskStatus =
   | "failed"
   | "blocked";
 
+export type AutonomousDevelopmentTaskPhase =
+  | "QUEUED"
+  | "DISCOVERING"
+  | "PLANNING"
+  | "READING"
+  | "GENERATING"
+  | "WRITING"
+  | "READBACK"
+  | "BUILD"
+  | "REPAIR"
+  | "COMPLETED"
+  | "BLOCKED";
+
 export type AutonomousDevelopmentTask = {
   id: string;
   objective: string;
@@ -14,6 +27,10 @@ export type AutonomousDevelopmentTask = {
   branch: string;
   targetPaths: string[];
   status: AutonomousDevelopmentTaskStatus;
+  phase: AutonomousDevelopmentTaskPhase;
+  reason?: string;
+  commitSha?: string;
+  changedPaths?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -58,12 +75,13 @@ function assertSafeTask(task: AutonomousDevelopmentTask) {
     throw new Error("Development objective is required.");
   }
 
-  if (!task.targetPaths.length) {
-    throw new Error("At least one target path is required.");
-  }
-
   for (const targetPath of task.targetPaths) {
-    if (!targetPath || targetPath.startsWith("/") || targetPath.includes("..")) {
+    if (
+      !targetPath ||
+      targetPath.startsWith("/") ||
+      targetPath.includes("..") ||
+      targetPath.includes("\\")
+    ) {
       throw new Error(`Unsafe target path: ${targetPath}`);
     }
   }
@@ -71,15 +89,16 @@ function assertSafeTask(task: AutonomousDevelopmentTask) {
 
 export function createAutonomousDevelopmentTask(input: {
   objective: string;
-  targetPaths: string[];
+  targetPaths?: string[];
 }) {
   const task: AutonomousDevelopmentTask = {
     id: createTaskId(),
-    objective: input.objective,
+    objective: input.objective.trim(),
     repository: ALLOWED_REPOSITORY,
     branch: ALLOWED_BRANCH,
-    targetPaths: input.targetPaths,
+    targetPaths: input.targetPaths ?? [],
     status: "todo",
+    phase: "QUEUED",
     createdAt: now(),
     updatedAt: now(),
   };
@@ -95,7 +114,11 @@ export function getAutonomousDevelopmentTask(taskId: string) {
 }
 
 export function listAutonomousDevelopmentTasks() {
-  return Array.from(tasks.values());
+  return Array.from(tasks.values()).sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() -
+      new Date(a.createdAt).getTime(),
+  );
 }
 
 export function claimAutonomousDevelopmentTask(taskId: string) {
@@ -110,10 +133,53 @@ export function claimAutonomousDevelopmentTask(taskId: string) {
   }
 
   task.status = "running";
+  task.phase = "DISCOVERING";
+  task.reason = undefined;
   task.updatedAt = now();
-
   tasks.set(taskId, task);
 
+  return task;
+}
+
+export function updateAutonomousDevelopmentTask(
+  taskId: string,
+  update: {
+    phase?: AutonomousDevelopmentTaskPhase;
+    reason?: string;
+    targetPaths?: string[];
+    commitSha?: string;
+    changedPaths?: string[];
+  },
+) {
+  const task = tasks.get(taskId);
+
+  if (!task) {
+    throw new Error("Development task not found.");
+  }
+
+  if (update.phase) {
+    task.phase = update.phase;
+  }
+
+  if (update.reason !== undefined) {
+    task.reason = update.reason;
+  }
+
+  if (update.targetPaths) {
+    task.targetPaths = Array.from(new Set(update.targetPaths));
+    assertSafeTask(task);
+  }
+
+  if (update.commitSha) {
+    task.commitSha = update.commitSha;
+  }
+
+  if (update.changedPaths) {
+    task.changedPaths = Array.from(new Set(update.changedPaths));
+  }
+
+  task.updatedAt = now();
+  tasks.set(taskId, task);
   return task;
 }
 
@@ -123,6 +189,7 @@ export function completeAutonomousDevelopmentTask(
     commitSha: string;
     readbackVerified: boolean;
     verificationPassed: boolean;
+    reason?: string;
   },
 ): AutonomousDevelopmentReceipt {
   const task = tasks.get(taskId);
@@ -141,8 +208,10 @@ export function completeAutonomousDevelopmentTask(
     result.verificationPassed === true;
 
   task.status = passed ? "completed" : "failed";
+  task.phase = passed ? "COMPLETED" : "BLOCKED";
+  task.reason = result.reason;
+  task.commitSha = result.commitSha || undefined;
   task.updatedAt = now();
-
   tasks.set(taskId, task);
 
   return {
@@ -165,9 +234,7 @@ export function completeAutonomousDevelopmentTask(
     commitSha: result.commitSha,
     readbackVerified: result.readbackVerified,
     verificationPassed: result.verificationPassed,
-    reason: passed
-      ? undefined
-      : "Development result failed final verification requirements.",
+    reason: result.reason,
     completedAt: now(),
   };
 }
@@ -183,8 +250,9 @@ export function blockAutonomousDevelopmentTask(
   }
 
   task.status = "blocked";
+  task.phase = "BLOCKED";
+  task.reason = reason;
   task.updatedAt = now();
-
   tasks.set(taskId, task);
 
   return {
