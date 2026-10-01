@@ -375,12 +375,13 @@ async function readFile(
     !result.success ||
     !result.data
   ) {
-    throw new Error(
-      `AIOS_TARGET_READ_FAILED: ${path}: ${
-        result.error ||
-        "GitHub file read failed."
-      }`,
-    );
+throw new Error(
+  `AIOS_TARGET_READ_FAILED: ${path}: ${
+    "error" in result
+      ? result.error
+      : "GitHub file read failed."
+  }`,
+);
   }
 
   return result.data;
