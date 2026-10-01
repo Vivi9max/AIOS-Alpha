@@ -1112,6 +1112,8 @@ export default function WorkspaceOverview() {
           </h2>
 
           <span
+            role="status"
+            aria-live="polite"
             style={{
               color:
                 error
@@ -1130,6 +1132,7 @@ export default function WorkspaceOverview() {
               : error ||
                 copy.synced}
           </span>
+SEARCH_END
         </div>
 
         <div
