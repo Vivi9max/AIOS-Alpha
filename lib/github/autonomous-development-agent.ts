@@ -22,10 +22,13 @@ const BRANCH = "main";
 
 const MAX_OBJECTIVE_LENGTH = 4000;
 const MAX_DISCOVERY_ENTRIES = 200;
-const MAX_CONTEXT_FILES = 12;
-const MAX_CONTEXT_FILE_CHARS = 14000;
+
+const MAX_CONTEXT_FILES = 6;
+const MAX_SUPPORTING_CONTEXT_FILES = 3;
+const MAX_CONTEXT_FILE_CHARS = 10000;
 const MAX_TARGET_CONTEXT_FILE_CHARS = 70000;
-const MAX_CONTEXT_CHARS = 150000;
+const MAX_CONTEXT_CHARS = 110000;
+
 const MAX_TARGET_FILES = 6;
 const MAX_GENERATED_FILE_CHARS = 200000;
 
@@ -59,28 +62,39 @@ const FILE_SYSTEM_PROMPT = [
   "AIOS Autonomous Single File Development Agent",
   "",
   "你现在只负责生成一个指定的 exact repository file。",
-  "必须输出完整文件，不得输出 diff、Markdown、解释、TODO、placeholder 或省略号。",
-  "必须保持现有架构、类型、接口和 import 路径兼容。",
+  "必须输出完整文件，从第一行到最后一行。",
+  "不要输出 diff。",
+  "不要输出解释。",
+  "不要输出 Markdown 说明文字。",
+  "不要输出 TODO。",
+  "不要输出 placeholder。",
+  "不要使用省略号代替代码。",
+  "不要省略任何未修改的现有代码。",
+  "保持现有架构、类型、接口和 import 路径兼容。",
   "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
-  "不得删除现有必要功能。",
-  "只输出一个 AIOS_FILE_BEGIN 文件块。",
-  "格式：",
-  "AIOS_FILE_BEGIN",
-  "PATH: <exact repository path>",
-  "CONTENT_BEGIN",
-  "<complete file content>",
-  "CONTENT_END",
-  "AIOS_FILE_END",
+  "",
+  "推荐直接返回完整源码。",
+  "如果使用代码块，只允许一个完整源码代码块。",
+  "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
 ].join("\n");
 
 const REPAIR_SYSTEM_PROMPT = [
   "AIOS Autonomous Build Repair Agent",
   "",
   "根据真实 Vercel Build Error 修复当前指定源码文件。",
-  "必须输出完整文件，不得输出 diff、Markdown、解释、TODO、placeholder 或省略号。",
+  "必须输出完整文件，从第一行到最后一行。",
+  "不要输出 diff。",
+  "不要输出解释。",
+  "不要输出 TODO。",
+  "不要输出 placeholder。",
+  "不要使用省略号代替代码。",
+  "不要省略任何未修改的现有代码。",
   "保持现有架构、类型、接口和 Founder 安全边界。",
   "不得修改 package.json、lockfile、vercel.json、.env、.git 或 .github。",
-  "每次只输出一个 AIOS_FILE_BEGIN 文件块。",
+  "",
+  "推荐直接返回完整源码。",
+  "如果使用代码块，只允许一个完整源码代码块。",
+  "如果使用 AIOS_FILE_BEGIN 格式，也必须包含完整 CONTENT_BEGIN / CONTENT_END。",
 ].join("\n");
 
 async function runBrain(
@@ -308,6 +322,10 @@ async function discoverRepositoryPaths(
 async function readContext(
   paths: string[],
   targetPaths: string[] = [],
+  options?: {
+    maxFiles?: number;
+    maxSupportingFiles?: number;
+  },
 ) {
   const targetSet =
     new Set(
@@ -331,6 +349,14 @@ async function readContext(
     ),
   ];
 
+  const maxFiles =
+    options?.maxFiles ??
+    MAX_CONTEXT_FILES;
+
+  const maxSupportingFiles =
+    options?.maxSupportingFiles ??
+    MAX_SUPPORTING_CONTEXT_FILES;
+
   const context: Array<{
     path: string;
     content: string;
@@ -338,13 +364,31 @@ async function readContext(
   }> = [];
 
   let total = 0;
+  let supportingCount = 0;
 
   for (
-    const path of ordered.slice(
-      0,
-      MAX_CONTEXT_FILES,
-    )
+    const path of ordered
   ) {
+    const isTarget =
+      targetSet.has(
+        normalizePath(path),
+      );
+
+    if (
+      !isTarget &&
+      supportingCount >=
+        maxSupportingFiles
+    ) {
+      continue;
+    }
+
+    if (
+      context.length >=
+      maxFiles
+    ) {
+      break;
+    }
+
     const result =
       await readGitHubFile({
         repo: REPOSITORY,
@@ -360,9 +404,7 @@ async function readContext(
     }
 
     const limit =
-      targetSet.has(
-        normalizePath(path),
-      )
+      isTarget
         ? MAX_TARGET_CONTEXT_FILE_CHARS
         : MAX_CONTEXT_FILE_CHARS;
 
@@ -376,7 +418,32 @@ async function readContext(
       total + content.length >
       MAX_CONTEXT_CHARS
     ) {
-      break;
+      if (isTarget) {
+        const remaining =
+          MAX_CONTEXT_CHARS -
+          total;
+
+        if (
+          remaining <= 0
+        ) {
+          break;
+        }
+
+        context.push({
+          path,
+          content:
+            content.slice(
+              0,
+              remaining,
+            ),
+          sha:
+            result.data.sha,
+        });
+
+        break;
+      }
+
+      continue;
     }
 
     context.push({
@@ -388,6 +455,10 @@ async function readContext(
 
     total +=
       content.length;
+
+    if (!isTarget) {
+      supportingCount += 1;
+    }
   }
 
   return context;
@@ -562,7 +633,6 @@ function candidateToPath(
 function extractPlan(
   content: string,
   discoveredPaths: string[],
-  objective: string,
 ) {
   const match =
     content.match(
@@ -678,6 +748,28 @@ function filePrompt(
     content: string;
   }>,
 ) {
+  const targetContext =
+    context.find(
+      (file) =>
+        normalizePath(
+          file.path,
+        ) ===
+        normalizePath(
+          targetPath,
+        ),
+    );
+
+  const supportingContext =
+    context.filter(
+      (file) =>
+        normalizePath(
+          file.path,
+        ) !==
+        normalizePath(
+          targetPath,
+        ),
+    );
+
   return [
     "AUTONOMOUS DEVELOPMENT REQUEST",
     `Repository: ${REPOSITORY}`,
@@ -686,28 +778,48 @@ function filePrompt(
     "USER REQUIREMENT:",
     objective,
     "",
+    `CURRENT FILE TO GENERATE: ${targetPath}`,
+    "",
+    "THE CURRENT TARGET FILE IS THE PRIMARY SOURCE OF TRUTH.",
+    "Read it completely before generating the replacement.",
+    "Preserve existing functionality unless the user requirement explicitly changes it.",
+    "",
+    ...(targetContext
+      ? [
+          `TARGET FILE: ${targetContext.path}`,
+          "TARGET_CONTENT_BEGIN",
+          targetContext.content,
+          "TARGET_CONTENT_END",
+          "",
+        ]
+      : []),
+    ...(supportingContext.length
+      ? [
+          "LIMITED SUPPORTING CONTEXT:",
+          ...supportingContext.flatMap(
+            (file) => [
+              `FILE: ${file.path}`,
+              "CONTENT_BEGIN",
+              file.content,
+              "CONTENT_END",
+              "",
+            ],
+          ),
+        ]
+      : []),
     "FULL TARGET FILE SET:",
     targetPaths.join("\n"),
     "",
-    `CURRENT FILE TO GENERATE: ${targetPath}`,
-    "",
-    "REAL REPOSITORY SOURCE CONTEXT:",
-    ...context.flatMap(
-      (file) => [
-        `FILE: ${file.path}`,
-        "CONTENT_BEGIN",
-        file.content,
-        "CONTENT_END",
-        "",
-      ],
-    ),
-    "Generate the complete current file from beginning to end.",
-    "Do not shorten it.",
+    "Generate the complete file from the first line to the final line.",
+    "Do not shorten the file.",
     "Do not omit unchanged code.",
     "Do not invent imports.",
     "Do not use placeholders.",
     "Do not use TODO as a substitute for implementation.",
-    "Return exactly one AIOS_FILE_BEGIN block.",
+    "Do not use ... to represent omitted code.",
+    "Return only the complete source file.",
+    "A single closed Markdown code block is acceptable.",
+    "Do not include an explanation before or after the source.",
   ].join("\n");
 }
 
@@ -722,6 +834,28 @@ function repairPrompt(
   verification: VercelBuildVerificationResult,
   round: number,
 ) {
+  const targetContext =
+    context.find(
+      (file) =>
+        normalizePath(
+          file.path,
+        ) ===
+        normalizePath(
+          targetPath,
+        ),
+    );
+
+  const supportingContext =
+    context.filter(
+      (file) =>
+        normalizePath(
+          file.path,
+        ) !==
+        normalizePath(
+          targetPath,
+        ),
+    );
+
   return [
     "AUTONOMOUS BUILD REPAIR REQUEST",
     `Repair round: ${round}`,
@@ -732,9 +866,6 @@ function repairPrompt(
     objective,
     "",
     `CURRENT REPAIR FILE: ${targetPath}`,
-    "",
-    "TARGET FILES:",
-    targetPaths.join("\n"),
     "",
     "VERCEL STATUS:",
     verification.readyState ||
@@ -749,34 +880,192 @@ function repairPrompt(
     verification.buildLogs ||
       "No build logs returned.",
     "",
-    "CURRENT REPOSITORY CONTEXT:",
-    ...context.flatMap(
-      (file) => [
-        `FILE: ${file.path}`,
-        "CONTENT_BEGIN",
-        file.content,
-        "CONTENT_END",
-        "",
-      ],
-    ),
+    "CURRENT REPAIR FILE:",
+    ...(targetContext
+      ? [
+          "CONTENT_BEGIN",
+          targetContext.content,
+          "CONTENT_END",
+          "",
+        ]
+      : []),
+    ...(supportingContext.length
+      ? [
+          "LIMITED SUPPORTING CONTEXT:",
+          ...supportingContext.flatMap(
+            (file) => [
+              `FILE: ${file.path}`,
+              "CONTENT_BEGIN",
+              file.content,
+              "CONTENT_END",
+              "",
+            ],
+          ),
+        ]
+      : []),
+    "TARGET FILES:",
+    targetPaths.join("\n"),
+    "",
     "Repair only the current repair file.",
-    "Return one complete AIOS_FILE_BEGIN block.",
+    "Return the entire file from the first line to the final line.",
+    "Do not return a diff.",
+    "Do not return an explanation.",
+    "Do not use TODO.",
+    "Do not use placeholders.",
+    "Do not use ... to represent omitted code.",
+    "A single closed Markdown code block is acceptable.",
   ].join("\n");
 }
 
-function extractFile(
+function stripOuterFence(
+  content: string,
+) {
+  const trimmed =
+    content.trim();
+
+  const fenceMatch =
+    trimmed.match(
+      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*\r?\n([\s\S]*?)\r?\n```$/i,
+    );
+
+  if (fenceMatch) {
+    return (
+      fenceMatch[1] ?? ""
+    ).trim();
+  }
+
+  return trimmed;
+}
+
+function removeLeadingExplanation(
+  content: string,
+  expectedPath: string,
+) {
+  let value =
+    content.trim();
+
+  const pathHeading =
+    new RegExp(
+      `^(?:FILE|PATH)\\s*:\\s*${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\r?\\n`,
+      "i",
+    );
+
+  value =
+    value.replace(
+      pathHeading,
+      "",
+    );
+
+  value =
+    value.replace(
+      /^Here(?:'s| is) the complete (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
+      "",
+    );
+
+  value =
+    value.replace(
+      /^Complete (?:file|source)(?:\s+content)?[:\s]*\r?\n/i,
+      "",
+    );
+
+  return value.trim();
+}
+
+function looksLikeSourceFile(
+  content: string,
+  expectedPath: string,
+) {
+  const value =
+    content.trim();
+
+  if (
+    !value ||
+    value.length < 40
+  ) {
+    return false;
+  }
+
+  if (
+    value.length >
+    MAX_GENERATED_FILE_CHARS
+  ) {
+    return false;
+  }
+
+  if (
+    /(?:^|\n)\s*(?:\.\.\.|…)\s*(?:$|\n)/.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(?:truncated|truncation|omitted for brevity|rest of file omitted)\b/i.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /(?:\/\/|\/\*|\*)\s*(?:TODO|FIXME|TRUNCATED|OMITTED)/i.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  const lowerPath =
+    expectedPath.toLowerCase();
+
+  if (
+    lowerPath.endsWith(
+      ".tsx",
+    ) ||
+    lowerPath.endsWith(
+      ".jsx",
+    )
+  ) {
+    return (
+      /(?:import\s+|export\s+|const\s+|function\s+|interface\s+|type\s+|return\s*\(|return\s+|<)/.test(
+        value,
+      ) &&
+      /[}\)>;]\s*$/.test(
+        value,
+      )
+    );
+  }
+
+  if (
+    /\.(ts|js|mjs|cjs)$/i.test(
+      lowerPath,
+    )
+  ) {
+    return (
+      /(?:import\s+|export\s+|const\s+|function\s+|class\s+|type\s+|interface\s+)/.test(
+        value,
+      ) &&
+      /[}\);,]\s*$/.test(
+        value,
+      )
+    );
+  }
+
+  return true;
+}
+
+function extractStrictFile(
   content: string,
   expectedPath: string,
 ) {
   const match =
     content.match(
-      /AIOS_FILE_BEGIN\s*\r?\nPATH:\s*([^\r\n]+)\r?\nCONTENT_BEGIN\r?\n([\s\S]*?)\r?\nCONTENT_END\r?\nAIOS_FILE_END/,
+      /AIOS_FILE_BEGIN\s*\r?\nPATH:\s*([^\r\n]+)\r?\nCONTENT_BEGIN\r?\n([\s\S]*?)\r?\nCONTENT_END\r?\nAIOS_FILE_END/i,
     );
 
   if (!match) {
-    throw new Error(
-      "AIOS_GENERATED_FILES_EMPTY",
-    );
+    return null;
   }
 
   const path =
@@ -799,24 +1088,96 @@ function extractFile(
   const fileContent =
     match[2] ?? "";
 
-  if (!fileContent.trim()) {
-    throw new Error(
-      `AIOS_GENERATED_CONTENT_EMPTY: ${path}`,
-    );
-  }
-
   if (
-    fileContent.length >
-    MAX_GENERATED_FILE_CHARS
+    !looksLikeSourceFile(
+      fileContent,
+      expectedPath,
+    )
   ) {
     throw new Error(
-      `AIOS_GENERATED_CONTENT_TOO_LARGE: ${path}`,
+      `AIOS_GENERATED_CONTENT_INCOMPLETE: ${path}`,
     );
   }
 
   return {
     path,
-    content: fileContent,
+    content:
+      fileContent.trim(),
+  };
+}
+
+function extractFile(
+  content: string,
+  expectedPath: string,
+) {
+  const strict =
+    extractStrictFile(
+      content,
+      expectedPath,
+    );
+
+  if (strict) {
+    return strict;
+  }
+
+  let normalized =
+    stripOuterFence(
+      content,
+    );
+
+  normalized =
+    removeLeadingExplanation(
+      normalized,
+      expectedPath,
+    );
+
+  if (
+    normalized.startsWith(
+      "AIOS_FILE_BEGIN",
+    )
+  ) {
+    throw new Error(
+      "AIOS_GENERATED_FILES_INCOMPLETE",
+    );
+  }
+
+  const fenced =
+    normalized.match(
+      /^```(?:tsx|typescript|ts|jsx|javascript|js|mjs|cjs)?\s*\r?\n([\s\S]*?)\r?\n```$/i,
+    );
+
+  if (fenced) {
+    normalized =
+      (
+        fenced[1] ??
+        ""
+      ).trim();
+  }
+
+  normalized =
+    removeLeadingExplanation(
+      normalized,
+      expectedPath,
+    );
+
+  if (
+    !looksLikeSourceFile(
+      normalized,
+      expectedPath,
+    )
+  ) {
+    throw new Error(
+      "AIOS_GENERATED_FILES_EMPTY",
+    );
+  }
+
+  return {
+    path:
+      normalizePath(
+        expectedPath,
+      ),
+    content:
+      normalized,
   };
 }
 
@@ -854,8 +1215,11 @@ async function generateFile(
               context,
             ),
             "",
-            `Previous generation failed with: ${lastReason}`,
-            "Regenerate the complete file.",
+            `Previous generation was rejected with: ${lastReason}`,
+            "Return the entire complete source file again.",
+            "Do not return a marker fragment.",
+            "Do not return a partial file.",
+            "Do not explain the correction.",
           ].join("\n");
 
     const generation =
@@ -1164,6 +1528,13 @@ export async function executeAutonomousDevelopmentAgent(
     const discoveryContext =
       await readContext(
         discoveredPaths,
+        [],
+        {
+          maxFiles:
+            MAX_CONTEXT_FILES,
+          maxSupportingFiles:
+            MAX_SUPPORTING_CONTEXT_FILES,
+        },
       );
 
     updateAutonomousDevelopmentTask(
@@ -1215,7 +1586,6 @@ export async function executeAutonomousDevelopmentAgent(
           extractPlan(
             plan.content,
             discoveredPaths,
-            objective,
           );
         break;
       } catch (error) {
@@ -1258,40 +1628,80 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
-    const targetContext =
-      await readContext(
-        targetPaths,
-        targetPaths,
-      );
-
-    if (
-      targetContext.length ===
-      0
-    ) {
-      throw new Error(
-        "AIOS_TARGET_CONTEXT_EMPTY",
-      );
-    }
-
     updateAutonomousDevelopmentTask(
       taskId,
       {
         phase:
           "GENERATING",
         reason:
-          `Generating ${targetPaths.length} target file(s).`,
+          `Generating ${targetPaths.length} target file(s) with target-first context.`,
       },
     );
 
     for (
       const targetPath of targetPaths
     ) {
+      const targetContext =
+        await readContext(
+          [targetPath],
+          [targetPath],
+          {
+            maxFiles: 1,
+            maxSupportingFiles: 0,
+          },
+        );
+
+      if (
+        targetContext.length ===
+        0
+      ) {
+        throw new Error(
+          `AIOS_TARGET_CONTEXT_EMPTY: ${targetPath}`,
+        );
+      }
+
+      const supportingPaths =
+        targetPaths
+          .filter(
+            (path) =>
+              normalizePath(
+                path,
+              ) !==
+              normalizePath(
+                targetPath,
+              ),
+          )
+          .slice(
+            0,
+            MAX_SUPPORTING_CONTEXT_FILES,
+          );
+
+      const supportingContext =
+        supportingPaths.length
+          ? await readContext(
+              supportingPaths,
+              [],
+              {
+                maxFiles:
+                  MAX_SUPPORTING_CONTEXT_FILES,
+                maxSupportingFiles:
+                  MAX_SUPPORTING_CONTEXT_FILES,
+              },
+            )
+          : [];
+
+      const generationContext =
+        [
+          ...targetContext,
+          ...supportingContext,
+        ];
+
       const file =
         await generateFile(
           objective,
           targetPath,
           targetPaths,
-          targetContext,
+          generationContext,
         );
 
       updateAutonomousDevelopmentTask(
@@ -1309,7 +1719,7 @@ export async function executeAutonomousDevelopmentAgent(
           objective,
           targetPaths,
           file,
-          "feat(C167.24): stabilize autonomous planner target resolution",
+          "fix(C167.25): harden autonomous file generation",
         );
 
       changedPaths.push(
@@ -1420,11 +1830,50 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
-      const repairContext =
+      const targetContext =
         await readContext(
-          targetPaths,
           [repairTarget],
+          [repairTarget],
+          {
+            maxFiles: 1,
+            maxSupportingFiles: 0,
+          },
         );
+
+      const supportingPaths =
+        targetPaths
+          .filter(
+            (path) =>
+              normalizePath(
+                path,
+              ) !==
+              normalizePath(
+                repairTarget,
+              ),
+          )
+          .slice(
+            0,
+            MAX_SUPPORTING_CONTEXT_FILES,
+          );
+
+      const supportingContext =
+        supportingPaths.length
+          ? await readContext(
+              supportingPaths,
+              [],
+              {
+                maxFiles:
+                  MAX_SUPPORTING_CONTEXT_FILES,
+                maxSupportingFiles:
+                  MAX_SUPPORTING_CONTEXT_FILES,
+              },
+            )
+          : [];
+
+      const repairContext = [
+        ...targetContext,
+        ...supportingContext,
+      ];
 
       const generation =
         await runBrain(
@@ -1459,7 +1908,7 @@ export async function executeAutonomousDevelopmentAgent(
           `${objective}\nVercel repair round ${repairRounds}.`,
           targetPaths,
           file,
-          `fix(C167.24): autonomous build repair ${repairRounds}`,
+          `fix(C167.25): autonomous build repair ${repairRounds}`,
         );
 
       changedPaths.push(
