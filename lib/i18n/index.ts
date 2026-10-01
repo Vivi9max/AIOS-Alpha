@@ -62,28 +62,6 @@ const messages = {
     "tasks.guard": "Planner Execution Guard",
     "tasks.syncTitle": "Synchronizing execution policy",
     "tasks.syncReason": "Reading the Planner's current execution limits.",
-    "tasks.emptyHint": "Tip: describe the outcome, not just the action, so Planner can route it accurately.",
-    "tasks.concurrent": "Concurrent",
-    "tasks.queue": "Task queue",
-    "tasks.newTask": "New tasks",
-    "tasks.allowed": "Allowed",
-    "tasks.paused": "Paused",
-    "tasks.currentAction": "Current action:",
-    "tasks.titleLabel": "Task title",
-    "tasks.descriptionLabel": "Task description (optional)",
-    "tasks.create": "Create task",
-    "tasks.processing": "Processing…",
-    "tasks.list": "Task list",
-    "tasks.loading": "Loading tasks…",
-    "tasks.empty": "No tasks yet. Create your first task.",
-    "tasks.deleteConfirm": "Delete this task?",
-SEARCH_END_REPLACE
-    "tasks.concurrent": "Concurrent",
-    "tasks.queue": "Task queue",
-    "tasks.newTask": "New tasks",
-    "tasks.allowed": "Allowed",
-SEARCH_END_REPLACE
-SEARCH_END_REPLACE
     "tasks.concurrent": "Concurrent",
     "tasks.queue": "Task queue",
     "tasks.newTask": "New tasks",
@@ -234,28 +212,6 @@ SEARCH_END_REPLACE
     "tasks.guard": "Planner 执行守卫",
     "tasks.syncTitle": "正在同步执行策略",
     "tasks.syncReason": "正在读取 Planner 当前运行限制。",
-    "tasks.emptyHint": "提示：请描述最终结果，而不仅是一个动作，Planner 才能更准确地规划执行路径。",
-    "tasks.concurrent": "并行执行",
-    "tasks.queue": "任务队列",
-    "tasks.newTask": "新增任务",
-    "tasks.allowed": "允许",
-    "tasks.paused": "已暂停",
-    "tasks.currentAction": "当前行动：",
-    "tasks.titleLabel": "任务标题",
-    "tasks.descriptionLabel": "任务说明（可选）",
-    "tasks.create": "创建任务",
-    "tasks.processing": "处理中…",
-    "tasks.list": "任务列表",
-    "tasks.loading": "正在读取任务……",
-    "tasks.empty": "还没有任务，先创建第一项任务。",
-    "tasks.deleteConfirm": "确定删除这项任务吗？",
-SEARCH_END_REPLACE
-    "tasks.concurrent": "并行执行",
-    "tasks.queue": "任务队列",
-    "tasks.newTask": "新增任务",
-    "tasks.allowed": "允许",
-SEARCH_END_REPLACE
-SEARCH_END_REPLACE
     "tasks.concurrent": "并行执行",
     "tasks.queue": "任务队列",
     "tasks.newTask": "新增任务",
@@ -406,28 +362,6 @@ SEARCH_END_REPLACE
     "tasks.guard": "Planner 実行ガード",
     "tasks.syncTitle": "実行ポリシーを同期中",
     "tasks.syncReason": "Planner の現在の実行制限を確認しています。",
-    "tasks.emptyHint": "ヒント：操作だけでなく最終成果を記述すると、Planner がより正確に実行経路を計画できます。",
-    "tasks.concurrent": "同時実行",
-    "tasks.queue": "タスクキュー",
-    "tasks.newTask": "新規タスク",
-    "tasks.allowed": "許可",
-    "tasks.paused": "一時停止",
-    "tasks.currentAction": "現在のアクション：",
-    "tasks.titleLabel": "タスク名",
-    "tasks.descriptionLabel": "タスクの説明（任意）",
-    "tasks.create": "タスクを作成",
-    "tasks.processing": "処理中…",
-    "tasks.list": "タスク一覧",
-    "tasks.loading": "タスクを読み込み中…",
-    "tasks.empty": "タスクはまだありません。最初のタスクを作成しましょう。",
-    "tasks.deleteConfirm": "このタスクを削除しますか？",
-SEARCH_END_REPLACE
-    "tasks.concurrent": "同時実行",
-    "tasks.queue": "タスクキュー",
-    "tasks.newTask": "新規タスク",
-    "tasks.allowed": "許可",
-SEARCH_END_REPLACE
-SEARCH_END_REPLACE
     "tasks.concurrent": "同時実行",
     "tasks.queue": "タスクキュー",
     "tasks.newTask": "新規タスク",
@@ -555,37 +489,192 @@ type ProjectCopy = Pick<Project, "name" | "description"> & {
 
 const projectCopies: Record<Locale, Record<string, ProjectCopy>> = {
   en: {
-    "aios-alpha": { name: "AIOS Alpha", description: "AIOS Alpha Runtime, Memory, Tasks, Planner and unified workspace.", modules: [
-      { name: "AIOS Workspace", description: "Enter the main AIOS workspace" }, { name: "Planner Engine", description: "Turn goals into executable workflows" }, { name: "Runtime Control Center", description: "Inspect system, model and module status" }, { name: "Execution Trace", description: "Inspect the latest execution and capability calls" }, { name: "Memory", description: "Manage long-term memory and user profile" }, { name: "Tasks", description: "Manage execution tasks created by plans" },
-    ] },
-    "content-os": { name: "Content OS", description: "A system for content research, production, publishing and growth validation.", modules: [
-      { name: "Content Production Workspace", description: "Enter the content research and production workflow" }, { name: "Content Tasks", description: "View content production tasks" },
-    ] },
-    "brain-engine": { name: "Brain Engine", description: "The core for goal understanding, planning, capability routing and Runtime execution.", modules: [
-      { name: "Planner Engine", description: "Understand goals and generate execution workflows" }, { name: "Runtime Control Center", description: "Inspect the actual AIOS Runtime state" }, { name: "Runtime Console", description: "Submit tasks directly to Runtime" }, { name: "Execution Trace", description: "Inspect the latest capability call records" },
-    ] },
-    "film-studio": { name: "Film Studio", description: "An AI multimodal system for concepts, shots, assets and content production.", modules: [
-      { name: "Creative Production Workspace", description: "Enter the AI multimodal creative production workflow" },
-    ] },
+    "aios-alpha": {
+      name: "AIOS Alpha",
+      description: "AIOS Alpha Runtime, Memory, Tasks, Planner and unified workspace.",
+      modules: [
+        {
+          name: "AIOS Workspace",
+          description: "Enter the main AIOS workspace",
+        },
+        {
+          name: "Planner Engine",
+          description: "Turn goals into executable workflows",
+        },
+        {
+          name: "Runtime Control Center",
+          description: "Inspect system, model and module status",
+        },
+        {
+          name: "Execution Trace",
+          description: "Inspect the latest execution and capability calls",
+        },
+        {
+          name: "Memory",
+          description: "Manage long-term memory and user profile",
+        },
+        {
+          name: "Tasks",
+          description: "Manage execution tasks created by plans",
+        },
+      ],
+    },
+    "content-os": {
+      name: "Content OS",
+      description: "A system for content research, production, publishing and growth validation.",
+      modules: [
+        {
+          name: "Content Production Workspace",
+          description: "Enter the content research and production workflow",
+        },
+        {
+          name: "Content Tasks",
+          description: "View content production tasks",
+        },
+      ],
+    },
+    "brain-engine": {
+      name: "Brain Engine",
+      description: "The core for goal understanding, planning, capability routing and Runtime execution.",
+      modules: [
+        {
+          name: "Planner Engine",
+          description: "Understand goals and generate execution workflows",
+        },
+        {
+          name: "Runtime Control Center",
+          description: "Inspect the actual AIOS Runtime state",
+        },
+        {
+          name: "Runtime Console",
+          description: "Submit tasks directly to Runtime",
+        },
+        {
+          name: "Execution Trace",
+          description: "Inspect the latest capability call records",
+        },
+      ],
+    },
+    "film-studio": {
+      name: "Film Studio",
+      description: "An AI multimodal system for concepts, shots, assets and content production.",
+      modules: [
+        {
+          name: "Creative Production Workspace",
+          description: "Enter the AI multimodal creative production workflow",
+        },
+      ],
+    },
   },
   "zh-CN": {},
   ja: {
-    "aios-alpha": { name: "AIOS Alpha", description: "AIOS Alpha の Runtime、Memory、Tasks、Planner、統合ワークスペース。", modules: [
-      { name: "AIOS ワークスペース", description: "AIOS のメインワークスペースを開く" }, { name: "Planner Engine", description: "目標を実行可能なワークフローに変換" }, { name: "Runtime 管理センター", description: "システム、モデル、モジュールの状態を確認" }, { name: "実行トレース", description: "最新の実行と機能呼び出しを確認" }, { name: "メモリー", description: "長期メモリーとユーザー情報を管理" }, { name: "タスク", description: "計画から生成された実行タスクを管理" },
-    ] },
-    "content-os": { name: "Content OS", description: "コンテンツの調査、制作、公開、成長検証を行うシステム。", modules: [
-      { name: "コンテンツ制作ワークスペース", description: "コンテンツ調査と制作ワークフローを開く" }, { name: "コンテンツタスク", description: "コンテンツ制作タスクを表示" },
-    ] },
-    "brain-engine": { name: "Brain Engine", description: "目標理解、計画、機能ルーティング、Runtime 実行の中核。", modules: [
-      { name: "Planner Engine", description: "目標を理解して実行ワークフローを生成" }, { name: "Runtime 管理センター", description: "AIOS Runtime の実際の状態を確認" }, { name: "Runtime Console", description: "Runtime にタスクを直接送信" }, { name: "実行トレース", description: "最新の機能呼び出し履歴を確認" },
-    ] },
-    "film-studio": { name: "Film Studio", description: "AI マルチモーダルの企画、ショット、素材、コンテンツ制作システム。", modules: [
-      { name: "クリエイティブ制作ワークスペース", description: "AI マルチモーダル制作ワークフローを開く" },
-    ] },
+    "aios-alpha": {
+      name: "AIOS Alpha",
+      description: "AIOS Alpha の Runtime、Memory、Tasks、Planner、統合ワークスペース。",
+      modules: [
+        {
+          name: "AIOS ワークスペース",
+          description: "AIOS のメインワークスペースを開く",
+        },
+        {
+          name: "Planner Engine",
+          description: "目標を実行可能なワークフローに変換",
+        },
+        {
+          name: "Runtime 管理センター",
+          description: "システム、モデル、モジュールの状態を確認",
+        },
+        {
+          name: "実行トレース",
+          description: "最新の実行と機能呼び出しを確認",
+        },
+        {
+          name: "メモリー",
+          description: "長期メモリーとユーザー情報を管理",
+        },
+        {
+          name: "タスク",
+          description: "計画から生成された実行タスクを管理",
+        },
+      ],
+    },
+    "content-os": {
+      name: "Content OS",
+      description: "コンテンツの調査、制作、公開、成長検証を行うシステム。",
+      modules: [
+        {
+          name: "コンテンツ制作ワークスペース",
+          description: "コンテンツ調査と制作ワークフローを開く",
+        },
+        {
+          name: "コンテンツタスク",
+          description: "コンテンツ制作タスクを表示",
+        },
+      ],
+    },
+    "brain-engine": {
+      name: "Brain Engine",
+      description: "目標理解、計画、機能ルーティング、Runtime 実行の中核。",
+      modules: [
+        {
+          name: "Planner Engine",
+          description: "目標を理解して実行ワークフローを生成",
+        },
+        {
+          name: "Runtime 管理センター",
+          description: "AIOS Runtime の実際の状態を確認",
+        },
+        {
+          name: "Runtime Console",
+          description: "Runtime にタスクを直接送信",
+        },
+        {
+          name: "実行トレース",
+          description: "最新の機能呼び出し履歴を確認",
+        },
+      ],
+    },
+    "film-studio": {
+      name: "Film Studio",
+      description: "AI マルチモーダルの企画、ショット、素材、コンテンツ制作システム。",
+      modules: [
+        {
+          name: "クリエイティブ制作ワークスペース",
+          description: "AI マルチモーダル制作ワークフローを開く",
+        },
+      ],
+    },
   },
 };
 
-export function projectCopy(locale: Locale, project: Project): ProjectCopy {
-  if (locale === "zh-CN") return { name: project.name, description: project.description, modules: project.modules.map(({ name, description }) => ({ name, description })) };
-  return projectCopies[locale][project.id] ?? projectCopies.en[project.id] ?? { name: project.name, description: project.description, modules: project.modules.map(({ name, description }) => ({ name, description })) };
+export function projectCopy(
+  locale: Locale,
+  project: Project,
+): ProjectCopy {
+  if (locale === "zh-CN") {
+    return {
+      name: project.name,
+      description: project.description,
+      modules: project.modules.map(
+        ({ name, description }) => ({
+          name,
+          description,
+        }),
+      ),
+    };
+  }
+
+  return (
+    projectCopies[locale][project.id] ??
+    projectCopies.en[project.id] ?? {
+      name: project.name,
+      description: project.description,
+      modules: project.modules.map(
+        ({ name, description }) => ({
+          name,
+          description,
+        }),
+      ),
+    }
+  );
 }
