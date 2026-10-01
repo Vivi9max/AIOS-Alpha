@@ -7,19 +7,21 @@ type SafetyGateInput = {
   patchedContents: Record<string, string>;
 };
 
-type SafetyGateResult = {
+type SafetyGateChecks = {
+  paths: boolean;
+  sourceIntegrity: boolean;
+  patchChange: boolean;
+  i18nContracts: boolean;
+  dangerousMarkers: boolean;
+};
+
+export type AutonomousDevelopmentSafetyGateResult = {
   passed: boolean;
   code:
     | "AUTONOMOUS_SAFETY_GATE_PASS"
     | "AUTONOMOUS_SAFETY_GATE_BLOCKED";
   reason: string;
-  checks: {
-    paths: boolean;
-    sourceIntegrity: boolean;
-    patchChange: boolean;
-    i18nContracts: boolean;
-    dangerousMarkers: boolean;
-  };
+  checks: SafetyGateChecks;
   errors: string[];
 };
 
@@ -46,14 +48,14 @@ const FORBIDDEN_PATHS = [
   "vercel.json",
 ];
 
-function normalizePath(value: string) {
+function normalizePath(value: string): string {
   return value
     .trim()
     .replace(/^\/+/, "")
     .replace(/\\+/g, "/");
 }
 
-function isSafePath(path: string) {
+function isSafePath(path: string): boolean {
   const normalized = normalizePath(path);
 
   if (!normalized) {
@@ -79,7 +81,7 @@ function isSafePath(path: string) {
   );
 }
 
-function hasDangerousMarkers(content: string) {
+function hasDangerousMarkers(content: string): boolean {
   const markers = [
     "SEARCH_END_REPLACE",
     "SEARCH_END_REPLACE_BEGIN",
@@ -97,7 +99,7 @@ function hasDangerousMarkers(content: string) {
   );
 }
 
-function hasBalancedSource(content: string) {
+function hasBalancedSource(content: string): boolean {
   const stack: string[] = [];
 
   let quote: "'" | "\"" | "`" | null = null;
@@ -105,7 +107,11 @@ function hasBalancedSource(content: string) {
   let lineComment = false;
   let blockComment = false;
 
-  for (let index = 0; index < content.length; index += 1) {
+  for (
+    let index = 0;
+    index < content.length;
+    index += 1
+  ) {
     const current = content[index];
     const next = content[index + 1];
 
@@ -118,7 +124,10 @@ function hasBalancedSource(content: string) {
     }
 
     if (blockComment) {
-      if (current === "*" && next === "/") {
+      if (
+        current === "*" &&
+        next === "/"
+      ) {
         blockComment = false;
         index += 1;
       }
@@ -144,13 +153,19 @@ function hasBalancedSource(content: string) {
       continue;
     }
 
-    if (current === "/" && next === "/") {
+    if (
+      current === "/" &&
+      next === "/"
+    ) {
       lineComment = true;
       index += 1;
       continue;
     }
 
-    if (current === "/" && next === "*") {
+    if (
+      current === "/" &&
+      next === "*"
+    ) {
       blockComment = true;
       index += 1;
       continue;
@@ -187,7 +202,8 @@ function hasBalancedSource(content: string) {
             : "[";
 
       if (
-        stack[stack.length - 1] !== expected
+        stack[stack.length - 1] !==
+        expected
       ) {
         return false;
       }
@@ -205,7 +221,7 @@ function hasBalancedSource(content: string) {
 
 function extractTranslationKeys(
   content: string,
-) {
+): string[] {
   const keys = new Set<string>();
 
   const patterns = [
@@ -218,7 +234,9 @@ function extractTranslationKeys(
   for (const pattern of patterns) {
     let match: RegExpExecArray | null = null;
 
-    while ((match = pattern.exec(content)) !== null) {
+    while (
+      (match = pattern.exec(content)) !== null
+    ) {
       const key = match[1]?.trim();
 
       if (key) {
@@ -232,7 +250,7 @@ function extractTranslationKeys(
 
 function extractDeclaredTranslationKeys(
   content: string,
-) {
+): Set<string> {
   const keys = new Set<string>();
 
   const pattern =
@@ -240,7 +258,9 @@ function extractDeclaredTranslationKeys(
 
   let match: RegExpExecArray | null = null;
 
-  while ((match = pattern.exec(content)) !== null) {
+  while (
+    (match = pattern.exec(content)) !== null
+  ) {
     const key = match[1]?.trim();
 
     if (
@@ -256,8 +276,12 @@ function extractDeclaredTranslationKeys(
 
 function validateI18nContracts(
   patchedContents: Record<string, string>,
-) {
-  const i18nPath = "lib/i18n/index.ts";
+): {
+  passed: boolean;
+  errors: string[];
+} {
+  const i18nPath =
+    "lib/i18n/index.ts";
 
   const i18nContent =
     patchedContents[i18nPath];
@@ -265,7 +289,7 @@ function validateI18nContracts(
   if (!i18nContent) {
     return {
       passed: true,
-      errors: [] as string[],
+      errors: [],
     };
   }
 
@@ -276,15 +300,19 @@ function validateI18nContracts(
 
   const errors: string[] = [];
 
-  for (const [path, content] of Object.entries(
-    patchedContents,
-  )) {
+  for (
+    const [path, content] of Object.entries(
+      patchedContents,
+    )
+  ) {
     if (path === i18nPath) {
       continue;
     }
 
     const referenced =
-      extractTranslationKeys(content);
+      extractTranslationKeys(
+        content,
+      );
 
     for (const key of referenced) {
       if (!declared.has(key)) {
@@ -305,7 +333,10 @@ function validatePaths(
   targetPaths: string[],
   originalContents: Record<string, string>,
   patchedContents: Record<string, string>,
-) {
+): {
+  passed: boolean;
+  errors: string[];
+} {
   const errors: string[] = [];
 
   if (
@@ -317,10 +348,14 @@ function validatePaths(
     );
   }
 
-  const uniquePaths = new Set<string>();
+  const uniquePaths =
+    new Set<string>();
 
-  for (const rawPath of targetPaths) {
-    const path = normalizePath(rawPath);
+  for (
+    const rawPath of targetPaths
+  ) {
+    const path =
+      normalizePath(rawPath);
 
     if (!isSafePath(path)) {
       errors.push(
@@ -328,7 +363,9 @@ function validatePaths(
       );
     }
 
-    if (uniquePaths.has(path)) {
+    if (
+      uniquePaths.has(path)
+    ) {
       errors.push(
         `AIOS_SAFETY_DUPLICATE_PATH: ${path}`,
       );
@@ -336,13 +373,17 @@ function validatePaths(
 
     uniquePaths.add(path);
 
-    if (!(path in originalContents)) {
+    if (
+      !(path in originalContents)
+    ) {
       errors.push(
         `AIOS_SAFETY_ORIGINAL_MISSING: ${path}`,
       );
     }
 
-    if (!(path in patchedContents)) {
+    if (
+      !(path in patchedContents)
+    ) {
       errors.push(
         `AIOS_SAFETY_PATCHED_MISSING: ${path}`,
       );
@@ -359,13 +400,23 @@ function validateSources(
   targetPaths: string[],
   originalContents: Record<string, string>,
   patchedContents: Record<string, string>,
-) {
+): {
+  passed: boolean;
+  errors: string[];
+} {
   const errors: string[] = [];
 
-  for (const rawPath of targetPaths) {
-    const path = normalizePath(rawPath);
-    const original = originalContents[path];
-    const patched = patchedContents[path];
+  for (
+    const rawPath of targetPaths
+  ) {
+    const path =
+      normalizePath(rawPath);
+
+    const original =
+      originalContents[path];
+
+    const patched =
+      patchedContents[path];
 
     if (
       typeof patched !== "string" ||
@@ -377,7 +428,10 @@ function validateSources(
       continue;
     }
 
-    if (patched.length > MAX_FILE_SIZE) {
+    if (
+      patched.length >
+      MAX_FILE_SIZE
+    ) {
       errors.push(
         `AIOS_SAFETY_SOURCE_TOO_LARGE: ${path}`,
       );
@@ -416,7 +470,7 @@ function validateSources(
 
 function validateObjective(
   objective: string,
-) {
+): string | null {
   if (!objective.trim()) {
     return "AIOS_SAFETY_OBJECTIVE_EMPTY";
   }
@@ -432,7 +486,7 @@ function validateObjective(
 
 export function runAutonomousDevelopmentSafetyGate(
   input: SafetyGateInput,
-): SafetyGateResult {
+): AutonomousDevelopmentSafetyGateResult {
   const errors: string[] = [];
 
   const objectiveError =
@@ -475,8 +529,9 @@ export function runAutonomousDevelopmentSafetyGate(
     ...i18nResult.errors,
   );
 
-  const checks = {
-    paths: pathResult.passed,
+  const checks: SafetyGateChecks = {
+    paths:
+      pathResult.passed,
     sourceIntegrity:
       sourceResult.passed,
     patchChange:
@@ -501,7 +556,7 @@ export function runAutonomousDevelopmentSafetyGate(
       ? "AUTONOMOUS_SAFETY_GATE_PASS"
       : "AUTONOMOUS_SAFETY_GATE_BLOCKED",
     reason: passed
-      ? "Autonomous development safety gate passed.",
+      ? "Autonomous development safety gate passed."
       : errors[0] ||
         "Autonomous development safety gate blocked the change.",
     checks,
