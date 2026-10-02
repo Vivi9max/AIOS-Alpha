@@ -33,8 +33,11 @@ export type AutonomousDevelopmentFinalizationResult = {
   terminal: boolean;
   receiptValid: boolean;
   commitSha?: string;
+  resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
+  commitShaConsistent: boolean;
+  missingEvidence: string[];
   reason?: string;
 };
 
@@ -49,9 +52,17 @@ type PersistentTask = NonNullable<
 function getReceiptState(
   task: PersistentTask,
 ) {
+  const taskCommitSha =
+    task.commitSha?.trim() ||
+    undefined;
+
+  const resultCommitSha =
+    task.result?.commitSha?.trim() ||
+    undefined;
+
   const commitSha =
-    task.result?.commitSha ??
-    task.commitSha;
+    taskCommitSha ??
+    resultCommitSha;
 
   const readbackVerified =
     task.result?.readbackVerified ===
@@ -62,8 +73,10 @@ function getReceiptState(
     true;
 
   return buildAutonomousDevelopmentReceipt({
-    status: task.status,
+    status:
+      task.status,
     commitSha,
+    resultCommitSha,
     readbackVerified,
     verificationPassed,
   });
@@ -94,22 +107,40 @@ function buildResult(
     ok:
       overrides?.ok ??
       receipt.successful,
+
     taskId:
       task.id,
+
     status:
       task.status,
+
     phase:
       task.phase,
+
     terminal:
       receipt.terminal,
+
     receiptValid:
       receipt.valid,
+
     commitSha:
       receipt.commitSha,
+
+    resultCommitSha:
+      receipt.resultCommitSha,
+
     readbackVerified:
       receipt.readbackVerified,
+
     verificationPassed:
       receipt.verificationPassed,
+
+    commitShaConsistent:
+      receipt.commitShaConsistent,
+
+    missingEvidence:
+      receipt.missingEvidence,
+
     reason,
   };
 }
@@ -135,6 +166,8 @@ function buildResult(
  *
  * completed +
  * valid 40-character Git commit SHA +
+ * result commit SHA evidence +
+ * matching commit evidence +
  * GitHub readback PASS +
  * final verification PASS
  *
@@ -156,6 +189,10 @@ export async function finalizeAutonomousDevelopmentTask(
       receiptValid: false,
       readbackVerified: false,
       verificationPassed: false,
+      commitShaConsistent: false,
+      missingEvidence: [
+        "taskId",
+      ],
       reason:
         "AUTONOMOUS_DEVELOPMENT_TASK_ID_REQUIRED",
     };
@@ -177,6 +214,10 @@ export async function finalizeAutonomousDevelopmentTask(
       receiptValid: false,
       readbackVerified: false,
       verificationPassed: false,
+      commitShaConsistent: false,
+      missingEvidence: [
+        "task",
+      ],
       reason:
         "AUTONOMOUS_DEVELOPMENT_TASK_NOT_FOUND",
     };
@@ -204,6 +245,10 @@ export async function finalizeAutonomousDevelopmentTask(
       receiptValid: false,
       readbackVerified: false,
       verificationPassed: false,
+      commitShaConsistent: false,
+      missingEvidence: [
+        "finalTask",
+      ],
       reason:
         "AUTONOMOUS_DEVELOPMENT_FINAL_STATE_UNAVAILABLE",
     };
@@ -215,7 +260,11 @@ export async function finalizeAutonomousDevelopmentTask(
    * An active task must remain non-terminal even when
    * its latest state has been durably persisted.
    */
-  if (!isTerminalTaskStatus(finalizedTask.status)) {
+  if (
+    !isTerminalTaskStatus(
+      finalizedTask.status,
+    )
+  ) {
     return buildResult(
       finalizedTask,
       {
