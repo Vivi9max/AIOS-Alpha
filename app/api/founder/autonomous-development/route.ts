@@ -24,6 +24,10 @@ import {
   getAutonomousDevelopmentHeartbeatInterval,
 } from "@/lib/github/autonomous-development-heartbeat";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
+import {
+  finalizeAutonomousDevelopmentFailure,
+  finalizeAutonomousDevelopmentTask,
+} from "@/lib/github/autonomous-development-finalization";
 
 export const dynamic =
   "force-dynamic";
@@ -569,6 +573,19 @@ export async function POST(
             claimedTask.id,
             objective,
           );
+
+          /*
+           * Explicit terminal persistence boundary.
+           *
+           * The Agent remains responsible for the actual
+           * development result. This finalization step makes
+           * the terminal receipt durable after the Agent has
+           * returned and after the final heartbeat has been
+           * attempted.
+           */
+          await finalizeAutonomousDevelopmentTask(
+            claimedTask.id,
+          );
         } catch (
           error
         ) {
@@ -589,6 +606,17 @@ export async function POST(
              * The persistent control plane remains
              * responsible for the authoritative terminal
              * state whenever possible.
+             */
+          }
+
+          try {
+            await finalizeAutonomousDevelopmentFailure(
+              claimedTask.id,
+            );
+          } catch {
+            /*
+             * Finalization failure must not hide the
+             * original autonomous execution failure.
              */
           }
         }
