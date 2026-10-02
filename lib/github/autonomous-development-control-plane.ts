@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  storage,
+} from "@/lib/server-storage";
+
 export type AutonomousDevelopmentTaskStatus =
   | "todo"
   | "running"
@@ -94,6 +98,9 @@ const MAX_PHASE_HISTORY =
 const ACTIVE_TASK_STALE_MS =
   7 * 60 * 1000;
 
+const TASK_STORAGE_KEY =
+  "aios:autonomous-development:tasks";
+
 const TERMINAL_STATUSES =
   new Set<AutonomousDevelopmentTaskStatus>([
     "completed",
@@ -174,19 +181,23 @@ const PHASE_TRANSITIONS: Record<
   BLOCKED: [],
 };
 
-function now() {
+function now(): string {
   return new Date().toISOString();
 }
 
-function createTaskId() {
-  return `ad-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+function createTaskId(): string {
+  return [
+    "ad",
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2, 8),
+  ].join("-");
 }
 
 function normalizeObjective(
   objective: string,
-) {
+): string {
   return objective
     .trim()
     .replace(/\s+/g, " ");
@@ -194,7 +205,7 @@ function normalizeObjective(
 
 function normalizeTargetPaths(
   targetPaths: string[],
-) {
+): string[] {
   return Array.from(
     new Set(
       targetPaths
@@ -210,7 +221,7 @@ function normalizeTargetPaths(
 
 function normalizeChangedPaths(
   changedPaths: string[],
-) {
+): string[] {
   return Array.from(
     new Set(
       changedPaths
@@ -224,9 +235,307 @@ function normalizeChangedPaths(
   );
 }
 
+function normalizePhaseHistory(
+  value: unknown,
+): AutonomousDevelopmentPhaseEvent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (
+        event,
+      ): event is AutonomousDevelopmentPhaseEvent =>
+        Boolean(event) &&
+        typeof event === "object" &&
+        typeof (
+          event as AutonomousDevelopmentPhaseEvent
+        ).phase === "string" &&
+        typeof (
+          event as AutonomousDevelopmentPhaseEvent
+        ).at === "string",
+    )
+    .slice(-MAX_PHASE_HISTORY);
+}
+
+function normalizeTask(
+  value: unknown,
+): AutonomousDevelopmentTask | null {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return null;
+  }
+
+  const candidate =
+    value as Partial<AutonomousDevelopmentTask>;
+
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.objective !== "string" ||
+    typeof candidate.repository !== "string" ||
+    typeof candidate.branch !== "string" ||
+    typeof candidate.status !== "string" ||
+    typeof candidate.phase !== "string" ||
+    typeof candidate.createdAt !== "string" ||
+    typeof candidate.updatedAt !== "string"
+  ) {
+    return null;
+  }
+
+  if (
+    ![
+      "todo",
+      "running",
+      "completed",
+      "failed",
+      "blocked",
+    ].includes(candidate.status)
+  ) {
+    return null;
+  }
+
+  if (
+    ![
+      "QUEUED",
+      "DISCOVERING",
+      "PLANNING",
+      "READING",
+      "GENERATING",
+      "WRITING",
+      "READBACK",
+      "BUILD",
+      "REPAIR",
+      "COMPLETED",
+      "BLOCKED",
+    ].includes(candidate.phase)
+  ) {
+    return null;
+  }
+
+  const task: AutonomousDevelopmentTask = {
+    id: candidate.id,
+    objective:
+      normalizeObjective(
+        candidate.objective,
+      ),
+    repository:
+      candidate.repository,
+    branch:
+      candidate.branch,
+    targetPaths:
+      normalizeTargetPaths(
+        Array.isArray(
+          candidate.targetPaths,
+        )
+          ? candidate.targetPaths
+          : [],
+      ),
+    status:
+      candidate.status as AutonomousDevelopmentTaskStatus,
+    phase:
+      candidate.phase as AutonomousDevelopmentTaskPhase,
+    reason:
+      typeof candidate.reason === "string"
+        ? candidate.reason
+        : undefined,
+    commitSha:
+      typeof candidate.commitSha === "string"
+        ? candidate.commitSha
+        : undefined,
+    changedPaths:
+      Array.isArray(
+        candidate.changedPaths,
+      )
+        ? normalizeChangedPaths(
+            candidate.changedPaths,
+          )
+        : undefined,
+    result:
+      candidate.result &&
+      typeof candidate.result === "object"
+        ? {
+            commitSha:
+              typeof candidate.result.commitSha ===
+              "string"
+                ? candidate.result.commitSha
+                : undefined,
+            readbackVerified:
+              candidate.result
+                .readbackVerified === true,
+            verificationPassed:
+              candidate.result
+                .verificationPassed === true,
+            reason:
+              typeof candidate.result.reason ===
+              "string"
+                ? candidate.result.reason
+                : undefined,
+          }
+        : undefined,
+    createdAt:
+      candidate.createdAt,
+    updatedAt:
+      candidate.updatedAt,
+    startedAt:
+      typeof candidate.startedAt === "string"
+        ? candidate.startedAt
+        : undefined,
+    completedAt:
+      typeof candidate.completedAt === "string"
+        ? candidate.completedAt
+        : undefined,
+    lastHeartbeatAt:
+      typeof candidate.lastHeartbeatAt ===
+      "string"
+        ? candidate.lastHeartbeatAt
+        : undefined,
+    phaseHistory:
+      normalizePhaseHistory(
+        candidate.phaseHistory,
+      ),
+  };
+
+  try {
+    assertSafeTask(task);
+  } catch {
+    return null;
+  }
+
+  return task;
+}
+
+function serializeTasks(): AutonomousDevelopmentTask[] {
+  return Array.from(
+    tasks.values(),
+  ).map((task) => ({
+    ...task,
+    targetPaths: [
+      ...task.targetPaths,
+    ],
+    changedPaths: task.changedPaths
+      ? [...task.changedPaths]
+      : undefined,
+    phaseHistory:
+      task.phaseHistory.map(
+        (event) => ({
+          ...event,
+        }),
+      ),
+    result: task.result
+      ? {
+          ...task.result,
+        }
+      : undefined,
+  }));
+}
+
+function persistTasks(): void {
+  const snapshot =
+    serializeTasks();
+
+  void storage
+    .set(
+      TASK_STORAGE_KEY,
+      snapshot,
+    )
+    .catch(() => {
+      /*
+       * The in-memory control plane remains
+       * authoritative for the active execution
+       * process. Persistent storage failure must
+       * never crash the autonomous execution loop.
+       */
+    });
+}
+
+async function persistTasksAwaited(): Promise<void> {
+  await storage.set(
+    TASK_STORAGE_KEY,
+    serializeTasks(),
+  );
+}
+
+async function loadPersistentTasks(): Promise<
+  AutonomousDevelopmentTask[]
+> {
+  const stored =
+    await storage.get<
+      unknown
+    >(
+      TASK_STORAGE_KEY,
+    );
+
+  if (!Array.isArray(stored)) {
+    return [];
+  }
+
+  return stored
+    .map(normalizeTask)
+    .filter(
+      (
+        task,
+      ): task is AutonomousDevelopmentTask =>
+        task !== null,
+    );
+}
+
+async function hydratePersistentTasks(): Promise<
+  AutonomousDevelopmentTask[]
+> {
+  const stored =
+    await loadPersistentTasks();
+
+  for (
+    const storedTask of stored
+  ) {
+    const current =
+      tasks.get(
+        storedTask.id,
+      );
+
+    if (!current) {
+      tasks.set(
+        storedTask.id,
+        storedTask,
+      );
+      continue;
+    }
+
+    const currentTime =
+      new Date(
+        current.updatedAt,
+      ).getTime();
+
+    const storedTime =
+      new Date(
+        storedTask.updatedAt,
+      ).getTime();
+
+    if (
+      !Number.isFinite(
+        currentTime,
+      ) ||
+      storedTime >
+        currentTime
+    ) {
+      tasks.set(
+        storedTask.id,
+        storedTask,
+      );
+    }
+  }
+
+  return Array.from(
+    tasks.values(),
+  );
+}
+
 function assertSafeRepository(
   task: AutonomousDevelopmentTask,
-) {
+): void {
   if (
     task.repository !==
     ALLOWED_REPOSITORY
@@ -248,7 +557,7 @@ function assertSafeRepository(
 
 function assertSafeObjective(
   objective: string,
-) {
+): string {
   const normalized =
     normalizeObjective(
       objective,
@@ -274,7 +583,7 @@ function assertSafeObjective(
 
 function assertSafePath(
   targetPath: string,
-) {
+): void {
   if (
     !targetPath ||
     targetPath.startsWith("/") ||
@@ -290,7 +599,7 @@ function assertSafePath(
 
 function assertSafeTask(
   task: AutonomousDevelopmentTask,
-) {
+): void {
   assertSafeRepository(task);
 
   task.objective =
@@ -308,9 +617,12 @@ function assertSafeTask(
   }
 
   for (
-    const targetPath of task.targetPaths
+    const targetPath of
+    task.targetPaths
   ) {
-    assertSafePath(targetPath);
+    assertSafePath(
+      targetPath,
+    );
   }
 
   if (
@@ -327,7 +639,9 @@ function assertSafeTask(
     const changedPath of
     task.changedPaths ?? []
   ) {
-    assertSafePath(changedPath);
+    assertSafePath(
+      changedPath,
+    );
   }
 }
 
@@ -336,14 +650,17 @@ function assertPhaseTransition(
     AutonomousDevelopmentTaskPhase,
   next:
     AutonomousDevelopmentTaskPhase,
-) {
-  if (current === next) {
+): void {
+  if (
+    current === next
+  ) {
     return;
   }
 
   const allowed =
-    PHASE_TRANSITIONS[current] ??
-    [];
+    PHASE_TRANSITIONS[
+      current
+    ] ?? [];
 
   if (
     !allowed.includes(next)
@@ -359,7 +676,7 @@ function appendPhaseEvent(
   phase:
     AutonomousDevelopmentTaskPhase,
   reason?: string,
-) {
+): void {
   const timestamp =
     now();
 
@@ -394,7 +711,7 @@ function appendPhaseEvent(
 
 function touchTask(
   task: AutonomousDevelopmentTask,
-) {
+): void {
   const timestamp =
     now();
 
@@ -408,7 +725,7 @@ function touchTask(
 function isTaskHeartbeatStale(
   task: AutonomousDevelopmentTask,
   referenceTime = Date.now(),
-) {
+): boolean {
   if (
     task.status !==
     "running"
@@ -444,7 +761,7 @@ function isTaskHeartbeatStale(
 
 function assertTaskIsActive(
   task: AutonomousDevelopmentTask,
-) {
+): void {
   if (
     TERMINAL_STATUSES.has(
       task.status,
@@ -465,7 +782,9 @@ function assertTaskIsActive(
   }
 
   if (
-    isTaskHeartbeatStale(task)
+    isTaskHeartbeatStale(
+      task,
+    )
   ) {
     throw new Error(
       "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE: task heartbeat has expired.",
@@ -489,7 +808,9 @@ function createReceipt(
     branch:
       task.branch,
     targetPaths:
-      [...task.targetPaths],
+      [
+        ...task.targetPaths,
+      ],
     phases:
       task.phaseHistory.map(
         (event) =>
@@ -517,7 +838,7 @@ function createReceipt(
 
 function recoverStaleTask(
   task: AutonomousDevelopmentTask,
-) {
+): AutonomousDevelopmentTask {
   if (
     !isTaskHeartbeatStale(
       task,
@@ -579,6 +900,8 @@ function recoverStaleTask(
     task,
   );
 
+  persistTasks();
+
   return task;
 }
 
@@ -587,7 +910,7 @@ export function createAutonomousDevelopmentTask(
     objective: string;
     targetPaths?: string[];
   },
-) {
+): AutonomousDevelopmentTask {
   const timestamp =
     now();
 
@@ -604,15 +927,18 @@ export function createAutonomousDevelopmentTask(
 
   const task: AutonomousDevelopmentTask =
     {
-      id: createTaskId(),
+      id:
+        createTaskId(),
       objective,
       repository:
         ALLOWED_REPOSITORY,
       branch:
         ALLOWED_BRANCH,
       targetPaths,
-      status: "todo",
-      phase: "QUEUED",
+      status:
+        "todo",
+      phase:
+        "QUEUED",
       createdAt:
         timestamp,
       updatedAt:
@@ -621,27 +947,35 @@ export function createAutonomousDevelopmentTask(
         timestamp,
       phaseHistory: [
         {
-          phase: "QUEUED",
-          at: timestamp,
+          phase:
+            "QUEUED",
+          at:
+            timestamp,
         },
       ],
     };
 
-  assertSafeTask(task);
+  assertSafeTask(
+    task,
+  );
 
   tasks.set(
     task.id,
     task,
   );
 
+  persistTasks();
+
   return task;
 }
 
 export function getAutonomousDevelopmentTask(
   taskId: string,
-) {
+): AutonomousDevelopmentTask | null {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     return null;
@@ -649,8 +983,10 @@ export function getAutonomousDevelopmentTask(
 
   if (
     task.status ===
-    "running" &&
-    isTaskHeartbeatStale(task)
+      "running" &&
+    isTaskHeartbeatStale(
+      task,
+    )
   ) {
     return recoverStaleTask(
       task,
@@ -660,7 +996,36 @@ export function getAutonomousDevelopmentTask(
   return task;
 }
 
-export function listAutonomousDevelopmentTasks() {
+export async function getPersistentAutonomousDevelopmentTask(
+  taskId: string,
+): Promise<AutonomousDevelopmentTask | null> {
+  await hydratePersistentTasks();
+
+  const task =
+    tasks.get(
+      taskId,
+    );
+
+  if (!task) {
+    return null;
+  }
+
+  if (
+    task.status ===
+      "running" &&
+    isTaskHeartbeatStale(
+      task,
+    )
+  ) {
+    return recoverStaleTask(
+      task,
+    );
+  }
+
+  return task;
+}
+
+export function listAutonomousDevelopmentTasks(): AutonomousDevelopmentTask[] {
   const currentTime =
     Date.now();
 
@@ -697,15 +1062,25 @@ export function listAutonomousDevelopmentTasks() {
   );
 }
 
+export async function listPersistentAutonomousDevelopmentTasks(): Promise<
+  AutonomousDevelopmentTask[]
+> {
+  await hydratePersistentTasks();
+
+  return listAutonomousDevelopmentTasks();
+}
+
 export function findActiveAutonomousDevelopmentTask(
   objective: string,
-) {
+): AutonomousDevelopmentTask | null {
   const normalizedObjective =
     normalizeObjective(
       objective,
     );
 
-  if (!normalizedObjective) {
+  if (
+    !normalizedObjective
+  ) {
     return null;
   }
 
@@ -722,16 +1097,29 @@ export function findActiveAutonomousDevelopmentTask(
       (task) =>
         normalizeObjective(
           task.objective,
-        ) === normalizedObjective,
+        ) ===
+        normalizedObjective,
     ) ?? null
+  );
+}
+
+export async function findPersistentActiveAutonomousDevelopmentTask(
+  objective: string,
+): Promise<AutonomousDevelopmentTask | null> {
+  await hydratePersistentTasks();
+
+  return findActiveAutonomousDevelopmentTask(
+    objective,
   );
 }
 
 export function claimAutonomousDevelopmentTask(
   taskId: string,
-) {
+): AutonomousDevelopmentTask {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     throw new Error(
@@ -751,7 +1139,9 @@ export function claimAutonomousDevelopmentTask(
   const timestamp =
     now();
 
-  assertSafeTask(task);
+  assertSafeTask(
+    task,
+  );
 
   assertPhaseTransition(
     task.phase,
@@ -792,6 +1182,8 @@ export function claimAutonomousDevelopmentTask(
     task,
   );
 
+  persistTasks();
+
   return task;
 }
 
@@ -804,9 +1196,11 @@ export function updateAutonomousDevelopmentTask(
     commitSha?: string;
     changedPaths?: string[];
   },
-) {
+): AutonomousDevelopmentTask {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     throw new Error(
@@ -814,7 +1208,9 @@ export function updateAutonomousDevelopmentTask(
     );
   }
 
-  assertTaskIsActive(task);
+  assertTaskIsActive(
+    task,
+  );
 
   if (
     update.phase
@@ -851,7 +1247,9 @@ export function updateAutonomousDevelopmentTask(
         update.targetPaths,
       );
 
-    assertSafeTask(task);
+    assertSafeTask(
+      task,
+    );
   }
 
   if (
@@ -883,15 +1281,21 @@ export function updateAutonomousDevelopmentTask(
         update.changedPaths,
       );
 
-    assertSafeTask(task);
+    assertSafeTask(
+      task,
+    );
   }
 
-  touchTask(task);
+  touchTask(
+    task,
+  );
 
   tasks.set(
     taskId,
     task,
   );
+
+  persistTasks();
 
   return task;
 }
@@ -901,7 +1305,9 @@ export function heartbeatAutonomousDevelopmentTask(
   reason?: string,
 ) {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     throw new Error(
@@ -940,9 +1346,13 @@ export function heartbeatAutonomousDevelopmentTask(
   }
 
   if (
-    isTaskHeartbeatStale(task)
+    isTaskHeartbeatStale(
+      task,
+    )
   ) {
-    recoverStaleTask(task);
+    recoverStaleTask(
+      task,
+    );
 
     throw new Error(
       "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE: task was automatically blocked.",
@@ -957,12 +1367,16 @@ export function heartbeatAutonomousDevelopmentTask(
       reason;
   }
 
-  touchTask(task);
+  touchTask(
+    task,
+  );
 
   tasks.set(
     taskId,
     task,
   );
+
+  persistTasks();
 
   return {
     taskId:
@@ -990,7 +1404,9 @@ export function completeAutonomousDevelopmentTask(
   },
 ): AutonomousDevelopmentReceipt {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     throw new Error(
@@ -1003,7 +1419,9 @@ export function completeAutonomousDevelopmentTask(
       task.status,
     )
   ) {
-    return createReceipt(task);
+    return createReceipt(
+      task,
+    );
   }
 
   if (
@@ -1083,7 +1501,11 @@ export function completeAutonomousDevelopmentTask(
     task,
   );
 
-  return createReceipt(task);
+  persistTasks();
+
+  return createReceipt(
+    task,
+  );
 }
 
 export function blockAutonomousDevelopmentTask(
@@ -1091,7 +1513,9 @@ export function blockAutonomousDevelopmentTask(
   reason: string,
 ) {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     throw new Error(
@@ -1114,7 +1538,9 @@ export function blockAutonomousDevelopmentTask(
         task.completedAt ||
         now(),
       receipt:
-        createReceipt(task),
+        createReceipt(
+          task,
+        ),
     };
   }
 
@@ -1133,7 +1559,9 @@ export function blockAutonomousDevelopmentTask(
         task.completedAt ||
         now(),
       receipt:
-        createReceipt(task),
+        createReceipt(
+          task,
+        ),
     };
   }
 
@@ -1189,6 +1617,8 @@ export function blockAutonomousDevelopmentTask(
     task,
   );
 
+  persistTasks();
+
   return {
     taskId,
     status:
@@ -1197,15 +1627,19 @@ export function blockAutonomousDevelopmentTask(
     completedAt:
       timestamp,
     receipt:
-      createReceipt(task),
+      createReceipt(
+        task,
+      ),
   };
 }
 
 export function isAutonomousDevelopmentTaskTerminal(
   taskId: string,
-) {
+): boolean {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     return false;
@@ -1220,7 +1654,9 @@ export function getAutonomousDevelopmentTaskHeartbeat(
   taskId: string,
 ) {
   const task =
-    tasks.get(taskId);
+    tasks.get(
+      taskId,
+    );
 
   if (!task) {
     return null;
@@ -1229,9 +1665,13 @@ export function getAutonomousDevelopmentTaskHeartbeat(
   if (
     task.status ===
       "running" &&
-    isTaskHeartbeatStale(task)
+    isTaskHeartbeatStale(
+      task,
+    )
   ) {
-    recoverStaleTask(task);
+    recoverStaleTask(
+      task,
+    );
   }
 
   return {
@@ -1248,4 +1688,36 @@ export function getAutonomousDevelopmentTaskHeartbeat(
     reason:
       task.reason,
   };
+}
+
+export async function getPersistentAutonomousDevelopmentTaskHeartbeat(
+  taskId: string,
+) {
+  const task =
+    await getPersistentAutonomousDevelopmentTask(
+      taskId,
+    );
+
+  if (!task) {
+    return null;
+  }
+
+  return {
+    taskId:
+      task.id,
+    status:
+      task.status,
+    phase:
+      task.phase,
+    updatedAt:
+      task.updatedAt,
+    lastHeartbeatAt:
+      task.lastHeartbeatAt,
+    reason:
+      task.reason,
+  };
+}
+
+export async function persistAutonomousDevelopmentTasks(): Promise<void> {
+  await persistTasksAwaited();
 }
