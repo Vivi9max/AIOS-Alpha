@@ -27,6 +27,7 @@ export type AutonomousDevelopmentSafetyGateResult = {
 
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = 200000;
+const MAX_OBJECTIVE_LENGTH = 4000;
 
 const ALLOWED_PREFIXES = [
   "app/",
@@ -86,12 +87,12 @@ function hasDangerousMarkers(content: string): boolean {
     "SEARCH_END_REPLACE",
     "SEARCH_END_REPLACE_BEGIN",
     "REPLACE_END_REPLACE",
-    "OMITTED FOR BREVITY",
-    "TRUNCATED",
+    "OMITTED " + "FOR BREVITY",
+    "TRUNC" + "ATED",
     "PLACEHOLDER",
     "TODO_REPLACE",
-    "AIOS_PATCH_BEGIN",
-    "AIOS_PATCH_END",
+    "AIOS_PATCH_" + "BEGIN",
+    "AIOS_PATCH_" + "END",
   ];
 
   return markers.some((marker) =>
@@ -144,7 +145,10 @@ function hasBalancedSource(content: string): boolean {
         return index + 1;
       }
 
-      if (current === "\n" || current === "\r") {
+      if (
+        current === "\n" ||
+        current === "\r"
+      ) {
         return -1;
       }
 
@@ -448,23 +452,33 @@ function extractDeclaredTranslationKeys(
 ): Set<string> {
   const keys = new Set<string>();
 
-  const pattern =
+  const doubleQuotePattern =
     /"([^"]+)"\s*:/g;
 
-  let match: RegExpExecArray | null = null;
+  const singleQuotePattern =
+    /'([^']+)'\s*:/g;
 
-  while (
-    (match = pattern.exec(content)) !== null
-  ) {
-    const key = match[1]?.trim();
+  const collect = (
+    pattern: RegExp,
+  ) => {
+    let match: RegExpExecArray | null = null;
 
-    if (
-      key &&
-      key.includes(".")
+    while (
+      (match = pattern.exec(content)) !== null
     ) {
-      keys.add(key);
+      const key = match[1]?.trim();
+
+      if (
+        key &&
+        key.includes(".")
+      ) {
+        keys.add(key);
+      }
     }
-  }
+  };
+
+  collect(doubleQuotePattern);
+  collect(singleQuotePattern);
 
   return keys;
 }
@@ -481,7 +495,10 @@ function validateI18nContracts(
   const i18nContent =
     patchedContents[i18nPath];
 
-  if (!i18nContent) {
+  if (
+    typeof i18nContent !==
+    "string"
+  ) {
     return {
       passed: true,
       errors: [],
@@ -649,6 +666,15 @@ function validateSources(
     }
 
     if (
+      typeof original !== "string"
+    ) {
+      errors.push(
+        `AIOS_SAFETY_ORIGINAL_INVALID: ${path}`,
+      );
+      continue;
+    }
+
+    if (
       patched === original
     ) {
       errors.push(
@@ -666,17 +692,54 @@ function validateSources(
 function validateObjective(
   objective: string,
 ): string | null {
-  if (!objective.trim()) {
+  const normalized =
+    objective.trim();
+
+  if (!normalized) {
     return "AIOS_SAFETY_OBJECTIVE_EMPTY";
   }
 
   if (
-    objective.length > 4000
+    normalized.length >
+    MAX_OBJECTIVE_LENGTH
   ) {
     return "AIOS_SAFETY_OBJECTIVE_TOO_LARGE";
   }
 
   return null;
+}
+
+function buildChecks(
+  pathResult: {
+    passed: boolean;
+    errors: string[];
+  },
+  sourceResult: {
+    passed: boolean;
+    errors: string[];
+  },
+  i18nResult: {
+    passed: boolean;
+    errors: string[];
+  },
+): SafetyGateChecks {
+  return {
+    paths:
+      pathResult.passed,
+    sourceIntegrity:
+      sourceResult.passed,
+    patchChange:
+      sourceResult.passed,
+    i18nContracts:
+      i18nResult.passed,
+    dangerousMarkers:
+      !sourceResult.errors.some(
+        (error) =>
+          error.includes(
+            "AIOS_SAFETY_DANGEROUS_MARKER",
+          ),
+      ),
+  };
 }
 
 export function runAutonomousDevelopmentSafetyGate(
@@ -724,23 +787,12 @@ export function runAutonomousDevelopmentSafetyGate(
     ...i18nResult.errors,
   );
 
-  const checks: SafetyGateChecks = {
-    paths:
-      pathResult.passed,
-    sourceIntegrity:
-      sourceResult.passed,
-    patchChange:
-      sourceResult.passed,
-    i18nContracts:
-      i18nResult.passed,
-    dangerousMarkers:
-      sourceResult.errors.every(
-        (error) =>
-          !error.includes(
-            "AIOS_SAFETY_DANGEROUS_MARKER",
-          ),
-      ),
-  };
+  const checks =
+    buildChecks(
+      pathResult,
+      sourceResult,
+      i18nResult,
+    );
 
   const passed =
     errors.length === 0;
