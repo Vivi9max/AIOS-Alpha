@@ -12,12 +12,11 @@ import {
 } from "@/lib/founder/auth";
 import {
   blockAutonomousDevelopmentTask,
-  claimAutonomousDevelopmentTask,
+  claimPersistentAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
   findPersistentActiveAutonomousDevelopmentTask,
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
-  persistAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
 
@@ -274,13 +273,6 @@ export async function GET(
       "objective",
     );
 
-  /*
-   * taskId is authoritative.
-   *
-   * The Founder UI binds polling to the exact task
-   * returned by POST. Persistent storage is queried
-   * before falling back to the local process state.
-   */
   if (
     taskId?.trim()
   ) {
@@ -392,15 +384,6 @@ export async function POST(
       );
     }
 
-    /*
-     * Persistent idempotency boundary.
-     *
-     * This lookup is intentionally performed against
-     * the persistent task store so two separate Vercel
-     * instances do not independently start the same
-     * Founder objective when a previous task is still
-     * todo/running.
-     */
     const existingTask =
       await findPersistentActiveAutonomousDevelopmentTask(
         objective,
@@ -430,34 +413,21 @@ export async function POST(
       );
 
     /*
-     * Close the creation-to-execution durability gap.
+     * Persistent execution lease.
      *
-     * Previously the task remained "todo" until the
-     * background Agent called claimAutonomousDevelopmentTask().
-     * If the Vercel invocation ended between createTask()
-     * and after(), the persistent record could remain queued
-     * without ever entering the stale-heartbeat recovery path.
-     *
-     * The route now claims the task before returning the HTTP
-     * response. The task therefore becomes a durable "running"
-     * execution lease before after() starts the Agent.
+     * The claim operation hydrates persistent state,
+     * verifies that the task is still todo, changes it
+     * to running, and awaits persistence before the
+     * request continues.
      */
     const claimedTask =
-      claimAutonomousDevelopmentTask(
+      await claimPersistentAutonomousDevelopmentTask(
         task.id,
       );
 
     /*
-     * Make the running state durable before the request
-     * returns. This is awaited deliberately because this
-     * persistence boundary protects the autonomous execution
-     * lease across Vercel instances.
-     */
-    await persistAutonomousDevelopmentTasks();
-
-    /*
-     * The HTTP request returns immediately after the durable
-     * execution lease has been persisted.
+     * The durable running state now exists before the
+     * background Agent starts.
      *
      * AIOS remains the execution authority:
      *
@@ -468,9 +438,6 @@ export async function POST(
      * -> GitHub write
      * -> readback
      * -> Vercel verification
-     *
-     * The Agent receives the exact taskId and continues the
-     * already-claimed running task without creating another task.
      */
     after(
       async () => {
@@ -499,8 +466,8 @@ export async function POST(
           } catch {
             /*
              * Preserve the original execution failure.
-             * The Agent/control-plane remains responsible
-             * for the authoritative terminal state whenever
+             * The control plane remains responsible for
+             * the authoritative terminal state whenever
              * possible.
              */
           }
