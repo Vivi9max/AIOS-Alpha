@@ -8,7 +8,7 @@ import {
 import {
   blockAutonomousDevelopmentTask,
   claimAutonomousDevelopmentTask,
-  completeAutonomousDevelopmentTask,
+  completeAutonomousDevelopmentTaskPersistently,
   createAutonomousDevelopmentTask,
   getAutonomousDevelopmentTask,
   updateAutonomousDevelopmentTask,
@@ -2281,7 +2281,7 @@ export async function executeAutonomousDevelopmentAgent(
     if (
       verificationPassed
     ) {
-      completeAutonomousDevelopmentTask(
+      await completeAutonomousDevelopmentTaskPersistently(
         taskId,
         {
           commitSha:
