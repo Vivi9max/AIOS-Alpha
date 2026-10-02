@@ -13,6 +13,9 @@ import {
   isFounderConfigured,
   isFounderRequest,
 } from "@/lib/founder/auth";
+import {
+  buildAutonomousDevelopmentReceipt,
+} from "@/lib/github/autonomous-development-receipt";
 
 export const dynamic =
   "force-dynamic";
@@ -116,6 +119,42 @@ function normalizeReason(
     );
 }
 
+function buildReceipt(
+  task: {
+    status: string;
+    commitSha?: string;
+    result?: {
+      commitSha?: string;
+      readbackVerified: boolean;
+      verificationPassed: boolean;
+      reason?: string;
+    };
+  },
+) {
+  return buildAutonomousDevelopmentReceipt(
+    {
+      status:
+        task.status as
+          | "todo"
+          | "running"
+          | "completed"
+          | "failed"
+          | "blocked",
+      commitSha:
+        task.result?.commitSha ??
+        task.commitSha,
+      readbackVerified:
+        task.result
+          ?.readbackVerified ??
+        false,
+      verificationPassed:
+        task.result
+          ?.verificationPassed ??
+        false,
+    },
+  );
+}
+
 function buildTaskResponse(
   task: Awaited<
     ReturnType<
@@ -126,6 +165,11 @@ function buildTaskResponse(
   if (!task) {
     return null;
   }
+
+  const receipt =
+    buildReceipt(
+      task,
+    );
 
   return {
     id: task.id,
@@ -161,7 +205,74 @@ function buildTaskResponse(
       task.phaseHistory ?? [],
     result:
       task.result,
+    receipt: {
+      terminal:
+        receipt.terminal,
+      successful:
+        receipt.successful,
+      valid:
+        receipt.valid,
+      receiptValid:
+        receipt.valid,
+      commitSha:
+        receipt.commitSha,
+      readbackVerified:
+        receipt.readbackVerified,
+      verificationPassed:
+        receipt.verificationPassed,
+      missingEvidence:
+        receipt.missingEvidence,
+    },
+    receiptValid:
+      receipt.valid,
+    successfulReceipt:
+      receipt.successful,
+    missingEvidence:
+      receipt.missingEvidence,
   };
+}
+
+function buildTerminalCode(
+  task: {
+    status: string;
+    commitSha?: string;
+    result?: {
+      commitSha?: string;
+      readbackVerified: boolean;
+      verificationPassed: boolean;
+      reason?: string;
+    };
+  },
+) {
+  const receipt =
+    buildReceipt(
+      task,
+    );
+
+  if (
+    task.status ===
+      "completed"
+  ) {
+    return receipt.successful
+      ? "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_COMPLETED"
+      : "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_COMPLETED_RECEIPT_INVALID";
+  }
+
+  if (
+    task.status ===
+      "failed"
+  ) {
+    return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_FAILED";
+  }
+
+  if (
+    task.status ===
+      "blocked"
+  ) {
+    return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_BLOCKED";
+  }
+
+  return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_TERMINAL";
 }
 
 export async function POST(
@@ -217,6 +328,11 @@ export async function POST(
       );
     }
 
+    const existingReceipt =
+      buildReceipt(
+        existingTask,
+      );
+
     if (
       existingTask.status ===
         "completed" ||
@@ -228,21 +344,53 @@ export async function POST(
       return json(
         {
           ok: true,
-          success: true,
+          success:
+            existingReceipt.successful,
           code:
-            "AUTONOMOUS_DEVELOPMENT_TERMINAL",
+            buildTerminalCode(
+              existingTask,
+            ),
           taskId:
             existingTask.id,
           status:
             existingTask.status,
           phase:
             existingTask.phase,
+          receipt: {
+            terminal:
+              existingReceipt.terminal,
+            successful:
+              existingReceipt.successful,
+            valid:
+              existingReceipt.valid,
+            receiptValid:
+              existingReceipt.valid,
+            commitSha:
+              existingReceipt.commitSha,
+            readbackVerified:
+              existingReceipt.readbackVerified,
+            verificationPassed:
+              existingReceipt.verificationPassed,
+            missingEvidence:
+              existingReceipt.missingEvidence,
+          },
+          receiptValid:
+            existingReceipt.valid,
+          successfulReceipt:
+            existingReceipt.successful,
+          missingEvidence:
+            existingReceipt.missingEvidence,
           task:
             buildTaskResponse(
               existingTask,
             ),
           message:
-            "Autonomous development task is already terminal. No heartbeat mutation was required.",
+            existingTask.status ===
+              "completed"
+              ? existingReceipt.successful
+                ? "Autonomous development task is completed and its terminal receipt is valid."
+                : "Autonomous development task reports completed status, but its terminal receipt evidence is incomplete or invalid."
+              : "Autonomous development task is already terminal. No heartbeat mutation was required.",
         },
       );
     }
@@ -289,12 +437,37 @@ export async function POST(
         existingTask.id,
       );
 
+    if (!refreshedTask) {
+      return json(
+        {
+          ok: false,
+          code:
+            "AUTONOMOUS_DEVELOPMENT_TASK_DISAPPEARED",
+          taskId:
+            existingTask.id,
+          error:
+            "Autonomous development task could not be reloaded after heartbeat persistence.",
+        },
+        500,
+      );
+    }
+
+    const refreshedReceipt =
+      buildReceipt(
+        refreshedTask,
+      );
+
     return json(
       {
         ok: true,
-        success: true,
+        success:
+          refreshedReceipt.successful,
         code:
-          "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_ACCEPTED",
+          refreshedReceipt.terminal
+            ? buildTerminalCode(
+                refreshedTask,
+              )
+            : "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_ACCEPTED",
         taskId:
           heartbeat.taskId,
         status:
@@ -307,19 +480,48 @@ export async function POST(
           heartbeat.updatedAt,
         reason:
           heartbeat.reason,
+        receipt: {
+          terminal:
+            refreshedReceipt.terminal,
+          successful:
+            refreshedReceipt.successful,
+          valid:
+            refreshedReceipt.valid,
+          receiptValid:
+            refreshedReceipt.valid,
+          commitSha:
+            refreshedReceipt.commitSha,
+          readbackVerified:
+            refreshedReceipt.readbackVerified,
+          verificationPassed:
+            refreshedReceipt.verificationPassed,
+          missingEvidence:
+            refreshedReceipt.missingEvidence,
+        },
+        receiptValid:
+          refreshedReceipt.valid,
+        successfulReceipt:
+          refreshedReceipt.successful,
+        missingEvidence:
+          refreshedReceipt.missingEvidence,
         task:
           buildTaskResponse(
             refreshedTask,
           ),
         message:
-          "Autonomous development heartbeat persisted.",
+          refreshedReceipt.terminal
+            ? refreshedReceipt.successful
+              ? "Autonomous development reached a valid successful terminal receipt."
+              : "Autonomous development reached a terminal state without a valid successful receipt."
+            : "Autonomous development heartbeat persisted.",
       },
     );
   } catch (
     error
   ) {
     const message =
-      error instanceof Error
+      error instanceof
+      Error
         ? error.message
         : "Autonomous development heartbeat failed.";
 
@@ -405,12 +607,23 @@ export async function GET(
         )
       : null;
 
+  const receipt =
+    buildReceipt(
+      task,
+    );
+
   return json(
     {
       ok: true,
-      success: true,
+      success:
+        receipt.successful,
       code:
-        "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STATUS",
+        task.status ===
+          "completed"
+          ? receipt.successful
+            ? "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_COMPLETED"
+            : "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_COMPLETED_RECEIPT_INVALID"
+          : "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STATUS",
       taskId:
         task.id,
       status:
@@ -420,6 +633,30 @@ export async function GET(
       lastHeartbeatAt:
         task.lastHeartbeatAt,
       heartbeatAgeMs,
+      receipt: {
+        terminal:
+          receipt.terminal,
+        successful:
+          receipt.successful,
+        valid:
+          receipt.valid,
+        receiptValid:
+          receipt.valid,
+        commitSha:
+          receipt.commitSha,
+        readbackVerified:
+          receipt.readbackVerified,
+        verificationPassed:
+          receipt.verificationPassed,
+        missingEvidence:
+          receipt.missingEvidence,
+      },
+      receiptValid:
+        receipt.valid,
+      successfulReceipt:
+        receipt.successful,
+      missingEvidence:
+        receipt.missingEvidence,
       task:
         buildTaskResponse(
           task,
