@@ -164,6 +164,30 @@ export async function runAutonomousLoopRegression(): Promise<AutonomousLoopRegre
     },
   });
 
+  const executionRateContract =
+    core.execution.successRate ===
+      null ||
+    (
+      core.execution.successRate >=
+        0 &&
+      core.execution.successRate <=
+        100
+    );
+
+  pushCheck(checks, {
+    id: "execution-success-rate-contract",
+    status: executionRateContract
+      ? "pass"
+      : "fail",
+    message: executionRateContract
+      ? "Execution success rate is either unset or within the valid 0-100 range."
+      : "Execution success rate is outside the valid 0-100 range.",
+    details: {
+      successRate:
+        core.execution.successRate,
+    },
+  });
+
   const gateReadyContract =
     autonomy.ready
       ? autonomy.level ===
