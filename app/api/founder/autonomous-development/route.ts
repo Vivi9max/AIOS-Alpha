@@ -183,8 +183,9 @@ function buildReceipt(
             | "failed"
             | "blocked",
         commitSha:
-          result?.commitSha ??
           task.commitSha,
+        resultCommitSha:
+          result?.commitSha,
         readbackVerified:
           result?.readbackVerified ??
           false,
@@ -205,10 +206,14 @@ function buildReceipt(
       receipt.valid,
     commitSha:
       receipt.commitSha,
+    resultCommitSha:
+      receipt.resultCommitSha,
     readbackVerified:
       receipt.readbackVerified,
     verificationPassed:
       receipt.verificationPassed,
+    commitShaConsistent:
+      receipt.commitShaConsistent,
     missingEvidence:
       receipt.missingEvidence,
   };
