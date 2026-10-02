@@ -60,6 +60,30 @@ type TaskResult = {
   reason?: string;
 };
 
+type TaskLike = {
+  id: string;
+  objective: string;
+  status: string;
+  phase: string;
+  repository: string;
+  branch: string;
+  targetPaths?: string[];
+  changedPaths?: string[];
+  reason?: string;
+  commitSha?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  lastHeartbeatAt?: string;
+  phaseHistory?: Array<{
+    phase: string;
+    at: string;
+    reason?: string;
+  }>;
+  result?: TaskResult;
+};
+
 function json(
   body: Record<
     string,
@@ -191,29 +215,7 @@ function buildReceipt(
 }
 
 function buildTaskResponse(
-  task: {
-    id: string;
-    objective: string;
-    status: string;
-    phase: string;
-    repository: string;
-    branch: string;
-    targetPaths?: string[];
-    changedPaths?: string[];
-    reason?: string;
-    commitSha?: string;
-    createdAt: string;
-    updatedAt: string;
-    startedAt?: string;
-    completedAt?: string;
-    lastHeartbeatAt?: string;
-    phaseHistory?: Array<{
-      phase: string;
-      at: string;
-      reason?: string;
-    }>;
-    result?: TaskResult;
-  },
+  task: TaskLike,
   options?: {
     duplicate?: boolean;
     message?: string;
@@ -228,10 +230,28 @@ function buildTaskResponse(
       task,
     );
 
-  return {
-    ok: true,
-    success: true,
-    code: duplicate
+  const message =
+    options?.message ??
+    (duplicate
+      ? "An autonomous development task with the same objective is already active. No duplicate execution was started."
+      : task.status ===
+          "completed"
+        ? receipt.successful
+          ? "Autonomous development completed successfully and its terminal receipt is valid."
+          : "Autonomous development reported completed status, but its terminal receipt evidence is incomplete or invalid."
+        : task.status ===
+            "blocked"
+          ? "Autonomous development is blocked and requires inspection."
+          : task.status ===
+              "failed"
+            ? "Autonomous development failed."
+            : "Autonomous development started. AIOS is executing the development loop.");
+
+  const success =
+    receipt.successful;
+
+  const code =
+    duplicate
       ? "AUTONOMOUS_DEVELOPMENT_ALREADY_RUNNING"
       : task.status ===
           "completed"
@@ -244,7 +264,12 @@ function buildTaskResponse(
           : task.status ===
               "failed"
             ? "AUTONOMOUS_DEVELOPMENT_FAILED"
-            : "AUTONOMOUS_DEVELOPMENT_RUNNING",
+            : "AUTONOMOUS_DEVELOPMENT_RUNNING";
+
+  return {
+    ok: true,
+    success,
+    code,
     repository:
       task.repository,
     branch:
@@ -291,22 +316,7 @@ function buildTaskResponse(
       receipt.missingEvidence,
     duplicate,
     task,
-    message:
-      options?.message ??
-      (duplicate
-        ? "An autonomous development task with the same objective is already active. No duplicate execution was started."
-        : task.status ===
-            "completed"
-          ? receipt.successful
-            ? "Autonomous development completed successfully and its terminal receipt is valid."
-            : "Autonomous development reported completed status, but its terminal receipt evidence is incomplete or invalid."
-          : task.status ===
-              "blocked"
-            ? "Autonomous development is blocked and requires inspection."
-            : task.status ===
-                "failed"
-              ? "Autonomous development failed."
-              : "Autonomous development started. AIOS is executing the development loop."),
+    message,
   };
 }
 
@@ -334,13 +344,23 @@ function buildTaskListResponse(
       ).length,
     tasks:
       tasks.map(
-        (task) => ({
-          ...task,
-          receipt:
+        (task) => {
+          const receipt =
             buildReceipt(
               task,
-            ),
-        }),
+            );
+
+          return {
+            ...task,
+            receipt,
+            receiptValid:
+              receipt.receiptValid,
+            successfulReceipt:
+              receipt.successful,
+            missingEvidence:
+              receipt.missingEvidence,
+          };
+        },
       ),
   };
 }
