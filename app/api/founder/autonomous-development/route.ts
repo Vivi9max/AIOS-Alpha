@@ -28,6 +28,9 @@ import {
   finalizeAutonomousDevelopmentFailure,
   finalizeAutonomousDevelopmentTask,
 } from "@/lib/github/autonomous-development-finalization";
+import {
+  buildAutonomousDevelopmentReceipt,
+} from "@/lib/github/autonomous-development-receipt";
 
 export const dynamic =
   "force-dynamic";
@@ -49,6 +52,13 @@ const ACTIVE_TASK_STATUSES =
     "todo",
     "running",
   ]);
+
+type TaskResult = {
+  commitSha?: string;
+  readbackVerified: boolean;
+  verificationPassed: boolean;
+  reason?: string;
+};
 
 function json(
   body: Record<
@@ -128,6 +138,58 @@ function normalizeObjective(
     );
 }
 
+function buildReceipt(
+  task: {
+    status: string;
+    result?: TaskResult;
+    commitSha?: string;
+  },
+) {
+  const result =
+    task.result;
+
+  const receipt =
+    buildAutonomousDevelopmentReceipt(
+      {
+        status:
+          task.status as
+            | "todo"
+            | "running"
+            | "completed"
+            | "failed"
+            | "blocked",
+        commitSha:
+          result?.commitSha ??
+          task.commitSha,
+        readbackVerified:
+          result?.readbackVerified ??
+          false,
+        verificationPassed:
+          result?.verificationPassed ??
+          false,
+      },
+    );
+
+  return {
+    terminal:
+      receipt.terminal,
+    successful:
+      receipt.successful,
+    valid:
+      receipt.valid,
+    receiptValid:
+      receipt.valid,
+    commitSha:
+      receipt.commitSha,
+    readbackVerified:
+      receipt.readbackVerified,
+    verificationPassed:
+      receipt.verificationPassed,
+    missingEvidence:
+      receipt.missingEvidence,
+  };
+}
+
 function buildTaskResponse(
   task: {
     id: string;
@@ -150,12 +212,7 @@ function buildTaskResponse(
       at: string;
       reason?: string;
     }>;
-    result?: {
-      commitSha?: string;
-      readbackVerified: boolean;
-      verificationPassed: boolean;
-      reason?: string;
-    };
+    result?: TaskResult;
   },
   options?: {
     duplicate?: boolean;
@@ -166,6 +223,11 @@ function buildTaskResponse(
     options?.duplicate ===
     true;
 
+  const receipt =
+    buildReceipt(
+      task,
+    );
+
   return {
     ok: true,
     success: true,
@@ -173,7 +235,9 @@ function buildTaskResponse(
       ? "AUTONOMOUS_DEVELOPMENT_ALREADY_RUNNING"
       : task.status ===
           "completed"
-        ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+        ? receipt.successful
+          ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+          : "AUTONOMOUS_DEVELOPMENT_COMPLETED_RECEIPT_INVALID"
         : task.status ===
             "blocked"
           ? "AUTONOMOUS_DEVELOPMENT_BLOCKED"
@@ -218,6 +282,13 @@ function buildTaskResponse(
       [],
     result:
       task.result,
+    receipt,
+    receiptValid:
+      receipt.receiptValid,
+    successfulReceipt:
+      receipt.successful,
+    missingEvidence:
+      receipt.missingEvidence,
     duplicate,
     task,
     message:
@@ -226,7 +297,9 @@ function buildTaskResponse(
         ? "An autonomous development task with the same objective is already active. No duplicate execution was started."
         : task.status ===
             "completed"
-          ? "Autonomous development completed successfully."
+          ? receipt.successful
+            ? "Autonomous development completed successfully and its terminal receipt is valid."
+            : "Autonomous development reported completed status, but its terminal receipt evidence is incomplete or invalid."
           : task.status ===
               "blocked"
             ? "Autonomous development is blocked and requires inspection."
@@ -259,7 +332,16 @@ function buildTaskListResponse(
             task.status,
           ),
       ).length,
-    tasks,
+    tasks:
+      tasks.map(
+        (task) => ({
+          ...task,
+          receipt:
+            buildReceipt(
+              task,
+            ),
+        }),
+      ),
   };
 }
 
