@@ -181,6 +181,9 @@ const PHASE_TRANSITIONS: Record<
   BLOCKED: [],
 };
 
+let persistenceQueue: Promise<void> =
+  Promise.resolve();
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -315,88 +318,109 @@ function normalizeTask(
     return null;
   }
 
-  const task: AutonomousDevelopmentTask = {
-    id: candidate.id,
-    objective:
-      normalizeObjective(
-        candidate.objective,
-      ),
-    repository:
-      candidate.repository,
-    branch:
-      candidate.branch,
-    targetPaths:
-      normalizeTargetPaths(
-        Array.isArray(
-          candidate.targetPaths,
-        )
-          ? candidate.targetPaths
-          : [],
-      ),
-    status:
-      candidate.status as AutonomousDevelopmentTaskStatus,
-    phase:
-      candidate.phase as AutonomousDevelopmentTaskPhase,
-    reason:
-      typeof candidate.reason === "string"
-        ? candidate.reason
-        : undefined,
-    commitSha:
-      typeof candidate.commitSha === "string"
-        ? candidate.commitSha
-        : undefined,
-    changedPaths:
-      Array.isArray(
-        candidate.changedPaths,
-      )
-        ? normalizeChangedPaths(
-            candidate.changedPaths,
+  const task: AutonomousDevelopmentTask =
+    {
+      id:
+        candidate.id,
+
+      objective:
+        normalizeObjective(
+          candidate.objective,
+        ),
+
+      repository:
+        candidate.repository,
+
+      branch:
+        candidate.branch,
+
+      targetPaths:
+        normalizeTargetPaths(
+          Array.isArray(
+            candidate.targetPaths,
           )
-        : undefined,
-    result:
-      candidate.result &&
-      typeof candidate.result === "object"
-        ? {
-            commitSha:
-              typeof candidate.result.commitSha ===
-              "string"
-                ? candidate.result.commitSha
-                : undefined,
-            readbackVerified:
-              candidate.result
-                .readbackVerified === true,
-            verificationPassed:
-              candidate.result
-                .verificationPassed === true,
-            reason:
-              typeof candidate.result.reason ===
-              "string"
-                ? candidate.result.reason
-                : undefined,
-          }
-        : undefined,
-    createdAt:
-      candidate.createdAt,
-    updatedAt:
-      candidate.updatedAt,
-    startedAt:
-      typeof candidate.startedAt === "string"
-        ? candidate.startedAt
-        : undefined,
-    completedAt:
-      typeof candidate.completedAt === "string"
-        ? candidate.completedAt
-        : undefined,
-    lastHeartbeatAt:
-      typeof candidate.lastHeartbeatAt ===
-      "string"
-        ? candidate.lastHeartbeatAt
-        : undefined,
-    phaseHistory:
-      normalizePhaseHistory(
-        candidate.phaseHistory,
-      ),
-  };
+            ? candidate.targetPaths
+            : [],
+        ),
+
+      status:
+        candidate.status as AutonomousDevelopmentTaskStatus,
+
+      phase:
+        candidate.phase as AutonomousDevelopmentTaskPhase,
+
+      reason:
+        typeof candidate.reason === "string"
+          ? candidate.reason
+          : undefined,
+
+      commitSha:
+        typeof candidate.commitSha === "string"
+          ? candidate.commitSha
+          : undefined,
+
+      changedPaths:
+        Array.isArray(
+          candidate.changedPaths,
+        )
+          ? normalizeChangedPaths(
+              candidate.changedPaths,
+            )
+          : undefined,
+
+      result:
+        candidate.result &&
+        typeof candidate.result === "object"
+          ? {
+              commitSha:
+                typeof candidate.result.commitSha ===
+                "string"
+                  ? candidate.result.commitSha
+                  : undefined,
+
+              readbackVerified:
+                candidate.result
+                  .readbackVerified === true,
+
+              verificationPassed:
+                candidate.result
+                  .verificationPassed === true,
+
+              reason:
+                typeof candidate.result.reason ===
+                "string"
+                  ? candidate.result.reason
+                  : undefined,
+            }
+          : undefined,
+
+      createdAt:
+        candidate.createdAt,
+
+      updatedAt:
+        candidate.updatedAt,
+
+      startedAt:
+        typeof candidate.startedAt === "string"
+          ? candidate.startedAt
+          : undefined,
+
+      completedAt:
+        typeof candidate.completedAt === "string"
+          ? candidate.completedAt
+          : undefined,
+
+      lastHeartbeatAt:
+        typeof candidate.lastHeartbeatAt ===
+        "string"
+          ? candidate.lastHeartbeatAt
+          : undefined,
+
+      phaseHistory:
+        normalizePhaseHistory(
+          candidate.phaseHistory,
+        ),
+    };
 
   try {
     assertSafeTask(task);
@@ -407,79 +431,224 @@ function normalizeTask(
   return task;
 }
 
-function serializeTasks(): AutonomousDevelopmentTask[] {
-  return Array.from(
-    tasks.values(),
-  ).map((task) => ({
+function cloneTask(
+  task: AutonomousDevelopmentTask,
+): AutonomousDevelopmentTask {
+  return {
     ...task,
+
     targetPaths: [
       ...task.targetPaths,
     ],
-    changedPaths: task.changedPaths
-      ? [...task.changedPaths]
-      : undefined,
+
+    changedPaths:
+      task.changedPaths
+        ? [
+            ...task.changedPaths,
+          ]
+        : undefined,
+
     phaseHistory:
       task.phaseHistory.map(
         (event) => ({
           ...event,
         }),
       ),
-    result: task.result
-      ? {
-          ...task.result,
-        }
-      : undefined,
-  }));
+
+    result:
+      task.result
+        ? {
+            ...task.result,
+          }
+        : undefined,
+  };
+}
+
+function serializeTasks(): AutonomousDevelopmentTask[] {
+  return Array.from(
+    tasks.values(),
+  ).map(cloneTask);
+}
+
+function compareTaskVersion(
+  left: AutonomousDevelopmentTask,
+  right: AutonomousDevelopmentTask,
+): number {
+  const leftUpdated =
+    new Date(
+      left.updatedAt,
+    ).getTime();
+
+  const rightUpdated =
+    new Date(
+      right.updatedAt,
+    ).getTime();
+
+  if (
+    Number.isFinite(
+      leftUpdated,
+    ) &&
+    Number.isFinite(
+      rightUpdated,
+    ) &&
+    leftUpdated !== rightUpdated
+  ) {
+    return (
+      leftUpdated -
+      rightUpdated
+    );
+  }
+
+  const leftCreated =
+    new Date(
+      left.createdAt,
+    ).getTime();
+
+  const rightCreated =
+    new Date(
+      right.createdAt,
+    ).getTime();
+
+  if (
+    Number.isFinite(
+      leftCreated,
+    ) &&
+    Number.isFinite(
+      rightCreated,
+    ) &&
+    leftCreated !== rightCreated
+  ) {
+    return (
+      leftCreated -
+      rightCreated
+    );
+  }
+
+  return 0;
+}
+
+function mergeTaskCollections(
+  localTasks: AutonomousDevelopmentTask[],
+  persistentTasks: AutonomousDevelopmentTask[],
+): AutonomousDevelopmentTask[] {
+  const merged =
+    new Map<
+      string,
+      AutonomousDevelopmentTask
+    >();
+
+  for (
+    const task of persistentTasks
+  ) {
+    merged.set(
+      task.id,
+      cloneTask(task),
+    );
+  }
+
+  for (
+    const task of localTasks
+  ) {
+    const existing =
+      merged.get(
+        task.id,
+      );
+
+    if (
+      !existing ||
+      compareTaskVersion(
+        existing,
+        task,
+      ) <= 0
+    ) {
+      merged.set(
+        task.id,
+        cloneTask(task),
+      );
+    }
+  }
+
+  return Array.from(
+    merged.values(),
+  );
+}
+
+function queuePersistence(
+  snapshot: AutonomousDevelopmentTask[],
+): void {
+  const immutableSnapshot =
+    snapshot.map(cloneTask);
+
+  persistenceQueue =
+    persistenceQueue
+      .catch(() => undefined)
+      .then(
+        async () => {
+          try {
+            await storage.set(
+              TASK_STORAGE_KEY,
+              immutableSnapshot,
+            );
+          } catch {
+            /*
+             * Persistence is intentionally
+             * best-effort for synchronous
+             * execution paths.
+             */
+          }
+        },
+      );
 }
 
 function persistTasks(): void {
-  const snapshot =
-    serializeTasks();
-
-  void storage
-    .set(
-      TASK_STORAGE_KEY,
-      snapshot,
-    )
-    .catch(() => {
-      /*
-       * The in-memory control plane remains
-       * authoritative for the active execution
-       * process. Persistent storage failure must
-       * never crash the autonomous execution loop.
-       */
-    });
+  queuePersistence(
+    serializeTasks(),
+  );
 }
 
 async function persistTasksAwaited(): Promise<void> {
-  await storage.set(
-    TASK_STORAGE_KEY,
-    serializeTasks(),
-  );
+  const snapshot =
+    serializeTasks();
+
+  persistenceQueue =
+    persistenceQueue
+      .catch(() => undefined)
+      .then(
+        async () => {
+          await storage.set(
+            TASK_STORAGE_KEY,
+            snapshot,
+          );
+        },
+      );
+
+  await persistenceQueue;
 }
 
 async function loadPersistentTasks(): Promise<
   AutonomousDevelopmentTask[]
 > {
-  const stored =
-    await storage.get<
-      unknown
-    >(
-      TASK_STORAGE_KEY,
-    );
+  try {
+    const stored =
+      await storage.get<unknown>(
+        TASK_STORAGE_KEY,
+      );
 
-  if (!Array.isArray(stored)) {
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+
+    return stored
+      .map(normalizeTask)
+      .filter(
+        (
+          task,
+        ): task is AutonomousDevelopmentTask =>
+          task !== null,
+      );
+  } catch {
     return [];
   }
-
-  return stored
-    .map(normalizeTask)
-    .filter(
-      (
-        task,
-      ): task is AutonomousDevelopmentTask =>
-        task !== null,
-    );
 }
 
 async function hydratePersistentTasks(): Promise<
@@ -488,49 +657,29 @@ async function hydratePersistentTasks(): Promise<
   const stored =
     await loadPersistentTasks();
 
+  const local =
+    Array.from(
+      tasks.values(),
+    );
+
+  const merged =
+    mergeTaskCollections(
+      local,
+      stored,
+    );
+
+  tasks.clear();
+
   for (
-    const storedTask of stored
+    const task of merged
   ) {
-    const current =
-      tasks.get(
-        storedTask.id,
-      );
-
-    if (!current) {
-      tasks.set(
-        storedTask.id,
-        storedTask,
-      );
-      continue;
-    }
-
-    const currentTime =
-      new Date(
-        current.updatedAt,
-      ).getTime();
-
-    const storedTime =
-      new Date(
-        storedTask.updatedAt,
-      ).getTime();
-
-    if (
-      !Number.isFinite(
-        currentTime,
-      ) ||
-      storedTime >
-        currentTime
-    ) {
-      tasks.set(
-        storedTask.id,
-        storedTask,
-      );
-    }
+    tasks.set(
+      task.id,
+      task,
+    );
   }
 
-  return Array.from(
-    tasks.values(),
-  );
+  return merged;
 }
 
 function assertSafeRepository(
@@ -801,35 +950,46 @@ function createReceipt(
   return {
     taskId:
       task.id,
+
     status:
       task.status,
+
     repository:
       task.repository,
+
     branch:
       task.branch,
+
     targetPaths:
       [
         ...task.targetPaths,
       ],
+
     phases:
       task.phaseHistory.map(
         (event) =>
           event.phase,
       ),
+
     commitSha:
       result?.commitSha ||
       task.commitSha,
+
     readbackVerified:
       result?.readbackVerified ===
       true,
+
     verificationPassed:
       result?.verificationPassed ===
       true,
+
     reason:
       result?.reason ||
       task.reason,
+
     startedAt:
       task.startedAt,
+
     completedAt:
       task.completedAt ||
       task.updatedAt,
@@ -872,10 +1032,13 @@ function recoverStaleTask(
   task.result = {
     commitSha:
       task.commitSha,
+
     readbackVerified:
       false,
+
     verificationPassed:
       false,
+
     reason:
       task.reason,
   };
@@ -929,26 +1092,37 @@ export function createAutonomousDevelopmentTask(
     {
       id:
         createTaskId(),
+
       objective,
+
       repository:
         ALLOWED_REPOSITORY,
+
       branch:
         ALLOWED_BRANCH,
+
       targetPaths,
+
       status:
         "todo",
+
       phase:
         "QUEUED",
+
       createdAt:
         timestamp,
+
       updatedAt:
         timestamp,
+
       lastHeartbeatAt:
         timestamp,
+
       phaseHistory: [
         {
           phase:
             "QUEUED",
+
           at:
             timestamp,
         },
@@ -1323,14 +1497,19 @@ export function heartbeatAutonomousDevelopmentTask(
     return {
       taskId:
         task.id,
+
       status:
         task.status,
+
       phase:
         task.phase,
+
       updatedAt:
         task.updatedAt,
+
       lastHeartbeatAt:
         task.lastHeartbeatAt,
+
       reason:
         task.reason,
     };
@@ -1381,17 +1560,34 @@ export function heartbeatAutonomousDevelopmentTask(
   return {
     taskId:
       task.id,
+
     status:
       task.status,
+
     phase:
       task.phase,
+
     updatedAt:
       task.updatedAt,
+
     lastHeartbeatAt:
       task.lastHeartbeatAt,
+
     reason:
       task.reason,
   };
+}
+
+export async function heartbeatPersistentAutonomousDevelopmentTask(
+  taskId: string,
+  reason?: string,
+) {
+  await hydratePersistentTasks();
+
+  return heartbeatAutonomousDevelopmentTask(
+    taskId,
+    reason,
+  );
 }
 
 export function completeAutonomousDevelopmentTask(
@@ -1473,10 +1669,13 @@ export function completeAutonomousDevelopmentTask(
   task.result = {
     commitSha:
       result.commitSha.trim(),
+
     readbackVerified:
       result.readbackVerified,
+
     verificationPassed:
       result.verificationPassed,
+
     reason:
       result.reason,
   };
@@ -1529,14 +1728,18 @@ export function blockAutonomousDevelopmentTask(
   ) {
     return {
       taskId,
+
       status:
         "completed" as const,
+
       reason:
         task.reason ||
         reason,
+
       completedAt:
         task.completedAt ||
         now(),
+
       receipt:
         createReceipt(
           task,
@@ -1550,14 +1753,18 @@ export function blockAutonomousDevelopmentTask(
   ) {
     return {
       taskId,
+
       status:
         "blocked" as const,
+
       reason:
         task.reason ||
         reason,
+
       completedAt:
         task.completedAt ||
         now(),
+
       receipt:
         createReceipt(
           task,
@@ -1590,10 +1797,13 @@ export function blockAutonomousDevelopmentTask(
   task.result = {
     commitSha:
       task.commitSha,
+
     readbackVerified:
       false,
+
     verificationPassed:
       false,
+
     reason,
   };
 
@@ -1621,11 +1831,15 @@ export function blockAutonomousDevelopmentTask(
 
   return {
     taskId,
+
     status:
       "blocked" as const,
+
     reason,
+
     completedAt:
       timestamp,
+
     receipt:
       createReceipt(
         task,
@@ -1677,14 +1891,19 @@ export function getAutonomousDevelopmentTaskHeartbeat(
   return {
     taskId:
       task.id,
+
     status:
       task.status,
+
     phase:
       task.phase,
+
     updatedAt:
       task.updatedAt,
+
     lastHeartbeatAt:
       task.lastHeartbeatAt,
+
     reason:
       task.reason,
   };
@@ -1705,14 +1924,19 @@ export async function getPersistentAutonomousDevelopmentTaskHeartbeat(
   return {
     taskId:
       task.id,
+
     status:
       task.status,
+
     phase:
       task.phase,
+
     updatedAt:
       task.updatedAt,
+
     lastHeartbeatAt:
       task.lastHeartbeatAt,
+
     reason:
       task.reason,
   };
