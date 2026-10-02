@@ -100,65 +100,244 @@ function hasDangerousMarkers(content: string): boolean {
 }
 
 function hasBalancedSource(content: string): boolean {
-  const stack: string[] = [];
+  type Delimiter = "{" | "(" | "[";
 
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
+  function isOpeningDelimiter(
+    value: string,
+  ): value is Delimiter {
+    return (
+      value === "{" ||
+      value === "(" ||
+      value === "["
+    );
+  }
 
-  for (
-    let index = 0;
-    index < content.length;
-    index += 1
-  ) {
-    const current = content[index];
-    const next = content[index + 1];
-
-    if (lineComment) {
-      if (current === "\n") {
-        lineComment = false;
-      }
-
-      continue;
+  function expectedOpeningDelimiter(
+    value: string,
+  ): Delimiter {
+    if (value === "}") {
+      return "{";
     }
 
-    if (blockComment) {
-      if (
-        current === "*" &&
-        next === "/"
-      ) {
-        blockComment = false;
-        index += 1;
-      }
-
-      continue;
+    if (value === ")") {
+      return "(";
     }
 
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
+    return "[";
+  }
+
+  function scanQuotedString(
+    start: number,
+    quote: "'" | "\"",
+  ): number {
+    let index = start + 1;
+
+    while (index < content.length) {
+      const current = content[index];
 
       if (current === "\\") {
-        escaped = true;
+        index += 2;
         continue;
       }
 
       if (current === quote) {
-        quote = null;
+        return index + 1;
       }
 
-      continue;
+      if (current === "\n" || current === "\r") {
+        return -1;
+      }
+
+      index += 1;
     }
+
+    return -1;
+  }
+
+  function scanBlockComment(
+    start: number,
+  ): number {
+    let index = start + 2;
+
+    while (index < content.length) {
+      if (
+        content[index] === "*" &&
+        content[index + 1] === "/"
+      ) {
+        return index + 2;
+      }
+
+      index += 1;
+    }
+
+    return -1;
+  }
+
+  function scanLineComment(
+    start: number,
+  ): number {
+    let index = start + 2;
+
+    while (index < content.length) {
+      if (
+        content[index] === "\n" ||
+        content[index] === "\r"
+      ) {
+        return index;
+      }
+
+      index += 1;
+    }
+
+    return content.length;
+  }
+
+  function scanTemplate(
+    start: number,
+  ): number {
+    let index = start + 1;
+
+    while (index < content.length) {
+      const current = content[index];
+
+      if (current === "\\") {
+        index += 2;
+        continue;
+      }
+
+      if (current === "`") {
+        return index + 1;
+      }
+
+      if (
+        current === "$" &&
+        content[index + 1] === "{"
+      ) {
+        const expressionEnd =
+          scanTemplateExpression(index + 2);
+
+        if (expressionEnd < 0) {
+          return -1;
+        }
+
+        index = expressionEnd;
+        continue;
+      }
+
+      index += 1;
+    }
+
+    return -1;
+  }
+
+  function scanTemplateExpression(
+    start: number,
+  ): number {
+    const stack: Delimiter[] = ["{"];
+    let index = start;
+
+    while (index < content.length) {
+      const current = content[index];
+      const next = content[index + 1];
+
+      if (
+        current === "/" &&
+        next === "/"
+      ) {
+        index = scanLineComment(index);
+        continue;
+      }
+
+      if (
+        current === "/" &&
+        next === "*"
+      ) {
+        index = scanBlockComment(index);
+
+        if (index < 0) {
+          return -1;
+        }
+
+        continue;
+      }
+
+      if (
+        current === "'" ||
+        current === "\""
+      ) {
+        index = scanQuotedString(
+          index,
+          current,
+        );
+
+        if (index < 0) {
+          return -1;
+        }
+
+        continue;
+      }
+
+      if (current === "`") {
+        index = scanTemplate(index);
+
+        if (index < 0) {
+          return -1;
+        }
+
+        continue;
+      }
+
+      if (isOpeningDelimiter(current)) {
+        stack.push(current);
+        index += 1;
+        continue;
+      }
+
+      if (
+        current === "}" ||
+        current === ")" ||
+        current === "]"
+      ) {
+        const expected =
+          expectedOpeningDelimiter(
+            current,
+          );
+
+        if (
+          stack[stack.length - 1] !==
+          expected
+        ) {
+          return -1;
+        }
+
+        stack.pop();
+        index += 1;
+
+        if (stack.length === 0) {
+          return index;
+        }
+
+        continue;
+      }
+
+      index += 1;
+    }
+
+    return -1;
+  }
+
+  const stack: Delimiter[] = [];
+  let index = 0;
+
+  while (index < content.length) {
+    const current = content[index];
+    const next = content[index + 1];
 
     if (
       current === "/" &&
       next === "/"
     ) {
-      lineComment = true;
-      index += 1;
+      index = scanLineComment(index);
       continue;
     }
 
@@ -166,26 +345,44 @@ function hasBalancedSource(content: string): boolean {
       current === "/" &&
       next === "*"
     ) {
-      blockComment = true;
-      index += 1;
+      index = scanBlockComment(index);
+
+      if (index < 0) {
+        return false;
+      }
+
       continue;
     }
 
     if (
       current === "'" ||
-      current === "\"" ||
-      current === "`"
+      current === "\""
     ) {
-      quote = current;
+      index = scanQuotedString(
+        index,
+        current,
+      );
+
+      if (index < 0) {
+        return false;
+      }
+
       continue;
     }
 
-    if (
-      current === "{" ||
-      current === "(" ||
-      current === "["
-    ) {
+    if (current === "`") {
+      index = scanTemplate(index);
+
+      if (index < 0) {
+        return false;
+      }
+
+      continue;
+    }
+
+    if (isOpeningDelimiter(current)) {
       stack.push(current);
+      index += 1;
       continue;
     }
 
@@ -195,11 +392,9 @@ function hasBalancedSource(content: string): boolean {
       current === "]"
     ) {
       const expected =
-        current === "}"
-          ? "{"
-          : current === ")"
-            ? "("
-            : "[";
+        expectedOpeningDelimiter(
+          current,
+        );
 
       if (
         stack[stack.length - 1] !==
@@ -209,14 +404,14 @@ function hasBalancedSource(content: string): boolean {
       }
 
       stack.pop();
+      index += 1;
+      continue;
     }
+
+    index += 1;
   }
 
-  return (
-    !quote &&
-    !blockComment &&
-    stack.length === 0
-  );
+  return stack.length === 0;
 }
 
 function extractTranslationKeys(
@@ -225,10 +420,10 @@ function extractTranslationKeys(
   const keys = new Set<string>();
 
   const patterns = [
-    /\bt\(\s*"([^"]+)"\s*\)/g,
-    /\bt\(\s*'([^']+)'\s*\)/g,
-    /\btranslate\(\s*[^,]+,\s*"([^"]+)"\s*\)/g,
-    /\btranslate\(\s*[^,]+,\s*'([^']+)'\s*\)/g,
+    /\bt$begin:math:text$\\s\*\"\(\[\^\"\]\+\)\"\\s\*$end:math:text$/g,
+    /\bt$begin:math:text$\\s\*\'\(\[\^\'\]\+\)\'\\s\*$end:math:text$/g,
+    /\btranslate$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\"\(\[\^\"\]\+\)\"\\s\*$end:math:text$/g,
+    /\btranslate$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\'\(\[\^\'\]\+\)\'\\s\*$end:math:text$/g,
   ];
 
   for (const pattern of patterns) {
