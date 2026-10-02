@@ -91,8 +91,38 @@ async function vercelFetch<T>(
   return parsed as T;
 }
 
-function deploymentMatchesCommit(deployment: VercelDeployment, commitSha: string): boolean {
-  const target = commitSha.toLowerCase();
+function deploymentMatchesCommit(
+  deployment: VercelDeployment,
+  commitSha: string,
+): boolean {
+  const target =
+    commitSha.trim().toLowerCase();
+
+  if (!target) {
+    return false;
+  }
+
+  const candidates = [
+    deployment.gitSource?.sha,
+    typeof deployment.meta?.githubCommitSha === "string"
+      ? deployment.meta.githubCommitSha
+      : undefined,
+    typeof deployment.meta?.gitCommitSha === "string"
+      ? deployment.meta.gitCommitSha
+      : undefined,
+  ]
+    .map((value) =>
+      typeof value === "string"
+        ? value.trim().toLowerCase()
+        : "",
+    )
+    .filter(Boolean);
+
+  return candidates.some(
+    (value) => value === target,
+  );
+}
+const target = commitSha.toLowerCase();
   const candidates = [
     deployment.gitSource?.sha,
     typeof deployment.meta?.githubCommitSha === "string" ? deployment.meta.githubCommitSha : undefined,
