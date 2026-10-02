@@ -811,7 +811,6 @@ export default function FounderAutonomousDevelopmentPage() {
 
         return;
       }
-SEARCH_END
 
       schedulePoll(
         key,
