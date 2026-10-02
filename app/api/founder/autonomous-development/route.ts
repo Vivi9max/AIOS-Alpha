@@ -18,6 +18,11 @@ import {
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
+import {
+  heartbeatAutonomousDevelopmentExecution,
+  clearAutonomousDevelopmentHeartbeatState,
+  getAutonomousDevelopmentHeartbeatInterval,
+} from "@/lib/github/autonomous-development-heartbeat";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
 
 export const dynamic =
@@ -221,7 +226,10 @@ function buildTaskResponse(
           : task.status ===
               "blocked"
             ? "Autonomous development is blocked and requires inspection."
-            : "Autonomous development started. AIOS is executing the development loop."),
+            : task.status ===
+                "failed"
+              ? "Autonomous development failed."
+              : "Autonomous development started. AIOS is executing the development loop."),
   };
 }
 
@@ -249,6 +257,118 @@ function buildTaskListResponse(
       ).length,
     tasks,
   };
+}
+
+/**
+ * Keeps the persistent execution lease alive while the
+ * autonomous development Agent is executing.
+ *
+ * This watchdog is intentionally outside the Agent so the
+ * large Agent implementation does not need to be rewritten.
+ *
+ * The Agent remains the execution authority. The watchdog
+ * only maintains durable execution liveness.
+ */
+async function executeWithHeartbeatWatchdog(
+  taskId: string,
+  objective: string,
+) {
+  const intervalMs =
+    getAutonomousDevelopmentHeartbeatInterval();
+
+  let stopped =
+    false;
+
+  const sendHeartbeat =
+    async (
+      reason: string,
+      force = false,
+    ) => {
+      if (stopped) {
+        return;
+      }
+
+      try {
+        const heartbeat =
+          await heartbeatAutonomousDevelopmentExecution(
+            taskId,
+            {
+              reason,
+              force,
+            },
+          );
+
+        if (
+          heartbeat.status ===
+            "completed" ||
+          heartbeat.status ===
+            "failed" ||
+          heartbeat.status ===
+            "blocked" ||
+          heartbeat.stale
+        ) {
+          stopped = true;
+        }
+      } catch {
+        /*
+         * Heartbeat failure must not replace the Agent's
+         * authoritative execution result.
+         *
+         * The persistent control plane remains the source
+         * of truth and can recover stale tasks separately.
+         */
+      }
+    };
+
+  await sendHeartbeat(
+    `AIOS autonomous development execution started: ${objective}`,
+    true,
+  );
+
+  const timer =
+    setInterval(
+      () => {
+        void sendHeartbeat(
+          "AIOS autonomous development execution is still running.",
+          false,
+        );
+      },
+      intervalMs,
+    );
+
+  try {
+    return await executeAutonomousDevelopmentAgent(
+      {
+        objective,
+        taskId,
+      },
+    );
+  } finally {
+    stopped = true;
+
+    clearInterval(
+      timer,
+    );
+
+    try {
+      await heartbeatAutonomousDevelopmentExecution(
+        taskId,
+        {
+          reason:
+            "AIOS autonomous development execution finished. Final task state is authoritative.",
+          force: true,
+        },
+      );
+    } catch {
+      /*
+       * The Agent's terminal state remains authoritative.
+       */
+    }
+
+    clearAutonomousDevelopmentHeartbeatState(
+      taskId,
+    );
+  }
 }
 
 export async function GET(
@@ -418,7 +538,7 @@ export async function POST(
      * The claim operation hydrates persistent state,
      * verifies that the task is still todo, changes it
      * to running, and awaits persistence before the
-     * request continues.
+     * background Agent starts.
      */
     const claimedTask =
       await claimPersistentAutonomousDevelopmentTask(
@@ -438,16 +558,16 @@ export async function POST(
      * -> GitHub write
      * -> readback
      * -> Vercel verification
+     *
+     * The heartbeat watchdog runs alongside the Agent
+     * without modifying the Agent implementation.
      */
     after(
       async () => {
         try {
-          await executeAutonomousDevelopmentAgent(
-            {
-              objective,
-              taskId:
-                claimedTask.id,
-            },
+          await executeWithHeartbeatWatchdog(
+            claimedTask.id,
+            objective,
           );
         } catch (
           error
@@ -466,9 +586,9 @@ export async function POST(
           } catch {
             /*
              * Preserve the original execution failure.
-             * The control plane remains responsible for
-             * the authoritative terminal state whenever
-             * possible.
+             * The persistent control plane remains
+             * responsible for the authoritative terminal
+             * state whenever possible.
              */
           }
         }
@@ -482,7 +602,7 @@ export async function POST(
           duplicate:
             false,
           message:
-            "Autonomous development execution lease persisted. AIOS is executing the development loop.",
+            "Autonomous development execution lease persisted. AIOS is executing the development loop with persistent heartbeat monitoring.",
         },
       ),
       202,
