@@ -1361,6 +1361,41 @@ export function claimAutonomousDevelopmentTask(
   return task;
 }
 
+export async function claimPersistentAutonomousDevelopmentTask(
+  taskId: string,
+): Promise<AutonomousDevelopmentTask> {
+  await hydratePersistentTasks();
+
+  const task =
+    tasks.get(
+      taskId,
+    );
+
+  if (!task) {
+    throw new Error(
+      "Development task not found.",
+    );
+  }
+
+  if (
+    task.status !==
+    "todo"
+  ) {
+    throw new Error(
+      `Task cannot be claimed from status: ${task.status}`,
+    );
+  }
+
+  const claimedTask =
+    claimAutonomousDevelopmentTask(
+      taskId,
+    );
+
+  await persistTasksAwaited();
+
+  return claimedTask;
+}
+
 export function updateAutonomousDevelopmentTask(
   taskId: string,
   update: {
