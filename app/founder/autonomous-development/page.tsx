@@ -699,7 +699,6 @@ export default function FounderAutonomousDevelopmentPage() {
         verificationPassed &&
         successfulReceipt &&
         receiptValid;
-SEARCH_END
 
       const code =
         completedWithValidReceipt
