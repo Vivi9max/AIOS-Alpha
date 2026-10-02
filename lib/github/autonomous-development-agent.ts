@@ -1299,7 +1299,7 @@ async function generatePatch(
   }
 
   throw new Error(
-    `AIOS_PATCH_GENERATION_FAILED: ${targetPath}: ${lastError}`,
+    `AIOS_PATCH_GENERATION_FAILED: Failed to generate a valid SEARCH/REPLACE patch for "${targetPath}" after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${lastError}`,
   );
 }
 
@@ -1998,7 +1998,7 @@ export async function executeAutonomousDevelopmentAgent(
         !written.readbackVerified
       ) {
         throw new Error(
-          `AUTONOMOUS_READBACK_FAILED: ${targetPath}`,
+          `AUTONOMOUS_READBACK_FAILED: GitHub readback did not confirm the written content for "${targetPath}". The commit may not match the intended patch.`,
         );
       }
     }
@@ -2210,7 +2210,7 @@ export async function executeAutonomousDevelopmentAgent(
         !written.readbackVerified
       ) {
         throw new Error(
-          `AUTONOMOUS_REPAIR_READBACK_FAILED: ${repairTarget}`,
+          `AUTONOMOUS_REPAIR_READBACK_FAILED: GitHub readback did not confirm the repair patch for "${repairTarget}" during build repair round ${repairRounds}.`,
         );
       }
 
