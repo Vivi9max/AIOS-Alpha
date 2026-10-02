@@ -87,6 +87,114 @@ function normalizeTaskId(
   ).trim();
 }
 
+function isSuccessfulReceipt(
+  result: {
+    status: string;
+    terminal: boolean;
+    receiptValid: boolean;
+    ok: boolean;
+  },
+) {
+  return (
+    result.status ===
+      "completed" &&
+    result.terminal &&
+    result.receiptValid &&
+    result.ok
+  );
+}
+
+function getReceiptResponseStatus(
+  result: {
+    status: string;
+    terminal: boolean;
+    receiptValid: boolean;
+    ok: boolean;
+  },
+) {
+  if (!result.terminal) {
+    return 409;
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    !result.receiptValid
+  ) {
+    return 409;
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    result.receiptValid
+  ) {
+    return 200;
+  }
+
+  return 409;
+}
+
+function getReceiptCode(
+  result: {
+    status: string;
+    terminal: boolean;
+    receiptValid: boolean;
+  },
+) {
+  if (!result.terminal) {
+    return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_PENDING";
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    result.receiptValid
+  ) {
+    return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_CONFIRMED";
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    !result.receiptValid
+  ) {
+    return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_INVALID";
+  }
+
+  return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_CONFIRMED_WITH_FAILURE";
+}
+
+function getReceiptMessage(
+  result: {
+    status: string;
+    terminal: boolean;
+    receiptValid: boolean;
+  },
+) {
+  if (!result.terminal) {
+    return "Autonomous development task is not terminal yet. No terminal receipt was issued.";
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    result.receiptValid
+  ) {
+    return "Autonomous development terminal receipt confirmed.";
+  }
+
+  if (
+    result.status ===
+      "completed" &&
+    !result.receiptValid
+  ) {
+    return "Autonomous development reported completed status, but its terminal receipt evidence is incomplete or invalid.";
+  }
+
+  return "Autonomous development reached a terminal non-success state.";
+}
+
 export async function POST(
   request: NextRequest,
 ) {
@@ -140,37 +248,32 @@ export async function POST(
       );
     }
 
-    if (!result.terminal) {
-      return json(
-        {
-          ...result,
-          code:
-            "AUTONOMOUS_DEVELOPMENT_FINALIZATION_NON_TERMINAL",
-          message:
-            "Autonomous development task is not terminal yet. No terminal receipt was issued.",
-        },
-        409,
+    const status =
+      getReceiptResponseStatus(
+        result,
       );
-    }
+
+    const code =
+      getReceiptCode(
+        result,
+      );
+
+    const message =
+      getReceiptMessage(
+        result,
+      );
 
     return json(
       {
         ...result,
-        code:
-          result.status ===
-          "completed"
-            ? "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_CONFIRMED"
-            : "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_CONFIRMED_WITH_FAILURE",
-        message:
-          result.status ===
-          "completed"
-            ? "Autonomous development terminal receipt confirmed."
-            : "Autonomous development reached a terminal non-success state.",
+        code,
+        message,
+        successfulReceipt:
+          isSuccessfulReceipt(
+            result,
+          ),
       },
-      result.status ===
-        "completed"
-        ? 200
-        : 409,
+      status,
     );
   } catch (error) {
     const message =
@@ -242,17 +345,28 @@ export async function GET(
       );
     }
 
+    const status =
+      getReceiptResponseStatus(
+        result,
+      );
+
     return json(
       {
         ...result,
         code:
-          result.terminal
-            ? "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT"
-            : "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_PENDING",
+          getReceiptCode(
+            result,
+          ),
+        message:
+          getReceiptMessage(
+            result,
+          ),
+        successfulReceipt:
+          isSuccessfulReceipt(
+            result,
+          ),
       },
-      result.terminal
-        ? 200
-        : 409,
+      status,
     );
   } catch (error) {
     const message =
@@ -325,23 +439,29 @@ export async function PATCH(
       );
     }
 
-    return json(
-      {
-        ...result,
-        code:
-          result.status ===
-          "completed"
-            ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_REJECTED"
-            : result.terminal
-              ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_CONFIRMED"
-              : "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_PENDING",
-      },
+    const status =
       result.status ===
         "completed"
         ? 409
         : result.terminal
           ? 200
-          : 409,
+          : 409;
+
+    const code =
+      result.status ===
+        "completed"
+        ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_REJECTED"
+        : result.terminal
+          ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_CONFIRMED"
+          : "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_PENDING";
+
+    return json(
+      {
+        ...result,
+        code,
+        successfulReceipt: false,
+      },
+      status,
     );
   } catch (error) {
     const message =
