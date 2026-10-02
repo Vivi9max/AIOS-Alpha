@@ -1,9 +1,15 @@
 import "server-only";
 
 import { after } from "next/server";
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-import { isFounderConfigured, isFounderRequest } from "@/lib/founder/auth";
+import {
+  isFounderConfigured,
+  isFounderRequest,
+} from "@/lib/founder/auth";
 import {
   blockAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
@@ -12,50 +18,81 @@ import {
 } from "@/lib/github/autonomous-development-control-plane";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-export const maxDuration = 300;
+export const dynamic =
+  "force-dynamic";
 
-const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
-const DEFAULT_BRANCH = "main";
+export const runtime =
+  "nodejs";
 
-const ACTIVE_TASK_STATUSES = new Set([
-  "todo",
-  "running",
-]);
+export const maxDuration =
+  300;
 
-function json(body: Record<string, unknown>, status = 200) {
-  return NextResponse.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
+const DEFAULT_REPOSITORY =
+  "Vivi9max/AIOS-Alpha";
+
+const DEFAULT_BRANCH =
+  "main";
+
+const ACTIVE_TASK_STATUSES =
+  new Set([
+    "todo",
+    "running",
+  ]);
+
+function json(
+  body: Record<
+    string,
+    unknown
+  >,
+  status = 200,
+) {
+  return NextResponse.json(
+    body,
+    {
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
     },
-  });
+  );
 }
 
-function requireFounder(request: NextRequest) {
-  if (!isFounderConfigured()) {
+function requireFounder(
+  request: NextRequest,
+) {
+  if (
+    !isFounderConfigured()
+  ) {
     return {
       ok: false as const,
       response: json(
         {
           ok: false,
-          code: "FOUNDER_NOT_CONFIGURED",
-          error: "Founder access is not configured.",
+          code:
+            "FOUNDER_NOT_CONFIGURED",
+          error:
+            "Founder access is not configured.",
         },
         503,
       ),
     };
   }
 
-  if (!isFounderRequest(request)) {
+  if (
+    !isFounderRequest(
+      request,
+    )
+  ) {
     return {
       ok: false as const,
       response: json(
         {
           ok: false,
-          code: "FOUNDER_UNAUTHORIZED",
-          error: "Founder authorization failed.",
+          code:
+            "FOUNDER_UNAUTHORIZED",
+          error:
+            "Founder authorization failed.",
         },
         401,
       ),
@@ -67,37 +104,48 @@ function requireFounder(request: NextRequest) {
   };
 }
 
-function normalizeObjective(value: unknown) {
-  return String(value ?? "")
+function normalizeObjective(
+  value: unknown,
+) {
+  return String(
+    value ?? "",
+  )
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(
+      /\s+/g,
+      " ",
+    );
 }
 
-function findActiveTaskByObjective(objective: string) {
+function findActiveTaskByObjective(
+  objective: string,
+) {
   const normalizedObjective =
-    normalizeObjective(objective);
+    normalizeObjective(
+      objective,
+    );
 
-  if (!normalizedObjective) {
+  if (
+    !normalizedObjective
+  ) {
     return null;
   }
 
-  const tasks =
-    listAutonomousDevelopmentTasks();
-
   return (
-    tasks.find(
+    listAutonomousDevelopmentTasks().find(
       (task) =>
         ACTIVE_TASK_STATUSES.has(
           task.status,
         ) &&
         normalizeObjective(
           task.objective,
-        ) === normalizedObjective,
+        ) ===
+          normalizedObjective,
     ) ?? null
   );
 }
 
-function buildRunningResponse(
+function buildTaskResponse(
   task: {
     id: string;
     objective: string;
@@ -105,32 +153,125 @@ function buildRunningResponse(
     phase: string;
     repository: string;
     branch: string;
+    targetPaths?: string[];
+    changedPaths?: string[];
+    reason?: string;
+    commitSha?: string;
     createdAt: string;
     updatedAt: string;
+    startedAt?: string;
+    completedAt?: string;
     lastHeartbeatAt?: string;
+    phaseHistory?: Array<{
+      phase: string;
+      at: string;
+      reason?: string;
+    }>;
+    result?: {
+      commitSha?: string;
+      readbackVerified: boolean;
+      verificationPassed: boolean;
+      reason?: string;
+    };
   },
-  duplicate = false,
+  options?: {
+    duplicate?: boolean;
+    message?: string;
+  },
 ) {
+  const duplicate =
+    options?.duplicate ===
+    true;
+
   return {
     ok: true,
     success: true,
     code: duplicate
       ? "AUTONOMOUS_DEVELOPMENT_ALREADY_RUNNING"
-      : "AUTONOMOUS_DEVELOPMENT_RUNNING",
-    repository: task.repository,
-    branch: task.branch,
-    objective: task.objective,
-    taskId: task.id,
-    status: task.status,
-    phase: task.phase,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
+      : task.status ===
+          "completed"
+        ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+        : task.status ===
+            "blocked"
+          ? "AUTONOMOUS_DEVELOPMENT_BLOCKED"
+          : task.status ===
+              "failed"
+            ? "AUTONOMOUS_DEVELOPMENT_FAILED"
+            : "AUTONOMOUS_DEVELOPMENT_RUNNING",
+    repository:
+      task.repository,
+    branch:
+      task.branch,
+    objective:
+      task.objective,
+    taskId:
+      task.id,
+    status:
+      task.status,
+    phase:
+      task.phase,
+    targetPaths:
+      task.targetPaths ??
+      [],
+    changedPaths:
+      task.changedPaths ??
+      [],
+    reason:
+      task.reason,
+    commitSha:
+      task.commitSha,
+    createdAt:
+      task.createdAt,
+    updatedAt:
+      task.updatedAt,
+    startedAt:
+      task.startedAt,
+    completedAt:
+      task.completedAt,
     lastHeartbeatAt:
       task.lastHeartbeatAt,
+    phaseHistory:
+      task.phaseHistory ??
+      [],
+    result:
+      task.result,
     duplicate,
-    message: duplicate
-      ? "An autonomous development task with the same objective is already active. No duplicate execution was started."
-      : "Autonomous development started. AIOS is discovering the repository and executing the development loop.",
+    task,
+    message:
+      options?.message ??
+      (duplicate
+        ? "An autonomous development task with the same objective is already active. No duplicate execution was started."
+        : task.status ===
+            "completed"
+          ? "Autonomous development completed successfully."
+          : task.status ===
+              "blocked"
+            ? "Autonomous development is blocked and requires inspection."
+            : "Autonomous development started. AIOS is executing the development loop."),
+  };
+}
+
+function buildTaskListResponse(
+  tasks: ReturnType<
+    typeof listAutonomousDevelopmentTasks
+  >,
+) {
+  return {
+    ok: true,
+    repository:
+      DEFAULT_REPOSITORY,
+    branch:
+      DEFAULT_BRANCH,
+    count:
+      tasks.length,
+    activeCount:
+      tasks.filter(
+        (task) =>
+          ACTIVE_TASK_STATUSES.has(
+            task.status,
+          ),
+      ).length,
+    tasks,
   };
 }
 
@@ -138,7 +279,9 @@ export async function GET(
   request: NextRequest,
 ) {
   const auth =
-    requireFounder(request);
+    requireFounder(
+      request,
+    );
 
   if (!auth.ok) {
     return auth.response;
@@ -154,32 +297,49 @@ export async function GET(
       "objective",
     );
 
-  if (taskId) {
+  /*
+   * taskId is authoritative.
+   *
+   * The Founder UI binds polling to the exact task returned by POST.
+   * Objective-based lookup remains available as a compatibility
+   * fallback, but must never override an explicit taskId.
+   */
+  if (
+    taskId?.trim()
+  ) {
     const task =
       getAutonomousDevelopmentTask(
-        taskId,
+        taskId.trim(),
       );
 
     if (!task) {
       return json(
         {
           ok: false,
-          code: "TASK_NOT_FOUND",
+          code:
+            "TASK_NOT_FOUND",
+          taskId:
+            taskId.trim(),
+          error:
+            "Autonomous development task was not found.",
         },
         404,
       );
     }
 
-    return json({
-      ok: true,
-      task,
-    });
+    return json(
+      buildTaskResponse(
+        task,
+      ),
+    );
   }
 
   let tasks =
     listAutonomousDevelopmentTasks();
 
-  if (objective?.trim()) {
+  if (
+    objective?.trim()
+  ) {
     const normalizedObjective =
       normalizeObjective(
         objective,
@@ -190,25 +350,25 @@ export async function GET(
         (task) =>
           normalizeObjective(
             task.objective,
-          ) === normalizedObjective,
+          ) ===
+          normalizedObjective,
       );
   }
 
-  return json({
-    ok: true,
-    repository:
-      DEFAULT_REPOSITORY,
-    branch:
-      DEFAULT_BRANCH,
-    tasks,
-  });
+  return json(
+    buildTaskListResponse(
+      tasks,
+    ),
+  );
 }
 
 export async function POST(
   request: NextRequest,
 ) {
   const auth =
-    requireFounder(request);
+    requireFounder(
+      request,
+    );
 
   if (!auth.ok) {
     return auth.response;
@@ -225,7 +385,8 @@ export async function POST(
       return json(
         {
           ok: false,
-          code: "UNKNOWN_ACTION",
+          code:
+            "UNKNOWN_ACTION",
           error:
             "Only the autonomous development action is exposed by this route.",
         },
@@ -251,16 +412,28 @@ export async function POST(
       );
     }
 
+    /*
+     * Idempotency boundary:
+     *
+     * Before creating a task, inspect the authoritative control-plane
+     * task collection. A todo/running task with the same normalized
+     * objective is reused instead of starting a second Agent.
+     */
     const existingTask =
       findActiveTaskByObjective(
         objective,
       );
 
-    if (existingTask) {
+    if (
+      existingTask
+    ) {
       return json(
-        buildRunningResponse(
+        buildTaskResponse(
           existingTask,
-          true,
+          {
+            duplicate:
+              true,
+          },
         ),
         202,
       );
@@ -274,40 +447,61 @@ export async function POST(
         },
       );
 
-    after(async () => {
-      try {
-        await executeAutonomousDevelopmentAgent(
-          {
-            objective,
-            taskId:
-              task.id,
-          },
-        );
-      } catch (error) {
-        const reason =
-          error instanceof Error
-            ? error.message
-            : "Autonomous development execution failed.";
-
+    /*
+     * The HTTP request returns immediately.
+     *
+     * AIOS remains the actual execution authority:
+     * Planner -> repository read -> patch -> safety gate ->
+     * GitHub write -> readback -> Vercel verification.
+     */
+    after(
+      async () => {
         try {
-          blockAutonomousDevelopmentTask(
-            task.id,
-            reason,
+          await executeAutonomousDevelopmentAgent(
+            {
+              objective,
+              taskId:
+                task.id,
+            },
           );
-        } catch {
-          // Preserve the original execution failure.
+        } catch (
+          error
+        ) {
+          const reason =
+            error instanceof
+            Error
+              ? error.message
+              : "Autonomous development execution failed.";
+
+          try {
+            blockAutonomousDevelopmentTask(
+              task.id,
+              reason,
+            );
+          } catch {
+            /*
+             * Preserve the original execution failure.
+             * The Agent/control-plane is responsible for the
+             * authoritative terminal state whenever possible.
+             */
+          }
         }
-      }
-    });
+      },
+    );
 
     return json(
-      buildRunningResponse(
+      buildTaskResponse(
         task,
-        false,
+        {
+          duplicate:
+            false,
+        },
       ),
       202,
     );
-  } catch (error) {
+  } catch (
+    error
+  ) {
     return json(
       {
         ok: false,
