@@ -1625,6 +1625,133 @@ export async function heartbeatPersistentAutonomousDevelopmentTask(
   );
 }
 
+export async function completePersistentAutonomousDevelopmentTask(
+  taskId: string,
+  result: {
+    commitSha: string;
+    readbackVerified: boolean;
+    verificationPassed: boolean;
+    reason?: string;
+  },
+): Promise<AutonomousDevelopmentReceipt> {
+  await hydratePersistentTasks();
+
+  const task =
+    tasks.get(
+      taskId,
+    );
+
+  if (!task) {
+    throw new Error(
+      "Development task not found.",
+    );
+  }
+
+  if (
+    TERMINAL_STATUSES.has(
+      task.status,
+    )
+  ) {
+    return createReceipt(
+      task,
+    );
+  }
+
+  if (
+    task.status !==
+    "running"
+  ) {
+    throw new Error(
+      `Task cannot complete from status: ${task.status}`,
+    );
+  }
+
+  const exactCommitSha =
+    result.commitSha.trim();
+
+  const passed =
+    Boolean(
+      exactCommitSha,
+    ) &&
+    result.readbackVerified ===
+      true &&
+    result.verificationPassed ===
+      true;
+
+  if (!passed) {
+    const blocked =
+      blockAutonomousDevelopmentTask(
+        taskId,
+        result.reason ||
+          "Autonomous development verification did not pass.",
+      );
+
+    await persistTasksAwaited();
+
+    return blocked.receipt;
+  }
+
+  assertPhaseTransition(
+    task.phase,
+    "COMPLETED",
+  );
+
+  const timestamp =
+    now();
+
+  task.status =
+    "completed";
+
+  task.phase =
+    "COMPLETED";
+
+  task.reason =
+    result.reason;
+
+  task.commitSha =
+    exactCommitSha;
+
+  task.result = {
+    commitSha:
+      exactCommitSha,
+
+    readbackVerified:
+      result.readbackVerified,
+
+    verificationPassed:
+      result.verificationPassed,
+
+    reason:
+      result.reason,
+  };
+
+  task.completedAt =
+    timestamp;
+
+  task.updatedAt =
+    timestamp;
+
+  task.lastHeartbeatAt =
+    timestamp;
+
+  appendPhaseEvent(
+    task,
+    "COMPLETED",
+    result.reason,
+  );
+
+  tasks.set(
+    taskId,
+    task,
+  );
+
+  await persistTasksAwaited();
+
+  return createReceipt(
+    task,
+  );
+}
+
 export function completeAutonomousDevelopmentTask(
   taskId: string,
   result: {
@@ -1634,6 +1761,7 @@ export function completeAutonomousDevelopmentTask(
     reason?: string;
   },
 ): AutonomousDevelopmentReceipt {
+SEARCH_END
   const task =
     tasks.get(
       taskId,
