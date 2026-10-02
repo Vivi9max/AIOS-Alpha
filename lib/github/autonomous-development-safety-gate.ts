@@ -82,6 +82,155 @@ function isSafePath(path: string): boolean {
   );
 }
 
+function isRegexLiteralStart(
+  source: string,
+  start: number,
+): boolean {
+  let index = start - 1;
+
+  while (index >= 0) {
+    const value = source[index];
+
+    if (
+      value === " " ||
+      value === "\t" ||
+      value === "\n" ||
+      value === "\r"
+    ) {
+      index -= 1;
+      continue;
+    }
+
+    break;
+  }
+
+  if (index < 0) {
+    return true;
+  }
+
+  const previous = source[index];
+
+  if (
+    previous === "=" ||
+    previous === "(" ||
+    previous === "[" ||
+    previous === "{" ||
+    previous === "," ||
+    previous === ":" ||
+    previous === ";" ||
+    previous === "!" ||
+    previous === "?" ||
+    previous === "&" ||
+    previous === "|" ||
+    previous === "+" ||
+    previous === "-" ||
+    previous === "*" ||
+    previous === "%" ||
+    previous === "~" ||
+    previous === "^" ||
+    previous === "<" ||
+    previous === ">"
+  ) {
+    return true;
+  }
+
+  let wordEnd = index;
+
+  while (
+    wordEnd >= 0 &&
+    /[A-Za-z0-9_$]/.test(
+      source[wordEnd],
+    )
+  ) {
+    wordEnd -= 1;
+  }
+
+  const previousWord =
+    source.slice(
+      wordEnd + 1,
+      index + 1,
+    );
+
+  return (
+    previousWord === "return" ||
+    previousWord === "throw" ||
+    previousWord === "case" ||
+    previousWord === "typeof" ||
+    previousWord === "void" ||
+    previousWord === "delete" ||
+    previousWord === "in" ||
+    previousWord === "instanceof" ||
+    previousWord === "else" ||
+    previousWord === "do" ||
+    previousWord === "yield" ||
+    previousWord === "await"
+  );
+}
+
+function scanRegexLiteral(
+  source: string,
+  start: number,
+): number {
+  let index = start + 1;
+  let inCharacterClass = false;
+
+  while (index < source.length) {
+    const current = source[index];
+
+    if (current === "\\") {
+      index += 2;
+      continue;
+    }
+
+    if (
+      current === "[" &&
+      !inCharacterClass
+    ) {
+      inCharacterClass = true;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "]" &&
+      inCharacterClass
+    ) {
+      inCharacterClass = false;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      !inCharacterClass
+    ) {
+      index += 1;
+
+      while (
+        index < source.length &&
+        /[A-Za-z]/.test(
+          source[index],
+        )
+      ) {
+        index += 1;
+      }
+
+      return index;
+    }
+
+    if (
+      current === "\n" ||
+      current === "\r"
+    ) {
+      return -1;
+    }
+
+    index += 1;
+  }
+
+  return -1;
+}
+
 function hasDangerousMarkers(content: string): boolean {
   const markers = [
     "SEARCH_END_REPLACE",
@@ -141,6 +290,24 @@ function hasDangerousMarkers(content: string): boolean {
         }
 
         continue;
+      }
+
+      if (
+        current === "/" &&
+        isRegexLiteralStart(
+          source,
+          index,
+        )
+      ) {
+        const regexEnd = scanRegexLiteral(
+          source,
+          index,
+        );
+
+        if (regexEnd > index) {
+          index = regexEnd;
+          continue;
+        }
       }
 
       if (
@@ -534,10 +701,10 @@ function extractTranslationKeys(
   const keys = new Set<string>();
 
   const patterns = [
-    /\bt\s*\(\s*"([^"\\]+)"\s*\)/g,
-    /\bt\s*\(\s*'([^'\\]+)'\s*\)/g,
-    /\btranslate\s*\(\s*[^,]+,\s*"([^"\\]+)"\s*\)/g,
-    /\btranslate\s*\(\s*[^,]+,\s*'([^'\\]+)'\s*\)/g,
+    /\bt\s*$begin:math:text$\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
+    /\bt\s*$begin:math:text$\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
+    /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
+    /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
   ];
 
   for (const pattern of patterns) {
