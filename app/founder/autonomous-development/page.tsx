@@ -217,20 +217,28 @@ function getTaskReceipt(
       false,
 
     commitSha:
-      task.receipt?.commitSha ??
       task.commitSha ??
-      task.result?.commitSha,
+      task.result?.commitSha ??
+      task.receipt?.commitSha,
 
     resultCommitSha:
+      task.result?.commitSha ??
       task.resultCommitSha ??
-      task.receipt?.resultCommitSha ??
-      task.result?.resultCommitSha,
+      task.result?.resultCommitSha ??
+      task.receipt?.resultCommitSha,
 
     commitShaConsistent:
       task.commitShaConsistent ??
-      task.receipt?.commitShaConsistent ??
       task.result?.commitShaConsistent ??
-      false,
+      task.receipt?.commitShaConsistent ??
+      (typeof (task.commitSha ?? task.result?.commitSha) === "string" &&
+      /^[0-9a-f]{40}$/i.test(
+        String(task.commitSha ?? task.result?.commitSha),
+      ) &&
+      (task.result?.commitSha ?? task.resultCommitSha ?? task.receipt?.resultCommitSha) ===
+        (task.commitSha ?? task.result?.commitSha)
+        ? true
+        : false),
 
     readbackVerified:
       task.receipt?.readbackVerified ??
@@ -642,6 +650,38 @@ export default function FounderAutonomousDevelopmentPage() {
       const receipt =
         getTaskReceipt(task);
 
+      const taskCommitSha =
+        task.commitSha ??
+        task.result?.commitSha ??
+        data.receipt?.commitSha;
+
+      const resultCommitSha =
+        task.result?.commitSha ??
+        task.resultCommitSha ??
+        task.result?.resultCommitSha ??
+        data.receipt?.resultCommitSha;
+
+      const commitShaValid =
+        typeof taskCommitSha === "string" &&
+        /^[0-9a-f]{40}$/i.test(taskCommitSha);
+
+      const resultCommitShaValid =
+        typeof resultCommitSha === "string" &&
+        /^[0-9a-f]{40}$/i.test(resultCommitSha);
+
+      const commitShaConsistent =
+        commitShaValid &&
+        resultCommitShaValid &&
+        taskCommitSha === resultCommitSha;
+
+      const readbackVerified =
+        task.result?.readbackVerified === true ||
+        task.receipt?.readbackVerified === true;
+
+      const verificationPassed =
+        task.result?.verificationPassed === true ||
+        task.receipt?.verificationPassed === true;
+
       const successfulReceipt =
         data.successfulReceipt ===
         true;
@@ -653,8 +693,13 @@ export default function FounderAutonomousDevelopmentPage() {
       const completedWithValidReceipt =
         task.status ===
           "completed" &&
+        commitShaValid &&
+        commitShaConsistent &&
+        readbackVerified &&
+        verificationPassed &&
         successfulReceipt &&
         receiptValid;
+SEARCH_END
 
       const code =
         completedWithValidReceipt
@@ -694,9 +739,11 @@ export default function FounderAutonomousDevelopmentPage() {
         receiptValid,
         successfulReceipt,
         resultCommitSha:
+          resultCommitSha ??
           data.resultCommitSha ??
           receipt.resultCommitSha,
         commitShaConsistent:
+          commitShaConsistent ??
           data.commitShaConsistent ??
           receipt.commitShaConsistent,
         missingEvidence:
@@ -727,21 +774,45 @@ export default function FounderAutonomousDevelopmentPage() {
         } else if (
           !completedWithValidReceipt
         ) {
-          const missing =
-            (
-              data.missingEvidence ??
-              receipt.missingEvidence
-            ).join(", ");
+          const missing = (
+            data.missingEvidence ??
+            receipt.missingEvidence ??
+            []
+          ).slice();
+
+          if (!commitShaValid) {
+            missing.push("task.commitSha");
+          }
+
+          if (!resultCommitShaValid) {
+            missing.push("result.commitSha");
+          }
+
+          if (!commitShaConsistent) {
+            missing.push("commitShaConsistent");
+          }
+
+          if (!readbackVerified) {
+            missing.push("readbackVerified");
+          }
+
+          if (!verificationPassed) {
+            missing.push("verificationPassed");
+          }
+
+          const missingLabel =
+            missing.join(", ");
 
           setError(
-            missing
-              ? `AIOS completed the execution, but the terminal receipt is invalid. Missing evidence: ${missing}.`
+            missingLabel
+              ? `AIOS completed the execution, but the terminal receipt is invalid. Missing evidence: ${missingLabel}.`
               : "AIOS completed the execution, but the terminal receipt is invalid.",
           );
         }
 
         return;
       }
+SEARCH_END
 
       schedulePoll(
         key,
@@ -940,8 +1011,27 @@ export default function FounderAutonomousDevelopmentPage() {
     );
 
   const success =
-    result?.successfulReceipt ===
-      true ||
+    status === "completed" &&
+    typeof currentReceipt.commitSha ===
+      "string" &&
+    /^[0-9a-f]{40}$/i.test(
+      currentReceipt.commitSha,
+    ) &&
+    typeof currentReceipt.resultCommitSha ===
+      "string" &&
+    /^[0-9a-f]{40}$/i.test(
+      currentReceipt.resultCommitSha,
+    ) &&
+    currentReceipt.commitSha ===
+      currentReceipt.resultCommitSha &&
+    currentReceipt.readbackVerified ===
+      true &&
+    currentReceipt.verificationPassed ===
+      true &&
+    currentReceipt.commitShaConsistent ===
+      true &&
+    currentReceipt.receiptValid ===
+      true &&
     currentReceipt.successfulReceipt ===
       true;
 
