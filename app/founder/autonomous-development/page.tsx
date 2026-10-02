@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 
+import AutonomousDevelopmentReceiptStatus from "./receipt-status";
+
 const STORAGE_KEY = "aios-founder-access-key";
 const POLL_INTERVAL_MS = 2500;
 const HEARTBEAT_INTERVAL_MS = 30000;
@@ -44,6 +46,20 @@ type TaskResult = {
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
+  receiptValid?: boolean;
+  successfulReceipt?: boolean;
+  missingEvidence?: string[];
+};
+
+type TaskReceipt = {
+  terminal?: boolean;
+  successful?: boolean;
+  valid?: boolean;
+  receiptValid?: boolean;
+  commitSha?: string;
+  readbackVerified?: boolean;
+  verificationPassed?: boolean;
+  missingEvidence?: string[];
 };
 
 type Task = {
@@ -64,6 +80,10 @@ type Task = {
   lastHeartbeatAt?: string;
   phaseHistory?: PhaseEvent[];
   result?: TaskResult;
+  receipt?: TaskReceipt;
+  receiptValid?: boolean;
+  successfulReceipt?: boolean;
+  missingEvidence?: string[];
 };
 
 type Result = {
@@ -79,6 +99,10 @@ type Result = {
   taskId?: string;
   tasks?: Task[];
   task?: Task;
+  receipt?: TaskReceipt;
+  receiptValid?: boolean;
+  successfulReceipt?: boolean;
+  missingEvidence?: string[];
 };
 
 const DEFAULT_OBJECTIVE =
@@ -126,12 +150,58 @@ function getHeartbeatAge(value?: string) {
   return Math.max(0, Date.now() - timestamp);
 }
 
-function isTerminalStatus(status?: TaskStatus | "starting") {
+function isTerminalStatus(
+  status?: TaskStatus | "starting",
+) {
   return (
     status === "completed" ||
     status === "failed" ||
     status === "blocked"
   );
+}
+
+function getTaskReceipt(task?: Task | null) {
+  if (!task) {
+    return {
+      receiptValid: false,
+      successfulReceipt: false,
+      commitSha: undefined,
+      readbackVerified: false,
+      verificationPassed: false,
+      missingEvidence: [],
+    };
+  }
+
+  return {
+    receiptValid:
+      task.receiptValid ??
+      task.result?.receiptValid ??
+      task.receipt?.receiptValid ??
+      task.receipt?.valid ??
+      false,
+    successfulReceipt:
+      task.successfulReceipt ??
+      task.result?.successfulReceipt ??
+      task.receipt?.successful ??
+      false,
+    commitSha:
+      task.receipt?.commitSha ??
+      task.result?.commitSha ??
+      task.commitSha,
+    readbackVerified:
+      task.receipt?.readbackVerified ??
+      task.result?.readbackVerified ??
+      false,
+    verificationPassed:
+      task.receipt?.verificationPassed ??
+      task.result?.verificationPassed ??
+      false,
+    missingEvidence:
+      task.missingEvidence ??
+      task.result?.missingEvidence ??
+      task.receipt?.missingEvidence ??
+      [],
+  };
 }
 
 export default function FounderAutonomousDevelopmentPage() {
@@ -141,18 +211,21 @@ export default function FounderAutonomousDevelopmentPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
 
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const pollTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const heartbeatTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pollRoundsRef = useRef(0);
-  const activeTaskIdRef = useRef<string | null>(null);
+  const activeTaskIdRef =
+    useRef<string | null>(null);
 
   useEffect(() => {
-    const storedKey = window.sessionStorage.getItem(STORAGE_KEY);
+    const storedKey =
+      window.sessionStorage.getItem(
+        STORAGE_KEY,
+      );
 
     if (storedKey) {
       setAccessKey(storedKey);
@@ -160,11 +233,15 @@ export default function FounderAutonomousDevelopmentPage() {
 
     return () => {
       if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
+        clearTimeout(
+          pollTimerRef.current,
+        );
       }
 
       if (heartbeatTimerRef.current) {
-        clearTimeout(heartbeatTimerRef.current);
+        clearTimeout(
+          heartbeatTimerRef.current,
+        );
       }
     };
   }, []);
@@ -177,21 +254,29 @@ export default function FounderAutonomousDevelopmentPage() {
 
   const clearPolling = () => {
     if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
+      clearTimeout(
+        pollTimerRef.current,
+      );
       pollTimerRef.current = null;
     }
   };
 
   const clearHeartbeat = () => {
     if (heartbeatTimerRef.current) {
-      clearTimeout(heartbeatTimerRef.current);
+      clearTimeout(
+        heartbeatTimerRef.current,
+      );
       heartbeatTimerRef.current = null;
     }
   };
 
   const clearFounderSession = () => {
-    window.sessionStorage.removeItem(STORAGE_KEY);
+    window.sessionStorage.removeItem(
+      STORAGE_KEY,
+    );
+
     activeTaskIdRef.current = null;
+
     clearPolling();
     clearHeartbeat();
   };
@@ -203,9 +288,13 @@ export default function FounderAutonomousDevelopmentPage() {
   ) => {
     clearPolling();
 
-    pollTimerRef.current = setTimeout(() => {
-      void pollTask(key, taskId);
-    }, delay);
+    pollTimerRef.current =
+      setTimeout(() => {
+        void pollTask(
+          key,
+          taskId,
+        );
+      }, delay);
   };
 
   const scheduleHeartbeat = (
@@ -215,16 +304,23 @@ export default function FounderAutonomousDevelopmentPage() {
   ) => {
     clearHeartbeat();
 
-    heartbeatTimerRef.current = setTimeout(() => {
-      void sendHeartbeat(key, taskId);
-    }, delay);
+    heartbeatTimerRef.current =
+      setTimeout(() => {
+        void sendHeartbeat(
+          key,
+          taskId,
+        );
+      }, delay);
   };
 
   const sendHeartbeat = async (
     key: string,
     taskId: string,
   ) => {
-    if (activeTaskIdRef.current !== taskId) {
+    if (
+      activeTaskIdRef.current !==
+      taskId
+    ) {
       return;
     }
 
@@ -237,17 +333,21 @@ export default function FounderAutonomousDevelopmentPage() {
           headers: getHeaders(key),
           body: JSON.stringify({
             taskId,
-            reason: "Founder Autonomous Development UI heartbeat",
+            reason:
+              "Founder Autonomous Development UI heartbeat",
           }),
         },
       );
 
-      const data = (await response.json()) as Result;
+      const data =
+        (await response.json()) as Result;
 
       if (!response.ok) {
         if (
-          data.code === "FOUNDER_UNAUTHORIZED" ||
-          data.code === "FOUNDER_NOT_CONFIGURED"
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
         ) {
           clearFounderSession();
           setRunning(false);
@@ -274,35 +374,74 @@ export default function FounderAutonomousDevelopmentPage() {
           return;
         }
 
-        scheduleHeartbeat(key, taskId);
+        scheduleHeartbeat(
+          key,
+          taskId,
+        );
+
         return;
       }
 
-if (data.task) {
-  const heartbeatTask = data.task;
+      if (data.task) {
+        const heartbeatTask =
+          data.task;
 
-  setResult((previous) => ({
-    ...(previous || {}),
-    ok: heartbeatTask.status === "completed",
-    success: heartbeatTask.status === "completed",
-    taskId,
-    status: heartbeatTask.status,
-    objective: heartbeatTask.objective,
-    repository: heartbeatTask.repository,
-    branch: heartbeatTask.branch,
-    task: heartbeatTask,
-    tasks: [heartbeatTask],
-  }));
-}
+        const receipt =
+          getTaskReceipt(
+            heartbeatTask,
+          );
 
-      if (isTerminalStatus(data.task?.status)) {
+        const successful =
+          receipt.successfulReceipt;
+
+        setResult((previous) => ({
+          ...(previous || {}),
+          ok: successful,
+          success: successful,
+          taskId,
+          status:
+            heartbeatTask.status,
+          objective:
+            heartbeatTask.objective,
+          repository:
+            heartbeatTask.repository,
+          branch:
+            heartbeatTask.branch,
+          task: heartbeatTask,
+          tasks: [heartbeatTask],
+          receipt:
+            data.receipt ??
+            heartbeatTask.receipt,
+          receiptValid:
+            data.receiptValid ??
+            receipt.receiptValid,
+          successfulReceipt:
+            data.successfulReceipt ??
+            successful,
+          missingEvidence:
+            data.missingEvidence ??
+            receipt.missingEvidence,
+        }));
+      }
+
+      if (
+        isTerminalStatus(
+          data.task?.status,
+        )
+      ) {
         clearHeartbeat();
         return;
       }
 
-      scheduleHeartbeat(key, taskId);
+      scheduleHeartbeat(
+        key,
+        taskId,
+      );
     } catch {
-      scheduleHeartbeat(key, taskId);
+      scheduleHeartbeat(
+        key,
+        taskId,
+      );
     }
   };
 
@@ -310,9 +449,11 @@ if (data.task) {
     key: string,
     taskId: string,
   ): Promise<void> => {
-    if (pollRoundsRef.current >= MAX_POLL_ROUNDS) {
+    if (
+      pollRoundsRef.current >=
+      MAX_POLL_ROUNDS
+    ) {
       setRunning(false);
-
       clearHeartbeat();
 
       setError(
@@ -324,7 +465,8 @@ if (data.task) {
 
     if (
       activeTaskIdRef.current &&
-      activeTaskIdRef.current !== taskId
+      activeTaskIdRef.current !==
+        taskId
     ) {
       return;
     }
@@ -340,18 +482,22 @@ if (data.task) {
           method: "GET",
           cache: "no-store",
           headers: {
-            Accept: "application/json",
+            Accept:
+              "application/json",
             Authorization: `Bearer ${key}`,
           },
         },
       );
 
-      const data = (await response.json()) as Result;
+      const data =
+        (await response.json()) as Result;
 
       if (!response.ok) {
         if (
-          data.code === "FOUNDER_UNAUTHORIZED" ||
-          data.code === "FOUNDER_NOT_CONFIGURED"
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
         ) {
           clearFounderSession();
         }
@@ -367,62 +513,139 @@ if (data.task) {
         return;
       }
 
-      const task = data.task ?? data.tasks?.[0] ?? null;
+      const task =
+        data.task ??
+        data.tasks?.[0] ??
+        null;
 
       if (!task) {
         setResult({
           ok: true,
-          success: true,
-          code: "AUTONOMOUS_DEVELOPMENT_PLANNING",
-          objective: result?.objective,
+          success: false,
+          code:
+            "AUTONOMOUS_DEVELOPMENT_PLANNING",
+          objective:
+            result?.objective,
           taskId,
           status: "starting",
           message:
             "AIOS 正在读取真实 GitHub 仓库并进行 Planner 判断。",
         });
 
-        schedulePoll(key, taskId);
-        scheduleHeartbeat(key, taskId);
+        schedulePoll(
+          key,
+          taskId,
+        );
+
+        scheduleHeartbeat(
+          key,
+          taskId,
+        );
+
         return;
       }
 
-      setResult({
-        ok: task.status === "completed",
-        success: task.status === "completed",
-        code:
-          task.status === "completed"
-            ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+      const receipt =
+        getTaskReceipt(task);
+
+      const successfulReceipt =
+        data.successfulReceipt ??
+        receipt.successfulReceipt;
+
+      const receiptValid =
+        data.receiptValid ??
+        receipt.receiptValid;
+
+      const completedWithValidReceipt =
+        task.status ===
+          "completed" &&
+        successfulReceipt === true &&
+        receiptValid === true;
+
+      const code =
+        completedWithValidReceipt
+          ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+          : task.status === "completed"
+            ? "AUTONOMOUS_DEVELOPMENT_COMPLETED_RECEIPT_INVALID"
             : task.status === "running"
               ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
               : task.status === "todo"
                 ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
-                : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
-        objective: task.objective,
-        repository: task.repository,
-        branch: task.branch,
+                : "AUTONOMOUS_DEVELOPMENT_BLOCKED";
+
+      setResult({
+        ok: completedWithValidReceipt,
+        success:
+          completedWithValidReceipt,
+        code,
+        objective:
+          task.objective,
+        repository:
+          task.repository,
+        branch:
+          task.branch,
         taskId: task.id,
-        status: task.status,
+        status:
+          task.status,
         tasks: [task],
         task,
+        receipt:
+          data.receipt ??
+          task.receipt,
+        receiptValid,
+        successfulReceipt,
+        missingEvidence:
+          data.missingEvidence ??
+          receipt.missingEvidence,
       });
 
-      if (isTerminalStatus(task.status)) {
+      if (
+        isTerminalStatus(
+          task.status,
+        )
+      ) {
         setRunning(false);
-        activeTaskIdRef.current = null;
+        activeTaskIdRef.current =
+          null;
+
         clearHeartbeat();
 
-        if (task.status !== "completed") {
+        if (
+          task.status !==
+          "completed"
+        ) {
           setError(
             task.reason ||
               `AIOS Autonomous Development ${task.status}.`,
+          );
+        } else if (
+          !completedWithValidReceipt
+        ) {
+          const missing =
+            (
+              data.missingEvidence ??
+              receipt.missingEvidence
+            ).join(", ");
+
+          setError(
+            missing
+              ? `AIOS completed the execution, but the terminal receipt is invalid. Missing evidence: ${missing}.`
+              : "AIOS completed the execution, but the terminal receipt is invalid.",
           );
         }
 
         return;
       }
 
-      schedulePoll(key, taskId);
-      scheduleHeartbeat(key, taskId);
+      schedulePoll(
+        key,
+        taskId,
+      );
+
+      scheduleHeartbeat(
+        key,
+        taskId,
+      );
     } catch (pollError) {
       setRunning(false);
       clearHeartbeat();
@@ -436,8 +659,11 @@ if (data.task) {
   };
 
   const handleRun = async () => {
-    const key = accessKey.trim();
-    const requestObjective = objective.trim();
+    const key =
+      accessKey.trim();
+
+    const requestObjective =
+      objective.trim();
 
     if (!key) {
       setError(
@@ -456,19 +682,26 @@ if (data.task) {
     clearPolling();
     clearHeartbeat();
 
-    activeTaskIdRef.current = null;
+    activeTaskIdRef.current =
+      null;
+
     pollRoundsRef.current = 0;
 
-    window.sessionStorage.setItem(STORAGE_KEY, key);
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      key,
+    );
 
     setRunning(true);
     setError("");
 
     setResult({
       ok: true,
-      success: true,
-      code: "AUTONOMOUS_DEVELOPMENT_STARTING",
-      objective: requestObjective,
+      success: false,
+      code:
+        "AUTONOMOUS_DEVELOPMENT_STARTING",
+      objective:
+        requestObjective,
       status: "starting",
       message:
         "正在启动 AIOS Autonomous Development。",
@@ -480,10 +713,13 @@ if (data.task) {
         {
           method: "POST",
           cache: "no-store",
-          headers: getHeaders(key),
+          headers:
+            getHeaders(key),
           body: JSON.stringify({
-            action: "autonomous",
-            objective: requestObjective,
+            action:
+              "autonomous",
+            objective:
+              requestObjective,
           }),
         },
       );
@@ -491,12 +727,14 @@ if (data.task) {
       let data: Result = {};
 
       try {
-        data = (await response.json()) as Result;
+        data =
+          (await response.json()) as Result;
       } catch {
         data = {
           ok: false,
           success: false,
-          code: "AUTONOMOUS_RESPONSE_INVALID",
+          code:
+            "AUTONOMOUS_RESPONSE_INVALID",
           error:
             "AIOS returned an invalid response.",
         };
@@ -504,18 +742,23 @@ if (data.task) {
 
       if (!response.ok) {
         if (
-          data.code === "FOUNDER_UNAUTHORIZED" ||
-          data.code === "FOUNDER_NOT_CONFIGURED"
+          data.code ===
+            "FOUNDER_UNAUTHORIZED" ||
+          data.code ===
+            "FOUNDER_NOT_CONFIGURED"
         ) {
           clearFounderSession();
         }
 
         setRunning(false);
+
         setError(
           data.error ||
             `Request failed (${response.status})`,
         );
+
         setResult(data);
+
         return;
       }
 
@@ -537,14 +780,27 @@ if (data.task) {
         return;
       }
 
-      activeTaskIdRef.current = taskId;
+      activeTaskIdRef.current =
+        taskId;
+
       pollRoundsRef.current = 0;
 
-      schedulePoll(key, taskId, 500);
-      scheduleHeartbeat(key, taskId, 1000);
+      schedulePoll(
+        key,
+        taskId,
+        500,
+      );
+
+      scheduleHeartbeat(
+        key,
+        taskId,
+        1000,
+      );
     } catch (requestError) {
       setRunning(false);
-      activeTaskIdRef.current = null;
+      activeTaskIdRef.current =
+        null;
+
       clearHeartbeat();
 
       setError(
@@ -556,48 +812,70 @@ if (data.task) {
   };
 
   const currentTask =
-    result?.task ?? result?.tasks?.[0];
+    result?.task ??
+    result?.tasks?.[0];
 
   const status =
     currentTask?.status ||
     result?.status ||
     "starting";
 
-  const phase = currentTask?.phase;
+  const phase =
+    currentTask?.phase;
 
-  const success = status === "completed";
+  const currentReceipt =
+    getTaskReceipt(
+      currentTask,
+    );
 
-  const isTerminal = isTerminalStatus(status);
+  const success =
+    result?.successfulReceipt ===
+      true ||
+    currentReceipt.successfulReceipt ===
+      true;
 
-  const phaseLabel = phase
-    ? PHASE_LABELS[phase]
-    : status === "starting"
-      ? "Starting"
-      : status.toUpperCase();
+  const isTerminal =
+    isTerminalStatus(
+      status,
+    );
 
-  const heartbeatAge = useMemo(
-    () =>
-      getHeartbeatAge(
+  const phaseLabel =
+    phase
+      ? PHASE_LABELS[phase]
+      : status === "starting"
+        ? "Starting"
+        : status.toUpperCase();
+
+  const heartbeatAge =
+    useMemo(
+      () =>
+        getHeartbeatAge(
+          currentTask?.lastHeartbeatAt,
+        ),
+      [
         currentTask?.lastHeartbeatAt,
-      ),
-    [currentTask?.lastHeartbeatAt],
-  );
+      ],
+    );
 
   const heartbeatWarning =
     status === "running" &&
     heartbeatAge !== null &&
-    heartbeatAge >= HEARTBEAT_WARNING_MS;
+    heartbeatAge >=
+      HEARTBEAT_WARNING_MS;
 
   const phaseHistory =
-    currentTask?.phaseHistory ?? [];
+    currentTask?.phaseHistory ??
+    [];
 
   return (
     <main
       style={{
         minHeight: "100vh",
         background: "#f6f7fb",
-        padding: "20px 14px 44px",
-        boxSizing: "border-box",
+        padding:
+          "20px 14px 44px",
+        boxSizing:
+          "border-box",
       }}
     >
       <div
@@ -607,21 +885,27 @@ if (data.task) {
           margin: "0 auto",
         }}
       >
-        <header style={{ marginBottom: 16 }}>
+        <header
+          style={{
+            marginBottom: 16,
+          }}
+        >
           <div
             style={{
               color: "#dc2626",
               fontSize: 10,
               fontWeight: 900,
-              letterSpacing: "0.14em",
+              letterSpacing:
+                "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.31.9
+            FOUNDER ONLY · C167.31.22
           </div>
 
           <h1
             style={{
-              margin: "8px 0 7px",
+              margin:
+                "8px 0 7px",
               fontSize: 28,
               lineHeight: 1.1,
               fontWeight: 850,
@@ -646,9 +930,11 @@ if (data.task) {
         <section
           style={{
             padding: 16,
-            border: "1px solid #e2e8f0",
+            border:
+              "1px solid #e2e8f0",
             borderRadius: 18,
-            background: "#ffffff",
+            background:
+              "#ffffff",
             boxShadow:
               "0 8px 26px rgba(15, 23, 42, 0.05)",
           }}
@@ -671,50 +957,70 @@ if (data.task) {
               "Write",
               "Commit",
               "Verify",
-            ].map((step, index) => (
-              <div
-                key={step}
-                style={{
-                  padding: "8px 5px",
-                  borderRadius: 9,
-                  background: "#f8fafc",
-                  textAlign: "center",
-                  color: "#475569",
-                  fontSize: 9,
-                  fontWeight: 750,
-                }}
-              >
-                <span
+            ].map(
+              (
+                step,
+                index,
+              ) => (
+                <div
+                  key={step}
                   style={{
-                    display: "block",
-                    marginBottom: 3,
-                    color: "#94a3b8",
-                    fontSize: 8,
+                    padding:
+                      "8px 5px",
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    textAlign:
+                      "center",
+                    color:
+                      "#475569",
+                    fontSize: 9,
+                    fontWeight: 750,
                   }}
                 >
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                {step}
-              </div>
-            ))}
+                  <span
+                    style={{
+                      display:
+                        "block",
+                      marginBottom: 3,
+                      color:
+                        "#94a3b8",
+                      fontSize: 8,
+                    }}
+                  >
+                    {String(
+                      index + 1,
+                    ).padStart(
+                      2,
+                      "0",
+                    )}
+                  </span>
+                  {step}
+                </div>
+              ),
+            )}
           </div>
 
           <div
             style={{
               padding: 12,
               borderRadius: 12,
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              background:
+                "#f8fafc",
+              border:
+                "1px solid #e2e8f0",
               marginBottom: 12,
             }}
           >
             <div
               style={{
                 marginBottom: 5,
-                color: "#94a3b8",
+                color:
+                  "#94a3b8",
                 fontSize: 10,
                 fontWeight: 850,
-                letterSpacing: "0.08em",
+                letterSpacing:
+                  "0.08em",
               }}
             >
               FOUNDER AUTH SESSION
@@ -722,7 +1028,9 @@ if (data.task) {
 
             <div
               style={{
-                color: accessKey ? "#15803d" : "#64748b",
+                color: accessKey
+                  ? "#15803d"
+                  : "#64748b",
                 fontSize: 13,
                 fontWeight: 700,
               }}
@@ -736,9 +1044,11 @@ if (data.task) {
           <label
             htmlFor="autonomous-objective"
             style={{
-              display: "block",
+              display:
+                "block",
               marginBottom: 7,
-              color: "#334155",
+              color:
+                "#334155",
               fontSize: 12,
               fontWeight: 750,
             }}
@@ -750,31 +1060,41 @@ if (data.task) {
             id="autonomous-objective"
             value={objective}
             onChange={(event) =>
-              setObjective(event.target.value)
+              setObjective(
+                event.target.value,
+              )
             }
-            placeholder={DEFAULT_OBJECTIVE}
+            placeholder={
+              DEFAULT_OBJECTIVE
+            }
             disabled={running}
             rows={7}
             spellCheck={false}
             style={{
               width: "100%",
-              boxSizing: "border-box",
+              boxSizing:
+                "border-box",
               padding: 12,
-              border: "1px solid #cbd5e1",
+              border:
+                "1px solid #cbd5e1",
               borderRadius: 10,
               outline: "none",
-              color: "#111827",
-              background: "#ffffff",
+              color:
+                "#111827",
+              background:
+                "#ffffff",
               fontSize: 14,
               lineHeight: 1.6,
-              resize: "vertical",
+              resize:
+                "vertical",
             }}
           />
 
           <div
             style={{
               marginTop: 7,
-              color: "#94a3b8",
+              color:
+                "#94a3b8",
               fontSize: 11,
               lineHeight: 1.5,
             }}
@@ -785,22 +1105,27 @@ if (data.task) {
           <button
             type="button"
             disabled={running}
-            onClick={() => void handleRun()}
+            onClick={() =>
+              void handleRun()
+            }
             style={{
               width: "100%",
               minHeight: 48,
               marginTop: 12,
               border: "none",
               borderRadius: 10,
-              background: running
-                ? "#94a3b8"
-                : "#111827",
-              color: "#ffffff",
+              background:
+                running
+                  ? "#94a3b8"
+                  : "#111827",
+              color:
+                "#ffffff",
               fontSize: 13,
               fontWeight: 850,
-              cursor: running
-                ? "default"
-                : "pointer",
+              cursor:
+                running
+                  ? "default"
+                  : "pointer",
             }}
           >
             {running
@@ -814,53 +1139,67 @@ if (data.task) {
                 marginTop: 12,
                 padding: 13,
                 borderRadius: 12,
-                border: success
-                  ? "1px solid #bbf7d0"
-                  : isTerminal
-                    ? "1px solid #fecaca"
-                    : "1px solid #bfdbfe",
-                background: success
-                  ? "#f0fdf4"
-                  : isTerminal
-                    ? "#fef2f2"
-                    : "#eff6ff",
+                border:
+                  success
+                    ? "1px solid #bbf7d0"
+                    : isTerminal
+                      ? "1px solid #fecaca"
+                      : "1px solid #bfdbfe",
+                background:
+                  success
+                    ? "#f0fdf4"
+                    : isTerminal
+                      ? "#fef2f2"
+                      : "#eff6ff",
               }}
             >
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
+                  display:
+                    "flex",
+                  justifyContent:
+                    "space-between",
                   gap: 10,
-                  alignItems: "center",
-                  flexWrap: "wrap",
+                  alignItems:
+                    "center",
+                  flexWrap:
+                    "wrap",
                 }}
               >
                 <div
                   style={{
-                    color: success
-                      ? "#15803d"
-                      : isTerminal
-                        ? "#b91c1c"
-                        : "#1d4ed8",
+                    color:
+                      success
+                        ? "#15803d"
+                        : isTerminal
+                          ? "#b91c1c"
+                          : "#1d4ed8",
                     fontSize: 12,
                     fontWeight: 900,
                   }}
                 >
                   {success
                     ? "AUTONOMOUS DEVELOPMENT COMPLETED"
-                    : isTerminal
-                      ? "AUTONOMOUS DEVELOPMENT STOPPED"
-                      : "AUTONOMOUS DEVELOPMENT RUNNING"}
+                    : isTerminal &&
+                        status ===
+                          "completed"
+                      ? "AUTONOMOUS DEVELOPMENT COMPLETED · RECEIPT INVALID"
+                      : isTerminal
+                        ? "AUTONOMOUS DEVELOPMENT STOPPED"
+                        : "AUTONOMOUS DEVELOPMENT RUNNING"}
                 </div>
 
                 <div
                   style={{
-                    padding: "4px 7px",
+                    padding:
+                      "4px 7px",
                     borderRadius: 7,
-                    background: "#ffffff",
+                    background:
+                      "#ffffff",
                     border:
                       "1px solid #dbe3ee",
-                    color: "#334155",
+                    color:
+                      "#334155",
                     fontSize: 10,
                     fontWeight: 850,
                   }}
@@ -874,7 +1213,8 @@ if (data.task) {
                   <div
                     style={{
                       marginTop: 10,
-                      display: "grid",
+                      display:
+                        "grid",
                       gridTemplateColumns:
                         "repeat(2, minmax(0, 1fr))",
                       gap: 8,
@@ -884,29 +1224,35 @@ if (data.task) {
                       style={{
                         padding: 9,
                         borderRadius: 9,
-                        background: "#ffffff",
+                        background:
+                          "#ffffff",
                         border:
                           "1px solid #e2e8f0",
                       }}
                     >
                       <div
                         style={{
-                          color: "#94a3b8",
+                          color:
+                            "#94a3b8",
                           fontSize: 9,
                           fontWeight: 850,
                         }}
                       >
                         TASK STATUS
                       </div>
+
                       <div
                         style={{
                           marginTop: 4,
-                          color: "#334155",
+                          color:
+                            "#334155",
                           fontSize: 12,
                           fontWeight: 850,
                         }}
                       >
-                        {currentTask.status}
+                        {
+                          currentTask.status
+                        }
                       </div>
                     </div>
 
@@ -914,24 +1260,28 @@ if (data.task) {
                       style={{
                         padding: 9,
                         borderRadius: 9,
-                        background: "#ffffff",
+                        background:
+                          "#ffffff",
                         border:
                           "1px solid #e2e8f0",
                       }}
                     >
                       <div
                         style={{
-                          color: "#94a3b8",
+                          color:
+                            "#94a3b8",
                           fontSize: 9,
                           fontWeight: 850,
                         }}
                       >
                         TASK ID
                       </div>
+
                       <div
                         style={{
                           marginTop: 4,
-                          color: "#334155",
+                          color:
+                            "#334155",
                           fontSize: 10,
                           fontFamily:
                             "monospace",
@@ -939,7 +1289,9 @@ if (data.task) {
                             "anywhere",
                         }}
                       >
-                        {currentTask.id}
+                        {
+                          currentTask.id
+                        }
                       </div>
                     </div>
                   </div>
@@ -949,23 +1301,27 @@ if (data.task) {
                       marginTop: 10,
                       padding: 10,
                       borderRadius: 10,
-                      background: "#ffffff",
+                      background:
+                        "#ffffff",
                       border:
                         "1px solid #e2e8f0",
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
+                        display:
+                          "flex",
                         justifyContent:
                           "space-between",
-                        alignItems: "center",
+                        alignItems:
+                          "center",
                         gap: 8,
                       }}
                     >
                       <div
                         style={{
-                          color: "#64748b",
+                          color:
+                            "#64748b",
                           fontSize: 10,
                           fontWeight: 850,
                           letterSpacing:
@@ -977,7 +1333,8 @@ if (data.task) {
 
                       <div
                         style={{
-                          display: "flex",
+                          display:
+                            "flex",
                           alignItems:
                             "center",
                           gap: 6,
@@ -1005,6 +1362,7 @@ if (data.task) {
                                   : "#94a3b8",
                           }}
                         />
+
                         {heartbeatWarning
                           ? "Heartbeat aging"
                           : currentTask.lastHeartbeatAt
@@ -1016,7 +1374,8 @@ if (data.task) {
                     <div
                       style={{
                         marginTop: 6,
-                        color: "#64748b",
+                        color:
+                          "#64748b",
                         fontSize: 10,
                         lineHeight: 1.5,
                       }}
@@ -1027,22 +1386,49 @@ if (data.task) {
                       )}
                     </div>
 
-                    {heartbeatAge !== null && (
+                    {heartbeatAge !==
+                      null && (
                       <div
                         style={{
                           marginTop: 3,
-                          color: "#94a3b8",
+                          color:
+                            "#94a3b8",
                           fontSize: 9,
                         }}
                       >
                         Age:{" "}
                         {Math.floor(
-                          heartbeatAge / 1000,
+                          heartbeatAge /
+                            1000,
                         )}
                         s
                       </div>
                     )}
                   </div>
+
+                  <AutonomousDevelopmentReceiptStatus
+                    status={
+                      currentTask.status
+                    }
+                    receiptValid={
+                      currentReceipt.receiptValid
+                    }
+                    successfulReceipt={
+                      currentReceipt.successfulReceipt
+                    }
+                    commitSha={
+                      currentReceipt.commitSha
+                    }
+                    readbackVerified={
+                      currentReceipt.readbackVerified
+                    }
+                    verificationPassed={
+                      currentReceipt.verificationPassed
+                    }
+                    missingEvidence={
+                      currentReceipt.missingEvidence
+                    }
+                  />
 
                   {currentTask.reason && (
                     <div
@@ -1052,12 +1438,14 @@ if (data.task) {
                         borderRadius: 10,
                         border:
                           "1px solid #fecaca",
-                        background: "#fff7f7",
+                        background:
+                          "#fff7f7",
                       }}
                     >
                       <div
                         style={{
-                          color: "#b91c1c",
+                          color:
+                            "#b91c1c",
                           fontSize: 10,
                           fontWeight: 900,
                           letterSpacing:
@@ -1070,19 +1458,23 @@ if (data.task) {
                       <div
                         style={{
                           marginTop: 5,
-                          color: "#7f1d1d",
+                          color:
+                            "#7f1d1d",
                           fontSize: 12,
                           lineHeight: 1.6,
                           overflowWrap:
                             "anywhere",
                         }}
                       >
-                        {currentTask.reason}
+                        {
+                          currentTask.reason
+                        }
                       </div>
                     </div>
                   )}
 
-                  {phaseHistory.length > 0 && (
+                  {phaseHistory.length >
+                    0 && (
                     <div
                       style={{
                         marginTop: 10,
@@ -1090,7 +1482,8 @@ if (data.task) {
                     >
                       <div
                         style={{
-                          color: "#64748b",
+                          color:
+                            "#64748b",
                           fontSize: 11,
                           fontWeight: 800,
                         }}
@@ -1101,14 +1494,18 @@ if (data.task) {
                       <div
                         style={{
                           marginTop: 7,
-                          display: "grid",
+                          display:
+                            "grid",
                           gap: 6,
                         }}
                       >
                         {phaseHistory
                           .slice()
                           .reverse()
-                          .slice(0, 12)
+                          .slice(
+                            0,
+                            12,
+                          )
                           .map(
                             (
                               event,
@@ -1132,7 +1529,8 @@ if (data.task) {
                                     borderRadius:
                                       "50%",
                                     background:
-                                      index === 0
+                                      index ===
+                                      0
                                         ? "#2563eb"
                                         : "#cbd5e1",
                                   }}
@@ -1219,7 +1617,7 @@ if (data.task) {
                     </div>
                   )}
 
-                  {currentTask.commitSha && (
+                  {currentReceipt.commitSha && (
                     <div
                       style={{
                         marginTop: 10,
@@ -1233,20 +1631,22 @@ if (data.task) {
                     >
                       <div
                         style={{
-                          color: "#94a3b8",
+                          color:
+                            "#94a3b8",
                           fontSize: 9,
                           fontWeight: 850,
                           letterSpacing:
                             "0.08em",
                         }}
                       >
-                        LATEST COMMIT
+                        VERIFIED COMMIT
                       </div>
 
                       <div
                         style={{
                           marginTop: 4,
-                          color: "#334155",
+                          color:
+                            "#334155",
                           fontSize: 11,
                           fontFamily:
                             "monospace",
@@ -1254,7 +1654,9 @@ if (data.task) {
                             "anywhere",
                         }}
                       >
-                        {currentTask.commitSha}
+                        {
+                          currentReceipt.commitSha
+                        }
                       </div>
                     </div>
                   )}
@@ -1262,7 +1664,8 @@ if (data.task) {
                   {currentTask.result && (
                     <div
                       style={{
-                        display: "grid",
+                        display:
+                          "grid",
                         gridTemplateColumns:
                           "repeat(2, minmax(0, 1fr))",
                         gap: 8,
@@ -1281,7 +1684,8 @@ if (data.task) {
                       >
                         <div
                           style={{
-                            color: "#94a3b8",
+                            color:
+                              "#94a3b8",
                             fontSize: 9,
                             fontWeight: 850,
                           }}
@@ -1293,16 +1697,14 @@ if (data.task) {
                           style={{
                             marginTop: 4,
                             color:
-                              currentTask.result
-                                .readbackVerified
+                              currentReceipt.readbackVerified
                                 ? "#15803d"
                                 : "#b91c1c",
                             fontSize: 11,
                             fontWeight: 850,
                           }}
                         >
-                          {currentTask.result
-                            .readbackVerified
+                          {currentReceipt.readbackVerified
                             ? "PASS"
                             : "NOT VERIFIED"}
                         </div>
@@ -1320,7 +1722,8 @@ if (data.task) {
                       >
                         <div
                           style={{
-                            color: "#94a3b8",
+                            color:
+                              "#94a3b8",
                             fontSize: 9,
                             fontWeight: 850,
                           }}
@@ -1332,16 +1735,14 @@ if (data.task) {
                           style={{
                             marginTop: 4,
                             color:
-                              currentTask.result
-                                .verificationPassed
+                              currentReceipt.verificationPassed
                                 ? "#15803d"
                                 : "#b91c1c",
                             fontSize: 11,
                             fontWeight: 850,
                           }}
                         >
-                          {currentTask.result
-                            .verificationPassed
+                          {currentReceipt.verificationPassed
                             ? "PASS"
                             : "NOT PASSED"}
                         </div>
@@ -1357,7 +1758,8 @@ if (data.task) {
                     >
                       <div
                         style={{
-                          color: "#64748b",
+                          color:
+                            "#64748b",
                           fontSize: 11,
                           fontWeight: 800,
                         }}
@@ -1378,7 +1780,8 @@ if (data.task) {
                                 "#ffffff",
                               border:
                                 "1px solid #e2e8f0",
-                              color: "#334155",
+                              color:
+                                "#334155",
                               fontSize: 11,
                               overflowWrap:
                                 "anywhere",
@@ -1399,7 +1802,8 @@ if (data.task) {
                     >
                       <div
                         style={{
-                          color: "#64748b",
+                          color:
+                            "#64748b",
                           fontSize: 11,
                           fontWeight: 800,
                         }}
@@ -1418,7 +1822,8 @@ if (data.task) {
                               borderRadius: 7,
                               background:
                                 "#f8fafc",
-                              color: "#334155",
+                              color:
+                                "#334155",
                               fontSize: 11,
                               overflowWrap:
                                 "anywhere",
@@ -1434,7 +1839,8 @@ if (data.task) {
                   <div
                     style={{
                       marginTop: 10,
-                      color: "#94a3b8",
+                      color:
+                        "#94a3b8",
                       fontSize: 10,
                       lineHeight: 1.5,
                     }}
@@ -1448,10 +1854,12 @@ if (data.task) {
                         <br />
                       </>
                     )}
+
                     Updated:{" "}
                     {formatTime(
                       currentTask.updatedAt,
                     )}
+
                     {currentTask.completedAt && (
                       <>
                         <br />
@@ -1469,7 +1877,8 @@ if (data.task) {
                 <div
                   style={{
                     marginTop: 9,
-                    color: "#64748b",
+                    color:
+                      "#64748b",
                     fontSize: 11,
                     lineHeight: 1.55,
                   }}
@@ -1486,7 +1895,8 @@ if (data.task) {
                     paddingTop: 9,
                     borderTop:
                       "1px solid #fecaca",
-                    color: "#b91c1c",
+                    color:
+                      "#b91c1c",
                     fontSize: 11,
                     lineHeight: 1.55,
                     overflowWrap:
@@ -1508,8 +1918,10 @@ if (data.task) {
                 border:
                   "1px solid #fecaca",
                 borderRadius: 10,
-                background: "#fef2f2",
-                color: "#b91c1c",
+                background:
+                  "#fef2f2",
+                color:
+                  "#b91c1c",
                 fontSize: 12,
                 lineHeight: 1.5,
               }}
