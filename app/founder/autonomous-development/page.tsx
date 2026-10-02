@@ -1792,7 +1792,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 </div>
               )}
 
-              {currentTask.changedPaths?.length >
+              {(currentTask.changedPaths?.length ?? 0) >
                 0 && (
                 <div
                   style={{
