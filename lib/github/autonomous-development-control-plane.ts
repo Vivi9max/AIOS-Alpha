@@ -1761,6 +1761,10 @@ export function completeAutonomousDevelopmentTask(
     reason?: string;
   },
 ): AutonomousDevelopmentReceipt {
+  const task =
+    tasks.get(
+      taskId,
+    );
 SEARCH_END
   const task =
     tasks.get(
