@@ -26,6 +26,13 @@ export type AutonomousDevelopmentPhaseEvent = {
   reason?: string;
 };
 
+export type AutonomousDevelopmentTaskResult = {
+  commitSha?: string;
+  readbackVerified: boolean;
+  verificationPassed: boolean;
+  reason?: string;
+};
+
 export type AutonomousDevelopmentTask = {
   id: string;
   objective: string;
@@ -37,6 +44,7 @@ export type AutonomousDevelopmentTask = {
   reason?: string;
   commitSha?: string;
   changedPaths?: string[];
+  result?: AutonomousDevelopmentTaskResult;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
@@ -77,11 +85,23 @@ const MAX_OBJECTIVE_LENGTH =
 const MAX_TARGET_PATHS =
   6;
 
+const MAX_CHANGED_PATHS =
+  20;
+
+const MAX_PHASE_HISTORY =
+  100;
+
 const TERMINAL_STATUSES =
   new Set<AutonomousDevelopmentTaskStatus>([
     "completed",
     "failed",
     "blocked",
+  ]);
+
+const ACTIVE_STATUSES =
+  new Set<AutonomousDevelopmentTaskStatus>([
+    "todo",
+    "running",
   ]);
 
 const PHASE_TRANSITIONS: Record<
@@ -161,6 +181,14 @@ function createTaskId() {
     .slice(2, 8)}`;
 }
 
+function normalizeObjective(
+  objective: string,
+) {
+  return objective
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function normalizeTargetPaths(
   targetPaths: string[],
 ) {
@@ -168,14 +196,32 @@ function normalizeTargetPaths(
     new Set(
       targetPaths
         .map((path) =>
-          path.trim().replace(/^\/+/, ""),
+          path
+            .trim()
+            .replace(/^\/+/, ""),
         )
         .filter(Boolean),
     ),
   );
 }
 
-function assertSafeTask(
+function normalizeChangedPaths(
+  changedPaths: string[],
+) {
+  return Array.from(
+    new Set(
+      changedPaths
+        .map((path) =>
+          path
+            .trim()
+            .replace(/^\/+/, ""),
+        )
+        .filter(Boolean),
+    ),
+  );
+}
+
+function assertSafeRepository(
   task: AutonomousDevelopmentTask,
 ) {
   if (
@@ -195,24 +241,59 @@ function assertSafeTask(
       "Branch is outside the Founder development boundary.",
     );
   }
+}
 
-  const objective =
-    task.objective.trim();
+function assertSafeObjective(
+  objective: string,
+) {
+  const normalized =
+    normalizeObjective(
+      objective,
+    );
 
-  if (!objective) {
+  if (!normalized) {
     throw new Error(
       "Development objective is required.",
     );
   }
 
   if (
-    objective.length >
+    normalized.length >
     MAX_OBJECTIVE_LENGTH
   ) {
     throw new Error(
       "Development objective exceeds the maximum allowed length.",
     );
   }
+
+  return normalized;
+}
+
+function assertSafePath(
+  targetPath: string,
+) {
+  if (
+    !targetPath ||
+    targetPath.startsWith("/") ||
+    targetPath.includes("..") ||
+    targetPath.includes("\\") ||
+    targetPath.includes("\0")
+  ) {
+    throw new Error(
+      `Unsafe repository path: ${targetPath}`,
+    );
+  }
+}
+
+function assertSafeTask(
+  task: AutonomousDevelopmentTask,
+) {
+  assertSafeRepository(task);
+
+  task.objective =
+    assertSafeObjective(
+      task.objective,
+    );
 
   if (
     task.targetPaths.length >
@@ -226,17 +307,24 @@ function assertSafeTask(
   for (
     const targetPath of task.targetPaths
   ) {
-    if (
-      !targetPath ||
-      targetPath.startsWith("/") ||
-      targetPath.includes("..") ||
-      targetPath.includes("\\") ||
-      targetPath.includes("\0")
-    ) {
-      throw new Error(
-        `Unsafe target path: ${targetPath}`,
-      );
-    }
+    assertSafePath(targetPath);
+  }
+
+  if (
+    task.changedPaths &&
+    task.changedPaths.length >
+      MAX_CHANGED_PATHS
+  ) {
+    throw new Error(
+      `A maximum of ${MAX_CHANGED_PATHS} changed paths is allowed.`,
+    );
+  }
+
+  for (
+    const changedPath of
+    task.changedPaths ?? []
+  ) {
+    assertSafePath(changedPath);
   }
 }
 
@@ -292,11 +380,11 @@ function appendPhaseEvent(
 
   if (
     task.phaseHistory.length >
-    100
+    MAX_PHASE_HISTORY
   ) {
     task.phaseHistory =
       task.phaseHistory.slice(
-        -100,
+        -MAX_PHASE_HISTORY,
       );
   }
 }
@@ -314,6 +402,71 @@ function touchTask(
     timestamp;
 }
 
+function assertTaskIsActive(
+  task: AutonomousDevelopmentTask,
+) {
+  if (
+    TERMINAL_STATUSES.has(
+      task.status,
+    )
+  ) {
+    throw new Error(
+      `Task cannot be modified from terminal status: ${task.status}`,
+    );
+  }
+
+  if (
+    task.status !==
+    "running"
+  ) {
+    throw new Error(
+      `Task cannot be modified from status: ${task.status}`,
+    );
+  }
+}
+
+function createReceipt(
+  task: AutonomousDevelopmentTask,
+): AutonomousDevelopmentReceipt {
+  const result =
+    task.result;
+
+  return {
+    taskId:
+      task.id,
+    status:
+      task.status,
+    repository:
+      task.repository,
+    branch:
+      task.branch,
+    targetPaths:
+      [...task.targetPaths],
+    phases:
+      task.phaseHistory.map(
+        (event) =>
+          event.phase,
+      ),
+    commitSha:
+      result?.commitSha ||
+      task.commitSha,
+    readbackVerified:
+      result?.readbackVerified ===
+      true,
+    verificationPassed:
+      result?.verificationPassed ===
+      true,
+    reason:
+      result?.reason ||
+      task.reason,
+    startedAt:
+      task.startedAt,
+    completedAt:
+      task.completedAt ||
+      task.updatedAt,
+  };
+}
+
 export function createAutonomousDevelopmentTask(
   input: {
     objective: string;
@@ -323,20 +476,26 @@ export function createAutonomousDevelopmentTask(
   const timestamp =
     now();
 
+  const objective =
+    assertSafeObjective(
+      input.objective,
+    );
+
+  const targetPaths =
+    normalizeTargetPaths(
+      input.targetPaths ??
+        [],
+    );
+
   const task: AutonomousDevelopmentTask =
     {
       id: createTaskId(),
-      objective:
-        input.objective.trim(),
+      objective,
       repository:
         ALLOWED_REPOSITORY,
       branch:
         ALLOWED_BRANCH,
-      targetPaths:
-        normalizeTargetPaths(
-          input.targetPaths ??
-            [],
-        ),
+      targetPaths,
       status: "todo",
       phase: "QUEUED",
       createdAt:
@@ -366,10 +525,14 @@ export function createAutonomousDevelopmentTask(
 export function getAutonomousDevelopmentTask(
   taskId: string,
 ) {
-  return (
-    tasks.get(taskId) ??
-    null
-  );
+  const task =
+    tasks.get(taskId);
+
+  if (!task) {
+    return null;
+  }
+
+  return task;
 }
 
 export function listAutonomousDevelopmentTasks() {
@@ -383,6 +546,38 @@ export function listAutonomousDevelopmentTasks() {
       new Date(
         a.createdAt,
       ).getTime(),
+  );
+}
+
+export function findActiveAutonomousDevelopmentTask(
+  objective: string,
+) {
+  const normalizedObjective =
+    normalizeObjective(
+      objective,
+    );
+
+  if (!normalizedObjective) {
+    return null;
+  }
+
+  const activeTasks =
+    Array.from(
+      tasks.values(),
+    ).filter(
+      (task) =>
+        ACTIVE_STATUSES.has(
+          task.status,
+        ),
+    );
+
+  return (
+    activeTasks.find(
+      (task) =>
+        normalizeObjective(
+          task.objective,
+        ) === normalizedObjective,
+    ) ?? null
   );
 }
 
@@ -410,6 +605,8 @@ export function claimAutonomousDevelopmentTask(
   const timestamp =
     now();
 
+  assertSafeTask(task);
+
   assertPhaseTransition(
     task.phase,
     "DISCOVERING",
@@ -422,6 +619,9 @@ export function claimAutonomousDevelopmentTask(
     "DISCOVERING";
 
   task.reason =
+    undefined;
+
+  task.result =
     undefined;
 
   task.startedAt =
@@ -468,24 +668,7 @@ export function updateAutonomousDevelopmentTask(
     );
   }
 
-  if (
-    TERMINAL_STATUSES.has(
-      task.status,
-    )
-  ) {
-    throw new Error(
-      `Task cannot be updated from terminal status: ${task.status}`,
-    );
-  }
-
-  if (
-    task.status !==
-    "running"
-  ) {
-    throw new Error(
-      `Task cannot be updated from status: ${task.status}`,
-    );
-  }
+  assertTaskIsActive(task);
 
   if (
     update.phase
@@ -514,33 +697,47 @@ export function updateAutonomousDevelopmentTask(
   }
 
   if (
-    update.targetPaths
+    update.targetPaths !==
+    undefined
   ) {
     task.targetPaths =
       normalizeTargetPaths(
         update.targetPaths,
       );
 
-    assertSafeTask(
-      task,
-    );
+    assertSafeTask(task);
   }
 
   if (
-    update.commitSha
+    update.commitSha !==
+    undefined
   ) {
+    const commitSha =
+      update.commitSha.trim();
+
     task.commitSha =
-      update.commitSha.trim() ||
+      commitSha ||
       undefined;
+
+    if (
+      task.result
+    ) {
+      task.result.commitSha =
+        commitSha ||
+        undefined;
+    }
   }
 
   if (
-    update.changedPaths
+    update.changedPaths !==
+    undefined
   ) {
     task.changedPaths =
-      normalizeTargetPaths(
+      normalizeChangedPaths(
         update.changedPaths,
       );
+
+    assertSafeTask(task);
   }
 
   touchTask(task);
@@ -551,6 +748,52 @@ export function updateAutonomousDevelopmentTask(
   );
 
   return task;
+}
+
+export function heartbeatAutonomousDevelopmentTask(
+  taskId: string,
+  reason?: string,
+) {
+  const task =
+    tasks.get(taskId);
+
+  if (!task) {
+    throw new Error(
+      "Development task not found.",
+    );
+  }
+
+  assertTaskIsActive(task);
+
+  if (
+    reason !==
+    undefined
+  ) {
+    task.reason =
+      reason;
+  }
+
+  touchTask(task);
+
+  tasks.set(
+    taskId,
+    task,
+  );
+
+  return {
+    taskId:
+      task.id,
+    status:
+      task.status,
+    phase:
+      task.phase,
+    updatedAt:
+      task.updatedAt,
+    lastHeartbeatAt:
+      task.lastHeartbeatAt,
+    reason:
+      task.reason,
+  };
 }
 
 export function completeAutonomousDevelopmentTask(
@@ -572,6 +815,14 @@ export function completeAutonomousDevelopmentTask(
   }
 
   if (
+    TERMINAL_STATUSES.has(
+      task.status,
+    )
+  ) {
+    return createReceipt(task);
+  }
+
+  if (
     task.status !==
     "running"
   ) {
@@ -589,33 +840,44 @@ export function completeAutonomousDevelopmentTask(
     result.verificationPassed ===
       true;
 
-  const finalPhase =
-    passed
-      ? "COMPLETED"
-      : "BLOCKED";
+  if (!passed) {
+    return blockAutonomousDevelopmentTask(
+      taskId,
+      result.reason ||
+        "Autonomous development verification did not pass.",
+    ).receipt;
+  }
 
   assertPhaseTransition(
     task.phase,
-    finalPhase,
+    "COMPLETED",
   );
 
   const timestamp =
     now();
 
   task.status =
-    passed
-      ? "completed"
-      : "failed";
+    "completed";
 
   task.phase =
-    finalPhase;
+    "COMPLETED";
 
   task.reason =
     result.reason;
 
   task.commitSha =
-    result.commitSha ||
-    undefined;
+    result.commitSha.trim();
+
+  task.result = {
+    commitSha:
+      result.commitSha.trim(),
+    readbackVerified:
+      result.readbackVerified,
+    verificationPassed:
+      result.verificationPassed,
+    reason:
+      result.reason,
+  };
 
   task.completedAt =
     timestamp;
@@ -628,7 +890,7 @@ export function completeAutonomousDevelopmentTask(
 
   appendPhaseEvent(
     task,
-    finalPhase,
+    "COMPLETED",
     result.reason,
   );
 
@@ -637,34 +899,7 @@ export function completeAutonomousDevelopmentTask(
     task,
   );
 
-  return {
-    taskId,
-    status:
-      task.status,
-    repository:
-      task.repository,
-    branch:
-      task.branch,
-    targetPaths:
-      task.targetPaths,
-    phases:
-      task.phaseHistory.map(
-        (event) =>
-          event.phase,
-      ),
-    commitSha:
-      result.commitSha,
-    readbackVerified:
-      result.readbackVerified,
-    verificationPassed:
-      result.verificationPassed,
-    reason:
-      result.reason,
-    startedAt:
-      task.startedAt,
-    completedAt:
-      timestamp,
-  };
+  return createReceipt(task);
 }
 
 export function blockAutonomousDevelopmentTask(
@@ -684,9 +919,19 @@ export function blockAutonomousDevelopmentTask(
     task.status ===
     "completed"
   ) {
-    throw new Error(
-      "Completed autonomous development tasks cannot be blocked.",
-    );
+    return {
+      taskId,
+      status:
+        "completed" as const,
+      reason:
+        task.reason ||
+        reason,
+      completedAt:
+        task.completedAt ||
+        now(),
+      receipt:
+        createReceipt(task),
+    };
   }
 
   if (
@@ -703,6 +948,8 @@ export function blockAutonomousDevelopmentTask(
       completedAt:
         task.completedAt ||
         now(),
+      receipt:
+        createReceipt(task),
     };
   }
 
@@ -727,6 +974,16 @@ export function blockAutonomousDevelopmentTask(
 
   task.reason =
     reason;
+
+  task.result = {
+    commitSha:
+      task.commitSha,
+    readbackVerified:
+      false,
+    verificationPassed:
+      false,
+    reason,
+  };
 
   task.completedAt =
     timestamp;
@@ -755,6 +1012,8 @@ export function blockAutonomousDevelopmentTask(
     reason,
     completedAt:
       timestamp,
+    receipt:
+      createReceipt(task),
   };
 }
 
@@ -794,5 +1053,7 @@ export function getAutonomousDevelopmentTaskHeartbeat(
       task.updatedAt,
     lastHeartbeatAt:
       task.lastHeartbeatAt,
+    reason:
+      task.reason,
   };
 }
