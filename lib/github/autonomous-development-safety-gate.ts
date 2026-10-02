@@ -95,8 +95,118 @@ function hasDangerousMarkers(content: string): boolean {
     "AIOS_PATCH_" + "END",
   ];
 
+  function containsMarkerInCode(
+    source: string,
+    marker: string,
+  ): boolean {
+    let index = 0;
+
+    while (index < source.length) {
+      const current = source[index];
+      const next = source[index + 1];
+
+      if (
+        current === "/" &&
+        next === "/"
+      ) {
+        index += 2;
+
+        while (
+          index < source.length &&
+          source[index] !== "\n" &&
+          source[index] !== "\r"
+        ) {
+          index += 1;
+        }
+
+        continue;
+      }
+
+      if (
+        current === "/" &&
+        next === "*"
+      ) {
+        index += 2;
+
+        while (index < source.length) {
+          if (
+            source[index] === "*" &&
+            source[index + 1] === "/"
+          ) {
+            index += 2;
+            break;
+          }
+
+          index += 1;
+        }
+
+        continue;
+      }
+
+      if (
+        current === "'" ||
+        current === "\""
+      ) {
+        const quote = current;
+        index += 1;
+
+        while (index < source.length) {
+          if (source[index] === "\\") {
+            index += 2;
+            continue;
+          }
+
+          if (source[index] === quote) {
+            index += 1;
+            break;
+          }
+
+          index += 1;
+        }
+
+        continue;
+      }
+
+      if (current === "`") {
+        index += 1;
+
+        while (index < source.length) {
+          if (source[index] === "\\") {
+            index += 2;
+            continue;
+          }
+
+          if (source[index] === "`") {
+            index += 1;
+            break;
+          }
+
+          index += 1;
+        }
+
+        continue;
+      }
+
+      if (
+        source.startsWith(
+          marker,
+          index,
+        )
+      ) {
+        return true;
+      }
+
+      index += 1;
+    }
+
+    return false;
+  }
+
   return markers.some((marker) =>
-    content.includes(marker),
+    containsMarkerInCode(
+      content,
+      marker,
+    ),
   );
 }
 
