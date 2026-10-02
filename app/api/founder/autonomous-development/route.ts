@@ -12,10 +12,12 @@ import {
 } from "@/lib/founder/auth";
 import {
   blockAutonomousDevelopmentTask,
+  claimAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
+  findPersistentActiveAutonomousDevelopmentTask,
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
-  findPersistentActiveAutonomousDevelopmentTask,
+  persistAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
 
@@ -428,7 +430,34 @@ export async function POST(
       );
 
     /*
-     * The HTTP request returns immediately.
+     * Close the creation-to-execution durability gap.
+     *
+     * Previously the task remained "todo" until the
+     * background Agent called claimAutonomousDevelopmentTask().
+     * If the Vercel invocation ended between createTask()
+     * and after(), the persistent record could remain queued
+     * without ever entering the stale-heartbeat recovery path.
+     *
+     * The route now claims the task before returning the HTTP
+     * response. The task therefore becomes a durable "running"
+     * execution lease before after() starts the Agent.
+     */
+    const claimedTask =
+      claimAutonomousDevelopmentTask(
+        task.id,
+      );
+
+    /*
+     * Make the running state durable before the request
+     * returns. This is awaited deliberately because this
+     * persistence boundary protects the autonomous execution
+     * lease across Vercel instances.
+     */
+    await persistAutonomousDevelopmentTasks();
+
+    /*
+     * The HTTP request returns immediately after the durable
+     * execution lease has been persisted.
      *
      * AIOS remains the execution authority:
      *
@@ -439,6 +468,9 @@ export async function POST(
      * -> GitHub write
      * -> readback
      * -> Vercel verification
+     *
+     * The Agent receives the exact taskId and continues the
+     * already-claimed running task without creating another task.
      */
     after(
       async () => {
@@ -447,7 +479,7 @@ export async function POST(
             {
               objective,
               taskId:
-                task.id,
+                claimedTask.id,
             },
           );
         } catch (
@@ -461,7 +493,7 @@ export async function POST(
 
           try {
             blockAutonomousDevelopmentTask(
-              task.id,
+              claimedTask.id,
               reason,
             );
           } catch {
@@ -478,10 +510,12 @@ export async function POST(
 
     return json(
       buildTaskResponse(
-        task,
+        claimedTask,
         {
           duplicate:
             false,
+          message:
+            "Autonomous development execution lease persisted. AIOS is executing the development loop.",
         },
       ),
       202,
