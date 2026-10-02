@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -29,6 +30,12 @@ type TaskPhase =
   | "COMPLETED"
   | "BLOCKED";
 
+type PhaseEvent = {
+  phase: TaskPhase;
+  at: string;
+  reason?: string;
+};
+
 type Task = {
   id: string;
   objective: string;
@@ -45,11 +52,7 @@ type Task = {
   startedAt?: string;
   completedAt?: string;
   lastHeartbeatAt?: string;
-  phaseHistory?: Array<{
-    phase: TaskPhase;
-    at: string;
-    reason?: string;
-  }>;
+  phaseHistory?: PhaseEvent[];
   result?: {
     commitSha?: string;
     readbackVerified: boolean;
@@ -78,6 +81,8 @@ const DEFAULT_OBJECTIVE =
 
 const POLL_INTERVAL_MS = 2500;
 const MAX_POLL_ROUNDS = 240;
+const HEARTBEAT_WARNING_MS =
+  5 * 60 * 1000;
 
 const PHASE_LABELS: Record<
   TaskPhase,
@@ -96,6 +101,53 @@ const PHASE_LABELS: Record<
   COMPLETED: "Completed",
   BLOCKED: "Blocked",
 };
+
+function formatTime(
+  value?: string,
+) {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp =
+    new Date(value).getTime();
+
+  if (
+    !Number.isFinite(
+      timestamp,
+    )
+  ) {
+    return value;
+  }
+
+  return new Date(
+    timestamp,
+  ).toLocaleString();
+}
+
+function getHeartbeatAge(
+  value?: string,
+) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp =
+    new Date(value).getTime();
+
+  if (
+    !Number.isFinite(
+      timestamp,
+    )
+  ) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Date.now() - timestamp,
+  );
+}
 
 export default function FounderAutonomousDevelopmentPage() {
   const [accessKey, setAccessKey] =
@@ -176,6 +228,22 @@ export default function FounderAutonomousDevelopmentPage() {
       null;
   };
 
+  const schedulePoll = (
+    key: string,
+    taskId: string,
+    delay = POLL_INTERVAL_MS,
+  ) => {
+    clearPolling();
+
+    pollTimerRef.current =
+      setTimeout(() => {
+        void pollTask(
+          key,
+          taskId,
+        );
+      }, delay);
+  };
+
   const pollTask = async (
     key: string,
     taskId: string,
@@ -190,6 +258,14 @@ export default function FounderAutonomousDevelopmentPage() {
         "AIOS 任务仍在后台执行。页面轮询已停止，可稍后重新打开 Founder Autonomous Development 查看任务状态。",
       );
 
+      return;
+    }
+
+    if (
+      activeTaskIdRef.current &&
+      activeTaskIdRef.current !==
+        taskId
+    ) {
       return;
     }
 
@@ -256,13 +332,10 @@ export default function FounderAutonomousDevelopmentPage() {
             "AIOS 正在读取真实 GitHub 仓库并进行 Planner 判断。",
         });
 
-        pollTimerRef.current =
-          setTimeout(() => {
-            void pollTask(
-              key,
-              taskId,
-            );
-          }, POLL_INTERVAL_MS);
+        schedulePoll(
+          key,
+          taskId,
+        );
 
         return;
       }
@@ -325,13 +398,10 @@ export default function FounderAutonomousDevelopmentPage() {
         return;
       }
 
-      pollTimerRef.current =
-        setTimeout(() => {
-          void pollTask(
-            key,
-            taskId,
-          );
-        }, POLL_INTERVAL_MS);
+      schedulePoll(
+        key,
+        taskId,
+      );
     } catch (
       pollError
     ) {
@@ -473,13 +543,11 @@ export default function FounderAutonomousDevelopmentPage() {
 
       pollRoundsRef.current = 0;
 
-      pollTimerRef.current =
-        setTimeout(() => {
-          void pollTask(
-            key,
-            taskId,
-          );
-        }, 500);
+      schedulePoll(
+        key,
+        taskId,
+        500,
+      );
     } catch (
       requestError
     ) {
@@ -530,6 +598,27 @@ export default function FounderAutonomousDevelopmentPage() {
         ? "Starting"
         : status.toUpperCase();
 
+  const heartbeatAge =
+    useMemo(
+      () =>
+        getHeartbeatAge(
+          currentTask?.lastHeartbeatAt,
+        ),
+      [
+        currentTask?.lastHeartbeatAt,
+      ],
+    );
+
+  const heartbeatWarning =
+    status === "running" &&
+    heartbeatAge !== null &&
+    heartbeatAge >=
+      HEARTBEAT_WARNING_MS;
+
+  const phaseHistory =
+    currentTask?.phaseHistory ??
+    [];
+
   return (
     <main
       style={{
@@ -571,7 +660,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.29.3
+            FOUNDER ONLY · C167.31.4
           </div>
 
           <h1
@@ -688,7 +777,6 @@ export default function FounderAutonomousDevelopmentPage() {
                       "0",
                     )}
                   </span>
-
                   {
                     step
                   }
@@ -912,9 +1000,9 @@ export default function FounderAutonomousDevelopmentPage() {
                 {success
                   ? "AUTONOMOUS DEVELOPMENT COMPLETED"
                   : status ===
-                      "running" ||
-                    status ===
-                      "todo"
+                        "running" ||
+                      status ===
+                        "todo"
                     ? "AUTONOMOUS DEVELOPMENT RUNNING"
                     : status ===
                         "starting"
@@ -1068,23 +1156,114 @@ export default function FounderAutonomousDevelopmentPage() {
                     </div>
                   </div>
 
-                  {currentTask.lastHeartbeatAt && (
+                  <div
+                    style={{
+                      marginTop:
+                        8,
+                      padding:
+                        10,
+                      borderRadius:
+                        10,
+                      background:
+                        heartbeatWarning
+                          ? "#fff7ed"
+                          : "#f8fafc",
+                      border:
+                        heartbeatWarning
+                          ? "1px solid #fed7aa"
+                          : "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display:
+                          "flex",
+                        justifyContent:
+                          "space-between",
+                        gap:
+                          10,
+                        alignItems:
+                          "center",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            color:
+                              "#94a3b8",
+                            fontSize:
+                              9,
+                            fontWeight:
+                              850,
+                            letterSpacing:
+                              "0.08em",
+                          }}
+                        >
+                          EXECUTION HEARTBEAT
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop:
+                              4,
+                            color:
+                              heartbeatWarning
+                                ? "#c2410c"
+                                : "#334155",
+                            fontSize:
+                              11,
+                            fontWeight:
+                              800,
+                          }}
+                        >
+                          {currentTask.lastHeartbeatAt
+                            ? heartbeatWarning
+                              ? "Heartbeat aging"
+                              : "Heartbeat healthy"
+                            : "Heartbeat pending"}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          width:
+                            9,
+                          height:
+                            9,
+                          borderRadius:
+                            "50%",
+                          background:
+                            heartbeatWarning
+                              ? "#f97316"
+                              : currentTask.lastHeartbeatAt
+                                ? "#22c55e"
+                                : "#94a3b8",
+                          flexShrink:
+                            0,
+                        }}
+                      />
+                    </div>
+
                     <div
                       style={{
                         marginTop:
-                          8,
+                          6,
                         color:
-                          "#94a3b8",
+                          "#64748b",
                         fontSize:
                           10,
+                        lineHeight:
+                          1.5,
                       }}
                     >
                       Last heartbeat:{" "}
                       {
-                        currentTask.lastHeartbeatAt
+                        formatTime(
+                          currentTask.lastHeartbeatAt,
+                        )
                       }
                     </div>
-                  )}
+                  </div>
                 </>
               )}
 
@@ -1138,6 +1317,165 @@ export default function FounderAutonomousDevelopmentPage() {
                   </div>
                 </div>
               )}
+
+              {currentTask?.phaseHistory
+                ?.length ? (
+                <div
+                  style={{
+                    marginTop:
+                      10,
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize:
+                        11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    EXECUTION PHASE HISTORY
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop:
+                        7,
+                      display:
+                        "grid",
+                      gap:
+                        6,
+                    }}
+                  >
+                    {phaseHistory
+                      .slice()
+                      .reverse()
+                      .slice(
+                        0,
+                        12,
+                      )
+                      .map(
+                        (
+                          event,
+                          index,
+                        ) => (
+                          <div
+                            key={`${event.at}-${event.phase}-${index}`}
+                            style={{
+                              display:
+                                "grid",
+                              gridTemplateColumns:
+                                "8px minmax(0, 1fr)",
+                              gap:
+                                8,
+                              alignItems:
+                                "start",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width:
+                                  8,
+                                height:
+                                  8,
+                                marginTop:
+                                  4,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  index ===
+                                  0
+                                    ? "#2563eb"
+                                    : "#cbd5e1",
+                              }}
+                            />
+
+                            <div
+                              style={{
+                                padding:
+                                  "7px 8px",
+                                borderRadius:
+                                  8,
+                                background:
+                                  "#f8fafc",
+                                border:
+                                  "1px solid #e2e8f0",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display:
+                                    "flex",
+                                  justifyContent:
+                                    "space-between",
+                                  gap:
+                                    8,
+                                  flexWrap:
+                                    "wrap",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color:
+                                      "#334155",
+                                    fontSize:
+                                      10,
+                                    fontWeight:
+                                      850,
+                                  }}
+                                >
+                                  {
+                                    PHASE_LABELS[
+                                      event.phase
+                                    ]
+                                  }
+                                </span>
+
+                                <span
+                                  style={{
+                                    color:
+                                      "#94a3b8",
+                                    fontSize:
+                                      9,
+                                  }}
+                                >
+                                  {
+                                    formatTime(
+                                      event.at,
+                                    )
+                                  }
+                                </span>
+                              </div>
+
+                              {event.reason && (
+                                <div
+                                  style={{
+                                    marginTop:
+                                      3,
+                                    color:
+                                      "#64748b",
+                                    fontSize:
+                                      10,
+                                    lineHeight:
+                                      1.45,
+                                    overflowWrap:
+                                      "anywhere",
+                                  }}
+                                >
+                                  {
+                                    event.reason
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ),
+                      )}
+                  </div>
+                </div>
+              ) : null}
 
               {currentTask?.commitSha && (
                 <div
@@ -1418,6 +1756,46 @@ export default function FounderAutonomousDevelopmentPage() {
                   )}
                 </div>
               ) : null}
+
+              {currentTask?.startedAt && (
+                <div
+                  style={{
+                    marginTop:
+                      10,
+                    color:
+                      "#94a3b8",
+                    fontSize:
+                      10,
+                    lineHeight:
+                      1.5,
+                  }}
+                >
+                  Started:{" "}
+                  {
+                    formatTime(
+                      currentTask.startedAt,
+                    )
+                  }
+                  <br />
+                  Updated:{" "}
+                  {
+                    formatTime(
+                      currentTask.updatedAt,
+                    )
+                  }
+                  {currentTask.completedAt && (
+                    <>
+                      <br />
+                      Completed:{" "}
+                      {
+                        formatTime(
+                          currentTask.completedAt,
+                        )
+                      }
+                    </>
+                  )}
+                </div>
+              )}
 
               {result.message && (
                 <div
