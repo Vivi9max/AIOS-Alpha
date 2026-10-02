@@ -278,20 +278,22 @@ export default function FounderAutonomousDevelopmentPage() {
         return;
       }
 
-      if (data.task) {
-        setResult((previous) => ({
-          ...(previous || {}),
-          ok: data.task?.status === "completed",
-          success: data.task?.status === "completed",
-          taskId,
-          status: data.task?.status,
-          objective: data.task?.objective,
-          repository: data.task?.repository,
-          branch: data.task?.branch,
-          task: data.task,
-          tasks: [data.task],
-        }));
-      }
+if (data.task) {
+  const heartbeatTask = data.task;
+
+  setResult((previous) => ({
+    ...(previous || {}),
+    ok: heartbeatTask.status === "completed",
+    success: heartbeatTask.status === "completed",
+    taskId,
+    status: heartbeatTask.status,
+    objective: heartbeatTask.objective,
+    repository: heartbeatTask.repository,
+    branch: heartbeatTask.branch,
+    task: heartbeatTask,
+    tasks: [heartbeatTask],
+  }));
+}
 
       if (isTerminalStatus(data.task?.status)) {
         clearHeartbeat();
