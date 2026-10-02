@@ -33,11 +33,20 @@ export type AutonomousDevelopmentFinalizationResult = {
   reason?: string;
 };
 
-const TERMINAL_STATUSES = new Set([
-  "completed",
-  "failed",
-  "blocked",
-]);
+const TERMINAL_STATUSES =
+  new Set([
+    "completed",
+    "failed",
+    "blocked",
+  ]);
+
+function isTerminalStatus(
+  status: string,
+): boolean {
+  return TERMINAL_STATUSES.has(
+    status,
+  );
+}
 
 function buildResult(
   task: NonNullable<
@@ -47,17 +56,26 @@ function buildResult(
       >
     >
   >,
+  overrides?: {
+    ok?: boolean;
+    reason?: string;
+  },
 ): AutonomousDevelopmentFinalizationResult {
   const terminal =
-    TERMINAL_STATUSES.has(
+    isTerminalStatus(
       task.status,
     );
 
   return {
-    ok: true,
-    taskId: task.id,
-    status: task.status,
-    phase: task.phase,
+    ok:
+      overrides?.ok ??
+      terminal,
+    taskId:
+      task.id,
+    status:
+      task.status,
+    phase:
+      task.phase,
     terminal,
     commitSha:
       task.result?.commitSha ??
@@ -69,20 +87,26 @@ function buildResult(
       task.result?.verificationPassed ===
       true,
     reason:
+      overrides?.reason ??
       task.result?.reason ??
       task.reason,
   };
 }
 
 /**
- * Re-hydrates the task from the persistent control plane
- * and forces the latest in-memory terminal state to storage.
+ * Finalizes the durable state of an autonomous
+ * development task.
  *
- * This is intentionally separate from the large Agent.
- * The Agent remains responsible for execution and terminal
- * state transitions; this helper is responsible only for
- * making the final state durable before the background
- * execution finishes.
+ * The Agent remains responsible for the actual
+ * development execution and terminal transition.
+ *
+ * This module is responsible for:
+ *
+ * 1. Reading the authoritative persistent task.
+ * 2. Persisting the latest merged state.
+ * 3. Reading the state back from persistence.
+ * 4. Refusing to report successful finalization
+ *    while the task is still active.
  */
 export async function finalizeAutonomousDevelopmentTask(
   taskId: string,
@@ -125,11 +149,11 @@ export async function finalizeAutonomousDevelopmentTask(
   }
 
   /*
-   * The persistent control plane has already merged the
-   * newest local task state against durable storage.
+   * The persistent control plane has already merged
+   * the latest local and durable state.
    *
-   * Persist one final awaited snapshot so the caller can
-   * safely finish the background execution after this point.
+   * Force one awaited persistence boundary before
+   * reading the final state back.
    */
   await persistAutonomousDevelopmentTasks();
 
@@ -153,6 +177,30 @@ export async function finalizeAutonomousDevelopmentTask(
     };
   }
 
+  /*
+   * Never convert an active task into a successful
+   * terminal receipt merely because persistence worked.
+   *
+   * This protects the distinction between:
+   *
+   * persisted = durable
+   * terminal = execution finished
+   */
+  if (
+    !isTerminalStatus(
+      finalizedTask.status,
+    )
+  ) {
+    return buildResult(
+      finalizedTask,
+      {
+        ok: false,
+        reason:
+          "AUTONOMOUS_DEVELOPMENT_FINALIZATION_NON_TERMINAL",
+      },
+    );
+  }
+
   return buildResult(
     finalizedTask,
   );
@@ -161,14 +209,30 @@ export async function finalizeAutonomousDevelopmentTask(
 /**
  * Finalizes the execution after an Agent failure.
  *
- * The route may already have transitioned the task to
- * blocked. This helper never invents a new terminal result.
- * It only persists and reads back the authoritative state.
+ * The route may already have transitioned the task
+ * to blocked. This function never invents a terminal
+ * result and never upgrades a non-terminal task.
  */
 export async function finalizeAutonomousDevelopmentFailure(
   taskId: string,
 ): Promise<AutonomousDevelopmentFinalizationResult> {
-  return finalizeAutonomousDevelopmentTask(
-    taskId,
-  );
+  const result =
+    await finalizeAutonomousDevelopmentTask(
+      taskId,
+    );
+
+  if (
+    result.ok &&
+    result.status ===
+      "completed"
+  ) {
+    return {
+      ...result,
+      ok: false,
+      reason:
+        "AUTONOMOUS_DEVELOPMENT_FAILURE_FINALIZATION_FOUND_COMPLETED_TASK",
+    };
+  }
+
+  return result;
 }
