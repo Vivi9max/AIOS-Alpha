@@ -86,6 +86,14 @@ export default function AutonomousLoopRegressionPanel() {
   ] =
     useState(false);
 
+  const [
+    lastCheckedAt,
+    setLastCheckedAt,
+  ] =
+    useState<number | null>(
+      null,
+    );
+
   const load =
     useCallback(
       async () => {
@@ -121,6 +129,13 @@ export default function AutonomousLoopRegressionPanel() {
            * is false.
            */
           setData(result);
+
+          setLastCheckedAt(
+            typeof result.timestamp ===
+              "number"
+              ? result.timestamp
+              : Date.now(),
+          );
 
           if (!response.ok) {
             setError(true);
@@ -227,6 +242,29 @@ export default function AutonomousLoopRegressionPanel() {
           </strong>
         )}
       </div>
+
+      {lastCheckedAt !== null && (
+        <p
+          style={{
+            margin:
+              "10px 0 0",
+
+            color:
+              "#64748b",
+
+            fontSize:
+              12,
+
+            fontWeight:
+              700,
+          }}
+        >
+          Last verified:{" "}
+          {new Date(
+            lastCheckedAt,
+          ).toLocaleString()}
+        </p>
+      )}
 
       {error && data && (
         <div
