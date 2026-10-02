@@ -1127,7 +1127,12 @@ export default function ChatInput({
                     "Add instructions and send…",
                     "説明を追加して送信…",
                   )
-                : copy.placeholder
+                : localized(
+                    locale,
+                    "你现在要完成什么结果？",
+                    "What result do you want to achieve?",
+                    "どんな結果を実現したいですか？",
+                  )
           }
           aria-label={
             copy.ariaLabel
