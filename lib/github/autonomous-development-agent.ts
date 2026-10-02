@@ -44,6 +44,21 @@ const MAX_PLAN_ATTEMPTS = 2;
 const MAX_PATCH_ATTEMPTS = 3;
 const MAX_REPAIR_ROUNDS = 2;
 
+/*
+ * Discovery is intentionally bounded.
+ *
+ * The previous implementation performed repository traversal as a
+ * fully serial queue. In a large repository this could require
+ * hundreds of sequential GitHub API round trips before the Planner
+ * was even called.
+ *
+ * Keep the traversal breadth-first and bounded while allowing a
+ * small number of independent GitHub directory reads at the same
+ * time.
+ */
+const DISCOVERY_CONCURRENCY = 6;
+const MAX_DISCOVERY_DEPTH = 4;
+
 const PLANNER_SYSTEM_PROMPT = [
   "AIOS Repository Development Planner",
   "",
@@ -245,6 +260,50 @@ function scorePath(
   return score;
 }
 
+type DiscoveryNode = {
+  path: string;
+  depth: number;
+};
+
+type DiscoveryEntry = {
+  type: string;
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+  html_url?: string;
+};
+
+async function discoverPath(
+  node: DiscoveryNode,
+): Promise<{
+  node: DiscoveryNode;
+  entries: DiscoveryEntry[];
+}> {
+  const result =
+    await listGitHubPath({
+      repo: REPOSITORY,
+      path: node.path,
+      ref: BRANCH,
+    });
+
+  if (
+    !result.success ||
+    !result.data
+  ) {
+    return {
+      node,
+      entries: [],
+    };
+  }
+
+  return {
+    node,
+    entries:
+      result.data as DiscoveryEntry[],
+  };
+}
+
 async function discoverRepositoryPaths(
   objective: string,
 ) {
@@ -260,81 +319,142 @@ async function discoverRepositoryPaths(
     "styles",
   ];
 
-  const queue = roots.map(
-    (path) => ({
-      path,
-      depth: 0,
-    }),
-  );
-
   const discovered =
     new Set<string>();
 
+  let frontier: DiscoveryNode[] =
+    roots.map((path) => ({
+      path,
+      depth: 0,
+    }));
+
+  /*
+   * Breadth-first discovery keeps the repository index deterministic.
+   * Each frontier is processed in bounded parallel batches rather than
+   * issuing one GitHub request after another.
+   */
   while (
-    queue.length > 0 &&
+    frontier.length > 0 &&
     discovered.size <
       MAX_DISCOVERY_ENTRIES
   ) {
-    const current =
-      queue.shift();
-
-    if (!current) {
-      break;
-    }
-
-    const result =
-      await listGitHubPath({
-        repo: REPOSITORY,
-        path: current.path,
-        ref: BRANCH,
-      });
-
-    if (
-      !result.success ||
-      !result.data
-    ) {
-      continue;
-    }
+    const nextFrontier:
+      DiscoveryNode[] = [];
 
     for (
-      const entry of result.data
+      let start = 0;
+      start < frontier.length &&
+      discovered.size <
+        MAX_DISCOVERY_ENTRIES;
+      start +=
+        DISCOVERY_CONCURRENCY
     ) {
-      const path =
-        normalizePath(
-          entry.path,
+      const batch =
+        frontier.slice(
+          start,
+          start +
+            DISCOVERY_CONCURRENCY,
         );
 
-      if (
-        !isSafePath(path)
-      ) {
-        continue;
-      }
+      const results =
+        await Promise.all(
+          batch.map(
+            discoverPath,
+          ),
+        );
 
-      if (
-        entry.type === "dir"
+      for (
+        const result of results
       ) {
-        if (
-          current.depth < 4
+        for (
+          const entry of result.entries
         ) {
-          queue.push({
-            path,
-            depth:
-              current.depth + 1,
-          });
-        }
-      } else if (
-        entry.type === "file"
-      ) {
-        discovered.add(path);
-      }
+          const path =
+            normalizePath(
+              entry.path,
+            );
 
-      if (
-        discovered.size >=
-        MAX_DISCOVERY_ENTRIES
-      ) {
-        break;
+          if (
+            !isSafePath(path)
+          ) {
+            continue;
+          }
+
+          if (
+            entry.type ===
+            "dir"
+          ) {
+            if (
+              result.node.depth <
+              MAX_DISCOVERY_DEPTH
+            ) {
+              nextFrontier.push({
+                path,
+                depth:
+                  result.node.depth +
+                  1,
+              });
+            }
+
+            continue;
+          }
+
+          if (
+            entry.type ===
+            "file"
+          ) {
+            discovered.add(
+              path,
+            );
+          }
+
+          if (
+            discovered.size >=
+            MAX_DISCOVERY_ENTRIES
+          ) {
+            break;
+          }
+        }
+
+        if (
+          discovered.size >=
+          MAX_DISCOVERY_ENTRIES
+        ) {
+          break;
+        }
       }
     }
+
+    /*
+     * Remove duplicate directories before the next breadth level.
+     * This prevents multiple parent listings from causing the same
+     * directory to be queried more than once.
+     */
+    const uniqueNext =
+      new Map<
+        string,
+        DiscoveryNode
+      >();
+
+    for (
+      const node of nextFrontier
+    ) {
+      if (
+        !uniqueNext.has(
+          node.path,
+        )
+      ) {
+        uniqueNext.set(
+          node.path,
+          node,
+        );
+      }
+    }
+
+    frontier =
+      Array.from(
+        uniqueNext.values(),
+      );
   }
 
   const tokens =
@@ -655,8 +775,8 @@ function parsePatchBlocks(
     );
   }
 
-  const blocks: PatchOperation[] =
-    [];
+  const blocks:
+    PatchOperation[] = [];
 
   const pattern =
     /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
@@ -707,8 +827,7 @@ function parsePatchBlocks(
 
     const path =
       normalizePath(
-        pathMatch[1] ||
-          "",
+        pathMatch[1] || "",
       );
 
     const operation =
@@ -1189,15 +1308,25 @@ function buildAutonomousCommitMessage(
   repairRound?: number,
 ) {
   const normalized = objective
-    .replace(/[^a-zA-Z0-9 _-]+/g, " ")
+    .replace(
+      /[^a-zA-Z0-9 _-]+/g,
+      " ",
+    )
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(
+      /\s+/g,
+      " ",
+    );
 
-  const summary = normalized
-    .slice(0, 72)
-    .trim()
-    .replace(/\s+/g, "-")
-    .toLowerCase();
+  const summary =
+    normalized
+      .slice(0, 72)
+      .trim()
+      .replace(
+        /\s+/g,
+        "-",
+      )
+      .toLowerCase();
 
   if (repairRound) {
     return `fix(C167.28.4): autonomous build repair ${repairRound}${summary ? ` ${summary}` : ""}`;
@@ -1211,19 +1340,30 @@ async function loadSafetyGateRepositoryContext(
   originalContents: Record<string, string>,
   patchedContents: Record<string, string>,
 ) {
-  const i18nPath = "lib/i18n/index.ts";
+  const i18nPath =
+    "lib/i18n/index.ts";
 
   if (
-    !targetPaths.includes(i18nPath) &&
-    !patchedContents[i18nPath]
+    !targetPaths.includes(
+      i18nPath,
+    ) &&
+    !patchedContents[
+      i18nPath
+    ]
   ) {
     const currentI18n =
-      await readFile(i18nPath);
+      await readFile(
+        i18nPath,
+      );
 
-    originalContents[i18nPath] =
+    originalContents[
+      i18nPath
+    ] =
       currentI18n.content;
 
-    patchedContents[i18nPath] =
+    patchedContents[
+      i18nPath
+    ] =
       currentI18n.content;
   }
 }
@@ -1235,12 +1375,14 @@ function runSafetyGateOrThrow(
   patchedContents: Record<string, string>,
 ) {
   const gate =
-    runAutonomousDevelopmentSafetyGate({
-      objective,
-      targetPaths,
-      originalContents,
-      patchedContents,
-    });
+    runAutonomousDevelopmentSafetyGate(
+      {
+        objective,
+        targetPaths,
+        originalContents,
+        patchedContents,
+      },
+    );
 
   if (!gate.passed) {
     throw new Error(
@@ -1259,33 +1401,37 @@ async function writeFinalFile(
   commitMessage: string,
 ) {
   const contract =
-    createFounderDevelopmentContract({
-      objective,
-      requestedFiles:
-        targetPaths,
-      actions: [
-        "read",
-        "write",
-        "verify",
-      ],
-      verification: [
-        "readback",
-        "build",
-        "production",
-      ],
-      commitMessage,
-    });
+    createFounderDevelopmentContract(
+      {
+        objective,
+        requestedFiles:
+          targetPaths,
+        actions: [
+          "read",
+          "write",
+          "verify",
+        ],
+        verification: [
+          "readback",
+          "build",
+          "production",
+        ],
+        commitMessage,
+      },
+    );
 
   const result =
-    await dispatchGitHubTask({
-      action: "write",
-      repo: REPOSITORY,
-      branch: BRANCH,
-      path,
-      content,
-      commitMessage,
-      contract,
-    });
+    await dispatchGitHubTask(
+      {
+        action: "write",
+        repo: REPOSITORY,
+        branch: BRANCH,
+        path,
+        content,
+        commitMessage,
+        contract,
+      },
+    );
 
   if (
     !result.success
@@ -1479,10 +1625,12 @@ export async function executeAutonomousDevelopmentAgent(
 
     if (!task) {
       task =
-        createAutonomousDevelopmentTask({
-          objective,
-          targetPaths: [],
-        });
+        createAutonomousDevelopmentTask(
+          {
+            objective,
+            targetPaths: [],
+          },
+        );
 
       taskId =
         task.id;
@@ -1883,10 +2031,12 @@ export async function executeAutonomousDevelopmentAgent(
     );
 
     verification =
-      await verifyVercelBuildForCommit({
-        commitSha:
-          latestCommitSha,
-      });
+      await verifyVercelBuildForCommit(
+        {
+          commitSha:
+            latestCommitSha,
+        },
+      );
 
     while (
       verification.status ===
@@ -2091,10 +2241,12 @@ export async function executeAutonomousDevelopmentAgent(
       );
 
       verification =
-        await verifyVercelBuildForCommit({
-          commitSha:
-            latestCommitSha,
-        });
+        await verifyVercelBuildForCommit(
+          {
+            commitSha:
+              latestCommitSha,
+          },
+        );
     }
 
     const buildPassed =
