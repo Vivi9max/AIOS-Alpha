@@ -1766,11 +1766,6 @@ export function completeAutonomousDevelopmentTask(
       taskId,
     );
 
-  const task =
-    tasks.get(
-      taskId,
-    );
-
   if (!task) {
     throw new Error(
       "Development task not found.",
