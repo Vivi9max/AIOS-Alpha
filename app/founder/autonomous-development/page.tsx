@@ -42,6 +42,20 @@ type Task = {
   changedPaths?: string[];
   createdAt: string;
   updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  lastHeartbeatAt?: string;
+  phaseHistory?: Array<{
+    phase: TaskPhase;
+    at: string;
+    reason?: string;
+  }>;
+  result?: {
+    commitSha?: string;
+    readbackVerified: boolean;
+    verificationPassed: boolean;
+    reason?: string;
+  };
 };
 
 type Result = {
@@ -56,6 +70,7 @@ type Result = {
   branch?: string;
   taskId?: string;
   tasks?: Task[];
+  task?: Task;
 };
 
 const DEFAULT_OBJECTIVE =
@@ -69,7 +84,8 @@ const PHASE_LABELS: Record<
   string
 > = {
   QUEUED: "Queued",
-  DISCOVERING: "Discovering Repository",
+  DISCOVERING:
+    "Discovering Repository",
   PLANNING: "AIOS Planning",
   READING: "Reading",
   GENERATING: "Generating",
@@ -105,6 +121,9 @@ export default function FounderAutonomousDevelopmentPage() {
   const pollRoundsRef =
     useRef(0);
 
+  const activeTaskIdRef =
+    useRef<string | null>(null);
+
   useEffect(() => {
     const storedKey =
       window.sessionStorage.getItem(
@@ -124,48 +143,53 @@ export default function FounderAutonomousDevelopmentPage() {
     };
   }, []);
 
-  const getHeaders = (key: string) => ({
+  const getHeaders = (
+    key: string,
+  ) => ({
     "Content-Type":
       "application/json",
-    Accept: "application/json",
-    Authorization: `Bearer ${key}`,
+    Accept:
+      "application/json",
+    Authorization:
+      `Bearer ${key}`,
   });
 
-  const findLatestTask = (
-    tasks: Task[],
-    requestObjective: string,
-  ) => {
-    return (
-      tasks
-        .filter(
-          (task) =>
-            task.objective.trim() ===
-            requestObjective.trim(),
-        )
-        .sort(
-          (a, b) =>
-            new Date(
-              b.createdAt,
-            ).getTime() -
-            new Date(
-              a.createdAt,
-            ).getTime(),
-        )[0] ?? null
+  const clearPolling = () => {
+    if (
+      pollTimerRef.current
+    ) {
+      clearTimeout(
+        pollTimerRef.current,
+      );
+
+      pollTimerRef.current =
+        null;
+    }
+  };
+
+  const clearFounderSession = () => {
+    window.sessionStorage.removeItem(
+      STORAGE_KEY,
     );
+
+    activeTaskIdRef.current =
+      null;
   };
 
   const pollTask = async (
     key: string,
-    requestObjective: string,
+    taskId: string,
   ): Promise<void> => {
     if (
       pollRoundsRef.current >=
       MAX_POLL_ROUNDS
     ) {
       setRunning(false);
+
       setError(
         "AIOS 任务仍在后台执行。页面轮询已停止，可稍后重新打开 Founder Autonomous Development 查看任务状态。",
       );
+
       return;
     }
 
@@ -174,8 +198,8 @@ export default function FounderAutonomousDevelopmentPage() {
     try {
       const response =
         await fetch(
-          `/api/founder/autonomous-development?objective=${encodeURIComponent(
-            requestObjective,
+          `/api/founder/autonomous-development?taskId=${encodeURIComponent(
+            taskId,
           )}`,
           {
             method: "GET",
@@ -183,7 +207,8 @@ export default function FounderAutonomousDevelopmentPage() {
             headers: {
               Accept:
                 "application/json",
-              Authorization: `Bearer ${key}`,
+              Authorization:
+                `Bearer ${key}`,
             },
           },
         );
@@ -198,24 +223,23 @@ export default function FounderAutonomousDevelopmentPage() {
           data.code ===
             "FOUNDER_NOT_CONFIGURED"
         ) {
-          window.sessionStorage.removeItem(
-            STORAGE_KEY,
-          );
+          clearFounderSession();
         }
 
         setRunning(false);
+
         setError(
           data.error ||
             `Task status request failed (${response.status})`,
         );
+
         return;
       }
 
       const task =
-        findLatestTask(
-          data.tasks ?? [],
-          requestObjective,
-        );
+        data.task ??
+        data.tasks?.[0] ??
+        null;
 
       if (!task) {
         setResult({
@@ -224,8 +248,10 @@ export default function FounderAutonomousDevelopmentPage() {
           code:
             "AUTONOMOUS_DEVELOPMENT_PLANNING",
           objective:
-            requestObjective,
-          status: "starting",
+            result?.objective,
+          taskId,
+          status:
+            "starting",
           message:
             "AIOS 正在读取真实 GitHub 仓库并进行 Planner 判断。",
         });
@@ -234,7 +260,7 @@ export default function FounderAutonomousDevelopmentPage() {
           setTimeout(() => {
             void pollTask(
               key,
-              requestObjective,
+              taskId,
             );
           }, POLL_INTERVAL_MS);
 
@@ -255,17 +281,22 @@ export default function FounderAutonomousDevelopmentPage() {
             : task.status ===
                 "running"
               ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
-              : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+              : task.status ===
+                  "todo"
+                ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
+                : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
         objective:
           task.objective,
         repository:
           task.repository,
         branch:
           task.branch,
-        taskId: task.id,
+        taskId:
+          task.id,
         status:
           task.status,
         tasks: [task],
+        task,
       });
 
       if (
@@ -277,6 +308,9 @@ export default function FounderAutonomousDevelopmentPage() {
           "blocked"
       ) {
         setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
 
         if (
           task.status !==
@@ -295,11 +329,14 @@ export default function FounderAutonomousDevelopmentPage() {
         setTimeout(() => {
           void pollTask(
             key,
-            requestObjective,
+            taskId,
           );
         }, POLL_INTERVAL_MS);
-    } catch (pollError) {
+    } catch (
+      pollError
+    ) {
       setRunning(false);
+
       setError(
         pollError instanceof Error
           ? pollError.message
@@ -319,6 +356,7 @@ export default function FounderAutonomousDevelopmentPage() {
       setError(
         "请输入 Founder Access Key，或先在 Founder Console 完成验证。",
       );
+
       return;
     }
 
@@ -326,14 +364,14 @@ export default function FounderAutonomousDevelopmentPage() {
       setError(
         "请先告诉 AIOS 你想实现什么，不需要填写 Target Path。",
       );
+
       return;
     }
 
-    if (pollTimerRef.current) {
-      clearTimeout(
-        pollTimerRef.current,
-      );
-    }
+    clearPolling();
+
+    activeTaskIdRef.current =
+      null;
 
     window.sessionStorage.setItem(
       STORAGE_KEY,
@@ -344,6 +382,7 @@ export default function FounderAutonomousDevelopmentPage() {
 
     setRunning(true);
     setError("");
+
     setResult({
       ok: true,
       success: true,
@@ -351,7 +390,8 @@ export default function FounderAutonomousDevelopmentPage() {
         "AUTONOMOUS_DEVELOPMENT_STARTING",
       objective:
         requestObjective,
-      status: "starting",
+      status:
+        "starting",
       message:
         "正在启动 AIOS Autonomous Development。",
     });
@@ -397,9 +437,7 @@ export default function FounderAutonomousDevelopmentPage() {
           data.code ===
             "FOUNDER_NOT_CONFIGURED"
         ) {
-          window.sessionStorage.removeItem(
-            STORAGE_KEY,
-          );
+          clearFounderSession();
         }
 
         setRunning(false);
@@ -408,20 +446,47 @@ export default function FounderAutonomousDevelopmentPage() {
             `Request failed (${response.status})`,
         );
         setResult(data);
+
         return;
       }
 
       setResult(data);
 
+      const taskId =
+        data.taskId ??
+        data.task?.id ??
+        data.tasks?.[0]?.id ??
+        null;
+
+      if (!taskId) {
+        setRunning(false);
+
+        setError(
+          "AIOS returned a successful response but did not provide a task ID.",
+        );
+
+        return;
+      }
+
+      activeTaskIdRef.current =
+        taskId;
+
+      pollRoundsRef.current = 0;
+
       pollTimerRef.current =
         setTimeout(() => {
           void pollTask(
             key,
-            requestObjective,
+            taskId,
           );
         }, 500);
-    } catch (requestError) {
+    } catch (
+      requestError
+    ) {
       setRunning(false);
+
+      activeTaskIdRef.current =
+        null;
 
       setError(
         requestError instanceof Error
@@ -432,6 +497,7 @@ export default function FounderAutonomousDevelopmentPage() {
   };
 
   const currentTask =
+    result?.task ??
     result?.tasks?.[0];
 
   const status =
@@ -443,25 +509,34 @@ export default function FounderAutonomousDevelopmentPage() {
     currentTask?.phase;
 
   const success =
-    status === "completed";
+    status ===
+    "completed";
 
   const isTerminal =
-    status === "completed" ||
-    status === "failed" ||
-    status === "blocked";
+    status ===
+      "completed" ||
+    status ===
+      "failed" ||
+    status ===
+      "blocked";
 
   const phaseLabel =
     phase
-      ? PHASE_LABELS[phase]
-      : status === "starting"
+      ? PHASE_LABELS[
+          phase
+        ]
+      : status ===
+          "starting"
         ? "Starting"
         : status.toUpperCase();
 
   return (
     <main
       style={{
-        minHeight: "100vh",
-        background: "#f6f7fb",
+        minHeight:
+          "100vh",
+        background:
+          "#f6f7fb",
         padding:
           "20px 14px 44px",
         boxSizing:
@@ -470,36 +545,47 @@ export default function FounderAutonomousDevelopmentPage() {
     >
       <div
         style={{
-          width: "100%",
-          maxWidth: 760,
-          margin: "0 auto",
+          width:
+            "100%",
+          maxWidth:
+            760,
+          margin:
+            "0 auto",
         }}
       >
         <header
           style={{
-            marginBottom: 16,
+            marginBottom:
+              16,
           }}
         >
           <div
             style={{
-              color: "#dc2626",
-              fontSize: 10,
-              fontWeight: 900,
+              color:
+                "#dc2626",
+              fontSize:
+                10,
+              fontWeight:
+                900,
               letterSpacing:
                 "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.20
+            FOUNDER ONLY · C167.29.3
           </div>
 
           <h1
             style={{
               margin:
                 "8px 0 7px",
-              fontSize: 28,
-              lineHeight: 1.1,
-              fontWeight: 850,
-              color: "#111827",
+              fontSize:
+                28,
+              lineHeight:
+                1.1,
+              fontWeight:
+                850,
+              color:
+                "#111827",
             }}
           >
             AIOS Autonomous Development
@@ -507,10 +593,14 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <p
             style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 13,
-              lineHeight: 1.6,
+              margin:
+                0,
+              color:
+                "#64748b",
+              fontSize:
+                13,
+              lineHeight:
+                1.6,
             }}
           >
             你只说需求。AIOS 自动发现真实仓库、读取代码、判断目标文件、生成、写入 GitHub、Commit、Readback 并执行 Build Verification。
@@ -519,22 +609,28 @@ export default function FounderAutonomousDevelopmentPage() {
 
         <section
           style={{
-            padding: 16,
+            padding:
+              16,
             border:
               "1px solid #e2e8f0",
-            borderRadius: 18,
-            background: "#ffffff",
+            borderRadius:
+              18,
+            background:
+              "#ffffff",
             boxShadow:
               "0 8px 26px rgba(15, 23, 42, 0.05)",
           }}
         >
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
               gridTemplateColumns:
                 "repeat(4, minmax(0, 1fr))",
-              gap: 7,
-              marginBottom: 16,
+              gap:
+                7,
+              marginBottom:
+                16,
             }}
           >
             {[
@@ -552,18 +648,22 @@ export default function FounderAutonomousDevelopmentPage() {
                 index,
               ) => (
                 <div
-                  key={step}
+                  key={
+                    step
+                  }
                   style={{
                     padding:
                       "8px 5px",
-                    borderRadius: 9,
+                    borderRadius:
+                      9,
                     background:
                       "#f8fafc",
                     textAlign:
                       "center",
                     color:
                       "#475569",
-                    fontSize: 9,
+                    fontSize:
+                      9,
                     fontWeight:
                       750,
                   }}
@@ -576,17 +676,22 @@ export default function FounderAutonomousDevelopmentPage() {
                         3,
                       color:
                         "#94a3b8",
-                      fontSize: 8,
+                      fontSize:
+                        8,
                     }}
                   >
                     {String(
-                      index + 1,
+                      index +
+                        1,
                     ).padStart(
                       2,
                       "0",
                     )}
                   </span>
-                  {step}
+
+                  {
+                    step
+                  }
                 </div>
               ),
             )}
@@ -594,22 +699,28 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <div
             style={{
-              padding: 12,
-              borderRadius: 12,
+              padding:
+                12,
+              borderRadius:
+                12,
               background:
                 "#f8fafc",
               border:
                 "1px solid #e2e8f0",
-              marginBottom: 12,
+              marginBottom:
+                12,
             }}
           >
             <div
               style={{
-                marginBottom: 5,
+                marginBottom:
+                  5,
                 color:
                   "#94a3b8",
-                fontSize: 10,
-                fontWeight: 850,
+                fontSize:
+                  10,
+                fontWeight:
+                  850,
                 letterSpacing:
                   "0.08em",
               }}
@@ -619,11 +730,14 @@ export default function FounderAutonomousDevelopmentPage() {
 
             <div
               style={{
-                color: accessKey
-                  ? "#15803d"
-                  : "#64748b",
-                fontSize: 13,
-                fontWeight: 700,
+                color:
+                  accessKey
+                    ? "#15803d"
+                    : "#64748b",
+                fontSize:
+                  13,
+                fontWeight:
+                  700,
               }}
             >
               {accessKey
@@ -637,11 +751,14 @@ export default function FounderAutonomousDevelopmentPage() {
             style={{
               display:
                 "block",
-              marginBottom: 7,
+              marginBottom:
+                7,
               color:
                 "#334155",
-              fontSize: 12,
-              fontWeight: 750,
+              fontSize:
+                12,
+              fontWeight:
+                750,
             }}
           >
             What do you want AIOS to build or change?
@@ -649,32 +766,50 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <textarea
             id="autonomous-objective"
-            value={objective}
-            onChange={(event) =>
+            value={
+              objective
+            }
+            onChange={(
+              event,
+            ) =>
               setObjective(
-                event.target.value,
+                event.target
+                  .value,
               )
             }
             placeholder={
               DEFAULT_OBJECTIVE
             }
-            disabled={running}
-            rows={7}
-            spellCheck={false}
+            disabled={
+              running
+            }
+            rows={
+              7
+            }
+            spellCheck={
+              false
+            }
             style={{
-              width: "100%",
+              width:
+                "100%",
               boxSizing:
                 "border-box",
-              padding: 12,
+              padding:
+                12,
               border:
                 "1px solid #cbd5e1",
-              borderRadius: 10,
-              outline: "none",
-              color: "#111827",
+              borderRadius:
+                10,
+              outline:
+                "none",
+              color:
+                "#111827",
               background:
                 "#ffffff",
-              fontSize: 14,
-              lineHeight: 1.6,
+              fontSize:
+                14,
+              lineHeight:
+                1.6,
               resize:
                 "vertical",
             }}
@@ -682,11 +817,14 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <div
             style={{
-              marginTop: 7,
+              marginTop:
+                7,
               color:
                 "#94a3b8",
-              fontSize: 11,
-              lineHeight: 1.5,
+              fontSize:
+                11,
+              lineHeight:
+                1.5,
             }}
           >
             不需要 Target Path。AIOS 会从真实 GitHub 仓库自行判断需要读取和修改哪些文件。
@@ -694,26 +832,37 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <button
             type="button"
-            disabled={running}
+            disabled={
+              running
+            }
             onClick={() =>
               void handleRun()
             }
             style={{
-              width: "100%",
-              minHeight: 48,
-              marginTop: 12,
-              border: "none",
-              borderRadius: 10,
-              background: running
-                ? "#94a3b8"
-                : "#111827",
+              width:
+                "100%",
+              minHeight:
+                48,
+              marginTop:
+                12,
+              border:
+                "none",
+              borderRadius:
+                10,
+              background:
+                running
+                  ? "#94a3b8"
+                  : "#111827",
               color:
                 "#ffffff",
-              fontSize: 13,
-              fontWeight: 850,
-              cursor: running
-                ? "default"
-                : "pointer",
+              fontSize:
+                13,
+              fontWeight:
+                850,
+              cursor:
+                running
+                  ? "default"
+                  : "pointer",
             }}
           >
             {running
@@ -724,9 +873,12 @@ export default function FounderAutonomousDevelopmentPage() {
           {result && (
             <div
               style={{
-                marginTop: 12,
-                padding: 13,
-                borderRadius: 12,
+                marginTop:
+                  12,
+                padding:
+                  13,
+                borderRadius:
+                  12,
                 border:
                   success
                     ? "1px solid #bbf7d0"
@@ -743,21 +895,26 @@ export default function FounderAutonomousDevelopmentPage() {
             >
               <div
                 style={{
-                  marginBottom: 8,
+                  marginBottom:
+                    8,
                   color:
                     success
                       ? "#15803d"
                       : isTerminal
                         ? "#b91c1c"
                         : "#1d4ed8",
-                  fontSize: 12,
-                  fontWeight: 850,
+                  fontSize:
+                    12,
+                  fontWeight:
+                    850,
                 }}
               >
                 {success
                   ? "AUTONOMOUS DEVELOPMENT COMPLETED"
                   : status ===
-                      "running"
+                      "running" ||
+                    status ===
+                      "todo"
                     ? "AUTONOMOUS DEVELOPMENT RUNNING"
                     : status ===
                         "starting"
@@ -770,13 +927,16 @@ export default function FounderAutonomousDevelopmentPage() {
                   style={{
                     color:
                       "#475569",
-                    fontSize: 12,
+                    fontSize:
+                      12,
                   }}
                 >
                   <strong>
                     Code:
                   </strong>{" "}
-                  {result.code}
+                  {
+                    result.code
+                  }
                 </div>
               )}
 
@@ -786,120 +946,157 @@ export default function FounderAutonomousDevelopmentPage() {
               ) && (
                 <div
                   style={{
-                    marginTop: 5,
+                    marginTop:
+                      5,
                     color:
                       "#475569",
-                    fontSize: 12,
+                    fontSize:
+                      12,
                   }}
                 >
                   <strong>
                     Task:
                   </strong>{" "}
-                  {currentTask?.id ||
-                    result.taskId}
+                  {
+                    currentTask?.id ||
+                    result.taskId
+                  }
                 </div>
               )}
 
               {currentTask && (
-                <div
-                  style={{
-                    display:
-                      "grid",
-                    gridTemplateColumns:
-                      "repeat(2, minmax(0, 1fr))",
-                    gap: 8,
-                    marginTop: 10,
-                  }}
-                >
+                <>
                   <div
                     style={{
-                      padding: 9,
-                      borderRadius: 9,
-                      background:
-                        "#ffffff",
-                      border:
-                        "1px solid #e2e8f0",
+                      display:
+                        "grid",
+                      gridTemplateColumns:
+                        "repeat(2, minmax(0, 1fr))",
+                      gap:
+                        8,
+                      marginTop:
+                        10,
                     }}
                   >
                     <div
                       style={{
-                        color:
-                          "#94a3b8",
-                        fontSize: 9,
-                        fontWeight:
-                          850,
-                        letterSpacing:
-                          "0.08em",
+                        padding:
+                          9,
+                        borderRadius:
+                          9,
+                        background:
+                          "#ffffff",
+                        border:
+                          "1px solid #e2e8f0",
                       }}
                     >
-                      STATUS
+                      <div
+                        style={{
+                          color:
+                            "#94a3b8",
+                          fontSize:
+                            9,
+                          fontWeight:
+                            850,
+                          letterSpacing:
+                            "0.08em",
+                        }}
+                      >
+                        STATUS
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            4,
+                          color:
+                            "#334155",
+                          fontSize:
+                            12,
+                          fontWeight:
+                            800,
+                        }}
+                      >
+                        {currentTask.status.toUpperCase()}
+                      </div>
                     </div>
 
                     <div
                       style={{
-                        marginTop: 4,
-                        color:
-                          "#334155",
-                        fontSize:
-                          12,
-                        fontWeight:
-                          800,
+                        padding:
+                          9,
+                        borderRadius:
+                          9,
+                        background:
+                          "#ffffff",
+                        border:
+                          "1px solid #e2e8f0",
                       }}
                     >
-                      {currentTask.status.toUpperCase()}
+                      <div
+                        style={{
+                          color:
+                            "#94a3b8",
+                          fontSize:
+                            9,
+                          fontWeight:
+                            850,
+                          letterSpacing:
+                            "0.08em",
+                        }}
+                      >
+                        PHASE
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            4,
+                          color:
+                            currentTask.phase ===
+                            "BLOCKED"
+                              ? "#b91c1c"
+                              : "#334155",
+                          fontSize:
+                            12,
+                          fontWeight:
+                            800,
+                        }}
+                      >
+                        {phaseLabel}
+                      </div>
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      padding: 9,
-                      borderRadius: 9,
-                      background:
-                        "#ffffff",
-                      border:
-                        "1px solid #e2e8f0",
-                    }}
-                  >
+                  {currentTask.lastHeartbeatAt && (
                     <div
                       style={{
+                        marginTop:
+                          8,
                         color:
                           "#94a3b8",
-                        fontSize: 9,
-                        fontWeight:
-                          850,
-                        letterSpacing:
-                          "0.08em",
-                      }}
-                    >
-                      PHASE
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 4,
-                        color:
-                          currentTask.phase ===
-                          "BLOCKED"
-                            ? "#b91c1c"
-                            : "#334155",
                         fontSize:
-                          12,
-                        fontWeight:
-                          800,
+                          10,
                       }}
                     >
-                      {phaseLabel}
+                      Last heartbeat:{" "}
+                      {
+                        currentTask.lastHeartbeatAt
+                      }
                     </div>
-                  </div>
-                </div>
+                  )}
+                </>
               )}
 
               {currentTask?.reason && (
                 <div
                   style={{
-                    marginTop: 10,
-                    padding: 11,
-                    borderRadius: 10,
+                    marginTop:
+                      10,
+                    padding:
+                      11,
+                    borderRadius:
+                      10,
                     border:
                       "1px solid #fecaca",
                     background:
@@ -910,7 +1107,8 @@ export default function FounderAutonomousDevelopmentPage() {
                     style={{
                       color:
                         "#b91c1c",
-                      fontSize: 10,
+                      fontSize:
+                        10,
                       fontWeight:
                         900,
                       letterSpacing:
@@ -922,7 +1120,8 @@ export default function FounderAutonomousDevelopmentPage() {
 
                   <div
                     style={{
-                      marginTop: 5,
+                      marginTop:
+                        5,
                       color:
                         "#7f1d1d",
                       fontSize:
@@ -933,7 +1132,9 @@ export default function FounderAutonomousDevelopmentPage() {
                         "anywhere",
                     }}
                   >
-                    {currentTask.reason}
+                    {
+                      currentTask.reason
+                    }
                   </div>
                 </div>
               )}
@@ -941,9 +1142,12 @@ export default function FounderAutonomousDevelopmentPage() {
               {currentTask?.commitSha && (
                 <div
                   style={{
-                    marginTop: 10,
-                    padding: 10,
-                    borderRadius: 10,
+                    marginTop:
+                      10,
+                    padding:
+                      10,
+                    borderRadius:
+                      10,
                     background:
                       "#f8fafc",
                     border:
@@ -954,7 +1158,8 @@ export default function FounderAutonomousDevelopmentPage() {
                     style={{
                       color:
                         "#94a3b8",
-                      fontSize: 9,
+                      fontSize:
+                        9,
                       fontWeight:
                         850,
                       letterSpacing:
@@ -966,7 +1171,8 @@ export default function FounderAutonomousDevelopmentPage() {
 
                   <div
                     style={{
-                      marginTop: 4,
+                      marginTop:
+                        4,
                       color:
                         "#334155",
                       fontSize:
@@ -977,7 +1183,126 @@ export default function FounderAutonomousDevelopmentPage() {
                         "anywhere",
                     }}
                   >
-                    {currentTask.commitSha}
+                    {
+                      currentTask.commitSha
+                    }
+                  </div>
+                </div>
+              )}
+
+              {currentTask?.result && (
+                <div
+                  style={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      "repeat(2, minmax(0, 1fr))",
+                    gap:
+                      8,
+                    marginTop:
+                      10,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding:
+                        9,
+                      borderRadius:
+                        9,
+                      background:
+                        "#f8fafc",
+                      border:
+                        "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize:
+                          9,
+                        fontWeight:
+                          850,
+                        letterSpacing:
+                          "0.08em",
+                      }}
+                    >
+                      READBACK
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          4,
+                        color:
+                          currentTask
+                            .result
+                            .readbackVerified
+                            ? "#15803d"
+                            : "#b91c1c",
+                        fontSize:
+                          11,
+                        fontWeight:
+                          850,
+                      }}
+                    >
+                      {currentTask
+                        .result
+                        .readbackVerified
+                        ? "PASS"
+                        : "NOT VERIFIED"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding:
+                        9,
+                      borderRadius:
+                        9,
+                      background:
+                        "#f8fafc",
+                      border:
+                        "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize:
+                          9,
+                        fontWeight:
+                          850,
+                        letterSpacing:
+                          "0.08em",
+                      }}
+                    >
+                      VERIFICATION
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          4,
+                        color:
+                          currentTask
+                            .result
+                            .verificationPassed
+                            ? "#15803d"
+                            : "#b91c1c",
+                        fontSize:
+                          11,
+                        fontWeight:
+                          850,
+                      }}
+                    >
+                      {currentTask
+                        .result
+                        .verificationPassed
+                        ? "PASS"
+                        : "NOT PASSED"}
+                    </div>
                   </div>
                 </div>
               )}
@@ -986,14 +1311,16 @@ export default function FounderAutonomousDevelopmentPage() {
                 ?.length ? (
                 <div
                   style={{
-                    marginTop: 10,
+                    marginTop:
+                      10,
                   }}
                 >
                   <div
                     style={{
                       color:
                         "#64748b",
-                      fontSize: 11,
+                      fontSize:
+                        11,
                       fontWeight:
                         800,
                     }}
@@ -1002,11 +1329,16 @@ export default function FounderAutonomousDevelopmentPage() {
                   </div>
 
                   {currentTask.targetPaths.map(
-                    (path) => (
+                    (
+                      path,
+                    ) => (
                       <div
-                        key={path}
+                        key={
+                          path
+                        }
                         style={{
-                          marginTop: 4,
+                          marginTop:
+                            4,
                           padding:
                             "5px 7px",
                           borderRadius:
@@ -1023,7 +1355,9 @@ export default function FounderAutonomousDevelopmentPage() {
                             "anywhere",
                         }}
                       >
-                        {path}
+                        {
+                          path
+                        }
                       </div>
                     ),
                   )}
@@ -1034,14 +1368,16 @@ export default function FounderAutonomousDevelopmentPage() {
                 ?.length ? (
                 <div
                   style={{
-                    marginTop: 10,
+                    marginTop:
+                      10,
                   }}
                 >
                   <div
                     style={{
                       color:
                         "#64748b",
-                      fontSize: 11,
+                      fontSize:
+                        11,
                       fontWeight:
                         800,
                     }}
@@ -1050,11 +1386,16 @@ export default function FounderAutonomousDevelopmentPage() {
                   </div>
 
                   {currentTask.changedPaths.map(
-                    (path) => (
+                    (
+                      path,
+                    ) => (
                       <div
-                        key={path}
+                        key={
+                          path
+                        }
                         style={{
-                          marginTop: 4,
+                          marginTop:
+                            4,
                           padding:
                             "5px 7px",
                           borderRadius:
@@ -1069,7 +1410,9 @@ export default function FounderAutonomousDevelopmentPage() {
                             "anywhere",
                         }}
                       >
-                        {path}
+                        {
+                          path
+                        }
                       </div>
                     ),
                   )}
@@ -1079,15 +1422,19 @@ export default function FounderAutonomousDevelopmentPage() {
               {result.message && (
                 <div
                   style={{
-                    marginTop: 9,
+                    marginTop:
+                      9,
                     color:
                       "#64748b",
-                    fontSize: 11,
+                    fontSize:
+                      11,
                     lineHeight:
                       1.55,
                   }}
                 >
-                  {result.message}
+                  {
+                    result.message
+                  }
                 </div>
               )}
 
@@ -1095,45 +1442,58 @@ export default function FounderAutonomousDevelopmentPage() {
                 <div
                   role="alert"
                   style={{
-                    marginTop: 9,
-                    paddingTop: 9,
+                    marginTop:
+                      9,
+                    paddingTop:
+                      9,
                     borderTop:
                       "1px solid #fecaca",
                     color:
                       "#b91c1c",
-                    fontSize: 11,
+                    fontSize:
+                      11,
                     lineHeight:
                       1.55,
                     overflowWrap:
                       "anywhere",
                   }}
                 >
-                  {error}
+                  {
+                    error
+                  }
                 </div>
               )}
             </div>
           )}
 
-          {error && !result && (
-            <div
-              role="alert"
-              style={{
-                marginTop: 10,
-                padding: 11,
-                border:
-                  "1px solid #fecaca",
-                borderRadius: 10,
-                background:
-                  "#fef2f2",
-                color:
-                  "#b91c1c",
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {error}
-            </div>
-          )}
+          {error &&
+            !result && (
+              <div
+                role="alert"
+                style={{
+                  marginTop:
+                    10,
+                  padding:
+                    11,
+                  border:
+                    "1px solid #fecaca",
+                  borderRadius:
+                    10,
+                  background:
+                    "#fef2f2",
+                  color:
+                    "#b91c1c",
+                  fontSize:
+                    12,
+                  lineHeight:
+                    1.5,
+                }}
+              >
+                {
+                  error
+                }
+              </div>
+            )}
         </section>
       </div>
     </main>
