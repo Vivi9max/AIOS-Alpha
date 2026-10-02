@@ -1765,7 +1765,7 @@ export function completeAutonomousDevelopmentTask(
     tasks.get(
       taskId,
     );
-SEARCH_END
+
   const task =
     tasks.get(
       taskId,
