@@ -923,6 +923,9 @@ export default function FounderAutonomousDevelopmentPage() {
     result?.task ??
     result?.tasks?.[0];
 
+  const changedPaths =
+    currentTask?.changedPaths ?? [];
+
   const status =
     currentTask?.status ??
     result?.status ??
@@ -1792,8 +1795,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 </div>
               )}
 
-              {(currentTask.changedPaths?.length ?? 0) >
-                0 && (
+              {changedPaths.length > 0 && (
                 <div
                   style={{
                     marginTop: 10,
@@ -1811,7 +1813,7 @@ export default function FounderAutonomousDevelopmentPage() {
                     CHANGED FILES
                   </div>
 
-                  {currentTask.changedPaths.map(
+                  {changedPaths.map(
                     (path) => (
                       <div
                         key={path}
