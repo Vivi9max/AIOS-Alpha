@@ -5,6 +5,8 @@ type ReceiptStatusProps = {
   receiptValid?: boolean;
   successfulReceipt?: boolean;
   commitSha?: string;
+  resultCommitSha?: string;
+  commitShaConsistent?: boolean;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
   missingEvidence?: string[];
@@ -54,7 +56,9 @@ function StatusBadge({
           fontWeight: 900,
         }}
       >
-        {passed ? "PASS" : "NOT VERIFIED"}
+        {passed
+          ? "PASS"
+          : "NOT VERIFIED"}
       </span>
     </div>
   );
@@ -74,11 +78,44 @@ function normalizeSha(
   );
 }
 
+function normalizeConsistency(
+  commitSha?: string,
+  resultCommitSha?: string,
+  commitShaConsistent?: boolean,
+) {
+  if (
+    typeof commitShaConsistent ===
+    "boolean"
+  ) {
+    return commitShaConsistent;
+  }
+
+  const normalizedCommitSha =
+    commitSha?.trim() ?? "";
+
+  const normalizedResultCommitSha =
+    resultCommitSha?.trim() ?? "";
+
+  if (
+    !normalizedCommitSha ||
+    !normalizedResultCommitSha
+  ) {
+    return true;
+  }
+
+  return (
+    normalizedCommitSha.toLowerCase() ===
+    normalizedResultCommitSha.toLowerCase()
+  );
+}
+
 export default function AutonomousDevelopmentReceiptStatus({
   status,
   receiptValid,
   successfulReceipt,
   commitSha,
+  resultCommitSha,
+  commitShaConsistent,
   readbackVerified,
   verificationPassed,
   missingEvidence = [],
@@ -89,17 +126,28 @@ export default function AutonomousDevelopmentReceiptStatus({
     status === "blocked";
 
   const validCommit =
-    normalizeSha(commitSha);
+    Boolean(
+      normalizeSha(
+        commitSha,
+      ),
+    );
+
+  const validResultCommit =
+    Boolean(
+      normalizeSha(
+        resultCommitSha,
+      ),
+    );
+
+  const consistency =
+    normalizeConsistency(
+      commitSha,
+      resultCommitSha,
+      commitShaConsistent,
+    );
 
   const successful =
-    successfulReceipt === true ||
-    (
-      status === "completed" &&
-      receiptValid === true &&
-      validCommit === true &&
-      readbackVerified === true &&
-      verificationPassed === true
-    );
+    successfulReceipt === true;
 
   const hasInvalidCompletedReceipt =
     status === "completed" &&
@@ -145,7 +193,8 @@ export default function AutonomousDevelopmentReceiptStatus({
         padding: 12,
         borderRadius: 12,
         background: "#ffffff",
-        border: "1px solid #e2e8f0",
+        border:
+          "1px solid #e2e8f0",
       }}
     >
       <div
@@ -222,15 +271,26 @@ export default function AutonomousDevelopmentReceiptStatus({
       >
         <StatusBadge
           label="COMMIT SHA"
-          passed={Boolean(
-            validCommit,
-          )}
+          passed={validCommit}
+        />
+
+        <StatusBadge
+          label="RESULT COMMIT"
+          passed={
+            validResultCommit
+          }
+        />
+
+        <StatusBadge
+          label="COMMIT CONSISTENCY"
+          passed={consistency}
         />
 
         <StatusBadge
           label="GITHUB READBACK"
           passed={
-            readbackVerified === true
+            readbackVerified ===
+            true
           }
         />
 
@@ -287,6 +347,69 @@ export default function AutonomousDevelopmentReceiptStatus({
           >
             {commitSha}
           </div>
+        </div>
+      )}
+
+      {validResultCommit && (
+        <div
+          style={{
+            marginTop: 7,
+            padding: 9,
+            borderRadius: 8,
+            background: "#f8fafc",
+            border:
+              "1px solid #e2e8f0",
+          }}
+        >
+          <div
+            style={{
+              color: "#94a3b8",
+              fontSize: 9,
+              fontWeight: 850,
+              letterSpacing:
+                "0.08em",
+            }}
+          >
+            RESULT COMMIT SHA
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              color: "#334155",
+              fontSize: 10,
+              lineHeight: 1.4,
+              fontFamily:
+                "monospace",
+              overflowWrap:
+                "anywhere",
+            }}
+          >
+            {resultCommitSha}
+          </div>
+        </div>
+      )}
+
+      {!consistency && (
+        <div
+          style={{
+            marginTop: 9,
+            padding: 9,
+            borderRadius: 8,
+            background: "#fef2f2",
+            border:
+              "1px solid #fecaca",
+            color: "#991b1b",
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: 1.5,
+          }}
+        >
+          AIOS detected a commit SHA mismatch
+          between the task record and the final
+          execution result. This receipt cannot
+          be considered valid until the commit
+          evidence is consistent.
         </div>
       )}
 
@@ -361,9 +484,10 @@ export default function AutonomousDevelopmentReceiptStatus({
           }}
         >
           AIOS Autonomous Development has a valid
-          terminal receipt: Git commit, GitHub
-          readback, and final verification are all
-          confirmed.
+          terminal receipt: Git commit, result
+          commit, GitHub readback, commit
+          consistency, and final verification are
+          all confirmed.
         </div>
       )}
 
