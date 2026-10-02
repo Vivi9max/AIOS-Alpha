@@ -4,6 +4,10 @@ import {
   getPersistentAutonomousDevelopmentTask,
   persistAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
+import {
+  buildAutonomousDevelopmentReceipt,
+  getAutonomousDevelopmentReceiptFailureReason,
+} from "@/lib/github/autonomous-development-receipt";
 
 export type AutonomousDevelopmentFinalizationResult = {
   ok: boolean;
@@ -34,40 +38,16 @@ export type AutonomousDevelopmentFinalizationResult = {
   reason?: string;
 };
 
-const TERMINAL_STATUSES =
-  new Set([
-    "completed",
-    "failed",
-    "blocked",
-  ]);
-
-function isTerminalStatus(
-  status: string,
-): boolean {
-  return TERMINAL_STATUSES.has(
-    status,
-  );
-}
-
-function hasUsableCommitSha(
-  commitSha?: string,
-): boolean {
-  const value =
-    commitSha?.trim() ?? "";
-
-  return /^[0-9a-f]{40}$/i.test(
-    value,
-  );
-}
+type PersistentTask = NonNullable<
+  Awaited<
+    ReturnType<
+      typeof getPersistentAutonomousDevelopmentTask
+    >
+  >
+>;
 
 function getReceiptState(
-  task: NonNullable<
-    Awaited<
-      ReturnType<
-        typeof getPersistentAutonomousDevelopmentTask
-      >
-    >
-  >,
+  task: PersistentTask,
 ) {
   const commitSha =
     task.result?.commitSha ??
@@ -81,49 +61,16 @@ function getReceiptState(
     task.result?.verificationPassed ===
     true;
 
-  const terminal =
-    isTerminalStatus(
-      task.status,
-    );
-
-  /*
-   * A successful autonomous development receipt
-   * requires all three independent execution proofs:
-   *
-   * 1. A real 40-character Git commit SHA.
-   * 2. GitHub readback confirmation.
-   * 3. Final build/deployment verification.
-   *
-   * Failed/blocked tasks remain terminal, but they
-   * must never be represented as a successful receipt.
-   */
-  const receiptValid =
-    terminal &&
-    task.status ===
-      "completed" &&
-    hasUsableCommitSha(
-      commitSha,
-    ) &&
-    readbackVerified &&
-    verificationPassed;
-
-  return {
-    terminal,
-    receiptValid,
+  return buildAutonomousDevelopmentReceipt({
+    status: task.status,
     commitSha,
     readbackVerified,
     verificationPassed,
-  };
+  });
 }
 
 function buildResult(
-  task: NonNullable<
-    Awaited<
-      ReturnType<
-        typeof getPersistentAutonomousDevelopmentTask
-      >
-    >
-  >,
+  task: PersistentTask,
   overrides?: {
     ok?: boolean;
     reason?: string;
@@ -132,56 +79,21 @@ function buildResult(
   const receipt =
     getReceiptState(task);
 
-  let reason =
+  const canonicalFailureReason =
+    getAutonomousDevelopmentReceiptFailureReason(
+      receipt,
+    );
+
+  const reason =
     overrides?.reason ??
     task.result?.reason ??
-    task.reason;
-
-  if (
-    !overrides?.reason &&
-    task.status ===
-      "completed" &&
-    !receipt.receiptValid
-  ) {
-    const missing: string[] =
-      [];
-
-    if (
-      !hasUsableCommitSha(
-        receipt.commitSha,
-      )
-    ) {
-      missing.push(
-        "commitSha",
-      );
-    }
-
-    if (
-      !receipt.readbackVerified
-    ) {
-      missing.push(
-        "readbackVerified",
-      );
-    }
-
-    if (
-      !receipt.verificationPassed
-    ) {
-      missing.push(
-        "verificationPassed",
-      );
-    }
-
-    reason =
-      `AUTONOMOUS_DEVELOPMENT_COMPLETED_RECEIPT_INVALID:${missing.join(
-        ",",
-      )}`;
-  }
+    task.reason ??
+    canonicalFailureReason;
 
   return {
     ok:
       overrides?.ok ??
-      receipt.receiptValid,
+      receipt.successful,
     taskId:
       task.id,
     status:
@@ -191,7 +103,7 @@ function buildResult(
     terminal:
       receipt.terminal,
     receiptValid:
-      receipt.receiptValid,
+      receipt.valid,
     commitSha:
       receipt.commitSha,
     readbackVerified:
@@ -219,11 +131,12 @@ function buildResult(
  *
  * This module is the final evidence boundary.
  *
- * A task can only receive:
+ * Successful completion requires the canonical receipt:
  *
- * successful terminal receipt =
- * completed + valid commit SHA +
- * readback PASS + verification PASS
+ * completed +
+ * valid 40-character Git commit SHA +
+ * GitHub readback PASS +
+ * final verification PASS
  *
  * Persistence alone never becomes proof of completion.
  */
@@ -302,11 +215,7 @@ export async function finalizeAutonomousDevelopmentTask(
    * An active task must remain non-terminal even when
    * its latest state has been durably persisted.
    */
-  if (
-    !isTerminalStatus(
-      finalizedTask.status,
-    )
-  ) {
+  if (!isTerminalTaskStatus(finalizedTask.status)) {
     return buildResult(
       finalizedTask,
       {
@@ -323,7 +232,7 @@ export async function finalizeAutonomousDevelopmentTask(
     );
 
   /*
-   * A completed task with incomplete evidence is not
+   * A completed task with incomplete evidence is never
    * promoted to a successful receipt.
    */
   if (
@@ -338,8 +247,8 @@ export async function finalizeAutonomousDevelopmentTask(
   }
 
   /*
-   * Failed and blocked tasks are valid terminal states,
-   * but they are never successful receipts.
+   * Failed and blocked tasks are terminal, but they are
+   * never successful receipts.
    */
   if (
     finalizedTask.status !==
@@ -356,11 +265,11 @@ export async function finalizeAutonomousDevelopmentTask(
 }
 
 /**
- * Finalizes the execution after an Agent failure.
+ * Finalizes execution after an Agent failure.
  *
  * A failure finalization can confirm a failed/blocked
- * terminal state, but it can never downgrade or reinterpret
- * a genuinely completed task as a failure.
+ * terminal state, but it can never reinterpret a genuinely
+ * completed task as a failure.
  */
 export async function finalizeAutonomousDevelopmentFailure(
   taskId: string,
@@ -392,4 +301,14 @@ export async function finalizeAutonomousDevelopmentFailure(
     ok: false,
     receiptValid: false,
   };
+}
+
+function isTerminalTaskStatus(
+  status: PersistentTask["status"],
+) {
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "blocked"
+  );
 }
