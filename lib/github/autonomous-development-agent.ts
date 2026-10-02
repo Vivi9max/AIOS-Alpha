@@ -45,6 +45,15 @@ const MAX_PATCH_ATTEMPTS = 3;
 const MAX_REPAIR_ROUNDS = 2;
 
 /*
+ * Hard ceiling on the total number of autonomous GitHub writes that a
+ * single development run may perform. This bounds the blast radius of
+ * an autonomous execution even when discovery, planning, patching and
+ * build repair are all combined, and it is intentionally independent
+ * from the per-stage attempt limits above.
+ */
+const MAX_AUTONOMOUS_WRITES = 12;
+
+/*
  * Discovery is intentionally bounded.
  *
  * The previous implementation performed repository traversal as a
@@ -1555,6 +1564,18 @@ export async function executeAutonomousDevelopmentAgent(
   const commitShas: string[] =
     [];
 
+  const enforceAutonomousWriteBudget =
+    () => {
+      if (
+        changedPaths.length >=
+        MAX_AUTONOMOUS_WRITES
+      ) {
+        throw new Error(
+          `AUTONOMOUS_WRITE_BUDGET_EXCEEDED: ${changedPaths.length} of ${MAX_AUTONOMOUS_WRITES} allowed autonomous writes were used before completion.`,
+        );
+      }
+    };
+
   let taskId =
     input.taskId || "";
 
@@ -1946,6 +1967,8 @@ export async function executeAutonomousDevelopmentAgent(
     for (
       const targetPath of targetPaths
     ) {
+      enforceAutonomousWriteBudget();
+
       const finalContent =
         patchedContents[
           targetPath
@@ -2164,6 +2187,8 @@ export async function executeAutonomousDevelopmentAgent(
         repairOriginalContents,
         repairPatchedContents,
       );
+
+      enforceAutonomousWriteBudget();
 
       updateAutonomousDevelopmentTask(
         taskId,
