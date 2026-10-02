@@ -888,8 +888,11 @@ function validateFinalSource(
     );
   }
 
+  const incompleteMarkerPattern =
+    /(?:^|\n)\s*(?:TRUNCATED|OMITTED\s+FOR\s+BREVITY)\s*(?:$|\n)/i;
+
   if (
-    /\b(?:TRUNCATED|OMITTED FOR BREVITY)\b/i.test(
+    incompleteMarkerPattern.test(
       normalized,
     )
   ) {
