@@ -10,6 +10,9 @@ import {
   finalizeAutonomousDevelopmentTask,
 } from "@/lib/github/autonomous-development-finalization";
 import {
+  buildAutonomousDevelopmentReceipt,
+} from "@/lib/github/autonomous-development-receipt";
+import {
   isFounderConfigured,
   isFounderRequest,
 } from "@/lib/founder/auth";
@@ -23,6 +26,35 @@ export const runtime =
 export const maxDuration =
   30;
 
+type FinalizationResult = {
+  ok: boolean;
+  taskId: string;
+  status:
+    | "todo"
+    | "running"
+    | "completed"
+    | "failed"
+    | "blocked";
+  phase:
+    | "QUEUED"
+    | "DISCOVERING"
+    | "PLANNING"
+    | "READING"
+    | "GENERATING"
+    | "WRITING"
+    | "READBACK"
+    | "BUILD"
+    | "REPAIR"
+    | "COMPLETED"
+    | "BLOCKED";
+  terminal: boolean;
+  receiptValid: boolean;
+  commitSha?: string;
+  readbackVerified: boolean;
+  verificationPassed: boolean;
+  reason?: string;
+};
+
 function json(
   body: Record<string, unknown>,
   status = 200,
@@ -33,7 +65,9 @@ function json(
       status,
       headers: {
         "Cache-Control":
-          "no-store",
+          "no-store, max-age=0",
+        Pragma:
+          "no-cache",
       },
     },
   );
@@ -87,39 +121,68 @@ function normalizeTaskId(
   ).trim();
 }
 
-function isSuccessfulReceipt(
-  result: {
-    status: string;
-    terminal: boolean;
-    receiptValid: boolean;
-    ok: boolean;
-  },
+function buildReceipt(
+  result: FinalizationResult,
 ) {
+  return buildAutonomousDevelopmentReceipt({
+    status:
+      result.status,
+    commitSha:
+      result.commitSha,
+    readbackVerified:
+      result.readbackVerified,
+    verificationPassed:
+      result.verificationPassed,
+  });
+}
+
+function buildReceiptResponse(
+  result: FinalizationResult,
+) {
+  const receipt =
+    buildReceipt(result);
+
+  return {
+    ...result,
+    receipt,
+    receiptValid:
+      receipt.valid,
+    successfulReceipt:
+      receipt.successful,
+    missingEvidence:
+      receipt.missingEvidence,
+  };
+}
+
+function isSuccessfulReceipt(
+  result: FinalizationResult,
+) {
+  const receipt =
+    buildReceipt(result);
+
   return (
     result.status ===
       "completed" &&
     result.terminal &&
-    result.receiptValid &&
-    result.ok
+    receipt.valid &&
+    receipt.successful
   );
 }
 
 function getReceiptResponseStatus(
-  result: {
-    status: string;
-    terminal: boolean;
-    receiptValid: boolean;
-    ok: boolean;
-  },
+  result: FinalizationResult,
 ) {
-  if (!result.terminal) {
+  const receipt =
+    buildReceipt(result);
+
+  if (!receipt.terminal) {
     return 409;
   }
 
   if (
     result.status ===
       "completed" &&
-    !result.receiptValid
+    !receipt.valid
   ) {
     return 409;
   }
@@ -127,7 +190,7 @@ function getReceiptResponseStatus(
   if (
     result.status ===
       "completed" &&
-    result.receiptValid
+    receipt.valid
   ) {
     return 200;
   }
@@ -136,20 +199,20 @@ function getReceiptResponseStatus(
 }
 
 function getReceiptCode(
-  result: {
-    status: string;
-    terminal: boolean;
-    receiptValid: boolean;
-  },
+  result: FinalizationResult,
 ) {
-  if (!result.terminal) {
+  const receipt =
+    buildReceipt(result);
+
+  if (!receipt.terminal) {
     return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_PENDING";
   }
 
   if (
     result.status ===
       "completed" &&
-    result.receiptValid
+    receipt.successful &&
+    receipt.valid
   ) {
     return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_CONFIRMED";
   }
@@ -157,7 +220,7 @@ function getReceiptCode(
   if (
     result.status ===
       "completed" &&
-    !result.receiptValid
+    !receipt.valid
   ) {
     return "AUTONOMOUS_DEVELOPMENT_TERMINAL_RECEIPT_INVALID";
   }
@@ -166,20 +229,20 @@ function getReceiptCode(
 }
 
 function getReceiptMessage(
-  result: {
-    status: string;
-    terminal: boolean;
-    receiptValid: boolean;
-  },
+  result: FinalizationResult,
 ) {
-  if (!result.terminal) {
+  const receipt =
+    buildReceipt(result);
+
+  if (!receipt.terminal) {
     return "Autonomous development task is not terminal yet. No terminal receipt was issued.";
   }
 
   if (
     result.status ===
       "completed" &&
-    result.receiptValid
+    receipt.successful &&
+    receipt.valid
   ) {
     return "Autonomous development terminal receipt confirmed.";
   }
@@ -187,12 +250,85 @@ function getReceiptMessage(
   if (
     result.status ===
       "completed" &&
-    !result.receiptValid
+    !receipt.valid
   ) {
     return "Autonomous development reported completed status, but its terminal receipt evidence is incomplete or invalid.";
   }
 
   return "Autonomous development reached a terminal non-success state.";
+}
+
+function getFailureFinalizationCode(
+  result: FinalizationResult,
+) {
+  if (
+    result.status ===
+      "completed"
+  ) {
+    return "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_REJECTED";
+  }
+
+  if (result.terminal) {
+    return "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_CONFIRMED";
+  }
+
+  return "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_PENDING";
+}
+
+function getFailureFinalizationStatus(
+  result: FinalizationResult,
+) {
+  if (
+    result.status ===
+      "completed"
+  ) {
+    return 409;
+  }
+
+  if (result.terminal) {
+    return 200;
+  }
+
+  return 409;
+}
+
+function getFailureFinalizationResponse(
+  result: FinalizationResult,
+) {
+  const receipt =
+    buildReceipt(result);
+
+  return {
+    ...result,
+    receipt,
+    receiptValid:
+      receipt.valid,
+    successfulReceipt: false,
+    missingEvidence:
+      receipt.missingEvidence,
+  };
+}
+
+function getNotFoundResponse(
+  result: FinalizationResult,
+) {
+  if (
+    result.reason !==
+    "AUTONOMOUS_DEVELOPMENT_TASK_NOT_FOUND"
+  ) {
+    return null;
+  }
+
+  return json(
+    {
+      ...result,
+      code:
+        "TASK_NOT_FOUND",
+      error:
+        "Autonomous development task was not found.",
+    },
+    404,
+  );
 }
 
 export async function POST(
@@ -232,21 +368,19 @@ export async function POST(
         taskId,
       );
 
-    if (
-      result.reason ===
-      "AUTONOMOUS_DEVELOPMENT_TASK_NOT_FOUND"
-    ) {
-      return json(
-        {
-          ...result,
-          code:
-            "TASK_NOT_FOUND",
-          error:
-            "Autonomous development task was not found.",
-        },
-        404,
+    const notFound =
+      getNotFoundResponse(
+        result,
       );
+
+    if (notFound) {
+      return notFound;
     }
+
+    const response =
+      buildReceiptResponse(
+        result,
+      );
 
     const status =
       getReceiptResponseStatus(
@@ -265,7 +399,7 @@ export async function POST(
 
     return json(
       {
-        ...result,
+        ...response,
         code,
         message,
         successfulReceipt:
@@ -329,21 +463,19 @@ export async function GET(
         taskId,
       );
 
-    if (
-      result.reason ===
-      "AUTONOMOUS_DEVELOPMENT_TASK_NOT_FOUND"
-    ) {
-      return json(
-        {
-          ...result,
-          code:
-            "TASK_NOT_FOUND",
-          error:
-            "Autonomous development task was not found.",
-        },
-        404,
+    const notFound =
+      getNotFoundResponse(
+        result,
       );
+
+    if (notFound) {
+      return notFound;
     }
+
+    const response =
+      buildReceiptResponse(
+        result,
+      );
 
     const status =
       getReceiptResponseStatus(
@@ -352,7 +484,7 @@ export async function GET(
 
     return json(
       {
-        ...result,
+        ...response,
         code:
           getReceiptCode(
             result,
@@ -423,45 +555,31 @@ export async function PATCH(
         taskId,
       );
 
-    if (
-      result.reason ===
-      "AUTONOMOUS_DEVELOPMENT_TASK_NOT_FOUND"
-    ) {
-      return json(
-        {
-          ...result,
-          code:
-            "TASK_NOT_FOUND",
-          error:
-            "Autonomous development task was not found.",
-        },
-        404,
+    const notFound =
+      getNotFoundResponse(
+        result,
       );
+
+    if (notFound) {
+      return notFound;
     }
 
-    const status =
-      result.status ===
-        "completed"
-        ? 409
-        : result.terminal
-          ? 200
-          : 409;
-
-    const code =
-      result.status ===
-        "completed"
-        ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_REJECTED"
-        : result.terminal
-          ? "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_CONFIRMED"
-          : "AUTONOMOUS_DEVELOPMENT_FAILURE_RECEIPT_PENDING";
+    const response =
+      getFailureFinalizationResponse(
+        result,
+      );
 
     return json(
       {
-        ...result,
-        code,
-        successfulReceipt: false,
+        ...response,
+        code:
+          getFailureFinalizationCode(
+            result,
+          ),
       },
-      status,
+      getFailureFinalizationStatus(
+        result,
+      ),
     );
   } catch (error) {
     const message =
