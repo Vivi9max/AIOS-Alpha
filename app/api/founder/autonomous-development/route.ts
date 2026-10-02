@@ -13,8 +13,9 @@ import {
 import {
   blockAutonomousDevelopmentTask,
   createAutonomousDevelopmentTask,
-  getAutonomousDevelopmentTask,
-  listAutonomousDevelopmentTasks,
+  getPersistentAutonomousDevelopmentTask,
+  listPersistentAutonomousDevelopmentTasks,
+  findPersistentActiveAutonomousDevelopmentTask,
 } from "@/lib/github/autonomous-development-control-plane";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
 
@@ -115,34 +116,6 @@ function normalizeObjective(
       /\s+/g,
       " ",
     );
-}
-
-function findActiveTaskByObjective(
-  objective: string,
-) {
-  const normalizedObjective =
-    normalizeObjective(
-      objective,
-    );
-
-  if (
-    !normalizedObjective
-  ) {
-    return null;
-  }
-
-  return (
-    listAutonomousDevelopmentTasks().find(
-      (task) =>
-        ACTIVE_TASK_STATUSES.has(
-          task.status,
-        ) &&
-        normalizeObjective(
-          task.objective,
-        ) ===
-          normalizedObjective,
-    ) ?? null
-  );
 }
 
 function buildTaskResponse(
@@ -252,8 +225,10 @@ function buildTaskResponse(
 }
 
 function buildTaskListResponse(
-  tasks: ReturnType<
-    typeof listAutonomousDevelopmentTasks
+  tasks: Awaited<
+    ReturnType<
+      typeof listPersistentAutonomousDevelopmentTasks
+    >
   >,
 ) {
   return {
@@ -300,16 +275,19 @@ export async function GET(
   /*
    * taskId is authoritative.
    *
-   * The Founder UI binds polling to the exact task returned by POST.
-   * Objective-based lookup remains available as a compatibility
-   * fallback, but must never override an explicit taskId.
+   * The Founder UI binds polling to the exact task
+   * returned by POST. Persistent storage is queried
+   * before falling back to the local process state.
    */
   if (
     taskId?.trim()
   ) {
+    const normalizedTaskId =
+      taskId.trim();
+
     const task =
-      getAutonomousDevelopmentTask(
-        taskId.trim(),
+      await getPersistentAutonomousDevelopmentTask(
+        normalizedTaskId,
       );
 
     if (!task) {
@@ -319,7 +297,7 @@ export async function GET(
           code:
             "TASK_NOT_FOUND",
           taskId:
-            taskId.trim(),
+            normalizedTaskId,
           error:
             "Autonomous development task was not found.",
         },
@@ -335,7 +313,7 @@ export async function GET(
   }
 
   let tasks =
-    listAutonomousDevelopmentTasks();
+    await listPersistentAutonomousDevelopmentTasks();
 
   if (
     objective?.trim()
@@ -413,14 +391,16 @@ export async function POST(
     }
 
     /*
-     * Idempotency boundary:
+     * Persistent idempotency boundary.
      *
-     * Before creating a task, inspect the authoritative control-plane
-     * task collection. A todo/running task with the same normalized
-     * objective is reused instead of starting a second Agent.
+     * This lookup is intentionally performed against
+     * the persistent task store so two separate Vercel
+     * instances do not independently start the same
+     * Founder objective when a previous task is still
+     * todo/running.
      */
     const existingTask =
-      findActiveTaskByObjective(
+      await findPersistentActiveAutonomousDevelopmentTask(
         objective,
       );
 
@@ -450,9 +430,15 @@ export async function POST(
     /*
      * The HTTP request returns immediately.
      *
-     * AIOS remains the actual execution authority:
-     * Planner -> repository read -> patch -> safety gate ->
-     * GitHub write -> readback -> Vercel verification.
+     * AIOS remains the execution authority:
+     *
+     * Planner
+     * -> repository read
+     * -> patch
+     * -> safety gate
+     * -> GitHub write
+     * -> readback
+     * -> Vercel verification
      */
     after(
       async () => {
@@ -481,8 +467,9 @@ export async function POST(
           } catch {
             /*
              * Preserve the original execution failure.
-             * The Agent/control-plane is responsible for the
-             * authoritative terminal state whenever possible.
+             * The Agent/control-plane remains responsible
+             * for the authoritative terminal state whenever
+             * possible.
              */
           }
         }
@@ -508,7 +495,8 @@ export async function POST(
         code:
           "AUTONOMOUS_DEVELOPMENT_REQUEST_FAILED",
         error:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "Autonomous development request failed.",
       },
