@@ -91,6 +91,9 @@ const MAX_CHANGED_PATHS =
 const MAX_PHASE_HISTORY =
   100;
 
+const ACTIVE_TASK_STALE_MS =
+  7 * 60 * 1000;
+
 const TERMINAL_STATUSES =
   new Set<AutonomousDevelopmentTaskStatus>([
     "completed",
@@ -339,7 +342,7 @@ function assertPhaseTransition(
   }
 
   const allowed =
-    PHASE_TRANSITIONS[current] ||
+    PHASE_TRANSITIONS[current] ??
     [];
 
   if (
@@ -402,6 +405,43 @@ function touchTask(
     timestamp;
 }
 
+function isTaskHeartbeatStale(
+  task: AutonomousDevelopmentTask,
+  referenceTime = Date.now(),
+) {
+  if (
+    task.status !==
+    "running"
+  ) {
+    return false;
+  }
+
+  const heartbeat =
+    task.lastHeartbeatAt ||
+    task.updatedAt ||
+    task.startedAt ||
+    task.createdAt;
+
+  const heartbeatTime =
+    new Date(
+      heartbeat,
+    ).getTime();
+
+  if (
+    !Number.isFinite(
+      heartbeatTime,
+    )
+  ) {
+    return true;
+  }
+
+  return (
+    referenceTime -
+      heartbeatTime >
+    ACTIVE_TASK_STALE_MS
+  );
+}
+
 function assertTaskIsActive(
   task: AutonomousDevelopmentTask,
 ) {
@@ -421,6 +461,14 @@ function assertTaskIsActive(
   ) {
     throw new Error(
       `Task cannot be modified from status: ${task.status}`,
+    );
+  }
+
+  if (
+    isTaskHeartbeatStale(task)
+  ) {
+    throw new Error(
+      "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE: task heartbeat has expired.",
     );
   }
 }
@@ -465,6 +513,73 @@ function createReceipt(
       task.completedAt ||
       task.updatedAt,
   };
+}
+
+function recoverStaleTask(
+  task: AutonomousDevelopmentTask,
+) {
+  if (
+    !isTaskHeartbeatStale(
+      task,
+    )
+  ) {
+    return task;
+  }
+
+  const timestamp =
+    now();
+
+  if (
+    task.phase !==
+    "BLOCKED"
+  ) {
+    assertPhaseTransition(
+      task.phase,
+      "BLOCKED",
+    );
+  }
+
+  task.status =
+    "blocked";
+
+  task.phase =
+    "BLOCKED";
+
+  task.reason =
+    "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE: no execution heartbeat was received within the allowed execution window.";
+
+  task.result = {
+    commitSha:
+      task.commitSha,
+    readbackVerified:
+      false,
+    verificationPassed:
+      false,
+    reason:
+      task.reason,
+  };
+
+  task.completedAt =
+    timestamp;
+
+  task.updatedAt =
+    timestamp;
+
+  task.lastHeartbeatAt =
+    timestamp;
+
+  appendPhaseEvent(
+    task,
+    "BLOCKED",
+    task.reason,
+  );
+
+  tasks.set(
+    task.id,
+    task,
+  );
+
+  return task;
 }
 
 export function createAutonomousDevelopmentTask(
@@ -532,13 +647,46 @@ export function getAutonomousDevelopmentTask(
     return null;
   }
 
+  if (
+    task.status ===
+    "running" &&
+    isTaskHeartbeatStale(task)
+  ) {
+    return recoverStaleTask(
+      task,
+    );
+  }
+
   return task;
 }
 
 export function listAutonomousDevelopmentTasks() {
-  return Array.from(
-    tasks.values(),
-  ).sort(
+  const currentTime =
+    Date.now();
+
+  const result =
+    Array.from(
+      tasks.values(),
+    ).map(
+      (task) => {
+        if (
+          task.status ===
+            "running" &&
+          isTaskHeartbeatStale(
+            task,
+            currentTime,
+          )
+        ) {
+          return recoverStaleTask(
+            task,
+          );
+        }
+
+        return task;
+      },
+    );
+
+  return result.sort(
     (a, b) =>
       new Date(
         b.createdAt,
@@ -562,9 +710,7 @@ export function findActiveAutonomousDevelopmentTask(
   }
 
   const activeTasks =
-    Array.from(
-      tasks.values(),
-    ).filter(
+    listAutonomousDevelopmentTasks().filter(
       (task) =>
         ACTIVE_STATUSES.has(
           task.status,
@@ -763,7 +909,45 @@ export function heartbeatAutonomousDevelopmentTask(
     );
   }
 
-  assertTaskIsActive(task);
+  if (
+    TERMINAL_STATUSES.has(
+      task.status,
+    )
+  ) {
+    return {
+      taskId:
+        task.id,
+      status:
+        task.status,
+      phase:
+        task.phase,
+      updatedAt:
+        task.updatedAt,
+      lastHeartbeatAt:
+        task.lastHeartbeatAt,
+      reason:
+        task.reason,
+    };
+  }
+
+  if (
+    task.status !==
+    "running"
+  ) {
+    throw new Error(
+      `Task heartbeat is not allowed from status: ${task.status}`,
+    );
+  }
+
+  if (
+    isTaskHeartbeatStale(task)
+  ) {
+    recoverStaleTask(task);
+
+    throw new Error(
+      "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE: task was automatically blocked.",
+    );
+  }
 
   if (
     reason !==
@@ -1040,6 +1224,14 @@ export function getAutonomousDevelopmentTaskHeartbeat(
 
   if (!task) {
     return null;
+  }
+
+  if (
+    task.status ===
+      "running" &&
+    isTaskHeartbeatStale(task)
+  ) {
+    recoverStaleTask(task);
   }
 
   return {
