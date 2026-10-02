@@ -9,11 +9,14 @@ import {
 
 import AutonomousDevelopmentReceiptStatus from "./receipt-status";
 
-const STORAGE_KEY = "aios-founder-access-key";
+const STORAGE_KEY =
+  "aios-founder-access-key";
+
 const POLL_INTERVAL_MS = 2500;
 const HEARTBEAT_INTERVAL_MS = 30000;
 const MAX_POLL_ROUNDS = 240;
-const HEARTBEAT_WARNING_MS = 5 * 60 * 1000;
+const HEARTBEAT_WARNING_MS =
+  5 * 60 * 1000;
 
 type TaskStatus =
   | "todo"
@@ -48,6 +51,8 @@ type TaskResult = {
   reason?: string;
   receiptValid?: boolean;
   successfulReceipt?: boolean;
+  resultCommitSha?: string;
+  commitShaConsistent?: boolean;
   missingEvidence?: string[];
 };
 
@@ -57,6 +62,8 @@ type TaskReceipt = {
   valid?: boolean;
   receiptValid?: boolean;
   commitSha?: string;
+  resultCommitSha?: string;
+  commitShaConsistent?: boolean;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
   missingEvidence?: string[];
@@ -83,6 +90,8 @@ type Task = {
   receipt?: TaskReceipt;
   receiptValid?: boolean;
   successfulReceipt?: boolean;
+  resultCommitSha?: string;
+  commitShaConsistent?: boolean;
   missingEvidence?: string[];
 };
 
@@ -102,15 +111,21 @@ type Result = {
   receipt?: TaskReceipt;
   receiptValid?: boolean;
   successfulReceipt?: boolean;
+  resultCommitSha?: string;
+  commitShaConsistent?: boolean;
   missingEvidence?: string[];
 };
 
 const DEFAULT_OBJECTIVE =
   "例如：把 /cn 页面做成正常用户可用的 AIOS CN 工作区，并保持现有 API 与 Founder 权限边界不变。";
 
-const PHASE_LABELS: Record<TaskPhase, string> = {
+const PHASE_LABELS: Record<
+  TaskPhase,
+  string
+> = {
   QUEUED: "Queued",
-  DISCOVERING: "Discovering Repository",
+  DISCOVERING:
+    "Discovering Repository",
   PLANNING: "AIOS Planning",
   READING: "Reading",
   GENERATING: "Generating",
@@ -122,32 +137,43 @@ const PHASE_LABELS: Record<TaskPhase, string> = {
   BLOCKED: "Blocked",
 };
 
-function formatTime(value?: string) {
+function formatTime(
+  value?: string,
+) {
   if (!value) {
     return "-";
   }
 
-  const timestamp = new Date(value).getTime();
+  const timestamp =
+    new Date(value).getTime();
 
   if (!Number.isFinite(timestamp)) {
     return value;
   }
 
-  return new Date(timestamp).toLocaleString();
+  return new Date(
+    timestamp,
+  ).toLocaleString();
 }
 
-function getHeartbeatAge(value?: string) {
+function getHeartbeatAge(
+  value?: string,
+) {
   if (!value) {
     return null;
   }
 
-  const timestamp = new Date(value).getTime();
+  const timestamp =
+    new Date(value).getTime();
 
   if (!Number.isFinite(timestamp)) {
     return null;
   }
 
-  return Math.max(0, Date.now() - timestamp);
+  return Math.max(
+    0,
+    Date.now() - timestamp,
+  );
 }
 
 function isTerminalStatus(
@@ -160,12 +186,16 @@ function isTerminalStatus(
   );
 }
 
-function getTaskReceipt(task?: Task | null) {
+function getTaskReceipt(
+  task?: Task | null,
+) {
   if (!task) {
     return {
       receiptValid: false,
       successfulReceipt: false,
       commitSha: undefined,
+      resultCommitSha: undefined,
+      commitShaConsistent: false,
       readbackVerified: false,
       verificationPassed: false,
       missingEvidence: [],
@@ -179,23 +209,39 @@ function getTaskReceipt(task?: Task | null) {
       task.receipt?.receiptValid ??
       task.receipt?.valid ??
       false,
+
     successfulReceipt:
       task.successfulReceipt ??
       task.result?.successfulReceipt ??
       task.receipt?.successful ??
       false,
+
     commitSha:
       task.receipt?.commitSha ??
-      task.result?.commitSha ??
-      task.commitSha,
+      task.commitSha ??
+      task.result?.commitSha,
+
+    resultCommitSha:
+      task.resultCommitSha ??
+      task.receipt?.resultCommitSha ??
+      task.result?.resultCommitSha,
+
+    commitShaConsistent:
+      task.commitShaConsistent ??
+      task.receipt?.commitShaConsistent ??
+      task.result?.commitShaConsistent ??
+      false,
+
     readbackVerified:
       task.receipt?.readbackVerified ??
       task.result?.readbackVerified ??
       false,
+
     verificationPassed:
       task.receipt?.verificationPassed ??
       task.result?.verificationPassed ??
       false,
+
     missingEvidence:
       task.missingEvidence ??
       task.result?.missingEvidence ??
@@ -205,19 +251,34 @@ function getTaskReceipt(task?: Task | null) {
 }
 
 export default function FounderAutonomousDevelopmentPage() {
-  const [accessKey, setAccessKey] = useState("");
-  const [objective, setObjective] = useState("");
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const [error, setError] = useState("");
+  const [accessKey, setAccessKey] =
+    useState("");
+
+  const [objective, setObjective] =
+    useState("");
+
+  const [running, setRunning] =
+    useState(false);
+
+  const [result, setResult] =
+    useState<Result | null>(null);
+
+  const [error, setError] =
+    useState("");
 
   const pollTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
 
   const heartbeatTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
 
-  const pollRoundsRef = useRef(0);
+  const pollRoundsRef =
+    useRef(0);
+
   const activeTaskIdRef =
     useRef<string | null>(null);
 
@@ -238,7 +299,9 @@ export default function FounderAutonomousDevelopmentPage() {
         );
       }
 
-      if (heartbeatTimerRef.current) {
+      if (
+        heartbeatTimerRef.current
+      ) {
         clearTimeout(
           heartbeatTimerRef.current,
         );
@@ -246,10 +309,15 @@ export default function FounderAutonomousDevelopmentPage() {
     };
   }, []);
 
-  const getHeaders = (key: string) => ({
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    Authorization: `Bearer ${key}`,
+  const getHeaders = (
+    key: string,
+  ) => ({
+    "Content-Type":
+      "application/json",
+    Accept:
+      "application/json",
+    Authorization:
+      `Bearer ${key}`,
   });
 
   const clearPolling = () => {
@@ -257,16 +325,22 @@ export default function FounderAutonomousDevelopmentPage() {
       clearTimeout(
         pollTimerRef.current,
       );
-      pollTimerRef.current = null;
+
+      pollTimerRef.current =
+        null;
     }
   };
 
   const clearHeartbeat = () => {
-    if (heartbeatTimerRef.current) {
+    if (
+      heartbeatTimerRef.current
+    ) {
       clearTimeout(
         heartbeatTimerRef.current,
       );
-      heartbeatTimerRef.current = null;
+
+      heartbeatTimerRef.current =
+        null;
     }
   };
 
@@ -275,7 +349,8 @@ export default function FounderAutonomousDevelopmentPage() {
       STORAGE_KEY,
     );
 
-    activeTaskIdRef.current = null;
+    activeTaskIdRef.current =
+      null;
 
     clearPolling();
     clearHeartbeat();
@@ -300,7 +375,8 @@ export default function FounderAutonomousDevelopmentPage() {
   const scheduleHeartbeat = (
     key: string,
     taskId: string,
-    delay = HEARTBEAT_INTERVAL_MS,
+    delay =
+      HEARTBEAT_INTERVAL_MS,
   ) => {
     clearHeartbeat();
 
@@ -313,62 +389,137 @@ export default function FounderAutonomousDevelopmentPage() {
       }, delay);
   };
 
-  const sendHeartbeat = async (
-    key: string,
-    taskId: string,
-  ) => {
-    if (
-      activeTaskIdRef.current !==
-      taskId
-    ) {
-      return;
-    }
+  const sendHeartbeat =
+    async (
+      key: string,
+      taskId: string,
+    ) => {
+      if (
+        activeTaskIdRef.current !==
+        taskId
+      ) {
+        return;
+      }
 
-    try {
-      const response = await fetch(
-        "/api/founder/autonomous-development/heartbeat",
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: getHeaders(key),
-          body: JSON.stringify({
-            taskId,
-            reason:
-              "Founder Autonomous Development UI heartbeat",
-          }),
-        },
-      );
-
-      const data =
-        (await response.json()) as Result;
-
-      if (!response.ok) {
-        if (
-          data.code ===
-            "FOUNDER_UNAUTHORIZED" ||
-          data.code ===
-            "FOUNDER_NOT_CONFIGURED"
-        ) {
-          clearFounderSession();
-          setRunning(false);
-          setError(
-            data.error ||
-              "Founder authorization failed.",
+      try {
+        const response =
+          await fetch(
+            "/api/founder/autonomous-development/heartbeat",
+            {
+              method: "POST",
+              cache: "no-store",
+              headers:
+                getHeaders(key),
+              body: JSON.stringify({
+                taskId,
+                reason:
+                  "Founder Autonomous Development UI heartbeat",
+              }),
+            },
           );
+
+        const data =
+          (await response.json()) as Result;
+
+        if (!response.ok) {
+          if (
+            data.code ===
+              "FOUNDER_UNAUTHORIZED" ||
+            data.code ===
+              "FOUNDER_NOT_CONFIGURED"
+          ) {
+            clearFounderSession();
+            setRunning(false);
+            setError(
+              data.error ||
+                "Founder authorization failed.",
+            );
+            return;
+          }
+
+          if (
+            data.code ===
+            "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE"
+          ) {
+            clearHeartbeat();
+            return;
+          }
+
+          if (
+            data.code ===
+            "AUTONOMOUS_DEVELOPMENT_TASK_NOT_RUNNING"
+          ) {
+            clearHeartbeat();
+            return;
+          }
+
+          scheduleHeartbeat(
+            key,
+            taskId,
+          );
+
           return;
         }
 
-        if (
-          data.code ===
-          "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_STALE"
-        ) {
-          clearHeartbeat();
-          return;
+        if (data.task) {
+          const heartbeatTask =
+            data.task;
+
+          const receipt =
+            getTaskReceipt(
+              heartbeatTask,
+            );
+
+          const successful =
+            data.successfulReceipt ===
+            true;
+
+          setResult(
+            (previous) => ({
+              ...(previous || {}),
+              ok: successful,
+              success:
+                successful,
+              taskId,
+              status:
+                heartbeatTask.status,
+              objective:
+                heartbeatTask.objective,
+              repository:
+                heartbeatTask.repository,
+              branch:
+                heartbeatTask.branch,
+              task:
+                heartbeatTask,
+              tasks: [
+                heartbeatTask,
+              ],
+              receipt:
+                data.receipt ??
+                heartbeatTask.receipt,
+              receiptValid:
+                data.receiptValid ??
+                receipt.receiptValid,
+              successfulReceipt:
+                data.successfulReceipt ??
+                receipt.successfulReceipt,
+              resultCommitSha:
+                data.resultCommitSha ??
+                receipt.resultCommitSha,
+              commitShaConsistent:
+                data.commitShaConsistent ??
+                receipt.commitShaConsistent,
+              missingEvidence:
+                data.missingEvidence ??
+                receipt.missingEvidence,
+            }),
+          );
         }
 
         if (
-          data.code ===
-          "AUTONOMOUS_DEVELOPMENT_TASK_NOT_RUNNING"
+          isTerminalStatus(
+            data.task?.status,
+          )
         ) {
           clearHeartbeat();
           return;
@@ -378,72 +529,13 @@ export default function FounderAutonomousDevelopmentPage() {
           key,
           taskId,
         );
-
-        return;
-      }
-
-      if (data.task) {
-        const heartbeatTask =
-          data.task;
-
-        const receipt =
-          getTaskReceipt(
-            heartbeatTask,
-          );
-
-        const successful =
-          receipt.successfulReceipt;
-
-        setResult((previous) => ({
-          ...(previous || {}),
-          ok: successful,
-          success: successful,
+      } catch {
+        scheduleHeartbeat(
+          key,
           taskId,
-          status:
-            heartbeatTask.status,
-          objective:
-            heartbeatTask.objective,
-          repository:
-            heartbeatTask.repository,
-          branch:
-            heartbeatTask.branch,
-          task: heartbeatTask,
-          tasks: [heartbeatTask],
-          receipt:
-            data.receipt ??
-            heartbeatTask.receipt,
-          receiptValid:
-            data.receiptValid ??
-            receipt.receiptValid,
-          successfulReceipt:
-            data.successfulReceipt ??
-            successful,
-          missingEvidence:
-            data.missingEvidence ??
-            receipt.missingEvidence,
-        }));
+        );
       }
-
-      if (
-        isTerminalStatus(
-          data.task?.status,
-        )
-      ) {
-        clearHeartbeat();
-        return;
-      }
-
-      scheduleHeartbeat(
-        key,
-        taskId,
-      );
-    } catch {
-      scheduleHeartbeat(
-        key,
-        taskId,
-      );
-    }
-  };
+    };
 
   const pollTask = async (
     key: string,
@@ -474,20 +566,22 @@ export default function FounderAutonomousDevelopmentPage() {
     pollRoundsRef.current += 1;
 
     try {
-      const response = await fetch(
-        `/api/founder/autonomous-development?taskId=${encodeURIComponent(
-          taskId,
-        )}`,
-        {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Accept:
-              "application/json",
-            Authorization: `Bearer ${key}`,
+      const response =
+        await fetch(
+          `/api/founder/autonomous-development?taskId=${encodeURIComponent(
+            taskId,
+          )}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              Accept:
+                "application/json",
+              Authorization:
+                `Bearer ${key}`,
+            },
           },
-        },
-      );
+        );
 
       const data =
         (await response.json()) as Result;
@@ -549,32 +643,36 @@ export default function FounderAutonomousDevelopmentPage() {
         getTaskReceipt(task);
 
       const successfulReceipt =
-        data.successfulReceipt ??
-        receipt.successfulReceipt;
+        data.successfulReceipt ===
+        true;
 
       const receiptValid =
-        data.receiptValid ??
-        receipt.receiptValid;
+        data.receiptValid ===
+        true;
 
       const completedWithValidReceipt =
         task.status ===
           "completed" &&
-        successfulReceipt === true &&
-        receiptValid === true;
+        successfulReceipt &&
+        receiptValid;
 
       const code =
         completedWithValidReceipt
           ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
-          : task.status === "completed"
+          : task.status ===
+              "completed"
             ? "AUTONOMOUS_DEVELOPMENT_COMPLETED_RECEIPT_INVALID"
-            : task.status === "running"
+            : task.status ===
+                "running"
               ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
-              : task.status === "todo"
+              : task.status ===
+                  "todo"
                 ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
                 : "AUTONOMOUS_DEVELOPMENT_BLOCKED";
 
       setResult({
-        ok: completedWithValidReceipt,
+        ok:
+          completedWithValidReceipt,
         success:
           completedWithValidReceipt,
         code,
@@ -584,7 +682,8 @@ export default function FounderAutonomousDevelopmentPage() {
           task.repository,
         branch:
           task.branch,
-        taskId: task.id,
+        taskId:
+          task.id,
         status:
           task.status,
         tasks: [task],
@@ -594,6 +693,12 @@ export default function FounderAutonomousDevelopmentPage() {
           task.receipt,
         receiptValid,
         successfulReceipt,
+        resultCommitSha:
+          data.resultCommitSha ??
+          receipt.resultCommitSha,
+        commitShaConsistent:
+          data.commitShaConsistent ??
+          receipt.commitShaConsistent,
         missingEvidence:
           data.missingEvidence ??
           receipt.missingEvidence,
@@ -605,6 +710,7 @@ export default function FounderAutonomousDevelopmentPage() {
         )
       ) {
         setRunning(false);
+
         activeTaskIdRef.current =
           null;
 
@@ -685,7 +791,8 @@ export default function FounderAutonomousDevelopmentPage() {
     activeTaskIdRef.current =
       null;
 
-    pollRoundsRef.current = 0;
+    pollRoundsRef.current =
+      0;
 
     window.sessionStorage.setItem(
       STORAGE_KEY,
@@ -708,21 +815,22 @@ export default function FounderAutonomousDevelopmentPage() {
     });
 
     try {
-      const response = await fetch(
-        "/api/founder/autonomous-development",
-        {
-          method: "POST",
-          cache: "no-store",
-          headers:
-            getHeaders(key),
-          body: JSON.stringify({
-            action:
-              "autonomous",
-            objective:
-              requestObjective,
-          }),
-        },
-      );
+      const response =
+        await fetch(
+          "/api/founder/autonomous-development",
+          {
+            method: "POST",
+            cache: "no-store",
+            headers:
+              getHeaders(key),
+            body: JSON.stringify({
+              action:
+                "autonomous",
+              objective:
+                requestObjective,
+            }),
+          },
+        );
 
       let data: Result = {};
 
@@ -751,14 +859,11 @@ export default function FounderAutonomousDevelopmentPage() {
         }
 
         setRunning(false);
-
         setError(
           data.error ||
             `Request failed (${response.status})`,
         );
-
         setResult(data);
-
         return;
       }
 
@@ -772,18 +877,17 @@ export default function FounderAutonomousDevelopmentPage() {
 
       if (!taskId) {
         setRunning(false);
-
         setError(
           "AIOS returned a successful response but did not provide a task ID.",
         );
-
         return;
       }
 
       activeTaskIdRef.current =
         taskId;
 
-      pollRoundsRef.current = 0;
+      pollRoundsRef.current =
+        0;
 
       schedulePoll(
         key,
@@ -796,15 +900,19 @@ export default function FounderAutonomousDevelopmentPage() {
         taskId,
         1000,
       );
-    } catch (requestError) {
+    } catch (
+      requestError
+    ) {
       setRunning(false);
+
       activeTaskIdRef.current =
         null;
 
       clearHeartbeat();
 
       setError(
-        requestError instanceof Error
+        requestError instanceof
+          Error
           ? requestError.message
           : "Autonomous development request failed.",
       );
@@ -816,8 +924,8 @@ export default function FounderAutonomousDevelopmentPage() {
     result?.tasks?.[0];
 
   const status =
-    currentTask?.status ||
-    result?.status ||
+    currentTask?.status ??
+    result?.status ??
     "starting";
 
   const phase =
@@ -899,7 +1007,7 @@ export default function FounderAutonomousDevelopmentPage() {
                 "0.14em",
             }}
           >
-            FOUNDER ONLY · C167.31.22
+            FOUNDER ONLY · C167.31.30
           </div>
 
           <h1
@@ -919,1015 +1027,1141 @@ export default function FounderAutonomousDevelopmentPage() {
             style={{
               margin: 0,
               color: "#64748b",
-              fontSize: 13,
+              fontSize: 12,
               lineHeight: 1.6,
             }}
           >
-            你只说需求。AIOS 自动发现真实仓库、读取代码、判断目标、生成、写入 GitHub、Commit、Readback、Build Verification，并持续维护执行状态。
+            AIOS reads the real repository,
+            plans the change, executes the
+            development task, writes through
+            the AIOS GitHub bridge, verifies
+            the result, and returns a terminal
+            evidence receipt.
           </p>
         </header>
 
         <section
           style={{
-            padding: 16,
+            padding: 14,
+            borderRadius: 14,
+            background: "#ffffff",
             border:
               "1px solid #e2e8f0",
-            borderRadius: 18,
-            background:
-              "#ffffff",
-            boxShadow:
-              "0 8px 26px rgba(15, 23, 42, 0.05)",
           }}
         >
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(4, minmax(0, 1fr))",
-              gap: 7,
-              marginBottom: 16,
+              color: "#64748b",
+              fontSize: 10,
+              fontWeight: 850,
+              letterSpacing:
+                "0.08em",
             }}
           >
-            {[
-              "Understand",
-              "Discover",
-              "Read",
-              "Plan",
-              "Generate",
-              "Write",
-              "Commit",
-              "Verify",
-            ].map(
-              (
-                step,
-                index,
-              ) => (
-                <div
-                  key={step}
-                  style={{
-                    padding:
-                      "8px 5px",
-                    borderRadius: 9,
-                    background:
-                      "#f8fafc",
-                    textAlign:
-                      "center",
-                    color:
-                      "#475569",
-                    fontSize: 9,
-                    fontWeight: 750,
-                  }}
-                >
-                  <span
-                    style={{
-                      display:
-                        "block",
-                      marginBottom: 3,
-                      color:
-                        "#94a3b8",
-                      fontSize: 8,
-                    }}
-                  >
-                    {String(
-                      index + 1,
-                    ).padStart(
-                      2,
-                      "0",
-                    )}
-                  </span>
-                  {step}
-                </div>
-              ),
-            )}
+            DEVELOPMENT OBJECTIVE
           </div>
-
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              background:
-                "#f8fafc",
-              border:
-                "1px solid #e2e8f0",
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                marginBottom: 5,
-                color:
-                  "#94a3b8",
-                fontSize: 10,
-                fontWeight: 850,
-                letterSpacing:
-                  "0.08em",
-              }}
-            >
-              FOUNDER AUTH SESSION
-            </div>
-
-            <div
-              style={{
-                color: accessKey
-                  ? "#15803d"
-                  : "#64748b",
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              {accessKey
-                ? "Founder Access Key loaded"
-                : "Founder Access Key required"}
-            </div>
-          </div>
-
-          <label
-            htmlFor="autonomous-objective"
-            style={{
-              display:
-                "block",
-              marginBottom: 7,
-              color:
-                "#334155",
-              fontSize: 12,
-              fontWeight: 750,
-            }}
-          >
-            What do you want AIOS to build or change?
-          </label>
 
           <textarea
-            id="autonomous-objective"
             value={objective}
             onChange={(event) =>
               setObjective(
                 event.target.value,
               )
             }
+            disabled={running}
             placeholder={
               DEFAULT_OBJECTIVE
             }
-            disabled={running}
-            rows={7}
-            spellCheck={false}
+            rows={5}
             style={{
               width: "100%",
+              marginTop: 8,
+              padding: 11,
               boxSizing:
                 "border-box",
-              padding: 12,
+              resize: "vertical",
+              borderRadius: 10,
               border:
                 "1px solid #cbd5e1",
-              borderRadius: 10,
-              outline: "none",
-              color:
-                "#111827",
               background:
-                "#ffffff",
-              fontSize: 14,
+                running
+                  ? "#f8fafc"
+                  : "#ffffff",
+              color: "#111827",
+              fontSize: 12,
               lineHeight: 1.6,
-              resize:
-                "vertical",
+              outline: "none",
             }}
           />
 
           <div
             style={{
-              marginTop: 7,
-              color:
-                "#94a3b8",
-              fontSize: 11,
-              lineHeight: 1.5,
+              display: "flex",
+              gap: 8,
+              alignItems:
+                "center",
+              marginTop: 9,
+              flexWrap: "wrap",
             }}
           >
-            不需要 Target Path。AIOS 会从真实 GitHub 仓库自行判断需要读取和修改哪些文件。
+            <input
+              value={accessKey}
+              onChange={(event) =>
+                setAccessKey(
+                  event.target.value,
+                )
+              }
+              type="password"
+              placeholder="Founder Access Key"
+              disabled={running}
+              style={{
+                flex: "1 1 260px",
+                minWidth: 0,
+                padding:
+                  "10px 11px",
+                borderRadius: 9,
+                border:
+                  "1px solid #cbd5e1",
+                background:
+                  "#ffffff",
+                color:
+                  "#111827",
+                fontSize: 11,
+                outline: "none",
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() =>
+                void handleRun()
+              }
+              disabled={running}
+              style={{
+                flex:
+                  "0 0 auto",
+                padding:
+                  "10px 15px",
+                borderRadius: 9,
+                border:
+                  "1px solid #111827",
+                background:
+                  running
+                    ? "#94a3b8"
+                    : "#111827",
+                color:
+                  "#ffffff",
+                fontSize: 11,
+                fontWeight: 850,
+                cursor:
+                  running
+                    ? "default"
+                    : "pointer",
+              }}
+            >
+              {running
+                ? "AIOS DEVELOPMENT RUNNING..."
+                : "RUN AUTONOMOUS DEVELOPMENT"}
+            </button>
           </div>
 
-          <button
-            type="button"
-            disabled={running}
-            onClick={() =>
-              void handleRun()
-            }
-            style={{
-              width: "100%",
-              minHeight: 48,
-              marginTop: 12,
-              border: "none",
-              borderRadius: 10,
-              background:
-                running
-                  ? "#94a3b8"
-                  : "#111827",
-              color:
-                "#ffffff",
-              fontSize: 13,
-              fontWeight: 850,
-              cursor:
-                running
-                  ? "default"
-                  : "pointer",
-            }}
-          >
-            {running
-              ? "AIOS Autonomous Development Running..."
-              : "Start Autonomous Development"}
-          </button>
-
-          {result && (
+          {error && (
             <div
               style={{
-                marginTop: 12,
-                padding: 13,
-                borderRadius: 12,
+                marginTop: 10,
+                padding: 10,
+                borderRadius: 9,
+                background:
+                  "#fff7f7",
                 border:
-                  success
-                    ? "1px solid #bbf7d0"
-                    : isTerminal
-                      ? "1px solid #fecaca"
-                      : "1px solid #bfdbfe",
+                  "1px solid #fecaca",
+                color:
+                  "#991b1b",
+                fontSize: 11,
+                lineHeight: 1.55,
+              }}
+            >
+              {error}
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            marginTop: 12,
+            padding: 14,
+            borderRadius: 14,
+            background: "#ffffff",
+            border:
+              "1px solid #e2e8f0",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems:
+                "flex-start",
+              gap: 10,
+              flexWrap:
+                "wrap",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color:
+                    "#94a3b8",
+                  fontSize: 9,
+                  fontWeight: 850,
+                  letterSpacing:
+                    "0.08em",
+                }}
+              >
+                AUTONOMOUS DEVELOPMENT STATUS
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  color:
+                    success
+                      ? "#15803d"
+                      : status ===
+                          "blocked" ||
+                        status ===
+                          "failed"
+                        ? "#b91c1c"
+                        : "#2563eb",
+                  fontSize: 17,
+                  fontWeight: 900,
+                }}
+              >
+                {success
+                  ? "COMPLETED · VERIFIED"
+                  : status ===
+                      "completed"
+                    ? "COMPLETED · RECEIPT INVALID"
+                    : phaseLabel}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding:
+                  "6px 9px",
+                borderRadius: 8,
                 background:
                   success
                     ? "#f0fdf4"
-                    : isTerminal
-                      ? "#fef2f2"
-                      : "#eff6ff",
+                    : "#f8fafc",
+                border:
+                  success
+                    ? "1px solid #bbf7d0"
+                    : "1px solid #e2e8f0",
+                color:
+                  success
+                    ? "#15803d"
+                    : "#64748b",
+                fontSize: 9,
+                fontWeight: 900,
               }}
             >
+              {status.toUpperCase()}
+            </div>
+          </div>
+
+          {result?.message && (
+            <div
+              style={{
+                marginTop: 8,
+                color:
+                  "#64748b",
+                fontSize: 11,
+                lineHeight: 1.55,
+              }}
+            >
+              {result.message}
+            </div>
+          )}
+
+          {currentTask && (
+            <>
               <div
                 style={{
                   display:
-                    "flex",
-                  justifyContent:
-                    "space-between",
-                  gap: 10,
-                  alignItems:
-                    "center",
-                  flexWrap:
-                    "wrap",
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 8,
+                  marginTop: 11,
+                }}
+              >
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    REPOSITORY
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {
+                      currentTask.repository
+                    }
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    BRANCH
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                    }}
+                  >
+                    {
+                      currentTask.branch
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 10,
+                  background:
+                    "#ffffff",
+                  border:
+                    "1px solid #e2e8f0",
                 }}
               >
                 <div
                   style={{
                     color:
-                      success
-                        ? "#15803d"
-                        : isTerminal
-                          ? "#b91c1c"
-                          : "#1d4ed8",
-                    fontSize: 12,
-                    fontWeight: 900,
+                      "#94a3b8",
+                    fontSize: 9,
+                    fontWeight:
+                      850,
                   }}
                 >
-                  {success
-                    ? "AUTONOMOUS DEVELOPMENT COMPLETED"
-                    : isTerminal &&
-                        status ===
-                          "completed"
-                      ? "AUTONOMOUS DEVELOPMENT COMPLETED · RECEIPT INVALID"
-                      : isTerminal
-                        ? "AUTONOMOUS DEVELOPMENT STOPPED"
-                        : "AUTONOMOUS DEVELOPMENT RUNNING"}
+                  TASK ID
                 </div>
 
                 <div
                   style={{
-                    padding:
-                      "4px 7px",
-                    borderRadius: 7,
-                    background:
-                      "#ffffff",
-                    border:
-                      "1px solid #dbe3ee",
+                    marginTop: 4,
                     color:
                       "#334155",
                     fontSize: 10,
-                    fontWeight: 850,
+                    fontFamily:
+                      "monospace",
+                    overflowWrap:
+                      "anywhere",
                   }}
                 >
-                  {phaseLabel}
+                  {
+                    currentTask.id
+                  }
                 </div>
               </div>
 
-              {currentTask && (
-                <>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 10,
+                  background:
+                    "#ffffff",
+                  border:
+                    "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems:
+                      "center",
+                    gap: 8,
+                  }}
+                >
                   <div
                     style={{
-                      marginTop: 10,
-                      display:
-                        "grid",
-                      gridTemplateColumns:
-                        "repeat(2, minmax(0, 1fr))",
-                      gap: 8,
+                      color:
+                        "#64748b",
+                      fontSize: 10,
+                      fontWeight:
+                        850,
+                      letterSpacing:
+                        "0.08em",
                     }}
                   >
-                    <div
-                      style={{
-                        padding: 9,
-                        borderRadius: 9,
-                        background:
-                          "#ffffff",
-                        border:
-                          "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#94a3b8",
-                          fontSize: 9,
-                          fontWeight: 850,
-                        }}
-                      >
-                        TASK STATUS
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 4,
-                          color:
-                            "#334155",
-                          fontSize: 12,
-                          fontWeight: 850,
-                        }}
-                      >
-                        {
-                          currentTask.status
-                        }
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: 9,
-                        borderRadius: 9,
-                        background:
-                          "#ffffff",
-                        border:
-                          "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#94a3b8",
-                          fontSize: 9,
-                          fontWeight: 850,
-                        }}
-                      >
-                        TASK ID
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 4,
-                          color:
-                            "#334155",
-                          fontSize: 10,
-                          fontFamily:
-                            "monospace",
-                          overflowWrap:
-                            "anywhere",
-                        }}
-                      >
-                        {
-                          currentTask.id
-                        }
-                      </div>
-                    </div>
+                    EXECUTION HEARTBEAT
                   </div>
 
                   <div
                     style={{
-                      marginTop: 10,
-                      padding: 10,
-                      borderRadius: 10,
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      gap: 6,
+                      color:
+                        heartbeatWarning
+                          ? "#c2410c"
+                          : currentTask.lastHeartbeatAt
+                            ? "#15803d"
+                            : "#64748b",
+                      fontSize: 10,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius:
+                          "50%",
+                        background:
+                          heartbeatWarning
+                            ? "#f97316"
+                            : currentTask.lastHeartbeatAt
+                              ? "#22c55e"
+                              : "#94a3b8",
+                      }}
+                    />
+
+                    {heartbeatWarning
+                      ? "Heartbeat aging"
+                      : currentTask.lastHeartbeatAt
+                        ? "Heartbeat healthy"
+                        : "Heartbeat pending"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 6,
+                    color:
+                      "#64748b",
+                    fontSize: 10,
+                  }}
+                >
+                  Last heartbeat:{" "}
+                  {formatTime(
+                    currentTask.lastHeartbeatAt,
+                  )}
+                </div>
+
+                {heartbeatAge !==
+                  null && (
+                  <div
+                    style={{
+                      marginTop: 3,
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                    }}
+                  >
+                    Age:{" "}
+                    {Math.floor(
+                      heartbeatAge /
+                        1000,
+                    )}
+                    s
+                  </div>
+                )}
+              </div>
+
+              <AutonomousDevelopmentReceiptStatus
+                status={
+                  currentTask.status
+                }
+                receiptValid={
+                  currentReceipt.receiptValid
+                }
+                successfulReceipt={
+                  currentReceipt.successfulReceipt
+                }
+                commitSha={
+                  currentReceipt.commitSha
+                }
+                resultCommitSha={
+                  currentReceipt.resultCommitSha
+                }
+                commitShaConsistent={
+                  currentReceipt.commitShaConsistent
+                }
+                readbackVerified={
+                  currentReceipt.readbackVerified
+                }
+                verificationPassed={
+                  currentReceipt.verificationPassed
+                }
+                missingEvidence={
+                  currentReceipt.missingEvidence
+                }
+              />
+
+              {currentTask.reason && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 11,
+                    borderRadius: 10,
+                    border:
+                      "1px solid #fecaca",
+                    background:
+                      "#fff7f7",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#b91c1c",
+                      fontSize: 10,
+                      fontWeight:
+                        900,
+                      letterSpacing:
+                        "0.08em",
+                    }}
+                  >
+                    EXECUTION REASON
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color:
+                        "#7f1d1d",
+                      fontSize: 12,
+                      lineHeight:
+                        1.6,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {
+                      currentTask.reason
+                    }
+                  </div>
+                </div>
+              )}
+
+              {phaseHistory.length >
+                0 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    EXECUTION PHASE HISTORY
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 7,
+                      display:
+                        "grid",
+                      gap: 6,
+                    }}
+                  >
+                    {phaseHistory
+                      .slice()
+                      .reverse()
+                      .slice(
+                        0,
+                        12,
+                      )
+                      .map(
+                        (
+                          event,
+                          index,
+                        ) => (
+                          <div
+                            key={`${event.at}-${event.phase}-${index}`}
+                            style={{
+                              display:
+                                "grid",
+                              gridTemplateColumns:
+                                "8px minmax(0, 1fr)",
+                              gap: 8,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 8,
+                                height: 8,
+                                marginTop: 4,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  index ===
+                                  0
+                                    ? "#2563eb"
+                                    : "#cbd5e1",
+                              }}
+                            />
+
+                            <div
+                              style={{
+                                padding:
+                                  "7px 8px",
+                                borderRadius:
+                                  8,
+                                background:
+                                  "#f8fafc",
+                                border:
+                                  "1px solid #e2e8f0",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display:
+                                    "flex",
+                                  justifyContent:
+                                    "space-between",
+                                  gap: 8,
+                                  flexWrap:
+                                    "wrap",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color:
+                                      "#334155",
+                                    fontSize:
+                                      10,
+                                    fontWeight:
+                                      850,
+                                  }}
+                                >
+                                  {
+                                    PHASE_LABELS[
+                                      event.phase
+                                    ]
+                                  }
+                                </span>
+
+                                <span
+                                  style={{
+                                    color:
+                                      "#94a3b8",
+                                    fontSize:
+                                      9,
+                                  }}
+                                >
+                                  {formatTime(
+                                    event.at,
+                                  )}
+                                </span>
+                              </div>
+
+                              {event.reason && (
+                                <div
+                                  style={{
+                                    marginTop: 3,
+                                    color:
+                                      "#64748b",
+                                    fontSize:
+                                      10,
+                                    lineHeight:
+                                      1.45,
+                                    overflowWrap:
+                                      "anywhere",
+                                  }}
+                                >
+                                  {
+                                    event.reason
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ),
+                      )}
+                  </div>
+                </div>
+              )}
+
+              {currentTask.targetPaths?.length >
+                0 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    AIOS SELECTED FILES
+                  </div>
+
+                  {currentTask.targetPaths.map(
+                    (path) => (
+                      <div
+                        key={path}
+                        style={{
+                          marginTop: 4,
+                          padding:
+                            "5px 7px",
+                          borderRadius:
+                            7,
+                          background:
+                            "#ffffff",
+                          border:
+                            "1px solid #e2e8f0",
+                          color:
+                            "#334155",
+                          fontSize: 11,
+                          overflowWrap:
+                            "anywhere",
+                        }}
+                      >
+                        {path}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+
+              {currentTask.changedPaths?.length >
+                0 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#64748b",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    CHANGED FILES
+                  </div>
+
+                  {currentTask.changedPaths.map(
+                    (path) => (
+                      <div
+                        key={path}
+                        style={{
+                          marginTop: 4,
+                          padding:
+                            "5px 7px",
+                          borderRadius:
+                            7,
+                          background:
+                            "#f0fdf4",
+                          border:
+                            "1px solid #bbf7d0",
+                          color:
+                            "#166534",
+                          fontSize: 11,
+                          overflowWrap:
+                            "anywhere",
+                        }}
+                      >
+                        {path}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display:
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 8,
+                  marginTop: 10,
+                }}
+              >
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    CREATED
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                    }}
+                  >
+                    {formatTime(
+                      currentTask.createdAt,
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    UPDATED
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                    }}
+                  >
+                    {formatTime(
+                      currentTask.updatedAt,
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    STARTED
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                    }}
+                  >
+                    {formatTime(
+                      currentTask.startedAt,
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                    }}
+                  >
+                    COMPLETED
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color:
+                        "#334155",
+                      fontSize: 10,
+                    }}
+                  >
+                    {formatTime(
+                      currentTask.completedAt,
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {currentTask.result && (
+                <div
+                  style={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      "repeat(2, minmax(0, 1fr))",
+                    gap: 8,
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 9,
+                      borderRadius: 9,
                       background:
-                        "#ffffff",
+                        "#f8fafc",
                       border:
                         "1px solid #e2e8f0",
                     }}
                   >
                     <div
                       style={{
-                        display:
-                          "flex",
-                        justifyContent:
-                          "space-between",
-                        alignItems:
-                          "center",
-                        gap: 8,
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#64748b",
-                          fontSize: 10,
-                          fontWeight: 850,
-                          letterSpacing:
-                            "0.08em",
-                        }}
-                      >
-                        EXECUTION HEARTBEAT
-                      </div>
-
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          alignItems:
-                            "center",
-                          gap: 6,
-                          color:
-                            heartbeatWarning
-                              ? "#c2410c"
-                              : currentTask.lastHeartbeatAt
-                                ? "#15803d"
-                                : "#64748b",
-                          fontSize: 10,
-                          fontWeight: 850,
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius:
-                              "50%",
-                            background:
-                              heartbeatWarning
-                                ? "#f97316"
-                                : currentTask.lastHeartbeatAt
-                                  ? "#22c55e"
-                                  : "#94a3b8",
-                          }}
-                        />
-
-                        {heartbeatWarning
-                          ? "Heartbeat aging"
-                          : currentTask.lastHeartbeatAt
-                            ? "Heartbeat healthy"
-                            : "Heartbeat pending"}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 6,
                         color:
-                          "#64748b",
-                        fontSize: 10,
-                        lineHeight: 1.5,
+                          "#94a3b8",
+                        fontSize: 9,
+                        fontWeight:
+                          850,
                       }}
                     >
-                      Last heartbeat:{" "}
-                      {formatTime(
-                        currentTask.lastHeartbeatAt,
-                      )}
+                      GITHUB READBACK
                     </div>
 
-                    {heartbeatAge !==
-                      null && (
-                      <div
-                        style={{
-                          marginTop: 3,
-                          color:
-                            "#94a3b8",
-                          fontSize: 9,
-                        }}
-                      >
-                        Age:{" "}
-                        {Math.floor(
-                          heartbeatAge /
-                            1000,
-                        )}
-                        s
-                      </div>
-                    )}
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color:
+                          currentReceipt.readbackVerified
+                            ? "#15803d"
+                            : "#b91c1c",
+                        fontSize: 11,
+                        fontWeight:
+                          850,
+                      }}
+                    >
+                      {currentReceipt.readbackVerified
+                        ? "PASS"
+                        : "NOT VERIFIED"}
+                    </div>
                   </div>
-
-                  <AutonomousDevelopmentReceiptStatus
-                    status={
-                      currentTask.status
-                    }
-                    receiptValid={
-                      currentReceipt.receiptValid
-                    }
-                    successfulReceipt={
-                      currentReceipt.successfulReceipt
-                    }
-                    commitSha={
-                      currentReceipt.commitSha
-                    }
-                    readbackVerified={
-                      currentReceipt.readbackVerified
-                    }
-                    verificationPassed={
-                      currentReceipt.verificationPassed
-                    }
-                    missingEvidence={
-                      currentReceipt.missingEvidence
-                    }
-                  />
-
-                  {currentTask.reason && (
-                    <div
-                      style={{
-                        marginTop: 10,
-                        padding: 11,
-                        borderRadius: 10,
-                        border:
-                          "1px solid #fecaca",
-                        background:
-                          "#fff7f7",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#b91c1c",
-                          fontSize: 10,
-                          fontWeight: 900,
-                          letterSpacing:
-                            "0.08em",
-                        }}
-                      >
-                        EXECUTION REASON
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 5,
-                          color:
-                            "#7f1d1d",
-                          fontSize: 12,
-                          lineHeight: 1.6,
-                          overflowWrap:
-                            "anywhere",
-                        }}
-                      >
-                        {
-                          currentTask.reason
-                        }
-                      </div>
-                    </div>
-                  )}
-
-                  {phaseHistory.length >
-                    0 && (
-                    <div
-                      style={{
-                        marginTop: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#64748b",
-                          fontSize: 11,
-                          fontWeight: 800,
-                        }}
-                      >
-                        EXECUTION PHASE HISTORY
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 7,
-                          display:
-                            "grid",
-                          gap: 6,
-                        }}
-                      >
-                        {phaseHistory
-                          .slice()
-                          .reverse()
-                          .slice(
-                            0,
-                            12,
-                          )
-                          .map(
-                            (
-                              event,
-                              index,
-                            ) => (
-                              <div
-                                key={`${event.at}-${event.phase}-${index}`}
-                                style={{
-                                  display:
-                                    "grid",
-                                  gridTemplateColumns:
-                                    "8px minmax(0, 1fr)",
-                                  gap: 8,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width: 8,
-                                    height: 8,
-                                    marginTop: 4,
-                                    borderRadius:
-                                      "50%",
-                                    background:
-                                      index ===
-                                      0
-                                        ? "#2563eb"
-                                        : "#cbd5e1",
-                                  }}
-                                />
-
-                                <div
-                                  style={{
-                                    padding:
-                                      "7px 8px",
-                                    borderRadius:
-                                      8,
-                                    background:
-                                      "#f8fafc",
-                                    border:
-                                      "1px solid #e2e8f0",
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      display:
-                                        "flex",
-                                      justifyContent:
-                                        "space-between",
-                                      gap: 8,
-                                      flexWrap:
-                                        "wrap",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        color:
-                                          "#334155",
-                                        fontSize:
-                                          10,
-                                        fontWeight:
-                                          850,
-                                      }}
-                                    >
-                                      {
-                                        PHASE_LABELS[
-                                          event.phase
-                                        ]
-                                      }
-                                    </span>
-
-                                    <span
-                                      style={{
-                                        color:
-                                          "#94a3b8",
-                                        fontSize:
-                                          9,
-                                      }}
-                                    >
-                                      {formatTime(
-                                        event.at,
-                                      )}
-                                    </span>
-                                  </div>
-
-                                  {event.reason && (
-                                    <div
-                                      style={{
-                                        marginTop: 3,
-                                        color:
-                                          "#64748b",
-                                        fontSize:
-                                          10,
-                                        lineHeight:
-                                          1.45,
-                                        overflowWrap:
-                                          "anywhere",
-                                      }}
-                                    >
-                                      {
-                                        event.reason
-                                      }
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ),
-                          )}
-                      </div>
-                    </div>
-                  )}
-
-                  {currentReceipt.commitSha && (
-                    <div
-                      style={{
-                        marginTop: 10,
-                        padding: 10,
-                        borderRadius: 10,
-                        background:
-                          "#f8fafc",
-                        border:
-                          "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#94a3b8",
-                          fontSize: 9,
-                          fontWeight: 850,
-                          letterSpacing:
-                            "0.08em",
-                        }}
-                      >
-                        VERIFIED COMMIT
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 4,
-                          color:
-                            "#334155",
-                          fontSize: 11,
-                          fontFamily:
-                            "monospace",
-                          overflowWrap:
-                            "anywhere",
-                        }}
-                      >
-                        {
-                          currentReceipt.commitSha
-                        }
-                      </div>
-                    </div>
-                  )}
-
-                  {currentTask.result && (
-                    <div
-                      style={{
-                        display:
-                          "grid",
-                        gridTemplateColumns:
-                          "repeat(2, minmax(0, 1fr))",
-                        gap: 8,
-                        marginTop: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          padding: 9,
-                          borderRadius: 9,
-                          background:
-                            "#f8fafc",
-                          border:
-                            "1px solid #e2e8f0",
-                        }}
-                      >
-                        <div
-                          style={{
-                            color:
-                              "#94a3b8",
-                            fontSize: 9,
-                            fontWeight: 850,
-                          }}
-                        >
-                          READBACK
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 4,
-                            color:
-                              currentReceipt.readbackVerified
-                                ? "#15803d"
-                                : "#b91c1c",
-                            fontSize: 11,
-                            fontWeight: 850,
-                          }}
-                        >
-                          {currentReceipt.readbackVerified
-                            ? "PASS"
-                            : "NOT VERIFIED"}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          padding: 9,
-                          borderRadius: 9,
-                          background:
-                            "#f8fafc",
-                          border:
-                            "1px solid #e2e8f0",
-                        }}
-                      >
-                        <div
-                          style={{
-                            color:
-                              "#94a3b8",
-                            fontSize: 9,
-                            fontWeight: 850,
-                          }}
-                        >
-                          VERIFICATION
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 4,
-                            color:
-                              currentReceipt.verificationPassed
-                                ? "#15803d"
-                                : "#b91c1c",
-                            fontSize: 11,
-                            fontWeight: 850,
-                          }}
-                        >
-                          {currentReceipt.verificationPassed
-                            ? "PASS"
-                            : "NOT PASSED"}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {currentTask.targetPaths?.length ? (
-                    <div
-                      style={{
-                        marginTop: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#64748b",
-                          fontSize: 11,
-                          fontWeight: 800,
-                        }}
-                      >
-                        AIOS SELECTED FILES
-                      </div>
-
-                      {currentTask.targetPaths.map(
-                        (path) => (
-                          <div
-                            key={path}
-                            style={{
-                              marginTop: 4,
-                              padding:
-                                "5px 7px",
-                              borderRadius: 7,
-                              background:
-                                "#ffffff",
-                              border:
-                                "1px solid #e2e8f0",
-                              color:
-                                "#334155",
-                              fontSize: 11,
-                              overflowWrap:
-                                "anywhere",
-                            }}
-                          >
-                            {path}
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  ) : null}
-
-                  {currentTask.changedPaths?.length ? (
-                    <div
-                      style={{
-                        marginTop: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          color:
-                            "#64748b",
-                          fontSize: 11,
-                          fontWeight: 800,
-                        }}
-                      >
-                        CHANGED PATHS
-                      </div>
-
-                      {currentTask.changedPaths.map(
-                        (path) => (
-                          <div
-                            key={path}
-                            style={{
-                              marginTop: 4,
-                              padding:
-                                "5px 7px",
-                              borderRadius: 7,
-                              background:
-                                "#f8fafc",
-                              color:
-                                "#334155",
-                              fontSize: 11,
-                              overflowWrap:
-                                "anywhere",
-                            }}
-                          >
-                            {path}
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  ) : null}
 
                   <div
                     style={{
-                      marginTop: 10,
-                      color:
-                        "#94a3b8",
-                      fontSize: 10,
-                      lineHeight: 1.5,
+                      padding: 9,
+                      borderRadius: 9,
+                      background:
+                        "#f8fafc",
+                      border:
+                        "1px solid #e2e8f0",
                     }}
                   >
-                    {currentTask.startedAt && (
-                      <>
-                        Started:{" "}
-                        {formatTime(
-                          currentTask.startedAt,
-                        )}
-                        <br />
-                      </>
-                    )}
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize: 9,
+                        fontWeight:
+                          850,
+                      }}
+                    >
+                      FINAL VERIFICATION
+                    </div>
 
-                    Updated:{" "}
-                    {formatTime(
-                      currentTask.updatedAt,
-                    )}
-
-                    {currentTask.completedAt && (
-                      <>
-                        <br />
-                        Completed:{" "}
-                        {formatTime(
-                          currentTask.completedAt,
-                        )}
-                      </>
-                    )}
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color:
+                          currentReceipt.verificationPassed
+                            ? "#15803d"
+                            : "#b91c1c",
+                        fontSize: 11,
+                        fontWeight:
+                          850,
+                      }}
+                    >
+                      {currentReceipt.verificationPassed
+                        ? "PASS"
+                        : "NOT PASSED"}
+                    </div>
                   </div>
-                </>
-              )}
-
-              {result.message && (
-                <div
-                  style={{
-                    marginTop: 9,
-                    color:
-                      "#64748b",
-                    fontSize: 11,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {result.message}
                 </div>
               )}
 
-              {error && (
+              {currentTask.objective && (
                 <div
-                  role="alert"
                   style={{
-                    marginTop: 9,
-                    paddingTop: 9,
-                    borderTop:
-                      "1px solid #fecaca",
-                    color:
-                      "#b91c1c",
-                    fontSize: 11,
-                    lineHeight: 1.55,
-                    overflowWrap:
-                      "anywhere",
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 10,
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #e2e8f0",
                   }}
                 >
-                  {error}
+                  <div
+                    style={{
+                      color:
+                        "#94a3b8",
+                      fontSize: 9,
+                      fontWeight:
+                        850,
+                      letterSpacing:
+                        "0.08em",
+                    }}
+                  >
+                    ACTIVE OBJECTIVE
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color:
+                        "#334155",
+                      fontSize: 11,
+                      lineHeight:
+                        1.55,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {
+                      currentTask.objective
+                    }
+                  </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {error && !result && (
-            <div
-              role="alert"
-              style={{
-                marginTop: 10,
-                padding: 11,
-                border:
-                  "1px solid #fecaca",
-                borderRadius: 10,
-                background:
-                  "#fef2f2",
-                color:
-                  "#b91c1c",
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {error}
-            </div>
+              {isTerminal &&
+                success && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 10,
+                      background:
+                        "#f0fdf4",
+                      border:
+                        "1px solid #bbf7d0",
+                      color:
+                        "#166534",
+                      fontSize: 11,
+                      fontWeight:
+                        800,
+                      lineHeight:
+                        1.55,
+                    }}
+                  >
+                    AIOS Autonomous
+                    Development is
+                    terminal and its
+                    canonical receipt
+                    is valid. The
+                    delivery evidence
+                    chain is complete.
+                  </div>
+                )}
+            </>
           )}
         </section>
       </div>
