@@ -8,6 +8,7 @@ export type AutonomousDevelopmentReceiptInput = {
     | "failed"
     | "blocked";
   commitSha?: string;
+  resultCommitSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -17,8 +18,10 @@ export type AutonomousDevelopmentReceipt = {
   successful: boolean;
   valid: boolean;
   commitSha?: string;
+  resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
+  commitShaConsistent: boolean;
   missingEvidence: string[];
 };
 
@@ -72,9 +75,8 @@ export function isValidAutonomousDevelopmentCommitSha(
  * 2. a real 40-character Git commit SHA
  * 3. GitHub readback verification
  * 4. final verification/build verification
- *
- * A terminal failed/blocked task is terminal, but
- * it is never a successful receipt.
+ * 5. task-level and result-level commit evidence,
+ *    when both are present, must identify the same commit
  */
 export function buildAutonomousDevelopmentReceipt(
   input: AutonomousDevelopmentReceiptInput,
@@ -82,6 +84,11 @@ export function buildAutonomousDevelopmentReceipt(
   const commitSha =
     normalizeCommitSha(
       input.commitSha,
+    );
+
+  const resultCommitSha =
+    normalizeCommitSha(
+      input.resultCommitSha,
     );
 
   const readbackVerified =
@@ -96,6 +103,12 @@ export function buildAutonomousDevelopmentReceipt(
     isAutonomousDevelopmentTerminalStatus(
       input.status,
     );
+
+  const commitShaConsistent =
+    !commitSha ||
+    !resultCommitSha ||
+    commitSha.toLowerCase() ===
+      resultCommitSha.toLowerCase();
 
   const missingEvidence: string[] =
     [];
@@ -132,6 +145,16 @@ export function buildAutonomousDevelopmentReceipt(
     );
   }
 
+  if (
+    input.status ===
+      "completed" &&
+    !commitShaConsistent
+  ) {
+    missingEvidence.push(
+      "commitShaConsistency",
+    );
+  }
+
   const successful =
     input.status ===
       "completed" &&
@@ -147,8 +170,10 @@ export function buildAutonomousDevelopmentReceipt(
         "completed" ||
         successful),
     commitSha,
+    resultCommitSha,
     readbackVerified,
     verificationPassed,
+    commitShaConsistent,
     missingEvidence,
   };
 }
