@@ -50,6 +50,7 @@ type FinalizationResult = {
   terminal: boolean;
   receiptValid: boolean;
   commitSha?: string;
+  resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
@@ -129,6 +130,8 @@ function buildReceipt(
       result.status,
     commitSha:
       result.commitSha,
+    resultCommitSha:
+      result.resultCommitSha,
     readbackVerified:
       result.readbackVerified,
     verificationPassed:
@@ -149,6 +152,10 @@ function buildReceiptResponse(
       receipt.valid,
     successfulReceipt:
       receipt.successful,
+    resultCommitSha:
+      receipt.resultCommitSha,
+    commitShaConsistent:
+      receipt.commitShaConsistent,
     missingEvidence:
       receipt.missingEvidence,
   };
@@ -303,7 +310,12 @@ function getFailureFinalizationResponse(
     receipt,
     receiptValid:
       receipt.valid,
-    successfulReceipt: false,
+    successfulReceipt:
+      false,
+    resultCommitSha:
+      receipt.resultCommitSha,
+    commitShaConsistent:
+      receipt.commitShaConsistent,
     missingEvidence:
       receipt.missingEvidence,
   };
