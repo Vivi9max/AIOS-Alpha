@@ -119,17 +119,19 @@ function normalizeReason(
     );
 }
 
-function buildReceipt(
-  task: {
-    status: string;
+type ReceiptTask = {
+  status: string;
+  commitSha?: string;
+  result?: {
     commitSha?: string;
-    result?: {
-      commitSha?: string;
-      readbackVerified: boolean;
-      verificationPassed: boolean;
-      reason?: string;
-    };
-  },
+    readbackVerified: boolean;
+    verificationPassed: boolean;
+    reason?: string;
+  };
+};
+
+function buildReceipt(
+  task: ReceiptTask,
 ) {
   return buildAutonomousDevelopmentReceipt(
     {
@@ -141,8 +143,9 @@ function buildReceipt(
           | "failed"
           | "blocked",
       commitSha:
-        task.result?.commitSha ??
         task.commitSha,
+      resultCommitSha:
+        task.result?.commitSha,
       readbackVerified:
         task.result
           ?.readbackVerified ??
@@ -216,6 +219,10 @@ function buildTaskResponse(
         receipt.valid,
       commitSha:
         receipt.commitSha,
+      resultCommitSha:
+        receipt.resultCommitSha,
+      commitShaConsistent:
+        receipt.commitShaConsistent,
       readbackVerified:
         receipt.readbackVerified,
       verificationPassed:
@@ -227,22 +234,17 @@ function buildTaskResponse(
       receipt.valid,
     successfulReceipt:
       receipt.successful,
+    resultCommitSha:
+      receipt.resultCommitSha,
+    commitShaConsistent:
+      receipt.commitShaConsistent,
     missingEvidence:
       receipt.missingEvidence,
   };
 }
 
 function buildTerminalCode(
-  task: {
-    status: string;
-    commitSha?: string;
-    result?: {
-      commitSha?: string;
-      readbackVerified: boolean;
-      verificationPassed: boolean;
-      reason?: string;
-    };
-  },
+  task: ReceiptTask,
 ) {
   const receipt =
     buildReceipt(
@@ -251,7 +253,7 @@ function buildTerminalCode(
 
   if (
     task.status ===
-      "completed"
+    "completed"
   ) {
     return receipt.successful
       ? "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_COMPLETED"
@@ -260,19 +262,48 @@ function buildTerminalCode(
 
   if (
     task.status ===
-      "failed"
+    "failed"
   ) {
     return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_FAILED";
   }
 
   if (
     task.status ===
-      "blocked"
+    "blocked"
   ) {
     return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_BLOCKED";
   }
 
   return "AUTONOMOUS_DEVELOPMENT_HEARTBEAT_TERMINAL";
+}
+
+function buildReceiptResponse(
+  receipt: ReturnType<
+    typeof buildAutonomousDevelopmentReceipt
+  >,
+) {
+  return {
+    terminal:
+      receipt.terminal,
+    successful:
+      receipt.successful,
+    valid:
+      receipt.valid,
+    receiptValid:
+      receipt.valid,
+    commitSha:
+      receipt.commitSha,
+    resultCommitSha:
+      receipt.resultCommitSha,
+    commitShaConsistent:
+      receipt.commitShaConsistent,
+    readbackVerified:
+      receipt.readbackVerified,
+    verificationPassed:
+      receipt.verificationPassed,
+    missingEvidence:
+      receipt.missingEvidence,
+  };
 }
 
 export async function POST(
@@ -356,28 +387,18 @@ export async function POST(
             existingTask.status,
           phase:
             existingTask.phase,
-          receipt: {
-            terminal:
-              existingReceipt.terminal,
-            successful:
-              existingReceipt.successful,
-            valid:
-              existingReceipt.valid,
-            receiptValid:
-              existingReceipt.valid,
-            commitSha:
-              existingReceipt.commitSha,
-            readbackVerified:
-              existingReceipt.readbackVerified,
-            verificationPassed:
-              existingReceipt.verificationPassed,
-            missingEvidence:
-              existingReceipt.missingEvidence,
-          },
+          receipt:
+            buildReceiptResponse(
+              existingReceipt,
+            ),
           receiptValid:
             existingReceipt.valid,
           successfulReceipt:
             existingReceipt.successful,
+          resultCommitSha:
+            existingReceipt.resultCommitSha,
+          commitShaConsistent:
+            existingReceipt.commitShaConsistent,
           missingEvidence:
             existingReceipt.missingEvidence,
           task:
@@ -480,28 +501,18 @@ export async function POST(
           heartbeat.updatedAt,
         reason:
           heartbeat.reason,
-        receipt: {
-          terminal:
-            refreshedReceipt.terminal,
-          successful:
-            refreshedReceipt.successful,
-          valid:
-            refreshedReceipt.valid,
-          receiptValid:
-            refreshedReceipt.valid,
-          commitSha:
-            refreshedReceipt.commitSha,
-          readbackVerified:
-            refreshedReceipt.readbackVerified,
-          verificationPassed:
-            refreshedReceipt.verificationPassed,
-          missingEvidence:
-            refreshedReceipt.missingEvidence,
-        },
+        receipt:
+          buildReceiptResponse(
+            refreshedReceipt,
+          ),
         receiptValid:
           refreshedReceipt.valid,
         successfulReceipt:
           refreshedReceipt.successful,
+        resultCommitSha:
+          refreshedReceipt.resultCommitSha,
+        commitShaConsistent:
+          refreshedReceipt.commitShaConsistent,
         missingEvidence:
           refreshedReceipt.missingEvidence,
         task:
@@ -633,28 +644,18 @@ export async function GET(
       lastHeartbeatAt:
         task.lastHeartbeatAt,
       heartbeatAgeMs,
-      receipt: {
-        terminal:
-          receipt.terminal,
-        successful:
-          receipt.successful,
-        valid:
-          receipt.valid,
-        receiptValid:
-          receipt.valid,
-        commitSha:
-          receipt.commitSha,
-        readbackVerified:
-          receipt.readbackVerified,
-        verificationPassed:
-          receipt.verificationPassed,
-        missingEvidence:
-          receipt.missingEvidence,
-      },
+      receipt:
+        buildReceiptResponse(
+          receipt,
+        ),
       receiptValid:
         receipt.valid,
       successfulReceipt:
         receipt.successful,
+      resultCommitSha:
+        receipt.resultCommitSha,
+      commitShaConsistent:
+        receipt.commitShaConsistent,
       missingEvidence:
         receipt.missingEvidence,
       task:
