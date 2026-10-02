@@ -796,6 +796,44 @@ function parsePatchBlocks(
   return blocks;
 }
 
+function validatePatchSearches(
+  original: string,
+  operations: PatchOperation[],
+) {
+  for (
+    const operation of operations
+  ) {
+    const firstIndex =
+      original.indexOf(
+        operation.search,
+      );
+
+    if (
+      firstIndex < 0
+    ) {
+      throw new Error(
+        `AIOS_PATCH_SEARCH_NOT_FOUND: ${operation.path}`,
+      );
+    }
+
+    const secondIndex =
+      original.indexOf(
+        operation.search,
+        firstIndex +
+          operation.search
+            .length,
+      );
+
+    if (
+      secondIndex >= 0
+    ) {
+      throw new Error(
+        `AIOS_PATCH_SEARCH_NOT_UNIQUE: ${operation.path}`,
+      );
+    }
+  }
+}
+
 function applyPatchOperations(
   original: string,
   operations: PatchOperation[],
@@ -1088,8 +1126,12 @@ async function generatePatch(
         attempt > 1
           ? [
               "",
+              "PREVIOUS PATCH ATTEMPT ERROR:",
+              lastError,
+              "",
               "IMPORTANT:",
               "The previous patch was rejected.",
+              "Fix the exact reported patch error.",
               "Do not output a complete file.",
               "Return only exact SEARCH/REPLACE operations.",
             ].join("\n")
@@ -1117,15 +1159,23 @@ async function generatePatch(
     }
 
     try {
-      return parsePatchBlocks(
-        response.content,
-        targetPath,
+      const operations =
+        parsePatchBlocks(
+          response.content,
+          targetPath,
+        );
+
+      validatePatchSearches(
+        currentContent,
+        operations,
       );
+
+      return operations;
     } catch (error) {
       lastError =
         error instanceof Error
           ? error.message
-          : "AIOS patch parsing failed.";
+          : "AIOS patch validation failed.";
     }
   }
 
