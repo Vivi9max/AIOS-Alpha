@@ -534,10 +534,10 @@ function extractTranslationKeys(
   const keys = new Set<string>();
 
   const patterns = [
-    /\bt$begin:math:text$\\s\*\"\(\[\^\"\]\+\)\"\\s\*$end:math:text$/g,
-    /\bt$begin:math:text$\\s\*\'\(\[\^\'\]\+\)\'\\s\*$end:math:text$/g,
-    /\btranslate$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\"\(\[\^\"\]\+\)\"\\s\*$end:math:text$/g,
-    /\btranslate$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\'\(\[\^\'\]\+\)\'\\s\*$end:math:text$/g,
+    /\bt\s*\(\s*"([^"\\]+)"\s*\)/g,
+    /\bt\s*\(\s*'([^'\\]+)'\s*\)/g,
+    /\btranslate\s*\(\s*[^,]+,\s*"([^"\\]+)"\s*\)/g,
+    /\btranslate\s*\(\s*[^,]+,\s*'([^'\\]+)'\s*\)/g,
   ];
 
   for (const pattern of patterns) {
