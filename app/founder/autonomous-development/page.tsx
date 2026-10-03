@@ -202,59 +202,69 @@ function getTaskReceipt(
     };
   }
 
+  const commitSha =
+    task.commitSha ??
+    task.result?.commitSha ??
+    task.receipt?.commitSha;
+
+  const resultCommitSha =
+    task.result?.commitSha ??
+    task.resultCommitSha ??
+    task.result?.resultCommitSha ??
+    task.receipt?.resultCommitSha;
+
+  const commitShaValid =
+    typeof commitSha === "string" &&
+    /^[0-9a-f]{40}$/i.test(commitSha);
+
+  const resultCommitShaValid =
+    typeof resultCommitSha === "string" &&
+    /^[0-9a-f]{40}$/i.test(resultCommitSha);
+
+  const commitShaConsistent =
+    commitShaValid &&
+    resultCommitShaValid &&
+    commitSha === resultCommitSha;
+
+  const readbackVerified =
+    task.receipt?.readbackVerified ??
+    task.result?.readbackVerified ??
+    false;
+
+  const verificationPassed =
+    task.receipt?.verificationPassed ??
+    task.result?.verificationPassed ??
+    false;
+
+  const canonicalEvidence =
+    commitShaValid &&
+    resultCommitShaValid &&
+    commitShaConsistent &&
+    readbackVerified === true &&
+    verificationPassed === true;
+
+  const missingEvidence =
+    task.missingEvidence ??
+    task.result?.missingEvidence ??
+    task.receipt?.missingEvidence ??
+    [];
+
   return {
-    receiptValid:
-      task.receiptValid ??
-      task.result?.receiptValid ??
-      task.receipt?.receiptValid ??
-      task.receipt?.valid ??
-      false,
+    receiptValid: canonicalEvidence,
 
-    successfulReceipt:
-      task.successfulReceipt ??
-      task.result?.successfulReceipt ??
-      task.receipt?.successful ??
-      false,
+    successfulReceipt: canonicalEvidence,
 
-    commitSha:
-      task.commitSha ??
-      task.result?.commitSha ??
-      task.receipt?.commitSha,
+    commitSha,
 
-    resultCommitSha:
-      task.result?.commitSha ??
-      task.resultCommitSha ??
-      task.result?.resultCommitSha ??
-      task.receipt?.resultCommitSha,
+    resultCommitSha,
 
-    commitShaConsistent:
-      task.commitShaConsistent ??
-      task.result?.commitShaConsistent ??
-      task.receipt?.commitShaConsistent ??
-      (typeof (task.commitSha ?? task.result?.commitSha) === "string" &&
-      /^[0-9a-f]{40}$/i.test(
-        String(task.commitSha ?? task.result?.commitSha),
-      ) &&
-      (task.result?.commitSha ?? task.resultCommitSha ?? task.receipt?.resultCommitSha) ===
-        (task.commitSha ?? task.result?.commitSha)
-        ? true
-        : false),
+    commitShaConsistent,
 
-    readbackVerified:
-      task.receipt?.readbackVerified ??
-      task.result?.readbackVerified ??
-      false,
+    readbackVerified,
 
-    verificationPassed:
-      task.receipt?.verificationPassed ??
-      task.result?.verificationPassed ??
-      false,
+    verificationPassed,
 
-    missingEvidence:
-      task.missingEvidence ??
-      task.result?.missingEvidence ??
-      task.receipt?.missingEvidence ??
-      [],
+    missingEvidence,
   };
 }
 
