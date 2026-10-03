@@ -64,25 +64,54 @@ function StatusBadge({
   );
 }
 
-function normalizeSha(
+function isValidCommitSha(
   value?: string,
 ) {
-  const sha =
+  const normalized =
     value?.trim() ?? "";
 
   return (
-    sha &&
+    normalized.length === 40 &&
     /^[0-9a-f]{40}$/i.test(
-      sha,
+      normalized,
     )
   );
 }
 
-function normalizeConsistency(
+function resolveCommitConsistency(
   commitSha?: string,
   resultCommitSha?: string,
   commitShaConsistent?: boolean,
 ) {
+  const normalizedCommitSha =
+    commitSha?.trim() ?? "";
+
+  const normalizedResultCommitSha =
+    resultCommitSha?.trim() ?? "";
+
+  /*
+   * When both commit values are present, the actual
+   * SHA values are authoritative.
+   *
+   * A stale boolean from an older receipt must never
+   * override the real commit evidence.
+   */
+  if (
+    normalizedCommitSha &&
+    normalizedResultCommitSha
+  ) {
+    return (
+      normalizedCommitSha.toLowerCase() ===
+      normalizedResultCommitSha.toLowerCase()
+    );
+  }
+
+  /*
+   * If both commit values are unavailable, preserve
+   * the supplied state only for non-completed tasks.
+   *
+   * Completed tasks must provide both commit evidences.
+   */
   if (
     typeof commitShaConsistent ===
     "boolean"
@@ -90,23 +119,7 @@ function normalizeConsistency(
     return commitShaConsistent;
   }
 
-  const normalizedCommitSha =
-    commitSha?.trim() ?? "";
-
-  const normalizedResultCommitSha =
-    resultCommitSha?.trim() ?? "";
-
-  if (
-    !normalizedCommitSha ||
-    !normalizedResultCommitSha
-  ) {
-    return true;
-  }
-
-  return (
-    normalizedCommitSha.toLowerCase() ===
-    normalizedResultCommitSha.toLowerCase()
-  );
+  return false;
 }
 
 export default function AutonomousDevelopmentReceiptStatus({
@@ -126,35 +139,80 @@ export default function AutonomousDevelopmentReceiptStatus({
     status === "blocked";
 
   const validCommit =
-    Boolean(
-      normalizeSha(
-        commitSha,
-      ),
+    isValidCommitSha(
+      commitSha,
     );
 
   const validResultCommit =
-    Boolean(
-      normalizeSha(
-        resultCommitSha,
-      ),
+    isValidCommitSha(
+      resultCommitSha,
     );
 
+  /*
+   * Canonical terminal evidence.
+   *
+   * These values are deliberately derived from the
+   * actual evidence passed into this component instead
+   * of trusting receiptValid/successfulReceipt booleans.
+   *
+   * This prevents an old persisted receipt flag such as
+   * receiptValid=false from masking a currently valid
+   * execution evidence chain.
+   */
   const consistency =
-    normalizeConsistency(
+    resolveCommitConsistency(
       commitSha,
       resultCommitSha,
       commitShaConsistent,
     );
 
-  const successful =
-    successfulReceipt === true;
+  const readbackPassed =
+    readbackVerified === true;
+
+  const verificationPassedValue =
+    verificationPassed === true;
+
+  const canonicalEvidenceComplete =
+    validCommit &&
+    validResultCommit &&
+    consistency &&
+    readbackPassed &&
+    verificationPassedValue;
+
+  /*
+   * For a completed task, Receipt Integrity is derived
+   * entirely from the complete evidence chain.
+   *
+   * The legacy receiptValid value is intentionally not
+   * allowed to downgrade a receipt that has complete
+   * current evidence.
+   *
+   * For non-completed states, receiptValid can still be
+   * displayed as supplied by the server because a task
+   * has not yet reached its terminal evidence boundary.
+   */
+  const effectiveReceiptValid =
+    status === "completed"
+      ? canonicalEvidenceComplete
+      : receiptValid === true;
+
+  /*
+   * Successful Receipt follows the same canonical rule.
+   *
+   * A completed task is successful only when all terminal
+   * evidence is present and consistent.
+   */
+  const effectiveSuccessfulReceipt =
+    status === "completed"
+      ? canonicalEvidenceComplete
+      : successfulReceipt === true;
 
   const hasInvalidCompletedReceipt =
     status === "completed" &&
-    !successful;
+    !effectiveSuccessfulReceipt;
 
   const title =
-    successful
+    effectiveSuccessfulReceipt
       ? "TERMINAL RECEIPT VALID"
       : hasInvalidCompletedReceipt
         ? "TERMINAL RECEIPT INVALID"
@@ -163,7 +221,7 @@ export default function AutonomousDevelopmentReceiptStatus({
           : "EXECUTION EVIDENCE";
 
   const titleColor =
-    successful
+    effectiveSuccessfulReceipt
       ? "#15803d"
       : hasInvalidCompletedReceipt
         ? "#b91c1c"
@@ -172,18 +230,42 @@ export default function AutonomousDevelopmentReceiptStatus({
           : "#1d4ed8";
 
   const titleBackground =
-    successful
+    effectiveSuccessfulReceipt
       ? "#f0fdf4"
       : hasInvalidCompletedReceipt
         ? "#fef2f2"
         : "#eff6ff";
 
   const titleBorder =
-    successful
+    effectiveSuccessfulReceipt
       ? "#bbf7d0"
       : hasInvalidCompletedReceipt
         ? "#fecaca"
         : "#bfdbfe";
+
+  const derivedMissingEvidence =
+    status === "completed"
+      ? [
+          ...new Set([
+            ...missingEvidence,
+            ...(!validCommit
+              ? ["commitSha"]
+              : []),
+            ...(!validResultCommit
+              ? ["resultCommitSha"]
+              : []),
+            ...(!consistency
+              ? ["commitShaConsistency"]
+              : []),
+            ...(!readbackPassed
+              ? ["readbackVerified"]
+              : []),
+            ...(!verificationPassedValue
+              ? ["verificationPassed"]
+              : []),
+          ]),
+        ]
+      : missingEvidence;
 
   return (
     <section
@@ -250,7 +332,7 @@ export default function AutonomousDevelopmentReceiptStatus({
             lineHeight: 1.5,
           }}
         >
-          {successful
+          {effectiveSuccessfulReceipt
             ? "AIOS has a complete terminal evidence chain."
             : hasInvalidCompletedReceipt
               ? "Completed status was reported, but the required terminal evidence is incomplete."
@@ -289,23 +371,21 @@ export default function AutonomousDevelopmentReceiptStatus({
         <StatusBadge
           label="GITHUB READBACK"
           passed={
-            readbackVerified ===
-            true
+            readbackPassed
           }
         />
 
         <StatusBadge
           label="FINAL VERIFICATION"
           passed={
-            verificationPassed ===
-            true
+            verificationPassedValue
           }
         />
 
         <StatusBadge
           label="RECEIPT INTEGRITY"
           passed={
-            receiptValid === true
+            effectiveReceiptValid
           }
         />
       </div>
@@ -413,7 +493,7 @@ export default function AutonomousDevelopmentReceiptStatus({
         </div>
       )}
 
-      {missingEvidence.length >
+      {derivedMissingEvidence.length >
         0 && (
         <div
           style={{
@@ -445,7 +525,7 @@ export default function AutonomousDevelopmentReceiptStatus({
               marginTop: 6,
             }}
           >
-            {missingEvidence.map(
+            {derivedMissingEvidence.map(
               (item) => (
                 <span
                   key={item}
@@ -468,7 +548,7 @@ export default function AutonomousDevelopmentReceiptStatus({
         </div>
       )}
 
-      {successful && (
+      {effectiveSuccessfulReceipt && (
         <div
           style={{
             marginTop: 9,
