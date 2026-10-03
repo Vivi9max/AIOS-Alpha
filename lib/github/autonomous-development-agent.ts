@@ -2284,7 +2284,13 @@ export async function executeAutonomousDevelopmentAgent(
 
     const reason =
       verificationPassed
-        ? "Autonomous self-generated development prompt, patch execution, GitHub readback and Vercel production verification completed."
+        ? [
+            "Autonomous development completed.",
+            `Targets: ${targetPaths.length}.`,
+            `Changed: ${changedPaths.length}.`,
+            `Repair rounds: ${repairRounds}.`,
+            "GitHub readback and Vercel production verification passed.",
+          ].join(" ")
         : verification?.errorMessage ||
           verification?.errorCode ||
           "Final autonomous verification failed.";
