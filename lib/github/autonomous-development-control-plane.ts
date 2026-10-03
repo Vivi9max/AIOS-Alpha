@@ -4,6 +4,10 @@ import {
   storage,
 } from "@/lib/server-storage";
 
+import {
+  buildAutonomousDevelopmentReceipt,
+} from "@/lib/github/autonomous-development-receipt";
+
 export type AutonomousDevelopmentTaskStatus =
   | "todo"
   | "running"
@@ -65,8 +69,14 @@ export type AutonomousDevelopmentReceipt = {
   targetPaths: string[];
   phases: string[];
   commitSha?: string;
+  resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
+  commitShaConsistent: boolean;
+  missingEvidence: string[];
+  terminal: boolean;
+  successful: boolean;
+  valid: boolean;
   reason?: string;
   startedAt?: string;
   completedAt: string;
@@ -947,6 +957,26 @@ function createReceipt(
   const result =
     task.result;
 
+  const canonical =
+    buildAutonomousDevelopmentReceipt({
+      status:
+        task.status,
+
+      commitSha:
+        task.commitSha,
+
+      resultCommitSha:
+        result?.commitSha,
+
+      readbackVerified:
+        result?.readbackVerified ===
+        true,
+
+      verificationPassed:
+        result?.verificationPassed ===
+        true,
+    });
+
   return {
     taskId:
       task.id,
@@ -972,16 +1002,31 @@ function createReceipt(
       ),
 
     commitSha:
-      result?.commitSha ||
-      task.commitSha,
+      canonical.commitSha,
+
+    resultCommitSha:
+      canonical.resultCommitSha,
 
     readbackVerified:
-      result?.readbackVerified ===
-      true,
+      canonical.readbackVerified,
 
     verificationPassed:
-      result?.verificationPassed ===
-      true,
+      canonical.verificationPassed,
+
+    commitShaConsistent:
+      canonical.commitShaConsistent,
+
+    missingEvidence:
+      canonical.missingEvidence,
+
+    terminal:
+      canonical.terminal,
+
+    successful:
+      canonical.successful,
+
+    valid:
+      canonical.valid,
 
     reason:
       result?.reason ||
