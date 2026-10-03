@@ -164,7 +164,7 @@ export function extractExplicitRepositoryPaths(
 
   const matches =
     normalizedObjective.match(
-      /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9._@\/+-]+/g,
+      /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+\/-]+\.[A-Za-z0-9]+/g,
     ) ?? [];
 
   return uniquePaths(
