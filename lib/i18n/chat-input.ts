@@ -18,8 +18,9 @@ export const chatInputCopy: Record<
     ariaLabel: "Message AIOS",
     send: "Send message",
     sending: "Sending",
-    objectiveLabel: "What outcome do you want to achieve?",
-    objectivePlaceholder: "Describe the result you want AIOS to deliver…",
+    objectiveLabel: "What do you want AIOS to help you achieve?",
+    objectivePlaceholder:
+      "Tell AIOS what you want to achieve. AIOS will help you understand the goal, plan the path and move it forward…",
   },
 
   "zh-CN": {
@@ -27,8 +28,9 @@ export const chatInputCopy: Record<
     ariaLabel: "输入消息",
     send: "发送消息",
     sending: "正在发送",
-    objectiveLabel: "你希望达成什么结果？",
-    objectivePlaceholder: "描述你希望 AIOS 交付的结果……",
+    objectiveLabel: "你希望 AIOS 帮你实现什么？",
+    objectivePlaceholder:
+      "告诉 AIOS 你想达成的目标。AIOS 会帮你理解目标、规划路径，并推动执行……",
   },
 
   ja: {
@@ -36,7 +38,8 @@ export const chatInputCopy: Record<
     ariaLabel: "AIOS へのメッセージ入力",
     send: "メッセージを送信",
     sending: "送信しています",
-    objectiveLabel: "どんな結果を実現したいですか？",
-    objectivePlaceholder: "AIOS に届けてほしい結果を説明してください…",
+    objectiveLabel: "AIOS に、何を実現してほしいですか？",
+    objectivePlaceholder:
+      "AIOS に実現したいことを伝えてください。目標を理解し、進め方を整理して実行をサポートします…",
   },
 };
