@@ -51,6 +51,10 @@ import {
   executeChatCommercialBridge,
 } from "@/lib/runtime/chat-commercial-bridge";
 import {
+  executeTimeCapability,
+  isTimeCapabilityPrompt,
+} from "@/lib/runtime/time-capability";
+import {
   processAIOSInputs,
 } from "@/lib/runtime/input/aios-input-runtime";
 import {
@@ -60,14 +64,18 @@ import {
 import type {
   AIOSInputItem,
 } from "@/lib/runtime/input/aios-input-types";
+
 export const dynamic =
   "force-dynamic";
+
 export const runtime =
   "nodejs";
+
 interface ChatRequestBody {
   prompt?: unknown;
   inputs?: unknown;
 }
+
 function resolveRequestLocale(
   request: NextRequest,
 ): Locale {
@@ -75,11 +83,14 @@ function resolveRequestLocale(
     request.headers.get(
       "x-aios-locale",
     );
+
   if (isLocale(header)) {
     return header;
   }
+
   return "en";
 }
+
 function applyIdentityCookie(
   response: NextResponse,
   userId: string,
@@ -98,14 +109,17 @@ function applyIdentityCookie(
         60 * 60 * 24 * 365,
     },
   );
+
   return response;
 }
+
 function normalizeInputPayload(
   value: unknown,
 ): AIOSInputItem[] {
   if (!Array.isArray(value)) {
     return [];
   }
+
   return value.filter(
     (
       item,
@@ -114,6 +128,7 @@ function normalizeInputPayload(
       item !== null,
   );
 }
+
 function formatCommercialGap(
   objective: Awaited<
     ReturnType<
@@ -125,25 +140,31 @@ function formatCommercialGap(
   if (!objective) {
     return [];
   }
+
   const now =
     Date.now();
+
   const revenueGap =
     Math.max(
       0,
       objective.revenueTarget -
         objective.revenueActual,
     );
+
   const customerGap =
     Math.max(
       0,
       objective.customerTarget -
         objective.customerActual,
     );
+
   const costHeadroom =
     objective.costTarget -
     objective.costActual;
+
   const deadlineAt =
     objective.deadlineAt;
+
   const daysRemaining =
     deadlineAt !== undefined
       ? Math.max(
@@ -157,6 +178,7 @@ function formatCommercialGap(
           ),
         )
       : null;
+
   const dailyRevenue =
     daysRemaining !== null &&
     daysRemaining > 0
@@ -166,6 +188,7 @@ function formatCommercialGap(
             100,
         ) / 100
       : revenueGap;
+
   const dailyCustomers =
     daysRemaining !== null &&
     daysRemaining > 0
@@ -174,6 +197,7 @@ function formatCommercialGap(
             daysRemaining,
         )
       : customerGap;
+
   if (locale === "ja") {
     return [
       "",
@@ -190,6 +214,7 @@ function formatCommercialGap(
         : []),
     ];
   }
+
   if (locale === "zh-CN") {
     return [
       "",
@@ -206,6 +231,7 @@ function formatCommercialGap(
         : []),
     ];
   }
+
   return [
     "",
     "Current Commercial Gap:",
@@ -221,20 +247,52 @@ function formatCommercialGap(
       : []),
   ];
 }
+
 async function executeChatPrompt(
   prompt: string,
   locale: Locale,
 ) {
+  /*
+   * Global real-time time capability.
+   *
+   * This branch intentionally runs before
+   * Commercial, GitHub, Web Intelligence,
+   * and Planner Runtime execution.
+   *
+   * The capability uses the current runtime
+   * clock and IANA timezone rules. It does
+   * not invent a time value and does not
+   * require an external provider.
+   */
+  if (isTimeCapabilityPrompt(prompt)) {
+    const timeResult =
+      executeTimeCapability(
+        prompt,
+        locale,
+      );
+
+    return {
+      success:
+        timeResult.success,
+      content:
+        timeResult.content,
+      code:
+        timeResult.code,
+    };
+  }
+
   const commercialIntent =
     detectCommercialChatIntent(
       prompt,
       locale,
     );
+
   if (
     commercialIntent.detected
   ) {
     const existingObjectives =
       await listCommercialObjectives();
+
     const existing =
       existingObjectives.find(
         (item) =>
@@ -245,12 +303,15 @@ async function executeChatPrompt(
           item.status !==
             "completed",
       );
+
     let objective;
+
     if (existing) {
       const updates:
         Parameters<
           typeof updateCommercialObjective
         >[1] = {};
+
       if (
         commercialIntent.currency !==
           "UNSPECIFIED" &&
@@ -260,6 +321,7 @@ async function executeChatPrompt(
         updates.currency =
           commercialIntent.currency;
       }
+
       if (
         commercialIntent.revenueTarget >
           0 &&
@@ -269,6 +331,7 @@ async function executeChatPrompt(
         updates.revenueTarget =
           commercialIntent.revenueTarget;
       }
+
       if (
         commercialIntent.costTarget >
           0 &&
@@ -278,6 +341,7 @@ async function executeChatPrompt(
         updates.costTarget =
           commercialIntent.costTarget;
       }
+
       if (
         commercialIntent.customerTarget >
           0 &&
@@ -287,6 +351,7 @@ async function executeChatPrompt(
         updates.customerTarget =
           commercialIntent.customerTarget;
       }
+
       if (
         commercialIntent.deadlineDays !==
           null
@@ -294,6 +359,7 @@ async function executeChatPrompt(
         updates.deadlineDays =
           commercialIntent.deadlineDays;
       }
+
       if (
         commercialIntent.description !==
           existing.description
@@ -301,6 +367,7 @@ async function executeChatPrompt(
         updates.description =
           commercialIntent.description;
       }
+
       if (
         commercialIntent.successCriteria !==
           existing.successCriteria
@@ -308,6 +375,7 @@ async function executeChatPrompt(
         updates.successCriteria =
           commercialIntent.successCriteria;
       }
+
       if (
         commercialIntent.stage !==
           existing.stage
@@ -315,6 +383,7 @@ async function executeChatPrompt(
         updates.stage =
           commercialIntent.stage;
       }
+
       objective =
         Object.keys(updates).length > 0
           ? await updateCommercialObjective(
@@ -351,20 +420,24 @@ async function executeChatPrompt(
             null,
         });
     }
+
     if (!objective) {
       throw new Error(
         "COMMERCIAL_OBJECTIVE_RECONCILIATION_FAILED",
       );
     }
+
     const loop =
       await ensureCommercialOperatingLoop(
         objective.id,
       );
+
     const nextAction =
       await ensureCommercialNextAction(
         objective.id,
         locale,
       );
+
     const liveCommercial =
       await executeChatCommercialBridge({
         prompt,
@@ -372,10 +445,13 @@ async function executeChatPrompt(
           objective.id,
         locale,
       });
+
     const currency =
       objective.currency;
+
     const deadlineAt =
       objective.deadlineAt;
+
     const daysRemaining =
       deadlineAt !== undefined
         ? Math.max(
@@ -390,7 +466,9 @@ async function executeChatPrompt(
             ),
           )
         : null;
+
     let content: string;
+
     if (locale === "ja") {
       content = [
         "商業目標を作成・更新しました。",
@@ -484,6 +562,7 @@ async function executeChatPrompt(
           : []),
       ].join("\n");
     }
+
     if (
       liveCommercial.shouldRunLiveOpportunity
     ) {
@@ -530,6 +609,7 @@ async function executeChatPrompt(
         },
       };
     }
+
     return {
       success: true,
       content,
@@ -570,10 +650,12 @@ async function executeChatPrompt(
       },
     };
   }
+
   const detection =
     detectFounderRuntimeGitHubTask(
       prompt,
     );
+
   if (
     detection.isGitHubTask &&
     detection.action === "read" &&
@@ -583,6 +665,7 @@ async function executeChatPrompt(
       await executePlannerGitHubRead(
         prompt,
       );
+
     if (!githubRead.detected) {
       return {
         success: false,
@@ -613,6 +696,7 @@ async function executeChatPrompt(
         },
       };
     }
+
     if (!githubRead.success) {
       return {
         success: false,
@@ -647,6 +731,7 @@ async function executeChatPrompt(
         },
       };
     }
+
     return {
       success: true,
       content:
@@ -691,16 +776,20 @@ async function executeChatPrompt(
       },
     };
   }
+
   const needsWeb =
     requiresWebIntelligence(
       prompt,
     );
+
   let webContext;
+
   if (needsWeb) {
     webContext =
       await retrieveWebEvidence(
         prompt,
       );
+
     if (
       !webContext.success ||
       !webContext.verified
@@ -722,6 +811,7 @@ async function executeChatPrompt(
       );
     }
   }
+
   return executeRuntime({
     prompt,
     locale,
@@ -731,6 +821,7 @@ async function executeChatPrompt(
         : undefined,
   });
 }
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -738,6 +829,7 @@ export async function GET(
     resolveAlphaIdentity(
       request,
     );
+
   const response =
     NextResponse.json(
       {
@@ -797,55 +889,70 @@ export async function GET(
         },
       },
     );
+
   return applyIdentityCookie(
     response,
     identity.userId,
   );
 }
+
 export async function POST(
   request: NextRequest,
 ) {
   const startedAt =
     Date.now();
+
   const identity =
     resolveAlphaIdentity(
       request,
     );
+
   try {
     const contentType =
       request.headers.get(
         "content-type",
       ) ?? "";
+
     const isMultipart =
       contentType.includes(
         "multipart/form-data",
       );
+
     let prompt = "";
+
     let inputItems:
       AIOSInputItem[] = [];
+
     let uploadedFiles:
       File[] = [];
+
     let fileInputIds:
       string[] = [];
+
     let inputProcessingResult:
       AIOSInputProcessingResult |
       undefined;
+
     if (isMultipart) {
       const formData =
         await request.formData();
+
       const rawPrompt =
         formData.get(
           "prompt",
         );
+
       prompt =
         typeof rawPrompt ===
         "string"
           ? rawPrompt.trim()
           : "";
+
       const rawInputs =
         formData.get(
           "inputs",
         );
+
       if (
         typeof rawInputs ===
         "string"
@@ -861,10 +968,12 @@ export async function POST(
           inputItems = [];
         }
       }
+
       const rawFileInputIds =
         formData.get(
           "fileInputIds",
         );
+
       if (
         typeof rawFileInputIds ===
         "string"
@@ -874,6 +983,7 @@ export async function POST(
             JSON.parse(
               rawFileInputIds,
             );
+
           fileInputIds =
             Array.isArray(parsed)
               ? parsed.filter(
@@ -890,6 +1000,7 @@ export async function POST(
           fileInputIds = [];
         }
       }
+
       uploadedFiles =
         formData
           .getAll("files")
@@ -904,6 +1015,7 @@ export async function POST(
                 "undefined" &&
               value instanceof File,
           );
+
       if (
         uploadedFiles.length >
           8 ||
@@ -927,11 +1039,13 @@ export async function POST(
               status: 400,
             },
           );
+
         return applyIdentityCookie(
           response,
           identity.userId,
         );
       }
+
       if (
         uploadedFiles.length !==
         fileInputIds.length
@@ -953,11 +1067,13 @@ export async function POST(
               status: 400,
             },
           );
+
         return applyIdentityCookie(
           response,
           identity.userId,
         );
       }
+
       const rebuiltInputs:
         AIOSInputItem[] =
         fileInputIds.map(
@@ -967,16 +1083,19 @@ export async function POST(
           ) => {
             const file =
               uploadedFiles[index];
+
             const original =
               inputItems.find(
                 (item) =>
                   item.id ===
                   inputId,
               );
+
             const isImage =
               file.type.startsWith(
                 "image/",
               );
+
             return {
               id: inputId,
               kind:
@@ -1018,6 +1137,7 @@ export async function POST(
             };
           },
         );
+
       inputItems =
         rebuiltInputs;
     } else if (
@@ -1028,11 +1148,13 @@ export async function POST(
       const body =
         (await request.json()) as
           ChatRequestBody;
+
       prompt =
         typeof body.prompt ===
         "string"
           ? body.prompt.trim()
           : "";
+
       inputItems =
         normalizeInputPayload(
           body.inputs,
@@ -1055,18 +1177,23 @@ export async function POST(
             status: 415,
           },
         );
+
       return applyIdentityCookie(
         response,
         identity.userId,
       );
     }
+
     const locale =
       resolveRequestLocale(
         request,
       );
+
     const hasInputs =
       inputItems.length > 0;
+
     let inputResult;
+
     if (hasInputs) {
       inputResult =
         processAIOSInputs({
@@ -1077,6 +1204,7 @@ export async function POST(
           sessionId:
             identity.userId,
         });
+
       if (
         inputResult.code ===
         "AIOS_INPUT_REJECTED"
@@ -1107,12 +1235,14 @@ export async function POST(
               status: 400,
             },
           );
+
         return applyIdentityCookie(
           response,
           identity.userId,
         );
       }
     }
+
     /*
      * C164.6.1:
      * Real uploaded browser Files are now
@@ -1144,8 +1274,10 @@ export async function POST(
             }),
           ),
         );
+
       inputItems =
         inputProcessingResult.inputs;
+
       inputResult = {
         ...inputResult,
         inputs:
@@ -1159,6 +1291,7 @@ export async function POST(
           ),
       };
     }
+
     if (
       !prompt &&
       !hasInputs
@@ -1184,11 +1317,13 @@ export async function POST(
             status: 400,
           },
         );
+
       return applyIdentityCookie(
         response,
         identity.userId,
       );
     }
+
     /*
      * Input-only requests stop at
      * the Input Foundation / Processing Runtime.
@@ -1208,27 +1343,33 @@ export async function POST(
       const acceptedCount =
         inputResult?.acceptedCount ??
         0;
+
       const rejectedCount =
         inputResult?.rejectedCount ??
         0;
+
       const processedCount =
         inputProcessingResult
           ?.processedCount ??
         0;
+
       const pendingCount =
         inputProcessingResult
           ?.pendingCount ??
         0;
+
       const failedCount =
         inputProcessingResult
           ?.failedCount ??
         0;
+
       const content =
         locale === "ja"
           ? `入力を受け付けました。${acceptedCount} 件を登録しました。処理済み ${processedCount} 件、保留 ${pendingCount} 件、失敗 ${failedCount} 件です。画像認識・OCR・PDF/DOC/XLS 解析はまだ実行していません。`
           : locale === "zh-CN"
             ? `已接收输入。共接受 ${acceptedCount} 项。已处理 ${processedCount} 项、待处理 ${pendingCount} 项、失败 ${failedCount} 项。当前尚未执行图像识别、OCR、PDF/DOC/XLS 文档解析。`
             : `Inputs accepted. ${acceptedCount} accepted. ${processedCount} processed, ${pendingCount} pending, and ${failedCount} failed. Vision, OCR, and PDF/DOC/XLS document parsing are not executed at this stage.`;
+
       const response =
         NextResponse.json(
           {
@@ -1272,11 +1413,13 @@ export async function POST(
             },
           },
         );
+
       return applyIdentityCookie(
         response,
         identity.userId,
       );
     }
+
     const result =
       await runWithUserContext(
         identity.userId,
@@ -1286,16 +1429,19 @@ export async function POST(
             locale,
           ),
       );
+
     const conversation =
       await runWithUserContext(
         identity.userId,
         () =>
           getPersistentMemory(),
       );
+
     const resultCode =
       "code" in result
         ? result.code
         : undefined;
+
     const response =
       NextResponse.json(
         {
@@ -1338,6 +1484,7 @@ export async function POST(
           },
         },
       );
+
     return applyIdentityCookie(
       response,
       identity.userId,
@@ -1347,14 +1494,17 @@ export async function POST(
       error instanceof Error
         ? error.message
         : "AIOS Chat API failed.";
+
     console.error(
       "[AIOS Chat API]",
       error,
     );
+
     const locale =
       resolveRequestLocale(
         request,
       );
+
     const response =
       NextResponse.json(
         {
@@ -1394,6 +1544,7 @@ export async function POST(
           },
         },
       );
+
     return applyIdentityCookie(
       response,
       identity.userId,
