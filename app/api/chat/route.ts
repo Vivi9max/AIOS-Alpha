@@ -276,8 +276,8 @@ async function executeChatPrompt(
    * existing Commercial, GitHub, Web, Planner,
    * or Execution behavior.
    */
-  const realtimeBridge =
-    executeRealtimeChatBridge(
+    const realtimeBridge =
+    await executeRealtimeChatBridge(
       prompt,
       locale,
     );
@@ -299,10 +299,16 @@ async function executeChatPrompt(
           realtimeBridge.execution,
         requiresExternalEvidence:
           realtimeBridge.requiresExternalEvidence,
+        evidenceVerified:
+          realtimeBridge.evidenceVerified,
+        evidenceAvailable:
+          realtimeBridge.evidenceAvailable,
         route:
           realtimeBridge.route,
         realtime:
           realtimeBridge.realtime,
+        evidence:
+          realtimeBridge.evidence,
       },
       execution: {
         provider:
@@ -312,6 +318,14 @@ async function executeChatPrompt(
           "realtime-capability-router",
           realtimeBridge.capability,
           realtimeBridge.execution,
+          ...(realtimeBridge.requiresExternalEvidence
+            ? [
+                "realtime-evidence-adapter",
+                realtimeBridge.evidenceVerified
+                  ? "evidence-verified"
+                  : "evidence-blocked",
+              ]
+            : []),
         ],
       },
     };
