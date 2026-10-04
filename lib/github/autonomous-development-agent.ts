@@ -1017,6 +1017,170 @@ function applyPatchOperations(
   return content;
 }
 
+function isRegexLiteralStart(
+  source: string,
+  start: number,
+): boolean {
+  let index = start - 1;
+
+  while (index >= 0) {
+    const value =
+      source[index];
+
+    if (
+      value === " " ||
+      value === "\t" ||
+      value === "\n" ||
+      value === "\r"
+    ) {
+      index -= 1;
+      continue;
+    }
+
+    break;
+  }
+
+  if (index < 0) {
+    return true;
+  }
+
+  const previous =
+    source[index];
+
+  if (
+    previous === "=" ||
+    previous === "(" ||
+    previous === "[" ||
+    previous === "{" ||
+    previous === "," ||
+    previous === ":" ||
+    previous === ";" ||
+    previous === "!" ||
+    previous === "?" ||
+    previous === "&" ||
+    previous === "|" ||
+    previous === "+" ||
+    previous === "-" ||
+    previous === "*" ||
+    previous === "%" ||
+    previous === "~" ||
+    previous === "^" ||
+    previous === "<" ||
+    previous === ">"
+  ) {
+    return true;
+  }
+
+  let wordEnd =
+    index;
+
+  while (
+    wordEnd >= 0 &&
+    /[A-Za-z0-9_$]/.test(
+      source[wordEnd],
+    )
+  ) {
+    wordEnd -= 1;
+  }
+
+  const previousWord =
+    source.slice(
+      wordEnd + 1,
+      index + 1,
+    );
+
+  return (
+    previousWord === "return" ||
+    previousWord === "throw" ||
+    previousWord === "case" ||
+    previousWord === "typeof" ||
+    previousWord === "void" ||
+    previousWord === "delete" ||
+    previousWord === "in" ||
+    previousWord === "instanceof" ||
+    previousWord === "else" ||
+    previousWord === "do" ||
+    previousWord === "yield" ||
+    previousWord === "await"
+  );
+}
+
+function scanRegexLiteral(
+  source: string,
+  start: number,
+): number {
+  let index =
+    start + 1;
+
+  let inCharacterClass =
+    false;
+
+  while (
+    index <
+    source.length
+  ) {
+    const current =
+      source[index];
+
+    if (
+      current === "\\"
+    ) {
+      index += 2;
+      continue;
+    }
+
+    if (
+      current === "[" &&
+      !inCharacterClass
+    ) {
+      inCharacterClass =
+        true;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "]" &&
+      inCharacterClass
+    ) {
+      inCharacterClass =
+        false;
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      !inCharacterClass
+    ) {
+      index += 1;
+
+      while (
+        index <
+          source.length &&
+        /[A-Za-z]/.test(
+          source[index],
+        )
+      ) {
+        index += 1;
+      }
+
+      return index;
+    }
+
+    if (
+      current === "\n" ||
+      current === "\r"
+    ) {
+      return -1;
+    }
+
+    index += 1;
+  }
+
+  return -1;
+}
+
 function validateFinalSource(
   path: string,
   content: string,
@@ -1076,13 +1240,19 @@ function validateFinalSource(
     | "`"
     | null = null;
 
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
+  let escaped =
+    false;
+
+  let lineComment =
+    false;
+
+  let blockComment =
+    false;
 
   for (
     let index = 0;
-    index < normalized.length;
+    index <
+      normalized.length;
     index += 1
   ) {
     const current =
@@ -1095,7 +1265,8 @@ function validateFinalSource(
       if (
         current === "\n"
       ) {
-        lineComment = false;
+        lineComment =
+          false;
       }
 
       continue;
@@ -1106,7 +1277,9 @@ function validateFinalSource(
         current === "*" &&
         next === "/"
       ) {
-        blockComment = false;
+        blockComment =
+          false;
+
         index += 1;
       }
 
@@ -1117,7 +1290,9 @@ function validateFinalSource(
       current === "/" &&
       next === "/"
     ) {
-      lineComment = true;
+      lineComment =
+        true;
+
       index += 1;
       continue;
     }
@@ -1126,7 +1301,9 @@ function validateFinalSource(
       current === "/" &&
       next === "*"
     ) {
-      blockComment = true;
+      blockComment =
+        true;
+
       index += 1;
       continue;
     }
@@ -1149,6 +1326,7 @@ function validateFinalSource(
       ) {
         index =
           regexEnd - 1;
+
         continue;
       }
     }
@@ -1164,26 +1342,34 @@ function validateFinalSource(
           | "\""
           | "`";
 
+      escaped =
+        false;
+
       continue;
     }
 
     if (quote) {
       if (escaped) {
-        escaped = false;
+        escaped =
+          false;
+
         continue;
       }
 
       if (
         current === "\\"
       ) {
-        escaped = true;
+        escaped =
+          true;
+
         continue;
       }
 
       if (
         current === quote
       ) {
-        quote = null;
+        quote =
+          null;
       }
 
       continue;
