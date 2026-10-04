@@ -1,4 +1,5 @@
 "use client";
+
 import {
   useCallback,
   useEffect,
@@ -25,6 +26,7 @@ import ChatInput from "./ChatInput";
 import MessageList, {
   type ChatMessage,
 } from "./MessageList";
+
 interface MemoryRecord {
   id: number;
   role:
@@ -33,6 +35,7 @@ interface MemoryRecord {
   content: string;
   timestamp: number;
 }
+
 type ProviderName =
   | "mock"
   | "qwen"
@@ -40,6 +43,38 @@ type ProviderName =
   | "openai"
   | "gemini"
   | "claude";
+
+type RealtimeCapabilityType =
+  | "time"
+  | "weather"
+  | "news"
+  | "exchange-rate"
+  | "market"
+  | "unknown";
+
+type RealtimeExecutionMode =
+  | "runtime"
+  | "external-evidence-required"
+  | "none";
+
+type RealtimeResponseStatus =
+  | "completed"
+  | "evidence-verified"
+  | "evidence-unverified"
+  | "failed"
+  | "not-detected";
+
+interface RealtimeResponseMetadata {
+  status?: RealtimeResponseStatus;
+  capability?: RealtimeCapabilityType;
+  execution?: RealtimeExecutionMode;
+  requiresExternalEvidence?: boolean;
+  evidenceVerified?: boolean;
+  evidenceAvailable?: boolean;
+  sourceCount?: number;
+  sourceHosts?: string[];
+}
+
 interface ChatApiResponse {
   success?: boolean;
   provider?: ProviderName;
@@ -49,6 +84,25 @@ interface ChatApiResponse {
   content?: string;
   latencyMs?: number;
   conversation?: MemoryRecord[];
+  realtime?: {
+    capability?: RealtimeCapabilityType;
+    execution?: RealtimeExecutionMode;
+    requiresExternalEvidence?: boolean;
+    evidenceVerified?: boolean;
+    evidenceAvailable?: boolean;
+    route?: {
+      detected?: boolean;
+      capability?: RealtimeCapabilityType;
+      execution?: RealtimeExecutionMode;
+      requiresExternalEvidence?: boolean;
+    };
+    evidence?: {
+      verified?: boolean;
+      sourceCount?: number;
+      sourceHosts?: string[];
+    };
+    response?: RealtimeResponseMetadata;
+  };
   inputResult?: {
     success?: boolean;
     code?:
@@ -68,6 +122,7 @@ interface ChatApiResponse {
     limitations?: string[];
   };
 }
+
 interface RuntimeStatusResponse {
   success?: boolean;
   provider?: ProviderName;
@@ -81,6 +136,7 @@ interface RuntimeStatusResponse {
     lastRequestAt?: number | null;
   };
 }
+
 interface ProviderViewState {
   provider: ProviderName;
   requestedProvider: ProviderName;
@@ -88,6 +144,19 @@ interface ProviderViewState {
   error?: string;
   latencyMs?: number;
 }
+
+interface RealtimeViewState {
+  active: boolean;
+  status: RealtimeResponseStatus;
+  capability?: RealtimeCapabilityType;
+  execution?: RealtimeExecutionMode;
+  requiresExternalEvidence: boolean;
+  evidenceVerified: boolean;
+  evidenceAvailable: boolean;
+  sourceCount: number;
+  sourceHosts: string[];
+}
+
 const providerLabels: Record<
   ProviderName,
   string
@@ -99,20 +168,35 @@ const providerLabels: Record<
   gemini: "Gemini",
   claude: "Claude",
 };
+
 const defaultProviderState:
   ProviderViewState = {
   provider: "mock",
   requestedProvider: "mock",
   fallbackUsed: false,
 };
+
+const defaultRealtimeState:
+  RealtimeViewState = {
+  active: false,
+  status: "not-detected",
+  requiresExternalEvidence: false,
+  evidenceVerified: false,
+  evidenceAvailable: false,
+  sourceCount: 0,
+  sourceHosts: [],
+};
+
 function isRuntimeWrapper(
   content: string,
 ): boolean {
   const raw =
     content.trim();
+
   if (!raw) {
     return false;
   }
+
   return (
     raw.includes(
       "你是 AIOS Runtime 的执行引擎",
@@ -125,6 +209,7 @@ function isRuntimeWrapper(
     )
   );
 }
+
 function sanitizeRestoredMessages(
   memory: MemoryRecord[],
 ): ChatMessage[] {
@@ -145,6 +230,7 @@ function sanitizeRestoredMessages(
       content: item.content,
     }));
 }
+
 function normalizeProvider(
   value: unknown,
   fallback: ProviderName = "mock",
@@ -159,8 +245,168 @@ function normalizeProvider(
   ) {
     return value;
   }
+
   return fallback;
 }
+
+function normalizeRealtimeStatus(
+  value: unknown,
+): RealtimeResponseStatus {
+  if (
+    value === "completed" ||
+    value === "evidence-verified" ||
+    value === "evidence-unverified" ||
+    value === "failed" ||
+    value === "not-detected"
+  ) {
+    return value;
+  }
+
+  return "not-detected";
+}
+
+function normalizeRealtimeCapability(
+  value: unknown,
+): RealtimeCapabilityType | undefined {
+  if (
+    value === "time" ||
+    value === "weather" ||
+    value === "news" ||
+    value === "exchange-rate" ||
+    value === "market" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeRealtimeExecution(
+  value: unknown,
+): RealtimeExecutionMode | undefined {
+  if (
+    value === "runtime" ||
+    value === "external-evidence-required" ||
+    value === "none"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function buildRealtimeViewState(
+  data: ChatApiResponse,
+): RealtimeViewState {
+  const realtime =
+    data.realtime;
+
+  if (!realtime) {
+    return defaultRealtimeState;
+  }
+
+  const responseMetadata =
+    realtime.response;
+
+  const capability =
+    normalizeRealtimeCapability(
+      responseMetadata?.capability ??
+        realtime.capability ??
+        realtime.route?.capability,
+    );
+
+  const execution =
+    normalizeRealtimeExecution(
+      responseMetadata?.execution ??
+        realtime.execution ??
+        realtime.route?.execution,
+    );
+
+  const evidenceVerified =
+    responseMetadata?.evidenceVerified ??
+    realtime.evidenceVerified ??
+    realtime.evidence?.verified ??
+    false;
+
+  const evidenceAvailable =
+    responseMetadata?.evidenceAvailable ??
+    realtime.evidenceAvailable ??
+    Boolean(
+      realtime.evidence,
+    );
+
+  const requiresExternalEvidence =
+    responseMetadata?.requiresExternalEvidence ??
+    realtime.requiresExternalEvidence ??
+    realtime.route?.requiresExternalEvidence ??
+    false;
+
+  const sourceCount =
+    responseMetadata?.sourceCount ??
+    realtime.evidence?.sourceCount ??
+    0;
+
+  const sourceHosts =
+    Array.isArray(
+      responseMetadata?.sourceHosts,
+    )
+      ? responseMetadata!.sourceHosts!
+      : Array.isArray(
+          realtime.evidence?.sourceHosts,
+        )
+        ? realtime.evidence!.sourceHosts!
+        : [];
+
+  let status =
+    normalizeRealtimeStatus(
+      responseMetadata?.status,
+    );
+
+  if (
+    status === "not-detected"
+  ) {
+    if (
+      execution === "runtime" &&
+      capability === "time"
+    ) {
+      status = "completed";
+    } else if (
+      requiresExternalEvidence &&
+      evidenceVerified
+    ) {
+      status = "evidence-verified";
+    } else if (
+      requiresExternalEvidence &&
+      evidenceAvailable &&
+      !evidenceVerified
+    ) {
+      status = "evidence-unverified";
+    } else if (
+      requiresExternalEvidence &&
+      !evidenceAvailable
+    ) {
+      status = "failed";
+    }
+  }
+
+  const active =
+    capability !== undefined &&
+    status !== "not-detected";
+
+  return {
+    active,
+    status,
+    capability,
+    execution,
+    requiresExternalEvidence,
+    evidenceVerified,
+    evidenceAvailable,
+    sourceCount,
+    sourceHosts,
+  };
+}
+
 function buildInputSummary(
   inputs: AIOSInputItem[],
 ): string {
@@ -178,11 +424,14 @@ function buildInputSummary(
         name.trim()
           .length > 0,
     );
+
   if (names.length === 0) {
     return `Attached inputs: ${inputs.length}`;
   }
+
   return `Attached inputs: ${names.join(", ")}`;
 }
+
 function buildUnderstandingSummary(
   result: {
     understoodCount: number;
@@ -201,6 +450,7 @@ function buildUnderstandingSummary(
       `失败：${result.failedCount}`,
     ].join("\n");
   }
+
   if (
     locale === "ja"
   ) {
@@ -211,6 +461,7 @@ function buildUnderstandingSummary(
       `失敗：${result.failedCount}`,
     ].join("\n");
   }
+
   return [
     "Input understanding completed.",
     `Understood: ${result.understoodCount}`,
@@ -218,6 +469,7 @@ function buildUnderstandingSummary(
     `Failed: ${result.failedCount}`,
   ].join("\n");
 }
+
 function buildUnderstandingEvidencePrompt(
   prompt: string,
   inputs: AIOSInputItem[],
@@ -238,6 +490,7 @@ function buildUnderstandingEvidencePrompt(
         const name =
           input.metadata.name ??
           input.id;
+
         return [
           `Input: ${name}`,
           "Status: ready",
@@ -246,17 +499,20 @@ function buildUnderstandingEvidencePrompt(
         ].join("\n");
       },
     );
+
   if (
     evidence.length === 0
   ) {
     return prompt;
   }
+
   const evidenceLabel =
     locale === "zh-CN"
       ? "以下内容来自 AIOS Input Understanding 对用户上传输入的实际处理结果。它属于输入证据，不是自动确认的事实。请基于这些证据回答用户，并明确区分可确认内容与推断内容。"
       : locale === "ja"
         ? "以下は AIOS Input Understanding がユーザーの入力ファイルから実際に取得した証拠です。自動的に事実と確定された情報ではありません。証拠と推測を明確に区別して回答してください。"
         : "The following is evidence actually produced by AIOS Input Understanding from the user's uploaded inputs. It is not automatically verified as fact. Clearly distinguish evidence from inference.";
+
   const userPrompt =
     prompt ||
     (
@@ -266,6 +522,7 @@ function buildUnderstandingEvidencePrompt(
           ? "アップロードした入力を分析してください。"
           : "Please analyze the uploaded input."
     );
+
   return [
     userPrompt,
     "",
@@ -276,6 +533,7 @@ function buildUnderstandingEvidencePrompt(
     "=== END AIOS INPUT UNDERSTANDING EVIDENCE ===",
   ].join("\n");
 }
+
 function buildUnderstandingFailureMessage(
   locale: string,
   understoodCount: number,
@@ -297,6 +555,7 @@ function buildUnderstandingFailureMessage(
         "AIOS 未将未经理解的文件当作已读取内容继续回答。",
       ].join("\n");
     }
+
     if (
       failedCount > 0 &&
       understoodCount === 0
@@ -308,6 +567,7 @@ function buildUnderstandingFailureMessage(
         "请检查文件格式、文件大小或重新上传。",
       ].join("\n");
     }
+
     return [
       "输入已接收，但没有产生足够的可用理解证据。",
       `已理解：${understoodCount}`,
@@ -316,6 +576,7 @@ function buildUnderstandingFailureMessage(
       "AIOS 未将未经理解的文件内容当作已确认事实。",
     ].join("\n");
   }
+
   if (
     locale === "ja"
   ) {
@@ -331,6 +592,7 @@ function buildUnderstandingFailureMessage(
         "AIOS は未解析のファイルを読み取り済みとして回答しません。",
       ].join("\n");
     }
+
     if (
       failedCount > 0 &&
       understoodCount === 0
@@ -342,6 +604,7 @@ function buildUnderstandingFailureMessage(
         "ファイル形式、サイズを確認するか、再アップロードしてください。",
       ].join("\n");
     }
+
     return [
       "入力を受け付けましたが、十分な理解エビデンスを取得できませんでした。",
       `理解済み：${understoodCount}`,
@@ -350,6 +613,7 @@ function buildUnderstandingFailureMessage(
       "AIOS は未解析のファイル内容を確認済みの事実として扱いません。",
     ].join("\n");
   }
+
   if (
     pendingCount > 0 &&
     understoodCount === 0 &&
@@ -362,6 +626,7 @@ function buildUnderstandingFailureMessage(
       "AIOS will not treat an unprocessed file as already-read content.",
     ].join("\n");
   }
+
   if (
     failedCount > 0 &&
     understoodCount === 0
@@ -373,6 +638,7 @@ function buildUnderstandingFailureMessage(
       "Check the file type and size, then try uploading again.",
     ].join("\n");
   }
+
   return [
     "The input was received, but it did not produce enough usable understanding evidence.",
     `Understood: ${understoodCount}`,
@@ -381,26 +647,189 @@ function buildUnderstandingFailureMessage(
     "AIOS will not treat unprocessed file content as verified fact.",
   ].join("\n");
 }
+
+function getRealtimeCapabilityLabel(
+  capability:
+    | RealtimeCapabilityType
+    | undefined,
+  locale: string,
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
+    switch (capability) {
+      case "time":
+        return "时间";
+      case "weather":
+        return "天气";
+      case "news":
+        return "新闻";
+      case "exchange-rate":
+        return "汇率";
+      case "market":
+        return "市场";
+      default:
+        return "实时信息";
+    }
+  }
+
+  if (
+    locale === "ja"
+  ) {
+    switch (capability) {
+      case "time":
+        return "時刻";
+      case "weather":
+        return "天気";
+      case "news":
+        return "ニュース";
+      case "exchange-rate":
+        return "為替";
+      case "market":
+        return "市場";
+      default:
+        return "リアルタイム情報";
+    }
+  }
+
+  switch (capability) {
+    case "time":
+      return "Time";
+    case "weather":
+      return "Weather";
+    case "news":
+      return "News";
+    case "exchange-rate":
+      return "Exchange rate";
+    case "market":
+      return "Market";
+    default:
+      return "Realtime information";
+  }
+}
+
+function getRealtimeStatusLabel(
+  status: RealtimeResponseStatus,
+  locale: string,
+): string {
+  if (
+    locale === "zh-CN"
+  ) {
+    switch (status) {
+      case "completed":
+        return "实时完成";
+      case "evidence-verified":
+        return "实时证据已验证";
+      case "evidence-unverified":
+        return "实时证据未验证";
+      case "failed":
+        return "实时信息不可用";
+      default:
+        return "";
+    }
+  }
+
+  if (
+    locale === "ja"
+  ) {
+    switch (status) {
+      case "completed":
+        return "リアルタイム完了";
+      case "evidence-verified":
+        return "リアルタイム証拠を確認済み";
+      case "evidence-unverified":
+        return "リアルタイム証拠を未確認";
+      case "failed":
+        return "リアルタイム情報を利用できません";
+      default:
+        return "";
+    }
+  }
+
+  switch (status) {
+    case "completed":
+      return "Realtime completed";
+    case "evidence-verified":
+      return "Realtime evidence verified";
+    case "evidence-unverified":
+      return "Realtime evidence unverified";
+    case "failed":
+      return "Realtime information unavailable";
+    default:
+      return "";
+  }
+}
+
+function getRealtimeStatusDisclosure(
+  state: RealtimeViewState,
+  locale: string,
+): string {
+  if (
+    !state.active
+  ) {
+    return "";
+  }
+
+  const capability =
+    getRealtimeCapabilityLabel(
+      state.capability,
+      locale,
+    );
+
+  const status =
+    getRealtimeStatusLabel(
+      state.status,
+      locale,
+    );
+
+  if (
+    state.status ===
+      "evidence-verified" &&
+    state.sourceCount > 0
+  ) {
+    if (
+      locale === "zh-CN"
+    ) {
+      return `${capability} · ${status} · ${state.sourceCount} 个来源`;
+    }
+
+    if (
+      locale === "ja"
+    ) {
+      return `${capability} · ${status} · ${state.sourceCount} 件の情報源`;
+    }
+
+    return `${capability} · ${status} · ${state.sourceCount} sources`;
+  }
+
+  return `${capability} · ${status}`;
+}
+
 export default function ChatPanel() {
   const {
     locale,
   } = useLanguage();
+
   const copy =
     chatPanelCopy[locale];
+
   const [
     messages,
     setMessages,
   ] = useState<ChatMessage[]>(
     [],
   );
+
   const [
     loading,
     setLoading,
   ] = useState(false);
+
   const [
     historyLoading,
     setHistoryLoading,
   ] = useState(true);
+
   const [
     providerState,
     setProviderState,
@@ -408,10 +837,20 @@ export default function ChatPanel() {
     useState<ProviderViewState>(
       defaultProviderState,
     );
+
+  const [
+    realtimeState,
+    setRealtimeState,
+  ] =
+    useState<RealtimeViewState>(
+      defaultRealtimeState,
+    );
+
   const scrollRef =
     useRef<HTMLDivElement | null>(
       null,
     );
+
   const scrollToBottom =
     useCallback(
       (
@@ -423,9 +862,11 @@ export default function ChatPanel() {
           () => {
             const element =
               scrollRef.current;
+
             if (!element) {
               return;
             }
+
             element.scrollTo({
               top:
                 element.scrollHeight,
@@ -436,6 +877,7 @@ export default function ChatPanel() {
       },
       [],
     );
+
   const loadConversation =
     useCallback(
       async (
@@ -446,6 +888,7 @@ export default function ChatPanel() {
         if (showLoading) {
           setHistoryLoading(true);
         }
+
         try {
           const response =
             await fetch(
@@ -461,13 +904,16 @@ export default function ChatPanel() {
                 },
               },
             );
+
           if (!response.ok) {
             throw new Error(
               "Failed to load chat history.",
             );
           }
+
           const data =
             await response.json();
+
           const memory:
             MemoryRecord[] =
             Array.isArray(
@@ -475,10 +921,12 @@ export default function ChatPanel() {
             )
               ? data.items
               : [];
+
           const restoredMessages =
             sanitizeRestoredMessages(
               memory,
             );
+
           const nextMessages =
             restoredMessages.length >
             0
@@ -491,15 +939,18 @@ export default function ChatPanel() {
                       copy.welcome,
                   },
                 ];
+
           setMessages(
             nextMessages,
           );
+
           return nextMessages;
         } catch (error) {
           console.error(
             "[AIOS Chat History]",
             error,
           );
+
           return null;
         } finally {
           if (showLoading) {
@@ -511,6 +962,7 @@ export default function ChatPanel() {
       },
       [copy.welcome],
     );
+
   const loadRuntimeStatus =
     useCallback(
       async () => {
@@ -525,29 +977,36 @@ export default function ChatPanel() {
                   "same-origin",
               },
             );
+
           if (!response.ok) {
             return;
           }
+
           const runtimeData =
             (await response.json()) as
               RuntimeStatusResponse;
+
           const runtime =
             runtimeData.providerRuntime;
+
           const activeProvider =
             normalizeProvider(
               runtimeData.provider,
               "mock",
             );
+
           const actualProvider =
             normalizeProvider(
               runtime?.provider,
               activeProvider,
             );
+
           const requestedProvider =
             normalizeProvider(
               runtime?.requestedProvider,
               activeProvider,
             );
+
           setProviderState({
             provider:
               actualProvider,
@@ -569,19 +1028,25 @@ export default function ChatPanel() {
       },
       [],
     );
+
   useEffect(() => {
     let active = true;
+
     async function loadInitialData() {
       await Promise.all([
         loadConversation(true),
         loadRuntimeStatus(),
       ]);
+
       if (!active) {
         return;
       }
+
       scrollToBottom("auto");
     }
+
     void loadInitialData();
+
     return () => {
       active = false;
     };
@@ -590,6 +1055,7 @@ export default function ChatPanel() {
     loadRuntimeStatus,
     scrollToBottom,
   ]);
+
   useEffect(() => {
     scrollToBottom(
       historyLoading
@@ -602,6 +1068,7 @@ export default function ChatPanel() {
     historyLoading,
     scrollToBottom,
   ]);
+
   function handleMessageDeleted(
     messageId: number,
   ) {
@@ -614,16 +1081,19 @@ export default function ChatPanel() {
         ),
     );
   }
+
   async function handleSend(
     prompt: string,
     inputs?: AIOSInputItem[],
   ) {
     const cleanPrompt =
       prompt.trim();
+
     const normalizedInputs =
       Array.isArray(inputs)
         ? inputs
         : [];
+
     if (
       (
         !cleanPrompt &&
@@ -633,11 +1103,13 @@ export default function ChatPanel() {
     ) {
       return;
     }
+
     const userContent =
       cleanPrompt ||
       buildInputSummary(
         normalizedInputs,
       );
+
     setMessages(
       (current) => [
         ...current,
@@ -648,14 +1120,21 @@ export default function ChatPanel() {
         },
       ],
     );
+
     setLoading(true);
+    setRealtimeState(
+      defaultRealtimeState,
+    );
+
     scrollToBottom("smooth");
+
     const files =
       getAIOSInputFiles(
         normalizedInputs.map(
           (item) => item.id,
         ),
       );
+
     try {
       let understanding:
         Awaited<
@@ -663,6 +1142,7 @@ export default function ChatPanel() {
             typeof executeAIOSInputUnderstandingBridge
           >
         > | null = null;
+
       /*
        * C164.8.2:
        *
@@ -682,6 +1162,7 @@ export default function ChatPanel() {
             files,
             locale,
           );
+
         const hasUsableEvidence =
           understanding.success &&
           understanding.understoodCount >
@@ -696,6 +1177,7 @@ export default function ChatPanel() {
                 .trim()
                 .length > 0,
           );
+
         /*
          * A failed understanding request
          * must never silently fall through
@@ -712,6 +1194,7 @@ export default function ChatPanel() {
               understanding.pendingCount,
               understanding.failedCount,
             );
+
           setMessages(
             (current) => [
               ...current,
@@ -723,9 +1206,11 @@ export default function ChatPanel() {
               },
             ],
           );
+
           return;
         }
       }
+
       const runtimePrompt =
         understanding &&
         understanding.success
@@ -735,20 +1220,25 @@ export default function ChatPanel() {
               locale,
             )
           : cleanPrompt;
+
       let response: Response;
+
       if (files.length > 0) {
         const formData =
           new FormData();
+
         formData.append(
           "prompt",
           runtimePrompt,
         );
+
         formData.append(
           "inputs",
           JSON.stringify(
             normalizedInputs,
           ),
         );
+
         formData.append(
           "fileInputIds",
           JSON.stringify(
@@ -758,6 +1248,7 @@ export default function ChatPanel() {
             ),
           ),
         );
+
         for (
           const entry of files
         ) {
@@ -767,6 +1258,7 @@ export default function ChatPanel() {
             entry.file.name,
           );
         }
+
         response =
           await fetch(
             "/api/chat",
@@ -806,19 +1298,23 @@ export default function ChatPanel() {
             },
           );
       }
+
       const data =
         (await response.json()) as
           ChatApiResponse;
+
       const actualProvider =
         normalizeProvider(
           data.provider,
           "mock",
         );
+
       const requestedProvider =
         normalizeProvider(
           data.requestedProvider,
           actualProvider,
         );
+
       setProviderState({
         provider:
           actualProvider,
@@ -831,18 +1327,27 @@ export default function ChatPanel() {
         latencyMs:
           data.latencyMs,
       });
+
+      setRealtimeState(
+        buildRealtimeViewState(
+          data,
+        ),
+      );
+
       if (!response.ok) {
         throw new Error(
           data.content ??
             copy.runtimeError,
         );
       }
+
       let assistantContent =
         typeof data.content ===
           "string" &&
         data.content.trim()
           ? data.content.trim()
           : "";
+
       /*
        * Only append a compact processing
        * status. The actual evidence has
@@ -864,17 +1369,20 @@ export default function ChatPanel() {
             },
             locale,
           );
+
         assistantContent =
           assistantContent
             ? `${assistantContent}\n\n${summary}`
             : summary;
       }
+
       if (
         !assistantContent
       ) {
         assistantContent =
           copy.unknownResponse;
       }
+
       setMessages(
         (current) => [
           ...current,
@@ -886,7 +1394,9 @@ export default function ChatPanel() {
           },
         ],
       );
+
       scrollToBottom("smooth");
+
       window.requestAnimationFrame(
         () => {
           if (
@@ -896,16 +1406,19 @@ export default function ChatPanel() {
           ) {
             return;
           }
+
           const canonical =
             sanitizeRestoredMessages(
               data.conversation,
             );
+
           if (
             canonical.length ===
             0
           ) {
             return;
           }
+
           const canonicalHasLatestAssistant =
             canonical.some(
               (message) =>
@@ -914,24 +1427,32 @@ export default function ChatPanel() {
                 message.content ===
                   assistantContent,
             );
+
           if (
             !canonicalHasLatestAssistant
           ) {
             return;
           }
+
           setMessages(
             canonical,
           );
+
           scrollToBottom(
             "smooth",
           );
         },
       );
     } catch (error) {
+      setRealtimeState(
+        defaultRealtimeState,
+      );
+
       const message =
         error instanceof Error
           ? error.message
           : copy.connectionError;
+
       setMessages(
         (current) => [
           ...current,
@@ -943,6 +1464,7 @@ export default function ChatPanel() {
           },
         ],
       );
+
       scrollToBottom("smooth");
     } finally {
       if (files.length > 0) {
@@ -953,8 +1475,11 @@ export default function ChatPanel() {
           ),
         );
       }
+
       setLoading(false);
+
       void loadRuntimeStatus();
+
       window.requestAnimationFrame(
         () =>
           scrollToBottom(
@@ -963,18 +1488,28 @@ export default function ChatPanel() {
       );
     }
   }
+
   const actualProviderLabel =
     providerLabels[
       providerState.provider
     ];
+
   const requestedProviderLabel =
     providerLabels[
       providerState.requestedProvider
     ];
+
   const providerSummary =
     providerState.fallbackUsed
       ? `${actualProviderLabel} <- ${requestedProviderLabel}`
       : actualProviderLabel;
+
+  const realtimeDisclosure =
+    getRealtimeStatusDisclosure(
+      realtimeState,
+      locale,
+    );
+
   return (
     <section
       style={{
@@ -1032,6 +1567,7 @@ export default function ChatPanel() {
                     : "#22c55e",
               }}
             />
+
             <strong
               style={{
                 color:
@@ -1044,6 +1580,7 @@ export default function ChatPanel() {
               AIOS
             </strong>
           </div>
+
           <div
             style={{
               marginTop: 3,
@@ -1058,23 +1595,89 @@ export default function ChatPanel() {
               ` · ${providerState.latencyMs}ms`}
           </div>
         </div>
-        {providerState.fallbackUsed &&
-          providerState.error && (
-            <span
-              title={
-                providerState.error
-              }
-              style={{
-                color:
-                  "#b45309",
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              Fallback
-            </span>
-          )}
+
+        <div
+          style={{
+            display:
+              "flex",
+            alignItems:
+              "center",
+            gap: 8,
+            flexShrink: 0,
+          }}
+        >
+          {realtimeState.active &&
+            realtimeDisclosure && (
+              <span
+                title={
+                  realtimeState.sourceHosts.length >
+                  0
+                    ? realtimeState.sourceHosts.join(
+                        ", ",
+                      )
+                    : undefined
+                }
+                style={{
+                  display:
+                    "inline-flex",
+                  alignItems:
+                    "center",
+                  minHeight: 26,
+                  padding:
+                    "4px 9px",
+                  borderRadius:
+                    999,
+                  background:
+                    realtimeState.status ===
+                    "evidence-verified"
+                      ? "#ecfdf5"
+                      : realtimeState.status ===
+                          "evidence-unverified"
+                        ? "#fffbeb"
+                        : realtimeState.status ===
+                            "failed"
+                          ? "#fef2f2"
+                          : "#eff6ff",
+                  color:
+                    realtimeState.status ===
+                    "evidence-verified"
+                      ? "#047857"
+                      : realtimeState.status ===
+                          "evidence-unverified"
+                        ? "#b45309"
+                        : realtimeState.status ===
+                            "failed"
+                          ? "#b91c1c"
+                          : "#1d4ed8",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  whiteSpace:
+                    "nowrap",
+                }}
+              >
+                {realtimeDisclosure}
+              </span>
+            )}
+
+          {providerState.fallbackUsed &&
+            providerState.error && (
+              <span
+                title={
+                  providerState.error
+                }
+                style={{
+                  color:
+                    "#b45309",
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                Fallback
+              </span>
+            )}
+        </div>
       </header>
+
       <div
         ref={scrollRef}
         style={{
@@ -1123,6 +1726,7 @@ export default function ChatPanel() {
             }
           />
         )}
+
         {loading && (
           <div
             aria-live="polite"
@@ -1161,12 +1765,14 @@ export default function ChatPanel() {
             >
               AI
             </span>
+
             <span>
               {copy.thinking}
             </span>
           </div>
         )}
       </div>
+
       <div
         style={{
           padding:
