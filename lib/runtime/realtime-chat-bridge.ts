@@ -4,6 +4,11 @@ import {
   type RealtimeCapabilityResult,
   type RealtimeCapabilityRoute,
 } from "@/lib/runtime/realtime-capability-router";
+import {
+  retrieveRealtimeEvidence,
+  canUseRealtimeEvidence,
+  type RealtimeEvidenceAdapterResult,
+} from "@/lib/runtime/realtime-evidence-adapter";
 import type { Locale } from "@/lib/i18n";
 
 export interface RealtimeChatBridgeResult {
@@ -12,16 +17,21 @@ export interface RealtimeChatBridgeResult {
   success: boolean;
   shouldContinueRuntime: boolean;
   requiresExternalEvidence: boolean;
+  evidenceVerified: boolean;
+  evidenceAvailable: boolean;
   capability: RealtimeCapabilityRoute["capability"];
   execution: RealtimeCapabilityRoute["execution"];
   code:
     | "REALTIME_CHAT_NOT_DETECTED"
     | "REALTIME_CHAT_COMPLETED"
     | "REALTIME_CHAT_EXTERNAL_EVIDENCE_REQUIRED"
+    | "REALTIME_CHAT_EVIDENCE_VERIFIED"
+    | "REALTIME_CHAT_EVIDENCE_UNVERIFIED"
     | "REALTIME_CHAT_FAILED";
   content: string;
   route: RealtimeCapabilityRoute;
   realtime?: RealtimeCapabilityResult;
+  evidence?: RealtimeEvidenceAdapterResult;
 }
 
 function buildNotDetectedResult(
@@ -33,38 +43,50 @@ function buildNotDetectedResult(
     success: false,
     shouldContinueRuntime: true,
     requiresExternalEvidence: false,
-    capability: route.capability,
-    execution: route.execution,
-    code: "REALTIME_CHAT_NOT_DETECTED",
+    evidenceVerified: false,
+    evidenceAvailable: false,
+    capability:
+      route.capability,
+    execution:
+      route.execution,
+    code:
+      "REALTIME_CHAT_NOT_DETECTED",
     content: "",
     route,
   };
 }
 
-function buildCompletedResult(
+function buildTimeCompletedResult(
   route: RealtimeCapabilityRoute,
   realtime: RealtimeCapabilityResult,
 ): RealtimeChatBridgeResult {
   return {
     detected: true,
     handled: true,
-    success: realtime.success,
+    success:
+      realtime.success,
     shouldContinueRuntime: false,
     requiresExternalEvidence: false,
-    capability: route.capability,
-    execution: route.execution,
-    code: realtime.success
-      ? "REALTIME_CHAT_COMPLETED"
-      : "REALTIME_CHAT_FAILED",
-    content: realtime.content,
+    evidenceVerified: false,
+    evidenceAvailable: false,
+    capability:
+      route.capability,
+    execution:
+      route.execution,
+    code:
+      realtime.success
+        ? "REALTIME_CHAT_COMPLETED"
+        : "REALTIME_CHAT_FAILED",
+    content:
+      realtime.content,
     route,
     realtime,
   };
 }
 
-function buildExternalEvidenceResult(
+function buildEvidenceFailureResult(
   route: RealtimeCapabilityRoute,
-  realtime: RealtimeCapabilityResult,
+  evidence: RealtimeEvidenceAdapterResult,
 ): RealtimeChatBridgeResult {
   return {
     detected: true,
@@ -72,66 +94,142 @@ function buildExternalEvidenceResult(
     success: false,
     shouldContinueRuntime: false,
     requiresExternalEvidence: true,
-    capability: route.capability,
-    execution: route.execution,
+    evidenceVerified:
+      evidence.verified,
+    evidenceAvailable:
+      evidence.evidence.length > 0,
+    capability:
+      route.capability,
+    execution:
+      route.execution,
     code:
-      "REALTIME_CHAT_EXTERNAL_EVIDENCE_REQUIRED",
-    content: realtime.content,
+      evidence.code ===
+        "REALTIME_EVIDENCE_UNVERIFIED"
+        ? "REALTIME_CHAT_EVIDENCE_UNVERIFIED"
+        : "REALTIME_CHAT_FAILED",
+    content:
+      evidence.content,
     route,
-    realtime,
+    evidence,
+  };
+}
+
+function buildEvidenceVerifiedResult(
+  route: RealtimeCapabilityRoute,
+  evidence: RealtimeEvidenceAdapterResult,
+): RealtimeChatBridgeResult {
+  return {
+    detected: true,
+    handled: true,
+    success: true,
+    shouldContinueRuntime: false,
+    requiresExternalEvidence: true,
+    evidenceVerified: true,
+    evidenceAvailable:
+      evidence.evidence.length > 0,
+    capability:
+      route.capability,
+    execution:
+      route.execution,
+    code:
+      "REALTIME_CHAT_EVIDENCE_VERIFIED",
+    content:
+      evidence.content,
+    route,
+    evidence,
   };
 }
 
 /**
- * C167.31.1
+ * C167.31.4
  *
- * Product-level bridge between Chat Runtime
- * and the realtime capability boundary.
+ * Product-level realtime bridge.
  *
- * The bridge deliberately separates:
+ * Execution boundary:
  *
- * 1. realtime capability detection
- * 2. runtime-executable capabilities
- * 3. capabilities requiring external evidence
- * 4. ordinary prompts that should continue
+ * 1. Time
+ *    -> direct Runtime execution.
  *
- * This prevents the general model runtime from
- * treating realtime requests as ordinary language
- * generation.
+ * 2. Weather / News / Exchange Rate / Market
+ *    -> Realtime Evidence Adapter.
+ *
+ * 3. Unknown realtime requests
+ *    -> Realtime Evidence Adapter.
+ *
+ * 4. Verified evidence
+ *    -> exposed to the Chat Runtime boundary.
+ *
+ * 5. Unverified or unavailable evidence
+ *    -> hard stop.
+ *
+ * The bridge never treats model memory as
+ * realtime data.
  */
-export function executeRealtimeChatBridge(
+export async function executeRealtimeChatBridge(
   prompt: string,
   locale: Locale = "en",
-): RealtimeChatBridgeResult {
+): Promise<RealtimeChatBridgeResult> {
   const route =
-    routeRealtimeCapability(prompt);
-
-  if (!route.detected) {
-    return buildNotDetectedResult(route);
-  }
-
-  const realtime =
-    executeRealtimeCapability(
+    routeRealtimeCapability(
       prompt,
-      locale === "zh-CN"
-        ? "zh-CN"
-        : locale === "ja"
-          ? "ja"
-          : "en",
     );
 
+  if (!route.detected) {
+    return buildNotDetectedResult(
+      route,
+    );
+  }
+
+  /*
+   * Runtime-executable realtime capability.
+   *
+   * Currently this is the time capability.
+   * It does not require external evidence.
+   */
   if (
-    route.requiresExternalEvidence
+    !route.requiresExternalEvidence
   ) {
-    return buildExternalEvidenceResult(
+    const realtime =
+      executeRealtimeCapability(
+        prompt,
+        locale === "zh-CN"
+          ? "zh-CN"
+          : locale === "ja"
+            ? "ja"
+            : "en",
+      );
+
+    return buildTimeCompletedResult(
       route,
       realtime,
     );
   }
 
-  return buildCompletedResult(
+  /*
+   * External realtime capabilities must pass
+   * through the existing Web Intelligence and
+   * evidence verification boundary.
+   */
+  const evidence =
+    await retrieveRealtimeEvidence(
+      prompt,
+      locale,
+    );
+
+  if (
+    canUseRealtimeEvidence(
+      evidence,
+    )
+  ) {
+    return buildEvidenceVerifiedResult(
+      route,
+      evidence,
+    );
+  }
+
+  return buildEvidenceFailureResult(
     route,
-    realtime,
+    evidence,
   );
 }
 
@@ -149,17 +247,16 @@ export function shouldHandleRealtimeChat(
 }
 
 /**
- * Returns true when the realtime request has
- * reached a hard external-evidence boundary.
- *
- * This is intentionally different from a
- * successful realtime execution such as time.
+ * Returns true when the realtime request
+ * requires external evidence.
  */
 export function requiresRealtimeExternalEvidence(
   prompt: string,
 ): boolean {
   const route =
-    routeRealtimeCapability(prompt);
+    routeRealtimeCapability(
+      prompt,
+    );
 
   return (
     route.detected &&
@@ -170,36 +267,82 @@ export function requiresRealtimeExternalEvidence(
 /**
  * Returns true when the request can continue
  * through the ordinary AIOS Runtime.
+ *
+ * Realtime requests never fall through.
  */
 export function shouldContinueAfterRealtimeBridge(
   prompt: string,
 ): boolean {
-  return !shouldHandleRealtimeChat(prompt);
+  return !shouldHandleRealtimeChat(
+    prompt,
+  );
+}
+
+/**
+ * Returns true only when realtime evidence
+ * has been successfully retrieved and verified.
+ */
+export async function hasVerifiedRealtimeEvidence(
+  prompt: string,
+  locale: Locale = "en",
+): Promise<boolean> {
+  const route =
+    routeRealtimeCapability(
+      prompt,
+    );
+
+  if (
+    !route.detected ||
+    !route.requiresExternalEvidence
+  ) {
+    return false;
+  }
+
+  const evidence =
+    await retrieveRealtimeEvidence(
+      prompt,
+      locale,
+    );
+
+  return canUseRealtimeEvidence(
+    evidence,
+  );
 }
 
 /**
  * Compact capability inspection used by
  * API/status layers without executing the
- * capability.
+ * realtime capability.
  */
 export function inspectRealtimeChatCapability(
   prompt: string,
 ): {
   detected: boolean;
-  capability: RealtimeChatBridgeResult["capability"];
-  execution: RealtimeChatBridgeResult["execution"];
+  capability:
+    RealtimeChatBridgeResult["capability"];
+  execution:
+    RealtimeChatBridgeResult["execution"];
   requiresExternalEvidence: boolean;
-  code: RealtimeChatBridgeResult["code"];
+  evidenceBoundary:
+    boolean;
+  code:
+    RealtimeChatBridgeResult["code"];
 } {
   const route =
-    routeRealtimeCapability(prompt);
+    routeRealtimeCapability(
+      prompt,
+    );
 
   if (!route.detected) {
     return {
       detected: false,
-      capability: route.capability,
-      execution: route.execution,
+      capability:
+        route.capability,
+      execution:
+        route.execution,
       requiresExternalEvidence:
+        false,
+      evidenceBoundary:
         false,
       code:
         "REALTIME_CHAT_NOT_DETECTED",
@@ -211,9 +354,13 @@ export function inspectRealtimeChatCapability(
   ) {
     return {
       detected: true,
-      capability: route.capability,
-      execution: route.execution,
+      capability:
+        route.capability,
+      execution:
+        route.execution,
       requiresExternalEvidence:
+        true,
+      evidenceBoundary:
         true,
       code:
         "REALTIME_CHAT_EXTERNAL_EVIDENCE_REQUIRED",
@@ -222,9 +369,13 @@ export function inspectRealtimeChatCapability(
 
   return {
     detected: true,
-    capability: route.capability,
-    execution: route.execution,
+    capability:
+      route.capability,
+    execution:
+      route.execution,
     requiresExternalEvidence:
+      false,
+    evidenceBoundary:
       false,
     code:
       "REALTIME_CHAT_COMPLETED",
