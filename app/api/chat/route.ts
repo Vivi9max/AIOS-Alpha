@@ -51,9 +51,8 @@ import {
   executeChatCommercialBridge,
 } from "@/lib/runtime/chat-commercial-bridge";
 import {
-  executeTimeCapability,
-  isTimeCapabilityPrompt,
-} from "@/lib/runtime/time-capability";
+  executeRealtimeChatBridge,
+} from "@/lib/runtime/realtime-chat-bridge";
 import {
   processAIOSInputs,
 } from "@/lib/runtime/input/aios-input-runtime";
@@ -253,31 +252,68 @@ async function executeChatPrompt(
   locale: Locale,
 ) {
   /*
-   * Global real-time time capability.
+   * C167.31.2:
    *
-   * This branch intentionally runs before
-   * Commercial, GitHub, Web Intelligence,
-   * and Planner Runtime execution.
+   * Chat now enters the realtime capability
+   * boundary before Commercial, GitHub,
+   * Web Intelligence, and Planner Runtime.
    *
-   * The capability uses the current runtime
-   * clock and IANA timezone rules. It does
-   * not invent a time value and does not
-   * require an external provider.
+   * Runtime-executable realtime capability:
+   *   Time -> direct runtime execution.
+   *
+   * External-evidence realtime capability:
+   *   Weather
+   *   News
+   *   Exchange rate
+   *   Market
+   *
+   * These capabilities must not fall through
+   * to model generation because the model must
+   * not present stale memory as realtime data.
+   *
+   * Ordinary prompts continue to the existing
+   * AIOS Runtime flow without changing the
+   * existing Commercial, GitHub, Web, Planner,
+   * or Execution behavior.
    */
-  if (isTimeCapabilityPrompt(prompt)) {
-    const timeResult =
-      executeTimeCapability(
-        prompt,
-        locale,
-      );
+  const realtimeBridge =
+    executeRealtimeChatBridge(
+      prompt,
+      locale,
+    );
 
+  if (
+    realtimeBridge.detected
+  ) {
     return {
       success:
-        timeResult.success,
+        realtimeBridge.success,
       content:
-        timeResult.content,
+        realtimeBridge.content,
       code:
-        timeResult.code,
+        realtimeBridge.code,
+      realtime: {
+        capability:
+          realtimeBridge.capability,
+        execution:
+          realtimeBridge.execution,
+        requiresExternalEvidence:
+          realtimeBridge.requiresExternalEvidence,
+        route:
+          realtimeBridge.route,
+        realtime:
+          realtimeBridge.realtime,
+      },
+      execution: {
+        provider:
+          "realtime-capability-router",
+        capabilityTrace: [
+          "chat",
+          "realtime-capability-router",
+          realtimeBridge.capability,
+          realtimeBridge.execution,
+        ],
+      },
     };
   }
 
@@ -862,6 +898,12 @@ export async function GET(
           realFileUpload:
             true,
           inputProcessing:
+            true,
+          realtimeCapabilityRouter:
+            true,
+          realtimeTime:
+            true,
+          realtimeExternalEvidenceBoundary:
             true,
         },
         identity: {
