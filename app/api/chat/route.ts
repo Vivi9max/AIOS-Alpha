@@ -279,17 +279,17 @@ async function executeChatPrompt(
    * existing Commercial, GitHub, Web, Planner,
    * or Execution behavior.
    */
-const realtimeBridge =
-  await executeRealtimeChatBridge(
-    prompt,
-    locale,
-  );
-  
-const realtimeResponse =
-  formatRealtimeResponse(
-    realtimeBridge,
-    locale,
-  );
+  const realtimeBridge =
+    await executeRealtimeChatBridge(
+      prompt,
+      locale,
+    );
+
+  const realtimeResponse =
+    formatRealtimeResponse(
+      realtimeBridge,
+      locale,
+    );
 
   if (
     realtimeBridge.detected
@@ -318,6 +318,8 @@ const realtimeResponse =
           realtimeBridge.realtime,
         evidence:
           realtimeBridge.evidence,
+        response:
+          realtimeResponse.metadata,
       },
       execution: {
         provider:
