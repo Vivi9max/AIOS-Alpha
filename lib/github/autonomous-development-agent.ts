@@ -1113,28 +1113,6 @@ function validateFinalSource(
       continue;
     }
 
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-
-      if (
-        current === "\\"
-      ) {
-        escaped = true;
-        continue;
-      }
-
-      if (
-        current === quote
-      ) {
-        quote = null;
-      }
-
-      continue;
-    }
-
     if (
       current === "/" &&
       next === "/"
@@ -1154,6 +1132,28 @@ function validateFinalSource(
     }
 
     if (
+      current === "/" &&
+      isRegexLiteralStart(
+        normalized,
+        index,
+      )
+    ) {
+      const regexEnd =
+        scanRegexLiteral(
+          normalized,
+          index,
+        );
+
+      if (
+        regexEnd > index
+      ) {
+        index =
+          regexEnd - 1;
+        continue;
+      }
+    }
+
+    if (
       current === "'" ||
       current === "\"" ||
       current === "`"
@@ -1163,6 +1163,28 @@ function validateFinalSource(
           | "'"
           | "\""
           | "`";
+
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (
+        current === "\\"
+      ) {
+        escaped = true;
+        continue;
+      }
+
+      if (
+        current === quote
+      ) {
+        quote = null;
+      }
 
       continue;
     }
