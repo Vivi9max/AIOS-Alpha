@@ -28,11 +28,52 @@ export interface RealtimeResponse {
   metadata: RealtimeResponseMetadata;
 }
 
+function normalizeSourceHosts(
+  result: RealtimeChatBridgeResult,
+): string[] {
+  const hosts =
+    result.evidence?.sourceHosts ??
+    [];
+
+  return Array.from(
+    new Set(
+      hosts
+        .filter(
+          (
+            host,
+          ): host is string =>
+            typeof host ===
+              "string" &&
+            host.trim().length > 0,
+        )
+        .map(
+          (host) =>
+            host.trim(),
+        ),
+    ),
+  );
+}
+
 function getSourceCount(
   result: RealtimeChatBridgeResult,
 ): number {
+  const declaredCount =
+    result.evidence?.sourceCount;
+
+  if (
+    typeof declaredCount ===
+      "number" &&
+    Number.isFinite(
+      declaredCount,
+    ) &&
+    declaredCount > 0
+  ) {
+    return Math.floor(
+      declaredCount,
+    );
+  }
+
   return (
-    result.evidence?.sourceCount ??
     result.evidence?.evidence.length ??
     0
   );
@@ -41,9 +82,8 @@ function getSourceCount(
 function getSourceHosts(
   result: RealtimeChatBridgeResult,
 ): string[] {
-  return (
-    result.evidence?.sourceHosts ??
-    []
+  return normalizeSourceHosts(
+    result,
   );
 }
 
@@ -54,20 +94,34 @@ function resolveStatus(
     return "not-detected";
   }
 
+  /*
+   * External realtime information is only
+   * considered a valid realtime result after
+   * evidence verification.
+   */
   if (
-    result.evidenceVerified
+    result.requiresExternalEvidence
   ) {
-    return "evidence-verified";
+    if (
+      result.evidenceVerified
+    ) {
+      return "evidence-verified";
+    }
+
+    if (
+      result.evidenceAvailable
+    ) {
+      return "evidence-unverified";
+    }
+
+    return "failed";
   }
 
-  if (
-    result.requiresExternalEvidence &&
-    result.evidenceAvailable &&
-    !result.evidenceVerified
-  ) {
-    return "evidence-unverified";
-  }
-
+  /*
+   * Runtime-executable realtime capabilities,
+   * currently Time, may complete without
+   * external evidence.
+   */
   if (result.success) {
     return "completed";
   }
@@ -245,40 +299,33 @@ function buildVerifiedContent(
     );
   }
 
+  const footer =
+    buildEvidenceFooter(
+      locale,
+      result,
+    );
+
   return [
     buildVerifiedPrefix(
       locale,
     ),
     "",
     content,
-    buildEvidenceFooter(
-      locale,
-      result,
-    ),
-  ].join("\n");
+    footer,
+  ]
+    .filter(
+      (part) =>
+        part.length > 0,
+    )
+    .join("\n");
 }
 
 function buildCompletedContent(
-  locale: Locale,
   result: RealtimeChatBridgeResult,
 ): string {
-  const content =
-    normalizeContent(
-      result.content,
-    );
-
-  if (!content) {
-    return "";
-  }
-
-  if (
-    result.capability ===
-    "time"
-  ) {
-    return content;
-  }
-
-  return content;
+  return normalizeContent(
+    result.content,
+  );
 }
 
 export function formatRealtimeResponse(
@@ -315,6 +362,11 @@ export function formatRealtimeResponse(
     };
   }
 
+  /*
+   * Never expose the raw realtime content
+   * when external evidence was available but
+   * could not be verified.
+   */
   if (
     metadata.status ===
     "evidence-unverified"
@@ -328,22 +380,19 @@ export function formatRealtimeResponse(
     };
   }
 
+  /*
+   * Never fall back to raw realtime content
+   * after a realtime execution failure.
+   */
   if (
     metadata.status ===
     "failed"
   ) {
-    const original =
-      normalizeContent(
-        result.content,
-      );
-
     return {
       content:
-        original.length > 0
-          ? original
-          : buildFailedContent(
-              locale,
-            ),
+        buildFailedContent(
+          locale,
+        ),
       metadata,
     };
   }
@@ -351,7 +400,6 @@ export function formatRealtimeResponse(
   return {
     content:
       buildCompletedContent(
-        locale,
         result,
       ),
     metadata,
@@ -363,7 +411,7 @@ export function isRealtimeResponseVerified(
 ): boolean {
   return (
     response.metadata.status ===
-      "evidence-verified" ||
+      "evidence-verified" &&
     response.metadata.evidenceVerified
   );
 }
@@ -429,36 +477,6 @@ export function getRealtimeResponseDisclosure(
   response: RealtimeResponse,
   locale: Locale = "en",
 ): string {
-  if (
-    response.metadata.status ===
-    "evidence-verified"
-  ) {
-    return getRealtimeResponseStatusLabel(
-      "evidence-verified",
-      locale,
-    );
-  }
-
-  if (
-    response.metadata.status ===
-    "evidence-unverified"
-  ) {
-    return getRealtimeResponseStatusLabel(
-      "evidence-unverified",
-      locale,
-    );
-  }
-
-  if (
-    response.metadata.status ===
-    "failed"
-  ) {
-    return getRealtimeResponseStatusLabel(
-      "failed",
-      locale,
-    );
-  }
-
   return getRealtimeResponseStatusLabel(
     response.metadata.status,
     locale,
