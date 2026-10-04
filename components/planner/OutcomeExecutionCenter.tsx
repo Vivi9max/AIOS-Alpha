@@ -2,22 +2,14 @@
 
 import Link from "next/link";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
-
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 
 interface ExecutionTask {
   id: string;
   title: string;
   description: string;
-  status:
-    | "todo"
-    | "doing"
-    | "done";
+  status: "todo" | "doing" | "done";
   createdAt: number;
   updatedAt: number;
 }
@@ -50,12 +42,8 @@ interface ExecutionData {
   queueSize: number;
   nextTaskId: string | null;
   milestoneId: string | null;
-  currentMilestone:
-    | ExecutionMilestone
-    | null;
-  nextTask:
-    | ExecutionTask
-    | null;
+  currentMilestone: ExecutionMilestone | null;
+  nextTask: ExecutionTask | null;
   nextAction: NextAction;
   queue: ExecutionTask[];
 }
@@ -63,9 +51,7 @@ interface ExecutionData {
 interface ExecutionResponse {
   success: boolean;
   state?: string;
-  outcome:
-    | ExecutionOutcome
-    | null;
+  outcome: ExecutionOutcome | null;
   execution?: ExecutionData;
   performedAction?: string;
   error?: string;
@@ -76,75 +62,155 @@ type ExecutionAction =
   | "complete-current"
   | "sync";
 
+type Locale = "en" | "zh-CN" | "ja";
+
+const copy = {
+  en: {
+    eyebrow: "OUTCOME EXECUTION",
+    commandCenter: "Execution Command Center",
+    outcomeCenter: "Outcome Center",
+    nextAction: "NEXT ACTION",
+    status: {
+      active: "In progress",
+      planned: "Not started",
+      blocked: "Blocked",
+      completed: "Completed",
+    },
+    priority: {
+      critical: "Critical priority",
+      high: "High priority",
+      low: "Low priority",
+      normal: "Normal priority",
+    },
+    action: {
+      started: "The next task has started.",
+      alreadyDoing: "The current task is already in progress.",
+      concurrencyBlocked:
+        "Planner has reached the current parallel execution limit. Complete an active task first.",
+      completed:
+        "Task completed. The execution queue and outcome progress are updated.",
+      noStart: "There is no task ready to start.",
+      noComplete: "There is no task ready to complete.",
+      synced:
+        "Outcome, milestone and task status are synchronized.",
+    },
+  },
+  "zh-CN": {
+    eyebrow: "成果执行",
+    commandCenter: "执行中心",
+    outcomeCenter: "成果中心",
+    nextAction: "下一项行动",
+    status: {
+      active: "执行中",
+      planned: "待启动",
+      blocked: "受阻",
+      completed: "已完成",
+    },
+    priority: {
+      critical: "最高优先级",
+      high: "高优先级",
+      low: "低优先级",
+      normal: "普通优先级",
+    },
+    action: {
+      started: "下一项任务已进入执行状态。",
+      alreadyDoing: "当前任务已经处于执行状态。",
+      concurrencyBlocked:
+        "Planner 已达到当前并行执行上限，请先完成正在执行的任务。",
+      completed:
+        "任务已完成，执行队列和成果进度已更新。",
+      noStart: "当前没有可以启动的任务。",
+      noComplete: "当前没有可以完成的任务。",
+      synced:
+        "成果、里程碑和任务状态已同步。",
+    },
+  },
+  ja: {
+    eyebrow: "成果の実行",
+    commandCenter: "実行センター",
+    outcomeCenter: "成果センター",
+    nextAction: "次のアクション",
+    status: {
+      active: "実行中",
+      planned: "未開始",
+      blocked: "停止中",
+      completed: "完了",
+    },
+    priority: {
+      critical: "最優先",
+      high: "高優先度",
+      low: "低優先度",
+      normal: "通常優先度",
+    },
+    action: {
+      started: "次のタスクを実行中にしました。",
+      alreadyDoing: "現在のタスクはすでに実行中です。",
+      concurrencyBlocked:
+        "Planner の同時実行上限に達しています。実行中のタスクを完了してください。",
+      completed:
+        "タスクが完了し、実行キューと成果の進捗を更新しました。",
+      noStart: "開始できるタスクはありません。",
+      noComplete: "完了できるタスクはありません。",
+      synced:
+        "成果、マイルストーン、タスクの状態を同期しました。",
+    },
+  },
+} as const;
+
+function getLocale(locale: string): Locale {
+  if (locale === "zh-CN" || locale === "ja") {
+    return locale;
+  }
+
+  return "en";
+}
+
 export default function OutcomeExecutionCenter() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const language = copy[getLocale(locale)];
 
-  const [
-    data,
-    setData,
-  ] =
-    useState<ExecutionResponse | null>(
-      null
-    );
+  const [data, setData] =
+    useState<ExecutionResponse | null>(null);
 
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [
-    actionLoading,
-    setActionLoading,
-  ] =
-    useState<
-      ExecutionAction | null
-    >(null);
+  const [actionLoading, setActionLoading] =
+    useState<ExecutionAction | null>(null);
 
-  const [
-    message,
-    setMessage,
-  ] =
-    useState("");
+  const [message, setMessage] = useState("");
 
-  const loadExecution =
-    useCallback(async () => {
-      setLoading(true);
+  const loadExecution = useCallback(async () => {
+    setLoading(true);
 
-      try {
-        const response =
-          await fetch(
-            "/api/planner/execute",
-            {
-              method: "GET",
-              cache: "no-store",
-            }
-          );
-
-        const result =
-          (await response.json()) as
-            ExecutionResponse;
-
-        setData(result);
-
-        if (
-          !response.ok ||
-          !result.success
-        ) {
-          setMessage(
-            result.error ??
-              t("execution.loadError")
-          );
+    try {
+      const response = await fetch(
+        "/api/planner/execute",
+        {
+          method: "GET",
+          cache: "no-store",
         }
-      } catch {
-        setData(null);
+      );
+
+      const result =
+        (await response.json()) as ExecutionResponse;
+
+      setData(result);
+
+      if (!response.ok || !result.success) {
         setMessage(
-          t("execution.connectionError")
+          result.error ??
+            t("execution.loadError")
         );
-      } finally {
-        setLoading(false);
       }
-    }, [t]);
+    } catch {
+      setData(null);
+      setMessage(
+        t("execution.connectionError")
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
 
   useEffect(() => {
     void loadExecution();
@@ -164,47 +230,37 @@ export default function OutcomeExecutionCenter() {
     setMessage("");
 
     try {
-      const response =
-        await fetch(
-          "/api/planner/execute",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              outcomeId:
-                data.outcome.id,
-
-              action,
-            }),
-          }
-        );
+      const response = await fetch(
+        "/api/planner/execute",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            outcomeId: data.outcome.id,
+            action,
+          }),
+        }
+      );
 
       const result =
-        (await response.json()) as
-          ExecutionResponse;
+        (await response.json()) as ExecutionResponse;
 
       setData(result);
 
-      if (
-        !response.ok ||
-        !result.success
-      ) {
+      if (!response.ok || !result.success) {
         setMessage(
           result.error ??
             t("execution.actionError")
         );
-
         return;
       }
 
       setMessage(
         getActionMessage(
-          result.performedAction
+          result.performedAction,
+          language.action
         )
       );
     } catch {
@@ -228,7 +284,9 @@ export default function OutcomeExecutionCenter() {
             </strong>
 
             <p style={mutedTextStyle}>
-              {t("execution.loadingDescription")}
+              {t(
+                "execution.loadingDescription"
+              )}
             </p>
           </div>
         </div>
@@ -250,7 +308,7 @@ export default function OutcomeExecutionCenter() {
 
           <div>
             <p style={eyebrowStyle}>
-              OUTCOME EXECUTION
+              {language.eyebrow}
             </p>
 
             <h2 style={emptyTitleStyle}>
@@ -258,7 +316,9 @@ export default function OutcomeExecutionCenter() {
             </h2>
 
             <p style={emptyTextStyle}>
-              {t("execution.emptyDescription")}
+              {t(
+                "execution.emptyDescription"
+              )}
             </p>
           </div>
 
@@ -298,25 +358,21 @@ export default function OutcomeExecutionCenter() {
 
   const doingTasks =
     execution.queue.filter(
-      (task) =>
-        task.status === "doing"
+      (task) => task.status === "doing"
     );
 
   const todoTasks =
     execution.queue.filter(
-      (task) =>
-        task.status === "todo"
+      (task) => task.status === "todo"
     );
 
   const doneTasks =
     execution.queue.filter(
-      (task) =>
-        task.status === "done"
+      (task) => task.status === "done"
     );
 
   const isCompleted =
-    execution.remainingTasks ===
-      0 &&
+    execution.remainingTasks === 0 &&
     execution.queueSize > 0;
 
   return (
@@ -324,11 +380,11 @@ export default function OutcomeExecutionCenter() {
       <div style={headerStyle}>
         <div>
           <p style={eyebrowStyle}>
-            OUTCOME EXECUTION
+            {language.eyebrow}
           </p>
 
           <h2 style={titleStyle}>
-            ⚡ Execution Command Center
+            ⚡ {language.commandCenter}
           </h2>
 
           <p style={subtitleStyle}>
@@ -339,16 +395,13 @@ export default function OutcomeExecutionCenter() {
         <div style={headerActionsStyle}>
           <button
             type="button"
-            disabled={
-              actionLoading !== null
-            }
+            disabled={actionLoading !== null}
             onClick={() =>
               void runAction("sync")
             }
             style={refreshButtonStyle}
           >
-            {actionLoading ===
-            "sync"
+            {actionLoading === "sync"
               ? t("execution.syncing")
               : t("execution.sync")}
           </button>
@@ -357,7 +410,7 @@ export default function OutcomeExecutionCenter() {
             href="/outcomes"
             style={outcomeLinkStyle}
           >
-            Outcome Center →
+            {language.outcomeCenter} →
           </Link>
         </div>
       </div>
@@ -368,13 +421,17 @@ export default function OutcomeExecutionCenter() {
             <div style={badgeRowStyle}>
               <span style={activeBadgeStyle}>
                 {formatStatus(
-                  outcome.status
+                  outcome.status,
+                  language.status
                 )}
               </span>
 
-              <span style={priorityBadgeStyle}>
+              <span
+                style={priorityBadgeStyle}
+              >
                 {formatPriority(
-                  outcome.priority
+                  outcome.priority,
+                  language.priority
                 )}
               </span>
             </div>
@@ -393,7 +450,6 @@ export default function OutcomeExecutionCenter() {
           <span
             style={{
               ...progressBarStyle,
-
               width: `${clampProgress(
                 execution.progress
               )}%`,
@@ -418,17 +474,15 @@ export default function OutcomeExecutionCenter() {
 
           <MetricCard
             label={t("execution.queueTotal")}
-            value={
-              execution.queueSize
-            }
+            value={execution.queueSize}
           />
 
           <MetricCard
             label={t("execution.stage")}
             value={
               execution
-                .currentMilestone
-                ?.order ?? "—"
+                .currentMilestone?.order ??
+              "—"
             }
           />
         </div>
@@ -437,39 +491,38 @@ export default function OutcomeExecutionCenter() {
       <div style={nextActionStyle}>
         <div style={{ minWidth: 0 }}>
           <p style={cardEyebrowStyle}>
-            NEXT ACTION
+            {language.nextAction}
           </p>
 
           <h3 style={nextActionTitleStyle}>
             {isCompleted
-              ? t("execution.outcomeComplete")
-              : execution.nextAction
-                  .title}
+              ? t(
+                  "execution.outcomeComplete"
+                )
+              : execution.nextAction.title}
           </h3>
 
           <p style={nextActionTextStyle}>
             {isCompleted
-              ? t("execution.outcomeCompleteDescription")
+              ? t(
+                  "execution.outcomeCompleteDescription"
+                )
               : execution.nextAction
                   .description ||
-                execution
-                  .currentMilestone
+                execution.currentMilestone
                   ?.title ||
                 t("execution.defaultAction")}
           </p>
 
           {execution.currentMilestone && (
-            <div
-              style={milestoneStyle}
-            >
+            <div style={milestoneStyle}>
               <span>
                 {t("execution.milestone")}
               </span>
 
               <strong>
                 {
-                  execution
-                    .currentMilestone
+                  execution.currentMilestone
                     .title
                 }
               </strong>
@@ -479,13 +532,12 @@ export default function OutcomeExecutionCenter() {
 
         <div style={nextButtonsStyle}>
           {!isCompleted &&
-            execution.nextTask
-              ?.status === "todo" && (
+            execution.nextTask?.status ===
+              "todo" && (
               <button
                 type="button"
                 disabled={
-                  actionLoading !==
-                  null
+                  actionLoading !== null
                 }
                 onClick={() =>
                   void runAction(
@@ -497,7 +549,9 @@ export default function OutcomeExecutionCenter() {
                 {actionLoading ===
                 "start-next"
                   ? t("execution.starting")
-                  : `▶ ${t("execution.startNext")}`}
+                  : `▶ ${t(
+                      "execution.startNext"
+                    )}`}
               </button>
             )}
 
@@ -506,8 +560,7 @@ export default function OutcomeExecutionCenter() {
               <button
                 type="button"
                 disabled={
-                  actionLoading !==
-                  null
+                  actionLoading !== null
                 }
                 onClick={() =>
                   void runAction(
@@ -519,7 +572,9 @@ export default function OutcomeExecutionCenter() {
                 {actionLoading ===
                 "complete-current"
                   ? t("execution.completing")
-                  : `✓ ${t("execution.completeCurrent")}`}
+                  : `✓ ${t(
+                      "execution.completeCurrent"
+                    )}`}
               </button>
             )}
 
@@ -545,21 +600,27 @@ export default function OutcomeExecutionCenter() {
           title={t("execution.doing")}
           icon="🚀"
           tasks={doingTasks}
-          emptyText={t("execution.noDoing")}
+          emptyText={t(
+            "execution.noDoing"
+          )}
         />
 
         <QueueColumn
           title={t("execution.todo")}
           icon="⏳"
           tasks={todoTasks}
-          emptyText={t("execution.noTodo")}
+          emptyText={t(
+            "execution.noTodo"
+          )}
         />
 
         <QueueColumn
           title={t("execution.done")}
           icon="✅"
           tasks={doneTasks.slice(0, 6)}
-          emptyText={t("execution.noDone")}
+          emptyText={t(
+            "execution.noDone"
+          )}
         />
       </div>
     </section>
@@ -652,49 +713,62 @@ function QueueColumn({
 }
 
 function getActionMessage(
-  action:
-    | string
-    | undefined
+  action: string | undefined,
+  messages: {
+    started: string;
+    alreadyDoing: string;
+    concurrencyBlocked: string;
+    completed: string;
+    noStart: string;
+    noComplete: string;
+    synced: string;
+  }
 ): string {
   switch (action) {
     case "task-started":
-      return "下一项任务已经进入执行状态。";
+      return messages.started;
 
     case "task-already-doing":
-      return "当前任务已经处于执行状态。";
+      return messages.alreadyDoing;
 
     case "planner-concurrency-blocked":
-      return "Planner 已达到当前并行上限，请先完成正在执行的任务。";
+      return messages.concurrencyBlocked;
 
     case "task-completed":
-      return "任务已完成，执行队列和 Outcome 进度已更新。";
+      return messages.completed;
 
     case "no-task-to-start":
-      return "当前没有可以启动的任务。";
+      return messages.noStart;
 
     case "no-task-to-complete":
-      return "当前没有可以完成的任务。";
+      return messages.noComplete;
 
     default:
-      return "Outcome、Milestone 和 Task 状态已同步。";
+      return messages.synced;
   }
 }
 
 function formatStatus(
-  status: string
+  status: string,
+  messages: {
+    active: string;
+    planned: string;
+    blocked: string;
+    completed: string;
+  }
 ): string {
   switch (status) {
     case "active":
-      return "执行中";
+      return messages.active;
 
     case "planned":
-      return "待启动";
+      return messages.planned;
 
     case "blocked":
-      return "受阻";
+      return messages.blocked;
 
     case "completed":
-      return "已完成";
+      return messages.completed;
 
     default:
       return status;
@@ -702,20 +776,26 @@ function formatStatus(
 }
 
 function formatPriority(
-  priority: string
+  priority: string,
+  messages: {
+    critical: string;
+    high: string;
+    low: string;
+    normal: string;
+  }
 ): string {
   switch (priority) {
     case "critical":
-      return "最高优先级";
+      return messages.critical;
 
     case "high":
-      return "高优先级";
+      return messages.high;
 
     case "low":
-      return "低优先级";
+      return messages.low;
 
     default:
-      return "普通优先级";
+      return messages.normal;
   }
 }
 
@@ -767,8 +847,7 @@ const panelStyle: CSSProperties = {
 
 const headerStyle: CSSProperties = {
   display: "flex",
-  justifyContent:
-    "space-between",
+  justifyContent: "space-between",
   alignItems: "flex-start",
   gap: 18,
   flexWrap: "wrap",
@@ -840,8 +919,7 @@ const outcomeCardStyle: CSSProperties = {
 
 const outcomeTopStyle: CSSProperties = {
   display: "flex",
-  justifyContent:
-    "space-between",
+  justifyContent: "space-between",
   alignItems: "flex-start",
   gap: 16,
 };
@@ -930,8 +1008,7 @@ const metricLabelStyle: CSSProperties = {
 
 const nextActionStyle: CSSProperties = {
   display: "flex",
-  justifyContent:
-    "space-between",
+  justifyContent: "space-between",
   alignItems: "center",
   gap: 18,
   flexWrap: "wrap",
@@ -1027,8 +1104,7 @@ const queueColumnStyle: CSSProperties = {
 
 const queueHeaderStyle: CSSProperties = {
   display: "flex",
-  justifyContent:
-    "space-between",
+  justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
 };
