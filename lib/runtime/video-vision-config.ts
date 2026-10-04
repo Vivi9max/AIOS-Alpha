@@ -1,4 +1,5 @@
-export type VideoVisionProvider = "openai";
+export type VideoVisionProvider =
+  "openai";
 
 export interface VideoVisionConfig {
   provider: VideoVisionProvider;
@@ -9,8 +10,20 @@ export interface VideoVisionConfig {
 }
 
 const DEFAULT_VISION_MODEL =
-  process.env.AIOS_VISION_MODEL ??
-  "gpt-5.6-luna";
+  "gpt-6-luna";
+
+function resolveVisionModel(): string {
+  const configuredModel =
+    process.env.AIOS_VISION_MODEL?.trim();
+
+  if (
+    configuredModel
+  ) {
+    return configuredModel;
+  }
+
+  return DEFAULT_VISION_MODEL;
+}
 
 export function getVideoVisionConfig(): VideoVisionConfig {
   const apiKeyConfigured =
@@ -21,22 +34,25 @@ export function getVideoVisionConfig(): VideoVisionConfig {
   const provider: VideoVisionProvider =
     "openai";
 
+  const model =
+    resolveVisionModel();
+
   return {
     provider,
 
-    model:
-      DEFAULT_VISION_MODEL,
+    model,
 
     apiKeyConfigured,
 
-    ...(process.env.OPENAI_BASE_URL
+    ...(process.env.OPENAI_BASE_URL?.trim()
       ? {
           baseURL:
-            process.env.OPENAI_BASE_URL,
+            process.env.OPENAI_BASE_URL.trim(),
         }
       : {}),
 
     enabled:
-      apiKeyConfigured,
+      apiKeyConfigured &&
+      Boolean(model),
   };
 }
