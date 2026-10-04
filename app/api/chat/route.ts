@@ -54,6 +54,9 @@ import {
   executeRealtimeChatBridge,
 } from "@/lib/runtime/realtime-chat-bridge";
 import {
+  formatRealtimeResponse,
+} from "@/lib/runtime/realtime-response-formatter";
+import {
   processAIOSInputs,
 } from "@/lib/runtime/input/aios-input-runtime";
 import {
@@ -276,11 +279,17 @@ async function executeChatPrompt(
    * existing Commercial, GitHub, Web, Planner,
    * or Execution behavior.
    */
-    const realtimeBridge =
-    await executeRealtimeChatBridge(
-      prompt,
-      locale,
-    );
+const realtimeBridge =
+  await executeRealtimeChatBridge(
+    prompt,
+    locale,
+  );
+  
+const realtimeResponse =
+  formatRealtimeResponse(
+    realtimeBridge,
+    locale,
+  );
 
   if (
     realtimeBridge.detected
@@ -289,7 +298,7 @@ async function executeChatPrompt(
       success:
         realtimeBridge.success,
       content:
-        realtimeBridge.content,
+        realtimeResponse.content,
       code:
         realtimeBridge.code,
       realtime: {
