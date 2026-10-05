@@ -377,10 +377,15 @@ export function createExecutionSteps(
       ? customSteps
       : DEFAULT_EXECUTION_STEPS.map(
           (step) => ({
-            key: step.key,
-            title: step.title,
+            key:
+              step.key,
+
+            title:
+              step.title,
+
             description:
               step.description,
+
             capability:
               step.capability,
           })
@@ -537,6 +542,7 @@ export function updateExecutionSession(
 
     metadata: {
       ...session.metadata,
+
       ...(updates.metadata ??
         {}),
     },
@@ -793,6 +799,7 @@ export function completeExecutionStep(
 
           metadata: {
             ...step.metadata,
+
             ...(metadata ??
               {}),
           },
@@ -874,7 +881,9 @@ export function failExecutionStep(
         stepId
     );
 
-  if (!failedStep) {
+  if (
+    !failedStep
+  ) {
     return session;
   }
 
@@ -1004,6 +1013,7 @@ export function completeExecutionSession(
         ) {
           return {
             ...step,
+
             status:
               "skipped" as const,
           };
@@ -1280,7 +1290,10 @@ export function calculateExecutionMetrics(
   const metrics =
     createEmptyExecutionMetrics();
 
-  for (const step of session.steps) {
+  for (
+    const step of
+      session.steps
+  ) {
     const duration =
       step.durationMs ??
       0;
@@ -1482,7 +1495,9 @@ function statusForCapability(
 function eventTypeForCompletedStep(
   stepKey: string
 ): ExecutionEventType {
-  switch (stepKey) {
+  switch (
+    stepKey
+  ) {
     case "create_tasks":
       return "tasks_created";
 
