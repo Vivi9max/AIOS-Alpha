@@ -68,6 +68,14 @@ interface MaterializedTask {
   created: boolean;
 }
 
+interface PlannerWorkflow {
+  status: "ready";
+  createdCount: number;
+  reusedCount: number;
+  taskCount: number;
+  tasks: MaterializedTask[];
+}
+
 export async function GET() {
   return NextResponse.json({
     success: true,
@@ -107,7 +115,18 @@ export async function GET() {
         MAX_MATERIALIZED_TASKS,
     },
 
-    timestamp: Date.now(),
+    workflow: {
+      sequence: [
+        "goal",
+        "plan",
+        "tasks",
+        "execution",
+        "outcome",
+      ],
+    },
+
+    timestamp:
+      Date.now(),
   });
 }
 
@@ -133,12 +152,17 @@ export async function POST(
       );
 
     const validationError =
-      validateGoal(goal);
+      validateGoal(
+        goal
+      );
 
-    if (validationError) {
+    if (
+      validationError
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
 
           error:
             validationError,
@@ -162,17 +186,22 @@ export async function POST(
         goal
       );
 
-    if (mode === "plan") {
+    if (
+      mode === "plan"
+    ) {
       return NextResponse.json({
-        success: true,
+        success:
+          true,
 
-        mode: "plan",
+        mode:
+          "plan",
 
         planner:
           "AIOS Strategic Planner",
 
         plan: {
-          id: plan.id,
+          id:
+            plan.id,
 
           type:
             plan.type,
@@ -217,9 +246,11 @@ export async function POST(
               .length,
         },
 
-        execution: null,
+        execution:
+          null,
 
-        workflow: null,
+        workflow:
+          null,
 
         latencyMs:
           Date.now() -
@@ -294,22 +325,25 @@ export async function POST(
     };
 
     const workflow =
-      await materializePlanTasks({
-        planId:
-          finalPlan.id,
+      result.success
+        ? await materializePlanTasks({
+            planId:
+              finalPlan.id,
 
-        goal:
-          finalPlan.goal,
+            goal:
+              finalPlan.goal,
 
-        steps:
-          finalPlan.steps,
-      });
+            steps:
+              finalPlan.steps,
+          })
+        : createFailedWorkflow();
 
     return NextResponse.json({
       success:
         result.success,
 
-      mode: "execute",
+      mode:
+        "execute",
 
       planner:
         "AIOS Strategic Planner",
@@ -376,17 +410,21 @@ export async function POST(
       timestamp:
         Date.now(),
     });
-  } catch (error) {
+  } catch (
+    error
+  ) {
     const message =
       error instanceof Error
         ? error.message
-        : "Planner 请求失败";
+        : "Planner request failed.";
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
 
-        error: message,
+        error:
+          message,
 
         code:
           "PLANNER_RUNTIME_ERROR",
@@ -444,18 +482,20 @@ function validateGoal(
   goal: string
 ): string | null {
   if (!goal) {
-    return "请输入希望 AIOS 最终完成的目标。";
+    return "Please provide the outcome you want AIOS to achieve.";
   }
 
-  if (goal.length < 4) {
-    return "目标描述过短，请补充希望得到的最终结果。";
+  if (
+    goal.length < 4
+  ) {
+    return "The goal is too short. Please describe the desired outcome.";
   }
 
   if (
     goal.length >
     MAX_GOAL_LENGTH
   ) {
-    return `目标不能超过 ${MAX_GOAL_LENGTH} 个字符。`;
+    return `The goal cannot exceed ${MAX_GOAL_LENGTH} characters.`;
   }
 
   return null;
@@ -465,7 +505,7 @@ function analyzeGoalQuality(
   goal: string
 ): GoalQuality {
   const hasResult =
-    /完成|实现|获得|达到|建立|上线|发布|解决|提高|降低|验证|输出|生成|确定/.test(
+    /完成|实现|获得|达到|建立|上线|发布|解决|提高|降低|验证|输出|生成|确定|完成|实现/.test(
       goal
     );
 
@@ -484,30 +524,43 @@ function analyzeGoalQuality(
       goal
     );
 
-  let score = 1;
+  let score =
+    1;
 
   if (
-    goal.length >= 30
+    goal.length >=
+    30
   ) {
-    score += 1;
+    score +=
+      1;
   }
 
-  if (hasResult) {
-    score += 1;
+  if (
+    hasResult
+  ) {
+    score +=
+      1;
   }
 
-  if (hasDeadline) {
-    score += 1;
+  if (
+    hasDeadline
+  ) {
+    score +=
+      1;
   }
 
   if (
     hasSuccessMetric
   ) {
-    score += 1;
+    score +=
+      1;
   }
 
-  if (hasConstraint) {
-    score += 1;
+  if (
+    hasConstraint
+  ) {
+    score +=
+      1;
   }
 
   const level =
@@ -538,11 +591,17 @@ function calculateComplexity(
     stepCount +
     capabilityCount;
 
-  if (score >= 9) {
+  if (
+    score >=
+    9
+  ) {
     return "high";
   }
 
-  if (score >= 5) {
+  if (
+    score >=
+    5
+  ) {
     return "medium";
   }
 
@@ -556,36 +615,56 @@ function normalizePlanSteps(
     new Set<string>();
 
   return steps
-    .map((step) =>
-      step
-        .replace(
-          /^\s*(?:步骤|阶段|phase)?\s*\d+[.、:：\-\)\]]*\s*/i,
-          ""
-        )
-        .replace(
-          /\s+/g,
-          " "
-        )
-        .trim()
+    .filter(
+      (
+        step
+      ) =>
+        typeof step ===
+        "string"
     )
-    .filter((step) => {
-      if (!step) {
-        return false;
+    .map(
+      (
+        step
+      ) =>
+        step
+          .replace(
+            /^\s*(?:步骤|阶段|phase)?\s*\d+[.、:：\-\)\]]*\s*/i,
+            ""
+          )
+          .replace(
+            /\s+/g,
+            " "
+          )
+          .trim()
+    )
+    .filter(
+      (
+        step
+      ) => {
+        if (
+          !step
+        ) {
+          return false;
+        }
+
+        const key =
+          step.toLowerCase();
+
+        if (
+          seen.has(
+            key
+          )
+        ) {
+          return false;
+        }
+
+        seen.add(
+          key
+        );
+
+        return true;
       }
-
-      const key =
-        step.toLowerCase();
-
-      if (
-        seen.has(key)
-      ) {
-        return false;
-      }
-
-      seen.add(key);
-
-      return true;
-    })
+    )
     .slice(
       0,
       MAX_MATERIALIZED_TASKS
@@ -600,23 +679,26 @@ async function materializePlanTasks({
   planId: string;
   goal: string;
   steps: string[];
-}): Promise<{
-  status: "ready";
-  createdCount: number;
-  reusedCount: number;
-  taskCount: number;
-  tasks: MaterializedTask[];
-}> {
+}): Promise<PlannerWorkflow> {
+  const normalizedSteps =
+    normalizePlanSteps(
+      steps
+    );
+
   const tasks:
-    MaterializedTask[] = [];
+    MaterializedTask[] =
+    [];
 
   for (
     let index = 0;
-    index < steps.length;
+    index <
+    normalizedSteps.length;
     index += 1
   ) {
     const step =
-      steps[index];
+      normalizedSteps[
+        index
+      ];
 
     const title =
       buildTaskTitle(
@@ -624,11 +706,38 @@ async function materializePlanTasks({
         index
       );
 
-    const developmentIntent =
-      buildPlannerDevelopmentIntent({
-        goal,
-        step,
+    const existing =
+      await findReusableTask(
+        title
+      );
+
+    if (
+      existing
+    ) {
+      tasks.push({
+        id:
+          existing.id,
+
+        title:
+          existing.title,
+
+        status:
+          existing.status,
+
+        created:
+          false,
       });
+
+      continue;
+    }
+
+    const developmentIntent =
+      buildPlannerDevelopmentIntent(
+        {
+          goal,
+          step,
+        }
+      );
 
     const developmentMetadata =
       buildDevelopmentMetadata(
@@ -638,12 +747,16 @@ async function materializePlanTasks({
     const description = [
       `Planner Plan: ${planId}`,
       `Final Goal: ${goal}`,
-      `Stage: ${index + 1}/${steps.length}`,
+      `Stage: ${index + 1}/${normalizedSteps.length}`,
       `Action: ${step}`,
       developmentMetadata,
     ]
-      .filter(Boolean)
-      .join("\n");
+      .filter(
+        Boolean
+      )
+      .join(
+        "\n"
+      );
 
     try {
       const task =
@@ -662,57 +775,74 @@ async function materializePlanTasks({
         status:
           task.status,
 
-        created: true,
+        created:
+          true,
       });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       const duplicateId =
         extractDuplicateTaskId(
           error
         );
 
-      if (!duplicateId) {
+      if (
+        !duplicateId
+      ) {
         throw error;
       }
 
       const existingTasks =
         await listPersistentTasks();
 
-      const existing =
+      const duplicate =
         existingTasks.find(
-          (task) =>
+          (
+            task
+          ) =>
             task.id ===
             duplicateId
         );
 
-      if (existing) {
-        tasks.push({
-          id:
-            existing.id,
-
-          title:
-            existing.title,
-
-          status:
-            existing.status,
-
-          created: false,
-        });
+      if (
+        !duplicate
+      ) {
+        throw error;
       }
+
+      tasks.push({
+        id:
+          duplicate.id,
+
+        title:
+          duplicate.title,
+
+        status:
+          duplicate.status,
+
+        created:
+          false,
+      });
     }
   }
 
   return {
-    status: "ready",
+    status:
+      "ready",
 
     createdCount:
       tasks.filter(
-        (task) =>
+        (
+          task
+        ) =>
           task.created
       ).length,
 
     reusedCount:
       tasks.filter(
-        (task) =>
+        (
+          task
+        ) =>
           !task.created
       ).length,
 
@@ -721,6 +851,51 @@ async function materializePlanTasks({
 
     tasks,
   };
+}
+
+async function findReusableTask(
+  title: string
+): Promise<Task | null> {
+  const tasks =
+    await listPersistentTasks();
+
+  const normalizedTitle =
+    normalizeTaskTitle(
+      title
+    );
+
+  if (
+    !normalizedTitle
+  ) {
+    return null;
+  }
+
+  return (
+    tasks.find(
+      (
+        task
+      ) =>
+        task.status !==
+          "done" &&
+        normalizeTaskTitle(
+          task.title
+        ) ===
+          normalizedTitle
+    ) ??
+    null
+  );
+}
+
+function normalizeTaskTitle(
+  title: string
+): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(
+      /\s+/g,
+      ""
+    );
 }
 
 function buildTaskTitle(
@@ -736,11 +911,12 @@ function buildTaskTitle(
       .trim();
 
   const shortStep =
-    cleanStep.length > 72
+    cleanStep.length >
+    72
       ? `${cleanStep.slice(
           0,
           69
-        )}…`
+        )}...`
       : cleanStep;
 
   return `P${index + 1} · ${shortStep}`;
@@ -773,6 +949,25 @@ function extractDuplicateTaskId(
   );
 }
 
+function createFailedWorkflow():
+  PlannerWorkflow {
+  return {
+    status:
+      "ready",
+
+    createdCount:
+      0,
+
+    reusedCount:
+      0,
+
+    taskCount:
+      0,
+
+    tasks: [],
+  };
+}
+
 function buildExecutionPrompt({
   goal,
   plan,
@@ -787,30 +982,40 @@ function buildExecutionPrompt({
   };
 }): string {
   return [
-    "你是 AIOS Alpha Runtime 的执行引擎。",
+    "You are the execution engine of AIOS Alpha.",
     "",
-    "你的任务不是只解释概念，而是把目标转化为可以立即推进的执行结果。",
+    "Convert the user's goal into an actionable and verifiable execution result.",
     "",
-    "【最终目标】",
+    "FINAL GOAL",
     goal,
     "",
-    "【Planner 初步判断】",
-    `目标类型：${plan.type}`,
-    `用户意图：${plan.intent}`,
-    `建议能力：${plan.capabilities.join("、") || "Planner、Runtime"}`,
+    "PLANNER CONTEXT",
+    `Goal type: ${plan.type}`,
+    `Intent: ${plan.intent}`,
+    `Recommended capabilities: ${
+      plan.capabilities.join(
+        ", "
+      ) ||
+      "Planner, Runtime"
+    }`,
     "",
-    "【初步执行阶段】",
+    "INITIAL EXECUTION STAGES",
     ...plan.steps.map(
-      (step, index) =>
+      (
+        step,
+        index
+      ) =>
         `${index + 1}. ${step}`
     ),
     "",
-    "【执行要求】",
-    "1. 先确认最终目标和成功标准。",
-    "2. 把任务拆分为有顺序、可执行、可验证的阶段。",
-    "3. 标明当前最优先执行的一步。",
-    "4. 避免空泛建议，不重复解释理论。",
-    "5. 如果目标涉及开发工作，保留用户明确提供的文件路径，不要自行猜测不存在的路径。",
-    "6. 最终输出必须能够直接指导下一步执行。",
-  ].join("\n");
+    "EXECUTION REQUIREMENTS",
+    "1. Confirm the final outcome and success criteria.",
+    "2. Convert the goal into ordered, actionable and verifiable stages.",
+    "3. Identify the highest-priority next action.",
+    "4. Avoid generic advice and unnecessary theoretical explanation.",
+    "5. If the goal involves development work, preserve user-provided file paths and do not invent nonexistent paths.",
+    "6. The result must directly support the next execution step.",
+  ].join(
+    "\n"
+  );
 }
