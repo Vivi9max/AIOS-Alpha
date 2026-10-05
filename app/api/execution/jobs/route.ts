@@ -18,6 +18,17 @@ import {
 } from "@/lib/execution/job-store";
 
 import {
+  createExecutionSessionForJob,
+  markExecutionJobSessionCompleted,
+  markExecutionJobSessionFailed,
+  markExecutionJobSessionRunning,
+} from "@/lib/runtime/execution-job-session-bridge";
+
+import {
+  getExecutionSession,
+} from "@/lib/runtime/session";
+
+import {
   canUseCapability,
 } from "@/lib/billing/entitlements";
 
@@ -152,13 +163,117 @@ function getEntitlementFailure(
   );
 }
 
+async function resolveSessionForJob(
+  jobId: string,
+) {
+  const bridge =
+    await createExecutionSessionForJob(
+      jobId,
+    );
+
+  if (
+    !bridge.success ||
+    !bridge.session
+  ) {
+    return {
+      success: false,
+      session: null,
+      error:
+        bridge.error ??
+        "Unable to create execution session.",
+    };
+  }
+
+  return {
+    success: true,
+    session:
+      bridge.session,
+    error: null,
+  };
+}
+
 async function executeJob(
   jobId: string,
   input: string,
 ) {
-  await markExecutionJobRunning(
-    jobId,
-  );
+  const sessionResult =
+    await resolveSessionForJob(
+      jobId,
+    );
+
+  if (
+    !sessionResult.success ||
+    !sessionResult.session
+  ) {
+    const message =
+      sessionResult.error ??
+      "Execution session could not be created.";
+
+    const failed =
+      await markExecutionJobFailed(
+        jobId,
+        message,
+      );
+
+    return {
+      success: false,
+      job: failed,
+      error: message,
+      code:
+        "EXECUTION_SESSION_ERROR",
+      session: null,
+    };
+  }
+
+  const runningJob =
+    await markExecutionJobRunning(
+      jobId,
+    );
+
+  if (!runningJob) {
+    return {
+      success: false,
+      job: null,
+      error:
+        "Execution job could not be started.",
+      code:
+        "EXECUTION_JOB_START_FAILED",
+      session:
+        sessionResult.session,
+    };
+  }
+
+  const runningBridge =
+    await markExecutionJobSessionRunning(
+      jobId,
+      sessionResult.session,
+    );
+
+  if (
+    !runningBridge.success ||
+    !runningBridge.session
+  ) {
+    const message =
+      runningBridge.error ??
+      "Execution session could not be started.";
+
+    const failed =
+      await markExecutionJobFailed(
+        jobId,
+        message,
+      );
+
+    return {
+      success: false,
+      job: failed,
+      error: message,
+      code:
+        "EXECUTION_SESSION_START_FAILED",
+      session:
+        runningBridge.session ??
+        sessionResult.session,
+    };
+  }
 
   try {
     const result =
@@ -167,11 +282,21 @@ async function executeJob(
       });
 
     if (!result.success) {
+      const error =
+        result.error ??
+        "Runtime execution failed.";
+
       const failed =
         await markExecutionJobFailed(
           jobId,
-          result.error ??
-            "Runtime execution failed.",
+          error,
+        );
+
+      const failedBridge =
+        await markExecutionJobSessionFailed(
+          jobId,
+          runningBridge.session,
+          error,
         );
 
       return {
@@ -197,12 +322,22 @@ async function executeJob(
           latencyMs:
             result.latencyMs,
         },
+        session:
+          failedBridge.session ??
+          runningBridge.session,
       };
     }
 
     const completed =
       await markExecutionJobCompleted(
         jobId,
+        result.content,
+      );
+
+    const completedBridge =
+      await markExecutionJobSessionCompleted(
+        jobId,
+        runningBridge.session,
         result.content,
       );
 
@@ -227,6 +362,9 @@ async function executeJob(
         latencyMs:
           result.latencyMs,
       },
+      session:
+        completedBridge.session ??
+        runningBridge.session,
     };
   } catch (error) {
     const message =
@@ -240,12 +378,22 @@ async function executeJob(
         message,
       );
 
+    const failedBridge =
+      await markExecutionJobSessionFailed(
+        jobId,
+        runningBridge.session,
+        message,
+      );
+
     return {
       success: false,
       job: failed,
       error: message,
       code:
         "EXECUTION_FAILED",
+      session:
+        failedBridge.session ??
+        runningBridge.session,
     };
   }
 }
@@ -264,6 +412,11 @@ export async function GET(
   const workspaceId =
     request.nextUrl.searchParams.get(
       "workspaceId",
+    );
+
+  const sessionId =
+    request.nextUrl.searchParams.get(
+      "sessionId",
     );
 
   const planId =
@@ -295,6 +448,16 @@ export async function GET(
       );
     }
 
+    let session =
+      null;
+
+    if (sessionId) {
+      session =
+        await getExecutionSession(
+          sessionId,
+        );
+    }
+
     return NextResponse.json({
       success: true,
       apiVersion:
@@ -306,6 +469,7 @@ export async function GET(
           "default",
       },
       job,
+      session,
       timestamp:
         Date.now(),
     });
@@ -466,6 +630,8 @@ export async function POST(
           job,
           execution:
             null,
+          session:
+            null,
           entitlement: {
             planId,
             capability:
@@ -514,6 +680,8 @@ export async function POST(
             API_VERSION,
           requestId,
           job: failed,
+          session:
+            null,
           error:
             "Daily execution limit reached.",
           code:
