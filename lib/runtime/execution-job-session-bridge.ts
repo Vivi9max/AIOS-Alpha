@@ -10,12 +10,29 @@ import {
 
 import {
   createPersistentExecutionSession,
+  listExecutionSessions,
   saveExecutionSession,
 } from "@/lib/runtime/session";
 
 import {
   getExecutionJob,
 } from "@/lib/execution/job-store";
+
+import {
+  createOutcome,
+  getOutcome,
+  listOutcomes,
+  updateOutcome,
+  updateOutcomeMilestone,
+} from "@/lib/outcome/store";
+
+import {
+  addAndSaveExecutionMemory,
+} from "@/lib/memory/execution-memory";
+
+import {
+  appendExecutionLedger,
+} from "@/lib/planner/execution-ledger";
 
 import {
   updatePersistentTask,
@@ -32,6 +49,10 @@ export interface ExecutionJobSessionBridgeResult {
 
   taskId: string | null;
 
+  outcomeId: string | null;
+
+  milestoneId: string | null;
+
   session:
     | ExecutionSession
     | null;
@@ -40,7 +61,10 @@ export interface ExecutionJobSessionBridgeResult {
     | {
         id: string;
         title: string;
-        status: "todo" | "doing" | "done";
+        status:
+          | "todo"
+          | "doing"
+          | "done";
         createdAt: number;
         updatedAt: number;
       }
@@ -73,43 +97,78 @@ const RUNTIME_STEP = {
 };
 
 export async function createExecutionSessionForJob(
-  jobId: string
+  jobId: string,
 ): Promise<ExecutionJobSessionBridgeResult> {
   const job =
     await getExecutionJob(
-      jobId
+      jobId,
     );
 
   if (!job) {
-    return {
-      success:
-        false,
-
+    return failureResult(
       jobId,
-
-      taskId:
-        null,
-
-      session:
-        null,
-
-      task:
-        null,
-
-      action:
-        "not_found",
-
-      error:
-        "Execution job not found.",
-    };
+      "Execution job not found.",
+    );
   }
 
-  const existingSessionId =
-    getSessionIdFromJob(
-      job
-    );
+  /*
+   * A Job does not own a sessionId.
+   *
+   * Session lineage is persisted in Session.metadata.jobId.
+   * Only an active session is reused. A completed or failed
+   * session remains historical evidence and a retry receives
+   * a fresh Session.
+   */
+  const existingSessions =
+    await listExecutionSessions({
+      limit: 50,
+    });
 
-  if (existingSessionId) {
+  const existingActiveSession =
+    existingSessions.find(
+      (session) =>
+        session.metadata?.jobId ===
+          jobId &&
+        session.status !==
+          "completed" &&
+        session.status !==
+          "failed" &&
+        session.status !==
+          "cancelled",
+    ) ?? null;
+
+  if (
+    existingActiveSession
+  ) {
+    const outcomeId =
+      getStringMetadata(
+        existingActiveSession.metadata,
+        "outcomeId",
+      );
+
+    const milestoneId =
+      getStringMetadata(
+        existingActiveSession.metadata,
+        "milestoneId",
+      );
+
+    let task = null;
+
+    if (
+      job.taskId &&
+      existingActiveSession.status ===
+        "idle"
+    ) {
+      task =
+        await updatePersistentTask(
+          job.taskId,
+          {
+            status:
+              "doing",
+          },
+        );
+    }
+
     return {
       success:
         true,
@@ -120,11 +179,19 @@ export async function createExecutionSessionForJob(
         job.taskId ??
         null,
 
+      outcomeId,
+
+      milestoneId,
+
       session:
-        null,
+        existingActiveSession,
 
       task:
-        null,
+        task
+          ? normalizeTask(
+              task,
+            )
+          : null,
 
       action:
         "created",
@@ -134,11 +201,17 @@ export async function createExecutionSessionForJob(
     };
   }
 
+  const lineage =
+    await resolveOutcomeLineage(
+      job,
+    );
+
   const session =
     await createPersistentExecutionSession(
       createSessionInput(
-        job
-      )
+        job,
+        lineage,
+      ),
     );
 
   const task =
@@ -148,7 +221,7 @@ export async function createExecutionSessionForJob(
           {
             status:
               "doing",
-          }
+          },
         )
       : null;
 
@@ -160,6 +233,15 @@ export async function createExecutionSessionForJob(
     taskId:
       job.taskId ??
       null,
+
+    outcomeId:
+      lineage.outcomeId,
+
+    milestoneId:
+      lineage.milestoneId,
+
+    source:
+      "execution-job",
   };
 
   const saved =
@@ -179,13 +261,19 @@ export async function createExecutionSessionForJob(
       job.taskId ??
       null,
 
+    outcomeId:
+      lineage.outcomeId,
+
+    milestoneId:
+      lineage.milestoneId,
+
     session:
       saved,
 
     task:
       task
         ? normalizeTask(
-            task
+            task,
           )
         : null,
 
@@ -199,54 +287,87 @@ export async function createExecutionSessionForJob(
 
 export async function markExecutionJobSessionRunning(
   jobId: string,
-  session: ExecutionSession
-): Promise<
-  ExecutionJobSessionBridgeResult
-> {
+  session: ExecutionSession,
+): Promise<ExecutionJobSessionBridgeResult> {
   const job =
     await getExecutionJob(
-      jobId
+      jobId,
     );
 
   if (!job) {
-    return {
-      success:
-        false,
-
+    return failureResult(
       jobId,
-
-      taskId:
-        null,
-
-      session:
-        null,
-
-      task:
-        null,
-
-      action:
-        "not_found",
-
-      error:
-        "Execution job not found.",
-    };
+      "Execution job not found.",
+    );
   }
 
   const runtimeStep =
     getRuntimeStep(
-      session
+      session,
     );
 
   if (!runtimeStep) {
     return {
+      ...failureResult(
+        jobId,
+        "Runtime execution step not found.",
+      ),
+
+      taskId:
+        job.taskId ??
+        null,
+
+      outcomeId:
+        getStringMetadata(
+          session.metadata,
+          "outcomeId",
+        ),
+
+      milestoneId:
+        getStringMetadata(
+          session.metadata,
+          "milestoneId",
+        ),
+
+      session,
+
+      action:
+        "running",
+    };
+  }
+
+  /*
+   * Idempotency boundary.
+   *
+   * Do not restart a step that is already running.
+   */
+  if (
+    session.status ===
+      "running" &&
+    runtimeStep.status ===
+      "running"
+  ) {
+    return {
       success:
-        false,
+        true,
 
       jobId,
 
       taskId:
         job.taskId ??
         null,
+
+      outcomeId:
+        getStringMetadata(
+          session.metadata,
+          "outcomeId",
+        ),
+
+      milestoneId:
+        getStringMetadata(
+          session.metadata,
+          "milestoneId",
+        ),
 
       session,
 
@@ -257,14 +378,57 @@ export async function markExecutionJobSessionRunning(
         "running",
 
       error:
-        "Runtime execution step not found.",
+        null,
+    };
+  }
+
+  /*
+   * A completed session is historical state.
+   * It must never be restarted.
+   */
+  if (
+    session.status ===
+    "completed"
+  ) {
+    return {
+      success:
+        true,
+
+      jobId,
+
+      taskId:
+        job.taskId ??
+        null,
+
+      outcomeId:
+        getStringMetadata(
+          session.metadata,
+          "outcomeId",
+        ),
+
+      milestoneId:
+        getStringMetadata(
+          session.metadata,
+          "milestoneId",
+        ),
+
+      session,
+
+      task:
+        null,
+
+      action:
+        "running",
+
+      error:
+        null,
     };
   }
 
   let updated =
     startExecutionStep(
       session,
-      runtimeStep.id
+      runtimeStep.id,
     );
 
   updated = {
@@ -283,7 +447,7 @@ export async function markExecutionJobSessionRunning(
 
   const saved =
     await saveExecutionSession(
-      updated
+      updated,
     );
 
   const task =
@@ -293,9 +457,87 @@ export async function markExecutionJobSessionRunning(
           {
             status:
               "doing",
-          }
+          },
         )
       : null;
+
+  await appendExecutionLedger({
+    action:
+      "task-start",
+
+    decision:
+      "allowed",
+
+    mode:
+      "baseline",
+
+    message:
+      "Execution Job entered Runtime execution.",
+
+    taskId:
+      job.taskId ??
+      null,
+
+    taskTitle:
+      task?.title ??
+      null,
+
+    outcomeId:
+      getStringMetadata(
+        saved.metadata,
+        "outcomeId",
+      ),
+
+    maxConcurrentTasks:
+      1,
+
+    doingCount:
+      1,
+  });
+
+  await addAndSaveExecutionMemory({
+    eventType:
+      "task-started",
+
+    source:
+      "runtime",
+
+    title:
+      "Execution Job started",
+
+    summary:
+      "Execution Job entered Runtime execution through a persistent Execution Session.",
+
+    outcomeId:
+      getStringMetadata(
+        saved.metadata,
+        "outcomeId",
+      ),
+
+    milestoneId:
+      getStringMetadata(
+        saved.metadata,
+        "milestoneId",
+      ),
+
+    task:
+      task ??
+      undefined,
+
+    taskId:
+      job.taskId ??
+      null,
+
+    metadata: {
+      jobId,
+
+      sessionId:
+        saved.id,
+    },
+
+    success:
+      true,
+  });
 
   return {
     success:
@@ -307,13 +549,25 @@ export async function markExecutionJobSessionRunning(
       job.taskId ??
       null,
 
+    outcomeId:
+      getStringMetadata(
+        saved.metadata,
+        "outcomeId",
+      ),
+
+    milestoneId:
+      getStringMetadata(
+        saved.metadata,
+        "milestoneId",
+      ),
+
     session:
       saved,
 
     task:
       task
         ? normalizeTask(
-            task
+            task,
           )
         : null,
 
@@ -328,48 +582,33 @@ export async function markExecutionJobSessionRunning(
 export async function markExecutionJobSessionCompleted(
   jobId: string,
   session: ExecutionSession,
-  result: string
-): Promise<
-  ExecutionJobSessionBridgeResult
-> {
+  result: string,
+): Promise<ExecutionJobSessionBridgeResult> {
   const job =
     await getExecutionJob(
-      jobId
+      jobId,
     );
 
   if (!job) {
-    return {
-      success:
-        false,
-
+    return failureResult(
       jobId,
-
-      taskId:
-        null,
-
-      session:
-        null,
-
-      task:
-        null,
-
-      action:
-        "not_found",
-
-      error:
-        "Execution job not found.",
-    };
+      "Execution job not found.",
+    );
   }
 
   const runtimeStep =
     getRuntimeStep(
-      session
+      session,
     );
 
   let updated =
     session;
 
-  if (runtimeStep) {
+  if (
+    runtimeStep &&
+    runtimeStep.status !==
+      "completed"
+  ) {
     updated =
       completeExecutionStep(
         updated,
@@ -381,38 +620,130 @@ export async function markExecutionJobSessionCompleted(
 
           completed:
             true,
-        }
+        },
       );
   }
 
-  const outcome:
+  const outcomeId =
+    getStringMetadata(
+      updated.metadata,
+      "outcomeId",
+    );
+
+  const milestoneId =
+    getStringMetadata(
+      updated.metadata,
+      "milestoneId",
+    );
+
+  const outcome =
+    outcomeId
+      ? await getOutcome(
+          outcomeId,
+        )
+      : null;
+
+  const previousProgress =
+    outcome?.progress ??
+    null;
+
+  let finalOutcome =
+    outcome;
+
+  /*
+   * Complete the linked milestone first.
+   * Outcome store automatically advances progress/status
+   * when all milestones are completed.
+   */
+  if (
+    outcome &&
+    milestoneId
+  ) {
+    finalOutcome =
+      (await updateOutcomeMilestone(
+        outcome.id,
+        milestoneId,
+        {
+          status:
+            "completed",
+
+          taskIds:
+            job.taskId
+              ? [
+                  job.taskId,
+                ]
+              : undefined,
+        },
+      )) ??
+      outcome;
+  } else if (
+    outcome
+  ) {
+    finalOutcome =
+      (await updateOutcome(
+        outcome.id,
+        {
+          status:
+            "completed",
+
+          progress:
+            100,
+
+          taskIds:
+            job.taskId
+              ? Array.from(
+                  new Set([
+                    ...outcome.taskIds,
+                    job.taskId,
+                  ]),
+                )
+              : outcome.taskIds,
+        },
+      )) ??
+      outcome;
+  }
+
+  const executionOutcome:
     ExecutionOutcome = {
     success:
       true,
 
     summary:
-      "Runtime execution completed successfully.",
+      "Runtime execution completed successfully and the linked Outcome lineage was synchronized.",
 
     generatedTaskCount:
       0,
 
     reusedTaskCount:
-      0,
+      job.taskId
+        ? 1
+        : 0,
 
     memoryUpdated:
-      false,
+      true,
 
     storageSaved:
       true,
 
     nextRecommendedAction:
-      null,
+      finalOutcome?.status ===
+        "completed"
+        ? "Review the completed Outcome and create the next Planner cycle."
+        : null,
 
     metadata: {
       jobId,
 
       taskId:
         job.taskId ??
+        null,
+
+      outcomeId:
+        outcomeId ??
+        null,
+
+      milestoneId:
+        milestoneId ??
         null,
 
       resultLength:
@@ -423,7 +754,7 @@ export async function markExecutionJobSessionCompleted(
   updated =
     completeExecutionSession(
       updated,
-      outcome
+      executionOutcome,
     );
 
   updated = {
@@ -438,6 +769,14 @@ export async function markExecutionJobSessionCompleted(
         job.taskId ??
         null,
 
+      outcomeId:
+        outcomeId ??
+        null,
+
+      milestoneId:
+        milestoneId ??
+        null,
+
       runtimeResult:
         result,
     },
@@ -445,7 +784,7 @@ export async function markExecutionJobSessionCompleted(
 
   const saved =
     await saveExecutionSession(
-      updated
+      updated,
     );
 
   const task =
@@ -455,9 +794,125 @@ export async function markExecutionJobSessionCompleted(
           {
             status:
               "done",
-          }
+          },
         )
       : null;
+
+  await appendExecutionLedger({
+    action:
+      "task-complete",
+
+    decision:
+      "allowed",
+
+    mode:
+      "baseline",
+
+    message:
+      "Execution Job completed after Runtime verification and Outcome synchronization.",
+
+    taskId:
+      job.taskId ??
+      null,
+
+    taskTitle:
+      task?.title ??
+      null,
+
+    outcomeId:
+      outcomeId ??
+      null,
+
+    maxConcurrentTasks:
+      1,
+
+    doingCount:
+      0,
+  });
+
+  await addAndSaveExecutionMemory({
+    eventType:
+      finalOutcome?.status ===
+        "completed"
+        ? "outcome-completed"
+        : "execution-synced",
+
+    source:
+      "runtime",
+
+    title:
+      finalOutcome?.status ===
+        "completed"
+        ? "Execution Outcome completed"
+        : "Execution state synchronized",
+
+    summary:
+      finalOutcome?.status ===
+        "completed"
+        ? "Execution Job, Session, Task, Milestone, Outcome and Execution Memory are now synchronized."
+        : "Execution Job and Session completed and the linked Outcome was updated.",
+
+    outcome:
+      finalOutcome ??
+      undefined,
+
+    outcomeId:
+      outcomeId ??
+      null,
+
+    milestone:
+      finalOutcome?.milestones.find(
+        (item) =>
+          item.id ===
+          milestoneId,
+      ),
+
+    milestoneId:
+      milestoneId ??
+      null,
+
+    task:
+      task ??
+      undefined,
+
+    taskId:
+      job.taskId ??
+      null,
+
+    previousProgress,
+
+    currentProgress:
+      finalOutcome?.progress ??
+      null,
+
+    completedTaskCount:
+      task
+        ? 1
+        : 0,
+
+    remainingTaskCount:
+      0,
+
+    queueSize:
+      0,
+
+    latencyMs:
+      saved.durationMs ??
+      null,
+
+    metadata: {
+      jobId,
+
+      sessionId:
+        saved.id,
+
+      resultLength:
+        result.length,
+    },
+
+    success:
+      true,
+  });
 
   return {
     success:
@@ -469,13 +924,21 @@ export async function markExecutionJobSessionCompleted(
       job.taskId ??
       null,
 
+    outcomeId:
+      outcomeId ??
+      null,
+
+    milestoneId:
+      milestoneId ??
+      null,
+
     session:
       saved,
 
     task:
       task
         ? normalizeTask(
-            task
+            task,
           )
         : null,
 
@@ -490,53 +953,38 @@ export async function markExecutionJobSessionCompleted(
 export async function markExecutionJobSessionFailed(
   jobId: string,
   session: ExecutionSession,
-  error: string
-): Promise<
-  ExecutionJobSessionBridgeResult
-> {
+  error: string,
+): Promise<ExecutionJobSessionBridgeResult> {
   const job =
     await getExecutionJob(
-      jobId
+      jobId,
     );
 
   if (!job) {
-    return {
-      success:
-        false,
-
+    return failureResult(
       jobId,
-
-      taskId:
-        null,
-
-      session:
-        null,
-
-      task:
-        null,
-
-      action:
-        "not_found",
-
-      error:
-        "Execution job not found.",
-    };
+      "Execution job not found.",
+    );
   }
 
   const runtimeStep =
     getRuntimeStep(
-      session
+      session,
     );
 
   let updated =
     session;
 
-  if (runtimeStep) {
+  if (
+    runtimeStep &&
+    runtimeStep.status !==
+      "failed"
+  ) {
     updated =
       failExecutionStep(
         updated,
         runtimeStep.id,
-        error
+        error,
       );
   } else {
     updated = {
@@ -554,29 +1002,57 @@ export async function markExecutionJobSessionFailed(
         Math.max(
           0,
           Date.now() -
-            updated.startedAt
+            updated.startedAt,
         ),
     };
   }
 
-  updated = {
-    ...updated,
-
-    metadata: {
-      ...updated.metadata,
-
-      jobId,
-
-      taskId:
-        job.taskId ??
-        null,
-    },
-  };
-
   const saved =
-    await saveExecutionSession(
-      updated
+    await saveExecutionSession({
+      ...updated,
+
+      metadata: {
+        ...updated.metadata,
+
+        jobId,
+
+        taskId:
+          job.taskId ??
+          null,
+
+        runtimeError:
+          error,
+      },
+    });
+
+  const outcomeId =
+    getStringMetadata(
+      saved.metadata,
+      "outcomeId",
     );
+
+  const milestoneId =
+    getStringMetadata(
+      saved.metadata,
+      "milestoneId",
+    );
+
+  const outcome =
+    outcomeId
+      ? await getOutcome(
+          outcomeId,
+        )
+      : null;
+
+  if (outcome) {
+    await updateOutcome(
+      outcome.id,
+      {
+        status:
+          "blocked",
+      },
+    );
+  }
 
   const task =
     job.taskId
@@ -584,10 +1060,102 @@ export async function markExecutionJobSessionFailed(
           job.taskId,
           {
             status:
-              "doing",
-          }
+              "todo",
+          },
         )
       : null;
+
+  await appendExecutionLedger({
+    action:
+      "task-update",
+
+    decision:
+      "allowed",
+
+    mode:
+      "baseline",
+
+    code:
+      "EXECUTION_RUNTIME_FAILED",
+
+    message:
+      "Execution Job failed during Runtime execution. Task remains available for retry.",
+
+    taskId:
+      job.taskId ??
+      null,
+
+    taskTitle:
+      task?.title ??
+      null,
+
+    outcomeId:
+      outcomeId ??
+      null,
+
+    maxConcurrentTasks:
+      1,
+
+    doingCount:
+      0,
+  });
+
+  await addAndSaveExecutionMemory({
+    eventType:
+      "execution-failed",
+
+    source:
+      "runtime",
+
+    title:
+      "Execution Runtime failed",
+
+    summary:
+      "Execution Job failed during Runtime execution. The linked Task remains available for retry.",
+
+    outcome:
+      outcome ??
+      undefined,
+
+    outcomeId:
+      outcomeId ??
+      null,
+
+    milestone:
+      outcome?.milestones.find(
+        (item) =>
+          item.id ===
+          milestoneId,
+      ),
+
+    milestoneId:
+      milestoneId ??
+      null,
+
+    task:
+      task ??
+      undefined,
+
+    taskId:
+      job.taskId ??
+      null,
+
+    latencyMs:
+      saved.durationMs ??
+      null,
+
+    metadata: {
+      jobId,
+
+      sessionId:
+        saved.id,
+
+      error,
+    },
+
+    success:
+      false,
+  });
 
   return {
     success:
@@ -599,13 +1167,21 @@ export async function markExecutionJobSessionFailed(
       job.taskId ??
       null,
 
+    outcomeId:
+      outcomeId ??
+      null,
+
+    milestoneId:
+      milestoneId ??
+      null,
+
     session:
       saved,
 
     task:
       task
         ? normalizeTask(
-            task
+            task,
           )
         : null,
 
@@ -618,37 +1194,18 @@ export async function markExecutionJobSessionFailed(
 
 export async function syncExecutionJobSession(
   jobId: string,
-  session: ExecutionSession
-): Promise<
-  ExecutionJobSessionBridgeResult
-> {
+  session: ExecutionSession,
+): Promise<ExecutionJobSessionBridgeResult> {
   const job =
     await getExecutionJob(
-      jobId
+      jobId,
     );
 
   if (!job) {
-    return {
-      success:
-        false,
-
+    return failureResult(
       jobId,
-
-      taskId:
-        null,
-
-      session:
-        null,
-
-      task:
-        null,
-
-      action:
-        "not_found",
-
-      error:
-        "Execution job not found.",
-    };
+      "Execution job not found.",
+    );
   }
 
   if (
@@ -657,7 +1214,7 @@ export async function syncExecutionJobSession(
   ) {
     return markExecutionJobSessionRunning(
       jobId,
-      session
+      session,
     );
   }
 
@@ -669,7 +1226,7 @@ export async function syncExecutionJobSession(
       jobId,
       session,
       job.result ??
-        ""
+        "",
     );
   }
 
@@ -681,7 +1238,7 @@ export async function syncExecutionJobSession(
       jobId,
       session,
       job.error ??
-        "Execution job failed."
+        "Execution job failed.",
     );
   }
 
@@ -694,6 +1251,18 @@ export async function syncExecutionJobSession(
     taskId:
       job.taskId ??
       null,
+
+    outcomeId:
+      getStringMetadata(
+        session.metadata,
+        "outcomeId",
+      ),
+
+    milestoneId:
+      getStringMetadata(
+        session.metadata,
+        "milestoneId",
+      ),
 
     session,
 
@@ -708,8 +1277,278 @@ export async function syncExecutionJobSession(
   };
 }
 
+async function resolveOutcomeLineage(
+  job: ExecutionJob,
+): Promise<{
+  outcomeId: string;
+  milestoneId:
+    | string
+    | null;
+}> {
+  const outcomes =
+    await listOutcomes();
+
+  /*
+   * First preference:
+   * an Outcome already linked to the real Task.
+   */
+  const taskLinkedOutcome =
+    job.taskId
+      ? outcomes.find(
+          (outcome) =>
+            outcome.taskIds.includes(
+              job.taskId as string,
+            ) &&
+            outcome.status !==
+              "archived",
+        ) ??
+        null
+      : null;
+
+  if (
+    taskLinkedOutcome
+  ) {
+    const activeMilestone =
+      job.taskId
+        ? taskLinkedOutcome.milestones.find(
+            (milestone) =>
+              milestone.taskIds.includes(
+                job.taskId as string,
+              ) &&
+              milestone.status !==
+                "completed",
+          ) ??
+          null
+        : null;
+
+    const fallbackMilestone =
+      taskLinkedOutcome.milestones.find(
+        (milestone) =>
+          milestone.status ===
+          "active",
+      ) ??
+      null;
+
+    const milestone =
+      activeMilestone ??
+      fallbackMilestone;
+
+    await updateOutcome(
+      taskLinkedOutcome.id,
+      {
+        status:
+          "active",
+
+        taskIds:
+          job.taskId
+            ? Array.from(
+                new Set([
+                  ...taskLinkedOutcome.taskIds,
+                  job.taskId,
+                ]),
+              )
+            : taskLinkedOutcome.taskIds,
+      },
+    );
+
+    if (
+      milestone &&
+      job.taskId
+    ) {
+      await updateOutcomeMilestone(
+        taskLinkedOutcome.id,
+        milestone.id,
+        {
+          status:
+            "active",
+
+          taskIds:
+            Array.from(
+              new Set([
+                ...milestone.taskIds,
+                job.taskId,
+              ]),
+            ),
+        },
+      );
+    }
+
+    return {
+      outcomeId:
+        taskLinkedOutcome.id,
+
+      milestoneId:
+        milestone?.id ??
+        null,
+    };
+  }
+
+  /*
+   * Second preference:
+   * reuse an existing active/planned Outcome with the same
+   * execution goal instead of creating duplicates.
+   */
+  const matchingOutcome =
+    outcomes.find(
+      (outcome) =>
+        outcome.title
+          .trim()
+          .toLowerCase() ===
+          job.goal
+            .trim()
+            .toLowerCase() &&
+        outcome.status !==
+          "archived",
+    ) ??
+    null;
+
+  if (
+    matchingOutcome
+  ) {
+    const milestone =
+      matchingOutcome.milestones.find(
+        (item) =>
+          item.status ===
+          "active",
+      ) ??
+      matchingOutcome.milestones[0] ??
+      null;
+
+    await updateOutcome(
+      matchingOutcome.id,
+      {
+        status:
+          "active",
+
+        taskIds:
+          job.taskId
+            ? Array.from(
+                new Set([
+                  ...matchingOutcome.taskIds,
+                  job.taskId,
+                ]),
+              )
+            : matchingOutcome.taskIds,
+      },
+    );
+
+    if (
+      milestone &&
+      job.taskId
+    ) {
+      await updateOutcomeMilestone(
+        matchingOutcome.id,
+        milestone.id,
+        {
+          status:
+            "active",
+
+          taskIds:
+            Array.from(
+              new Set([
+                ...milestone.taskIds,
+                job.taskId,
+              ]),
+            ),
+        },
+      );
+    }
+
+    return {
+      outcomeId:
+        matchingOutcome.id,
+
+      milestoneId:
+        milestone?.id ??
+        null,
+    };
+  }
+
+  /*
+   * Final fallback:
+   * create one persisted Outcome so every Execution Job has
+   * a durable Outcome lineage.
+   */
+  const outcome =
+    await createOutcome({
+      title:
+        job.goal,
+
+      description:
+        "Execution outcome created from the persisted Execution Job lineage.",
+
+      successCriteria:
+        "Runtime execution completes successfully, verification passes, and the linked Task and execution state are synchronized.",
+
+      priority:
+        "normal",
+
+      milestones: [
+        {
+          title:
+            "Execute and verify",
+
+          description:
+            "Execute the Runtime job and synchronize the resulting Task, Session and Outcome state.",
+        },
+      ],
+    });
+
+  await updateOutcome(
+    outcome.id,
+    {
+      status:
+        "active",
+
+      taskIds:
+        job.taskId
+          ? [
+              job.taskId,
+            ]
+          : [],
+    },
+  );
+
+  const milestone =
+    outcome.milestones[0] ??
+    null;
+
+  if (
+    milestone &&
+    job.taskId
+  ) {
+    await updateOutcomeMilestone(
+      outcome.id,
+      milestone.id,
+      {
+        status:
+          "active",
+
+        taskIds: [
+          job.taskId,
+        ],
+      },
+    );
+  }
+
+  return {
+    outcomeId:
+      outcome.id,
+
+    milestoneId:
+      milestone?.id ??
+      null,
+  };
+}
+
 function createSessionInput(
-  job: ExecutionJob
+  job: ExecutionJob,
+  lineage: {
+    outcomeId: string;
+    milestoneId:
+      | string
+      | null;
+  },
 ) {
   return {
     goal:
@@ -752,6 +1591,12 @@ function createSessionInput(
         job.taskId ??
         null,
 
+      outcomeId:
+        lineage.outcomeId,
+
+      milestoneId:
+        lineage.milestoneId,
+
       source:
         "execution-job",
     },
@@ -759,51 +1604,88 @@ function createSessionInput(
 }
 
 function getRuntimeStep(
-  session: ExecutionSession
+  session: ExecutionSession,
 ) {
   return (
     session.steps.find(
       (step) =>
         step.key ===
-        RUNTIME_STEP.key
+        RUNTIME_STEP.key,
     ) ??
     session.steps.find(
       (step) =>
         step.capability ===
-        RUNTIME_STEP.capability
+        RUNTIME_STEP.capability,
     ) ??
     null
   );
 }
 
-function getSessionIdFromJob(
-  job: ExecutionJob
+function getStringMetadata(
+  metadata:
+    Record<string, unknown>,
+  key:
+    string,
 ): string | null {
-  const candidate =
-    (
-      job as ExecutionJob & {
-        sessionId?: unknown;
-      }
-    ).sessionId;
+  const value =
+    metadata[key];
 
-  return typeof candidate ===
+  return typeof value ===
     "string" &&
-    candidate.trim()
-    ? candidate.trim()
+    value.trim()
+    ? value.trim()
     : null;
+}
+
+function failureResult(
+  jobId: string,
+  error: string,
+): ExecutionJobSessionBridgeResult {
+  return {
+    success:
+      false,
+
+    jobId,
+
+    taskId:
+      null,
+
+    outcomeId:
+      null,
+
+    milestoneId:
+      null,
+
+    session:
+      null,
+
+    task:
+      null,
+
+    action:
+      "not_found",
+
+    error,
+  };
 }
 
 function normalizeTask(
   task: {
     id: string;
+
     title: string;
+
     status:
       | "todo"
       | "doing"
       | "done";
-    createdAt: number;
-    updatedAt: number;
-  }
+
+    createdAt:
+      number;
+
+    updatedAt:
+      number;
+  },
 ) {
   return {
     id:
