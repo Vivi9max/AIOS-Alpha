@@ -26,6 +26,7 @@ import ChatInput from "./ChatInput";
 import MessageList, {
   type ChatMessage,
 } from "./MessageList";
+import RealtimeEvidenceDisclosure from "./RealtimeEvidenceDisclosure";
 
 interface MemoryRecord {
   id: number;
@@ -648,163 +649,6 @@ function buildUnderstandingFailureMessage(
   ].join("\n");
 }
 
-function getRealtimeCapabilityLabel(
-  capability:
-    | RealtimeCapabilityType
-    | undefined,
-  locale: string,
-): string {
-  if (
-    locale === "zh-CN"
-  ) {
-    switch (capability) {
-      case "time":
-        return "时间";
-      case "weather":
-        return "天气";
-      case "news":
-        return "新闻";
-      case "exchange-rate":
-        return "汇率";
-      case "market":
-        return "市场";
-      default:
-        return "实时信息";
-    }
-  }
-
-  if (
-    locale === "ja"
-  ) {
-    switch (capability) {
-      case "time":
-        return "時刻";
-      case "weather":
-        return "天気";
-      case "news":
-        return "ニュース";
-      case "exchange-rate":
-        return "為替";
-      case "market":
-        return "市場";
-      default:
-        return "リアルタイム情報";
-    }
-  }
-
-  switch (capability) {
-    case "time":
-      return "Time";
-    case "weather":
-      return "Weather";
-    case "news":
-      return "News";
-    case "exchange-rate":
-      return "Exchange rate";
-    case "market":
-      return "Market";
-    default:
-      return "Realtime information";
-  }
-}
-
-function getRealtimeStatusLabel(
-  status: RealtimeResponseStatus,
-  locale: string,
-): string {
-  if (
-    locale === "zh-CN"
-  ) {
-    switch (status) {
-      case "completed":
-        return "实时完成";
-      case "evidence-verified":
-        return "实时证据已验证";
-      case "evidence-unverified":
-        return "实时证据未验证";
-      case "failed":
-        return "实时信息不可用";
-      default:
-        return "";
-    }
-  }
-
-  if (
-    locale === "ja"
-  ) {
-    switch (status) {
-      case "completed":
-        return "リアルタイム完了";
-      case "evidence-verified":
-        return "リアルタイム証拠を確認済み";
-      case "evidence-unverified":
-        return "リアルタイム証拠を未確認";
-      case "failed":
-        return "リアルタイム情報を利用できません";
-      default:
-        return "";
-    }
-  }
-
-  switch (status) {
-    case "completed":
-      return "Realtime completed";
-    case "evidence-verified":
-      return "Realtime evidence verified";
-    case "evidence-unverified":
-      return "Realtime evidence unverified";
-    case "failed":
-      return "Realtime information unavailable";
-    default:
-      return "";
-  }
-}
-
-function getRealtimeStatusDisclosure(
-  state: RealtimeViewState,
-  locale: string,
-): string {
-  if (
-    !state.active
-  ) {
-    return "";
-  }
-
-  const capability =
-    getRealtimeCapabilityLabel(
-      state.capability,
-      locale,
-    );
-
-  const status =
-    getRealtimeStatusLabel(
-      state.status,
-      locale,
-    );
-
-  if (
-    state.status ===
-      "evidence-verified" &&
-    state.sourceCount > 0
-  ) {
-    if (
-      locale === "zh-CN"
-    ) {
-      return `${capability} · ${status} · ${state.sourceCount} 个来源`;
-    }
-
-    if (
-      locale === "ja"
-    ) {
-      return `${capability} · ${status} · ${state.sourceCount} 件の情報源`;
-    }
-
-    return `${capability} · ${status} · ${state.sourceCount} sources`;
-  }
-
-  return `${capability} · ${status}`;
-}
-
 export default function ChatPanel() {
   const {
     locale,
@@ -1106,8 +950,14 @@ export default function ChatPanel() {
 
     const userContent =
       cleanPrompt ||
-      buildInputSummary(
-        normalizedInputs,
+      (
+        normalizedInputs.length > 0
+          ? locale === "zh-CN"
+            ? `已上传 ${normalizedInputs.length} 个输入`
+            : locale === "ja"
+              ? `${normalizedInputs.length} 件の入力をアップロードしました`
+              : `${normalizedInputs.length} input${normalizedInputs.length === 1 ? "" : "s"} uploaded`
+          : ""
       );
 
     setMessages(
@@ -1143,18 +993,6 @@ export default function ChatPanel() {
           >
         > | null = null;
 
-      /*
-       * C164.8.2:
-       *
-       * File inputs now require a
-       * successful understanding stage
-       * before Chat Runtime execution.
-       *
-       * This prevents silent degradation
-       * where the user uploads a file but
-       * Runtime answers without actually
-       * using the file evidence.
-       */
       if (files.length > 0) {
         understanding =
           await executeAIOSInputUnderstandingBridge(
@@ -1178,11 +1016,6 @@ export default function ChatPanel() {
                 .length > 0,
           );
 
-        /*
-         * A failed understanding request
-         * must never silently fall through
-         * to ordinary Runtime execution.
-         */
         if (
           !understanding.success ||
           !hasUsableEvidence
@@ -1348,11 +1181,6 @@ export default function ChatPanel() {
           ? data.content.trim()
           : "";
 
-      /*
-       * Only append a compact processing
-       * status. The actual evidence has
-       * already been supplied to Runtime.
-       */
       if (
         understanding &&
         files.length > 0
@@ -1504,12 +1332,6 @@ export default function ChatPanel() {
       ? `${actualProviderLabel} <- ${requestedProviderLabel}`
       : actualProviderLabel;
 
-  const realtimeDisclosure =
-    getRealtimeStatusDisclosure(
-      realtimeState,
-      locale,
-    );
-
   return (
     <section
       style={{
@@ -1602,62 +1424,32 @@ export default function ChatPanel() {
               "flex",
             alignItems:
               "center",
+            justifyContent:
+              "flex-end",
             gap: 8,
             flexShrink: 0,
+            maxWidth:
+              "min(52vw, 420px)",
           }}
         >
-          {realtimeState.active &&
-            realtimeDisclosure && (
-              <span
-                title={
-                  realtimeState.sourceHosts.length >
-                  0
-                    ? realtimeState.sourceHosts.join(
-                        ", ",
-                      )
-                    : undefined
-                }
-                style={{
-                  display:
-                    "inline-flex",
-                  alignItems:
-                    "center",
-                  minHeight: 26,
-                  padding:
-                    "4px 9px",
-                  borderRadius:
-                    999,
-                  background:
-                    realtimeState.status ===
-                    "evidence-verified"
-                      ? "#ecfdf5"
-                      : realtimeState.status ===
-                          "evidence-unverified"
-                        ? "#fffbeb"
-                        : realtimeState.status ===
-                            "failed"
-                          ? "#fef2f2"
-                          : "#eff6ff",
-                  color:
-                    realtimeState.status ===
-                    "evidence-verified"
-                      ? "#047857"
-                      : realtimeState.status ===
-                          "evidence-unverified"
-                        ? "#b45309"
-                        : realtimeState.status ===
-                            "failed"
-                          ? "#b91c1c"
-                          : "#1d4ed8",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  whiteSpace:
-                    "nowrap",
-                }}
-              >
-                {realtimeDisclosure}
-              </span>
-            )}
+          <RealtimeEvidenceDisclosure
+            active={
+              realtimeState.active
+            }
+            status={
+              realtimeState.status
+            }
+            capability={
+              realtimeState.capability
+            }
+            sourceCount={
+              realtimeState.sourceCount
+            }
+            sourceHosts={
+              realtimeState.sourceHosts
+            }
+            locale={locale}
+          />
 
           {providerState.fallbackUsed &&
             providerState.error && (
