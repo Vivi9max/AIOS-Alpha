@@ -1,7 +1,6 @@
 import {
   completeExecutionSession,
   completeExecutionStep,
-  createExecutionSession,
   failExecutionStep,
   startExecutionStep,
   type ExecutionOutcome,
@@ -111,14 +110,6 @@ export async function createExecutionSessionForJob(
     );
   }
 
-  /*
-   * A Job does not own a sessionId.
-   *
-   * Session lineage is persisted in Session.metadata.jobId.
-   * Only an active session is reused. A completed or failed
-   * session remains historical evidence and a retry receives
-   * a fresh Session.
-   */
   const existingSessions =
     await listExecutionSessions({
       limit: 50,
@@ -339,11 +330,12 @@ export async function markExecutionJobSessionRunning(
   /*
    * Idempotency boundary.
    *
-   * Do not restart a step that is already running.
+   * ExecutionSession uses "executing" for Runtime execution.
+   * ExecutionStep uses "running" for the currently running step.
    */
   if (
     session.status ===
-      "running" &&
+      "executing" &&
     runtimeStep.status ===
       "running"
   ) {
@@ -382,10 +374,6 @@ export async function markExecutionJobSessionRunning(
     };
   }
 
-  /*
-   * A completed session is historical state.
-   * It must never be restarted.
-   */
   if (
     session.status ===
     "completed"
@@ -650,11 +638,6 @@ export async function markExecutionJobSessionCompleted(
   let finalOutcome =
     outcome;
 
-  /*
-   * Complete the linked milestone first.
-   * Outcome store automatically advances progress/status
-   * when all milestones are completed.
-   */
   if (
     outcome &&
     milestoneId
@@ -1288,10 +1271,6 @@ async function resolveOutcomeLineage(
   const outcomes =
     await listOutcomes();
 
-  /*
-   * First preference:
-   * an Outcome already linked to the real Task.
-   */
   const taskLinkedOutcome =
     job.taskId
       ? outcomes.find(
@@ -1383,11 +1362,6 @@ async function resolveOutcomeLineage(
     };
   }
 
-  /*
-   * Second preference:
-   * reuse an existing active/planned Outcome with the same
-   * execution goal instead of creating duplicates.
-   */
   const matchingOutcome =
     outcomes.find(
       (outcome) =>
@@ -1464,11 +1438,6 @@ async function resolveOutcomeLineage(
     };
   }
 
-  /*
-   * Final fallback:
-   * create one persisted Outcome so every Execution Job has
-   * a durable Outcome lineage.
-   */
   const outcome =
     await createOutcome({
       title:
