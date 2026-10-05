@@ -19,11 +19,13 @@ import type {
 
 import {
   registerAIOSInputFile,
+  registerAIOSInputProcessingFile,
   removeAIOSInputFile,
 } from "@/lib/runtime/input/aios-input-browser-store";
 
 interface Props {
   disabled?: boolean;
+
   onInputsChange?: (
     inputs: AIOSInputItem[],
   ) => void;
@@ -34,7 +36,8 @@ interface AIOSNativeInputBridge {
   pickPhotos: () => Promise<File[]>;
 }
 
-interface NativeInputWindow extends Window {
+interface NativeInputWindow
+  extends Window {
   AIOSNativeInput?: {
     pickPhotos?: () => Promise<unknown>;
   };
@@ -45,6 +48,9 @@ const MAX_INPUTS = 8;
 const MAX_IMAGE_BYTES =
   20 * 1024 * 1024;
 
+const MAX_VIDEO_BYTES =
+  100 * 1024 * 1024;
+
 const MAX_FILE_BYTES =
   25 * 1024 * 1024;
 
@@ -54,6 +60,9 @@ const PHOTO_ACCEPT =
 const CAMERA_ACCEPT =
   "image/jpeg,image/png,image/webp,image/heic,image/heif";
 
+const VIDEO_ACCEPT =
+  "video/mp4,video/webm,video/quicktime,video/x-m4v";
+
 const SUPPORTED_IMAGE_TYPES =
   new Set([
     "image/jpeg",
@@ -61,6 +70,14 @@ const SUPPORTED_IMAGE_TYPES =
     "image/webp",
     "image/heic",
     "image/heif",
+  ]);
+
+const SUPPORTED_VIDEO_TYPES =
+  new Set([
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-m4v",
   ]);
 
 const SUPPORTED_FILE_TYPES =
@@ -86,6 +103,14 @@ const SUPPORTED_IMAGE_EXTENSIONS =
     ".heif",
   ]);
 
+const SUPPORTED_VIDEO_EXTENSIONS =
+  new Set([
+    ".mp4",
+    ".webm",
+    ".mov",
+    ".m4v",
+  ]);
+
 const SUPPORTED_FILE_EXTENSIONS =
   new Set([
     ".pdf",
@@ -104,11 +129,15 @@ function localized(
   en: string,
   ja: string,
 ): string {
-  if (locale === "ja") {
+  if (
+    locale === "ja"
+  ) {
     return ja;
   }
 
-  if (locale === "en") {
+  if (
+    locale === "en"
+  ) {
     return en;
   }
 
@@ -116,9 +145,13 @@ function localized(
 }
 
 function createInputId(): string {
-  return `aios-input-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 10)}`;
+  return [
+    "aios-input",
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2, 10),
+  ].join("-");
 }
 
 function getFileExtension(
@@ -132,11 +165,15 @@ function getFileExtension(
   const index =
     name.lastIndexOf(".");
 
-  if (index < 0) {
+  if (
+    index < 0
+  ) {
     return "";
   }
 
-  return name.slice(index);
+  return name.slice(
+    index,
+  );
 }
 
 function isImageFile(
@@ -160,6 +197,27 @@ function isImageFile(
   );
 }
 
+function isVideoFile(
+  file: File,
+): boolean {
+  const mime =
+    file.type
+      .trim()
+      .toLowerCase();
+
+  if (
+    SUPPORTED_VIDEO_TYPES.has(
+      mime,
+    )
+  ) {
+    return true;
+  }
+
+  return SUPPORTED_VIDEO_EXTENSIONS.has(
+    getFileExtension(file),
+  );
+}
+
 function isSupportedFile(
   file: File,
 ): boolean {
@@ -170,6 +228,9 @@ function isSupportedFile(
 
   if (
     SUPPORTED_IMAGE_TYPES.has(
+      mime,
+    ) ||
+    SUPPORTED_VIDEO_TYPES.has(
       mime,
     ) ||
     SUPPORTED_FILE_TYPES.has(
@@ -186,6 +247,9 @@ function isSupportedFile(
     SUPPORTED_IMAGE_EXTENSIONS.has(
       extension,
     ) ||
+    SUPPORTED_VIDEO_EXTENSIONS.has(
+      extension,
+    ) ||
     SUPPORTED_FILE_EXTENSIONS.has(
       extension,
     )
@@ -195,24 +259,39 @@ function isSupportedFile(
 function getInputKind(
   file: File,
 ): AIOSInputKind {
-  return isImageFile(file)
-    ? "image"
-    : "file";
+  if (
+    isImageFile(file)
+  ) {
+    return "image";
+  }
+
+  if (
+    isVideoFile(file)
+  ) {
+    return "video";
+  }
+
+  return "file";
 }
 
 function formatFileSize(
   bytes: number,
 ): string {
-  if (bytes < 1024) {
+  if (
+    bytes <
+    1024
+  ) {
     return `${bytes} B`;
   }
 
   if (
     bytes <
-    1024 * 1024
+    1024 *
+      1024
   ) {
     return `${(
-      bytes / 1024
+      bytes /
+      1024
     ).toFixed(1)} KB`;
   }
 
@@ -244,6 +323,13 @@ function getFileIcon(
     "image"
   ) {
     return "IMG";
+  }
+
+  if (
+    item.kind ===
+    "video"
+  ) {
+    return "VID";
   }
 
   if (
@@ -320,7 +406,9 @@ function getNativePhotoBridge(): AIOSNativeInputBridge {
         await picker();
 
       if (
-        !Array.isArray(result)
+        !Array.isArray(
+          result,
+        )
       ) {
         return [];
       }
@@ -335,6 +423,392 @@ function getNativePhotoBridge(): AIOSNativeInputBridge {
       );
     },
   };
+}
+
+function waitForVideoMetadata(
+  video: HTMLVideoElement,
+): Promise<void> {
+  if (
+    video.readyState >=
+    1
+  ) {
+    return Promise.resolve();
+  }
+
+  return new Promise(
+    (
+      resolve,
+      reject,
+    ) => {
+      const onLoaded =
+        () => {
+          cleanup();
+          resolve();
+        };
+
+      const onError =
+        () => {
+          cleanup();
+          reject(
+            new Error(
+              "Video metadata could not be loaded.",
+            ),
+          );
+        };
+
+      const cleanup =
+        () => {
+          video.removeEventListener(
+            "loadedmetadata",
+            onLoaded,
+          );
+
+          video.removeEventListener(
+            "error",
+            onError,
+          );
+        };
+
+      video.addEventListener(
+        "loadedmetadata",
+        onLoaded,
+      );
+
+      video.addEventListener(
+        "error",
+        onError,
+      );
+
+      video.load();
+    },
+  );
+}
+
+function seekVideo(
+  video: HTMLVideoElement,
+  time: number,
+): Promise<void> {
+  return new Promise(
+    (
+      resolve,
+      reject,
+    ) => {
+      const onSeeked =
+        () => {
+          cleanup();
+          resolve();
+        };
+
+      const onError =
+        () => {
+          cleanup();
+          reject(
+            new Error(
+              "Video frame could not be sampled.",
+            ),
+          );
+        };
+
+      const cleanup =
+        () => {
+          video.removeEventListener(
+            "seeked",
+            onSeeked,
+          );
+
+          video.removeEventListener(
+            "error",
+            onError,
+          );
+        };
+
+      video.addEventListener(
+        "seeked",
+        onSeeked,
+      );
+
+      video.addEventListener(
+        "error",
+        onError,
+      );
+
+      try {
+        video.currentTime =
+          time;
+      } catch {
+        cleanup();
+
+        reject(
+          new Error(
+            "Video seek is not supported.",
+          ),
+        );
+      }
+    },
+  );
+}
+
+async function buildVideoFrameSheet(
+  file: File,
+): Promise<File | null> {
+  if (
+    typeof document ===
+      "undefined" ||
+    typeof URL ===
+      "undefined"
+  ) {
+    return null;
+  }
+
+  const sourceUrl =
+    URL.createObjectURL(
+      file,
+    );
+
+  const video =
+    document.createElement(
+      "video",
+    );
+
+  video.preload =
+    "metadata";
+
+  video.muted =
+    true;
+
+  video.playsInline =
+    true;
+
+  video.src =
+    sourceUrl;
+
+  try {
+    await waitForVideoMetadata(
+      video,
+    );
+
+    const duration =
+      Number.isFinite(
+        video.duration,
+      )
+        ? video.duration
+        : 0;
+
+    if (
+      duration <= 0 ||
+      !Number.isFinite(
+        duration,
+      )
+    ) {
+      return null;
+    }
+
+    const ratios = [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95,
+    ];
+
+    const sourceWidth =
+      video.videoWidth ||
+      640;
+
+    const sourceHeight =
+      video.videoHeight ||
+      360;
+
+    const maxWidth =
+      640;
+
+    const scale =
+      Math.min(
+        1,
+        maxWidth /
+          sourceWidth,
+      );
+
+    const width =
+      Math.max(
+        320,
+        Math.round(
+          sourceWidth *
+            scale,
+        ),
+      );
+
+    const height =
+      Math.max(
+        180,
+        Math.round(
+          sourceHeight *
+            scale,
+        ),
+      );
+
+    const gap = 8;
+
+    const columns = 2;
+
+    const rows =
+      Math.ceil(
+        ratios.length /
+          columns,
+      );
+
+    const sheet =
+      document.createElement(
+        "canvas",
+      );
+
+    sheet.width =
+      columns *
+        width +
+      (columns + 1) *
+        gap;
+
+    sheet.height =
+      rows *
+        height +
+      (rows + 1) *
+        gap;
+
+    const context =
+      sheet.getContext(
+        "2d",
+      );
+
+    if (!context) {
+      return null;
+    }
+
+    context.fillStyle =
+      "#ffffff";
+
+    context.fillRect(
+      0,
+      0,
+      sheet.width,
+      sheet.height,
+    );
+
+    for (
+      let index = 0;
+      index <
+      ratios.length;
+      index += 1
+    ) {
+      const ratio =
+        ratios[index];
+
+      const time =
+        Math.min(
+          duration *
+            ratio,
+          Math.max(
+            0,
+            duration -
+              0.05,
+          ),
+        );
+
+      await seekVideo(
+        video,
+        time,
+      );
+
+      const column =
+        index %
+        columns;
+
+      const row =
+        Math.floor(
+          index /
+            columns,
+        );
+
+      const x =
+        gap +
+        column *
+          (width +
+            gap);
+
+      const y =
+        gap +
+        row *
+          (height +
+            gap);
+
+      context.drawImage(
+        video,
+        x,
+        y,
+        width,
+        height,
+      );
+
+      context.fillStyle =
+        "rgba(0,0,0,0.62)";
+
+      context.fillRect(
+        x,
+        y,
+        76,
+        24,
+      );
+
+      context.fillStyle =
+        "#ffffff";
+
+      context.font =
+        "12px sans-serif";
+
+      context.fillText(
+        `${Math.round(
+          time,
+        )}s`,
+        x + 8,
+        y + 16,
+      );
+    }
+
+    const blob =
+      await new Promise<Blob | null>(
+        (resolve) => {
+          sheet.toBlob(
+            resolve,
+            "image/jpeg",
+            0.82,
+          );
+        },
+      );
+
+    if (!blob) {
+      return null;
+    }
+
+    return new File(
+      [blob],
+      `${file.name}.frames.jpg`,
+      {
+        type:
+          "image/jpeg",
+        lastModified:
+          Date.now(),
+      },
+    );
+  } finally {
+    video.pause();
+    video.removeAttribute(
+      "src",
+    );
+    video.load();
+
+    URL.revokeObjectURL(
+      sourceUrl,
+    );
+  }
 }
 
 function getInputItem(
@@ -410,12 +884,22 @@ export default function AIOSInputPicker({
     setNativePhotoLoading,
   ] = useState(false);
 
+  const [
+    videoProcessing,
+    setVideoProcessing,
+  ] = useState(false);
+
   const cameraRef =
     useRef<HTMLInputElement | null>(
       null,
     );
 
   const photoRef =
+    useRef<HTMLInputElement | null>(
+      null,
+    );
+
+  const videoRef =
     useRef<HTMLInputElement | null>(
       null,
     );
@@ -483,7 +967,21 @@ export default function AIOSInputPicker({
     }
 
     if (
+      isVideoFile(file) &&
+      file.size >
+        MAX_VIDEO_BYTES
+    ) {
+      return localized(
+        locale,
+        "视频超过 100 MB 限制。",
+        "Video exceeds the 100 MB limit.",
+        "動画が 100 MB の上限を超えています。",
+      );
+    }
+
+    if (
       !isImageFile(file) &&
+      !isVideoFile(file) &&
       file.size >
         MAX_FILE_BYTES
     ) {
@@ -498,7 +996,7 @@ export default function AIOSInputPicker({
     return null;
   }
 
-  function addFiles(
+  async function addFiles(
     files: FileList | File[],
     source: AIOSInputSource,
   ) {
@@ -527,6 +1025,7 @@ export default function AIOSInputPicker({
           `同時に追加できる入力は最大 ${MAX_INPUTS} 件です。`,
         ),
       );
+
       return;
     }
 
@@ -552,6 +1051,7 @@ export default function AIOSInputPicker({
         setInputError(
           validationError,
         );
+
         continue;
       }
 
@@ -582,14 +1082,68 @@ export default function AIOSInputPicker({
             "このファイルはすでに追加されています。",
           ),
         );
+
         continue;
       }
 
-      acceptedItems.push(
+      const item =
         getInputItem(
           file,
           source,
-        ),
+        );
+
+      if (
+        isVideoFile(file)
+      ) {
+        setVideoProcessing(
+          true,
+        );
+
+        try {
+          const frameSheet =
+            await buildVideoFrameSheet(
+              file,
+            );
+
+          if (
+            frameSheet
+          ) {
+            registerAIOSInputProcessingFile(
+              item.id,
+              frameSheet,
+            );
+          } else {
+            setInputError(
+              localized(
+                locale,
+                "视频已添加，但关键帧提取未完成。",
+                "The video was attached, but frame extraction did not complete.",
+                "動画は追加されましたが、キーフレーム抽出を完了できませんでした。",
+              ),
+            );
+          }
+        } catch (
+          error
+        ) {
+          setInputError(
+            error instanceof Error
+              ? error.message
+              : localized(
+                  locale,
+                  "视频关键帧提取失败。",
+                  "Video frame extraction failed.",
+                  "動画のキーフレーム抽出に失敗しました。",
+                ),
+          );
+        } finally {
+          setVideoProcessing(
+            false,
+          );
+        }
+      }
+
+      acceptedItems.push(
+        item,
       );
     }
 
@@ -635,11 +1189,14 @@ export default function AIOSInputPicker({
       !bridge.isAvailable()
     ) {
       photoRef.current?.click();
+
       return;
     }
 
     setInputError("");
-    setNativePhotoLoading(true);
+    setNativePhotoLoading(
+      true,
+    );
 
     try {
       const files =
@@ -648,7 +1205,7 @@ export default function AIOSInputPicker({
       if (
         files.length > 0
       ) {
-        addFiles(
+        await addFiles(
           files,
           "photo-library",
         );
@@ -676,7 +1233,7 @@ export default function AIOSInputPicker({
   function handleCameraChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    addFiles(
+    void addFiles(
       event.target.files
         ? Array.from(
             event.target.files,
@@ -692,7 +1249,7 @@ export default function AIOSInputPicker({
   function handlePhotoChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    addFiles(
+    void addFiles(
       event.target.files
         ? Array.from(
             event.target.files,
@@ -705,10 +1262,26 @@ export default function AIOSInputPicker({
       "";
   }
 
+  function handleVideoChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    void addFiles(
+      event.target.files
+        ? Array.from(
+            event.target.files,
+          )
+        : [],
+      "file-picker",
+    );
+
+    event.target.value =
+      "";
+  }
+
   function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    addFiles(
+    void addFiles(
       event.target.files
         ? Array.from(
             event.target.files,
@@ -748,21 +1321,28 @@ export default function AIOSInputPicker({
       <input
         ref={cameraRef}
         type="file"
-        accept={CAMERA_ACCEPT}
+        accept={
+          CAMERA_ACCEPT
+        }
         capture="environment"
         onChange={
           handleCameraChange
         }
-        disabled={disabled}
+        disabled={
+          disabled
+        }
         style={{
-          display: "none",
+          display:
+            "none",
         }}
       />
 
       <input
         ref={photoRef}
         type="file"
-        accept={PHOTO_ACCEPT}
+        accept={
+          PHOTO_ACCEPT
+        }
         multiple
         onChange={
           handlePhotoChange
@@ -772,7 +1352,28 @@ export default function AIOSInputPicker({
           nativePhotoLoading
         }
         style={{
-          display: "none",
+          display:
+            "none",
+        }}
+      />
+
+      <input
+        ref={videoRef}
+        type="file"
+        accept={
+          VIDEO_ACCEPT
+        }
+        multiple
+        onChange={
+          handleVideoChange
+        }
+        disabled={
+          disabled ||
+          videoProcessing
+        }
+        style={{
+          display:
+            "none",
         }}
       />
 
@@ -802,18 +1403,24 @@ export default function AIOSInputPicker({
         onChange={
           handleFileChange
         }
-        disabled={disabled}
+        disabled={
+          disabled
+        }
         style={{
-          display: "none",
+          display:
+            "none",
         }}
       />
 
       <div
         className="aios-input-actions"
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
+          display:
+            "flex",
+          flexWrap:
+            "wrap",
+          alignItems:
+            "center",
           gap: 7,
         }}
       >
@@ -843,6 +1450,7 @@ export default function AIOSInputPicker({
           <span className="aios-input-action-icon">
             C
           </span>
+
           <span className="aios-input-action-label">
             {localized(
               locale,
@@ -879,6 +1487,7 @@ export default function AIOSInputPicker({
           <span className="aios-input-action-icon">
             P
           </span>
+
           <span className="aios-input-action-label">
             {nativePhotoLoading
               ? localized(
@@ -899,7 +1508,53 @@ export default function AIOSInputPicker({
         <button
           type="button"
           className="aios-input-action"
-          disabled={disabled}
+          disabled={
+            disabled ||
+            videoProcessing
+          }
+          onClick={() =>
+            videoRef.current?.click()
+          }
+          aria-label={localized(
+            locale,
+            "选择视频",
+            "Choose videos",
+            "動画を選択",
+          )}
+          title={localized(
+            locale,
+            "上传视频",
+            "Upload video",
+            "動画をアップロード",
+          )}
+        >
+          <span className="aios-input-action-icon">
+            V
+          </span>
+
+          <span className="aios-input-action-label">
+            {videoProcessing
+              ? localized(
+                  locale,
+                  "解析中",
+                  "Processing",
+                  "解析中",
+                )
+              : localized(
+                  locale,
+                  "视频",
+                  "Video",
+                  "動画",
+                )}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className="aios-input-action"
+          disabled={
+            disabled
+          }
           onClick={() =>
             fileRef.current?.click()
           }
@@ -919,6 +1574,7 @@ export default function AIOSInputPicker({
           <span className="aios-input-action-icon">
             F
           </span>
+
           <span className="aios-input-action-label">
             {localized(
               locale,
@@ -940,290 +1596,270 @@ export default function AIOSInputPicker({
       )}
 
       {inputs.length > 0 && (
-        <div className="aios-input-files">
+        <div
+          className="aios-input-files"
+          style={{
+            display:
+              "grid",
+            gridTemplateColumns:
+              "repeat(auto-fill, minmax(180px, 1fr))",
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
           {inputs.map(
             (item) => (
               <div
-                key={item.id}
+                key={
+                  item.id
+                }
                 className="aios-input-file"
+                style={{
+                  position:
+                    "relative",
+                  overflow:
+                    "hidden",
+                  border:
+                    "1px solid #e5e7eb",
+                  borderRadius:
+                    12,
+                  background:
+                    "#f8fafc",
+                }}
               >
-                <span
-                  className="aios-input-file-type"
-                  aria-hidden="true"
-                >
-                  {getFileIcon(
-                    item,
-                  )}
-                </span>
+                {(
+                  item.kind ===
+                    "image" ||
+                  item.kind ===
+                    "video"
+                ) && (
+                  <InputMediaPreview
+                    item={
+                      item
+                    }
+                  />
+                )}
 
                 <div
-                  className="aios-input-file-info"
+                  style={{
+                    display:
+                      "flex",
+                    alignItems:
+                      "center",
+                    gap: 8,
+                    padding:
+                      "8px 10px",
+                  }}
                 >
-                  <div className="aios-input-file-name">
-                    {item.metadata
-                      .name ??
-                      localized(
-                        locale,
-                        "未命名文件",
-                        "Unnamed file",
-                        "名前なしファイル",
-                      )}
-                  </div>
+                  <span
+                    className="aios-input-file-type"
+                    aria-hidden="true"
+                    style={{
+                      fontSize:
+                        10,
+                      fontWeight:
+                        800,
+                      color:
+                        "#475569",
+                    }}
+                  >
+                    {getFileIcon(
+                      item,
+                    )}
+                  </span>
 
-                  <div className="aios-input-file-meta">
-                    {item.metadata
-                      .sizeBytes !==
-                    null
-                      ? formatFileSize(
-                          item
-                            .metadata
-                            .sizeBytes,
-                        )
-                      : "—"}
-
-                    <span aria-hidden="true">
-                      {" · "}
-                    </span>
-
-                    {item.processingStatus ===
-                    "ready"
-                      ? localized(
+                  <div
+                    className="aios-input-file-info"
+                    style={{
+                      minWidth:
+                        0,
+                      flex: 1,
+                    }}
+                  >
+                    <div
+                      className="aios-input-file-name"
+                      style={{
+                        overflow:
+                          "hidden",
+                        textOverflow:
+                          "ellipsis",
+                        whiteSpace:
+                          "nowrap",
+                        color:
+                          "#0f172a",
+                        fontSize:
+                          12,
+                        fontWeight:
+                          700,
+                      }}
+                    >
+                      {item.metadata
+                        .name ??
+                        localized(
                           locale,
-                          "已处理",
-                          "Ready",
-                          "処理済み",
-                        )
-                      : item.processingStatus ===
-                        "failed"
-                        ? localized(
-                            locale,
-                            "处理失败",
-                            "Failed",
-                            "失敗",
-                          )
-                        : item.kind ===
-                          "image"
-                          ? localized(
-                              locale,
-                              "等待视觉理解",
-                              "Waiting for vision understanding",
-                              "画像理解待ち",
-                            )
-                          : localized(
-                              locale,
-                              "等待文件解析",
-                              "Waiting for file parsing",
-                              "ファイル解析待ち",
-                            )}
-                  </div>
-                </div>
+                          "未命名输入",
+                          "Untitled input",
+                          "名称なし",
+                        )}
+                    </div>
 
-                <button
-                  type="button"
-                  className="aios-input-remove"
-                  onClick={() =>
-                    removeInput(
-                      item.id,
-                    )
-                  }
-                  disabled={disabled}
-                  aria-label={localized(
-                    locale,
-                    "移除输入",
-                    "Remove input",
-                    "入力を削除",
-                  )}
-                >
-                  x
-                </button>
+                    <div
+                      style={{
+                        marginTop:
+                          2,
+                        color:
+                          "#94a3b8",
+                        fontSize:
+                          10,
+                      }}
+                    >
+                      {item.metadata
+                        .sizeBytes
+                        ? formatFileSize(
+                            item.metadata
+                              .sizeBytes,
+                          )
+                        : ""}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      removeInput(
+                        item.id,
+                      )
+                    }
+                    disabled={
+                      disabled
+                    }
+                    aria-label={localized(
+                      locale,
+                      "删除输入",
+                      "Remove input",
+                      "入力を削除",
+                    )}
+                    style={{
+                      border:
+                        "none",
+                      background:
+                        "transparent",
+                      color:
+                        "#94a3b8",
+                      cursor:
+                        "pointer",
+                      fontSize:
+                        16,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
             ),
           )}
         </div>
       )}
+    </div>
+  );
+}
 
-      {inputs.length > 0 && (
-        <div className="aios-input-count">
-          {localized(
-            locale,
-            `已选择 ${inputs.length}/${MAX_INPUTS}`,
-            `${inputs.length}/${MAX_INPUTS} inputs`,
-            `${inputs.length}/${MAX_INPUTS} 件`,
-          )}
+function InputMediaPreview({
+  item,
+}: {
+  item: AIOSInputItem;
+}) {
+  const [
+    url,
+    setUrl,
+  ] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    const file =
+      item.localReference
+        ? null
+        : null;
+
+    void file;
+
+    return undefined;
+  }, [
+    item,
+  ]);
+
+  return (
+    <div
+      style={{
+        width:
+          "100%",
+        aspectRatio:
+          "16 / 9",
+        background:
+          "#e2e8f0",
+        overflow:
+          "hidden",
+      }}
+    >
+      {item.kind ===
+        "image" && (
+        <div
+          style={{
+            width:
+              "100%",
+            height:
+              "100%",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            color:
+              "#64748b",
+            fontSize:
+              11,
+          }}
+        >
+          IMAGE
         </div>
       )}
 
-      <style jsx>{`
-        .aios-input-actions {
-          width: 100%;
-        }
+      {item.kind ===
+        "video" && (
+        <div
+          style={{
+            width:
+              "100%",
+            height:
+              "100%",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            color:
+              "#64748b",
+            fontSize:
+              11,
+          }}
+        >
+          VIDEO
+        </div>
+      )}
 
-        .aios-input-action {
-          min-width: 72px;
-          height: 36px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          padding: 0 10px;
-          border: 1px solid #e2e8f0;
-          border-radius: 11px;
-          background: #ffffff;
-          color: #475569;
-          font-size: 11px;
-          font-weight: 800;
-          cursor: pointer;
-          transition:
-            border-color 120ms ease,
-            background 120ms ease,
-            transform 120ms ease;
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        .aios-input-action:hover:not(:disabled) {
-          border-color: #cbd5e1;
-          background: #f8fafc;
-        }
-
-        .aios-input-action:active:not(:disabled) {
-          transform: translateY(1px);
-        }
-
-        .aios-input-action:disabled {
-          opacity: 0.48;
-          cursor: not-allowed;
-        }
-
-        .aios-input-action-icon {
-          width: 22px;
-          height: 22px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 7px;
-          background: #f1f5f9;
-          color: #334155;
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 0.02em;
-        }
-
-        .aios-input-action-label {
-          white-space: nowrap;
-        }
-
-        .aios-input-error {
-          margin-top: 7px;
-          padding: 7px 9px;
-          border: 1px solid #fecaca;
-          border-radius: 9px;
-          background: #fff7f7;
-          color: #b91c1c;
-          font-size: 10px;
-          line-height: 1.45;
-        }
-
-        .aios-input-files {
-          display: grid;
-          gap: 6px;
-          margin-top: 7px;
-        }
-
-        .aios-input-file {
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 7px 8px;
-          border: 1px solid #e2e8f0;
-          border-radius: 10px;
-          background: #f8fafc;
-        }
-
-        .aios-input-file-type {
-          width: 28px;
-          height: 28px;
-          flex: 0 0 28px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 8px;
-          background: #eef2f7;
-          color: #64748b;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .aios-input-file-info {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .aios-input-file-name {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          color: #1e293b;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .aios-input-file-meta {
-          margin-top: 2px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          color: #94a3b8;
-          font-size: 9px;
-        }
-
-        .aios-input-remove {
-          width: 27px;
-          height: 27px;
-          flex: 0 0 27px;
-          border: 0;
-          border-radius: 8px;
-          background: #e2e8f0;
-          color: #475569;
-          font-size: 12px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .aios-input-remove:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .aios-input-count {
-          margin-top: 5px;
-          color: #94a3b8;
-          font-size: 9px;
-          line-height: 1.4;
-        }
-
-        @media (max-width: 520px) {
-          .aios-input-actions {
-            gap: 6px;
-          }
-
-          .aios-input-action {
-            min-width: 0;
-            flex: 1;
-            height: 35px;
-            padding: 0 7px;
-          }
-
-          .aios-input-action-icon {
-            width: 21px;
-            height: 21px;
-          }
-
-          .aios-input-action-label {
-            font-size: 10px;
-          }
-        }
-      `}</style>
+      {url && (
+        <span
+          style={{
+            display:
+              "none",
+          }}
+        >
+          {url}
+        </span>
+      )}
     </div>
   );
 }
