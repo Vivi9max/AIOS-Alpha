@@ -15,9 +15,10 @@ type Locale =
 const copy = {
   en: {
     eyebrow: "AIOS CN",
-    title: "Your China-ready AI workspace",
+    title:
+      "Start with the outcome. Move the work forward.",
     description:
-      "A native AIOS workspace for conversation, input understanding and evidence-aware work.",
+      "Bring a goal, question, or task. AIOS helps turn it into clear, evidence-aware work.",
     runtime: "Runtime",
     runtimeValue: "DeepSeek",
     input: "Input",
@@ -36,9 +37,10 @@ const copy = {
   },
   "zh-CN": {
     eyebrow: "AIOS CN",
-    title: "面向中国用户的 AI 工作空间",
+    title:
+      "从目标出发，把工作推进到结果。",
     description:
-      "面向中国使用场景构建的 AIOS 工作空间，支持对话、输入理解与基于证据的工作流。",
+      "告诉 AIOS 你要达成的目标，从问题、输入到证据，让工作一步步走向结果。",
     runtime: "Runtime",
     runtimeValue: "DeepSeek",
     input: "输入",
@@ -57,9 +59,10 @@ const copy = {
   },
   ja: {
     eyebrow: "AIOS CN",
-    title: "中国向けの AI ワークスペース",
+    title:
+      "目標から始めて、成果につなげる。",
     description:
-      "中国での利用を想定した AIOS ワークスペース。会話、入力理解、エビデンスを重視した作業に対応します。",
+      "目標や課題を入力すれば、AIOS が問い、入力、エビデンスを整理し、成果につながる作業へ導きます。",
     runtime: "Runtime",
     runtimeValue: "DeepSeek",
     input: "入力",
