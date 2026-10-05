@@ -38,9 +38,10 @@ interface RuntimeState {
   status: RuntimeStatus;
 }
 
-const pageTitles: Record<string, MessageKey> = {
-  "/": "page.workspace",
-  "/workspace": "page.workspace",
+const pageTitles: Record<
+  string,
+  MessageKey
+> = {
   "/dashboard": "nav.dashboard",
   "/memory": "nav.memory",
   "/tasks": "nav.tasks",
@@ -57,16 +58,19 @@ const localPageTitles = {
   en: {
     global: "AIOS Global",
     cn: "AIOS CN",
+    workspace: "Workspace",
     market: "Market Research",
   },
   "zh-CN": {
     global: "AIOS Global",
     cn: "AIOS CN",
+    workspace: "工作区",
     market: "市场研究",
   },
   ja: {
     global: "AIOS Global",
     cn: "AIOS CN",
+    workspace: "ワークスペース",
     market: "市場リサーチ",
   },
 } as const;
@@ -114,31 +118,53 @@ export default function Header() {
     t,
   } = useLanguage();
 
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
 
   const [
     runtime,
     setRuntime,
-  ] = useState<RuntimeState>(initialStatus);
+  ] = useState<RuntimeState>(
+    initialStatus,
+  );
 
-  const copy = runtimeStatusCopy[locale];
-  const product = productCopy[locale];
-  const localTitles = localPageTitles[locale];
+  const copy =
+    runtimeStatusCopy[
+      locale
+    ];
+
+  const product =
+    productCopy[
+      locale
+    ];
+
+  const localTitles =
+    localPageTitles[
+      locale
+    ];
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith("/cn/");
+    pathname.startsWith(
+      "/cn/",
+    );
+
+  const isWorkspace =
+    pathname === "/" ||
+    pathname === "/workspace";
 
   const pageTitle =
-    isCN
-      ? localTitles.cn
-      : pathname === "/market-intelligence"
-        ? localTitles.market
-        : pathname === "/" ||
-            pathname === "/workspace"
-          ? localTitles.global
+    isWorkspace
+      ? localTitles.workspace
+      : isCN
+        ? localTitles.cn
+        : pathname ===
+              "/market-intelligence"
+          ? localTitles.market
           : t(
-              pageTitles[pathname] ??
+              pageTitles[
+                pathname
+              ] ??
                 "page.default",
             );
 
@@ -147,40 +173,53 @@ export default function Header() {
 
     async function loadRuntimeStatus() {
       try {
-        const response = await fetch(
-          "/api/runtime/status",
-          {
-            cache: "no-store",
-            credentials: "same-origin",
-          },
-        );
+        const response =
+          await fetch(
+            "/api/runtime/status",
+            {
+              cache:
+                "no-store",
+              credentials:
+                "same-origin",
+            },
+          );
 
-        if (!response.ok) {
-          throw new Error(copy.unavailable);
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            copy.unavailable,
+          );
         }
 
-        const data = await response.json();
+        const data =
+          await response.json();
 
         if (!active) {
           return;
         }
 
-        const status = data.status;
+        const status =
+          data.status;
 
         const normalizedStatus: RuntimeStatus =
-          status === "online"
+          status ===
+          "online"
             ? "online"
-            : status === "degraded"
+            : status ===
+                "degraded"
               ? "degraded"
               : "offline";
 
         setRuntime({
-          status: normalizedStatus,
+          status:
+            normalizedStatus,
         });
       } catch {
         if (active) {
           setRuntime({
-            status: "offline",
+            status:
+              "offline",
           });
         }
       }
@@ -188,32 +227,43 @@ export default function Header() {
 
     void loadRuntimeStatus();
 
-    const interval = window.setInterval(
-      loadRuntimeStatus,
-      30000,
-    );
+    const interval =
+      window.setInterval(
+        loadRuntimeStatus,
+        30000,
+      );
 
     return () => {
       active = false;
-      window.clearInterval(interval);
+      window.clearInterval(
+        interval,
+      );
     };
-  }, [copy.unavailable]);
+  }, [
+    copy.unavailable,
+  ]);
 
   const statusLabel =
-    runtime.status === "checking"
+    runtime.status ===
+    "checking"
       ? product.checking
-      : runtime.status === "online"
+      : runtime.status ===
+          "online"
         ? product.online
-        : runtime.status === "degraded"
+        : runtime.status ===
+            "degraded"
           ? product.degraded
           : product.offline;
 
   const statusTone =
-    runtime.status === "online"
+    runtime.status ===
+    "online"
       ? "online"
-      : runtime.status === "degraded"
+      : runtime.status ===
+          "degraded"
         ? "degraded"
-        : runtime.status === "checking"
+        : runtime.status ===
+            "checking"
           ? "checking"
           : "offline";
 
@@ -281,7 +331,9 @@ export default function Header() {
           </span>
 
           <span className="aios-header-meta-text">
-            {APP_CONFIG.codename}
+            {
+              APP_CONFIG.codename
+            }
           </span>
 
           <span
