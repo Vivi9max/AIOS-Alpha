@@ -13,9 +13,9 @@ const copy = {
     eyebrow:
       "AIOS GLOBAL",
     title:
-      "What outcome are you working toward?",
+      "What do you want to achieve?",
     description:
-      "Ask, research, analyze, organize or execute from one workspace.",
+      "Start with a goal. Research, analyze, organize, and move the work forward in one workspace.",
     capabilities:
       "Research",
     evidence:
@@ -31,9 +31,9 @@ const copy = {
     eyebrow:
       "AIOS GLOBAL",
     title:
-      "你现在要完成什么结果？",
+      "你想达成什么结果？",
     description:
-      "在一个工作区中完成提问、研究、分析、整理与执行。",
+      "从目标开始，在一个工作区中完成提问、研究、分析、整理与执行。",
     capabilities:
       "研究",
     evidence:
@@ -49,9 +49,9 @@ const copy = {
     eyebrow:
       "AIOS GLOBAL",
     title:
-      "どのような成果を実現しますか？",
+      "どんな成果を実現したいですか？",
     description:
-      "一つのワークスペースで質問、リサーチ、分析、整理、実行まで進められます。",
+      "目標から始めて、一つのワークスペースで質問、リサーチ、分析、整理、実行まで進められます。",
     capabilities:
       "リサーチ",
     evidence:
