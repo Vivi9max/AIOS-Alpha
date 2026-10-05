@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -9,13 +10,19 @@ import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
 
+import {
+  getAIOSInputPreviewBatches,
+} from "@/lib/runtime/input/aios-input-browser-store";
+
 import MessageBubble from "./MessageBubble";
 
 export interface ChatMessage {
   role:
     | "user"
     | "assistant";
+
   content: string;
+
   id?: number;
 }
 
@@ -31,10 +38,13 @@ interface Props {
 
 interface DeletedMemoryRecord {
   id: number;
+
   role:
     | "user"
     | "assistant";
+
   content: string;
+
   timestamp: number;
 }
 
@@ -52,28 +62,277 @@ const copy: Record<
 > = {
   en: {
     delete: "Delete",
-    deleting: "Deleting…",
-    deleted: "Message deleted.",
+    deleting: "Deleting...",
+    deleted:
+      "Message deleted.",
     undo: "Undo",
-    restoring: "Restoring…",
+    restoring:
+      "Restoring...",
   },
 
   "zh-CN": {
     delete: "删除",
-    deleting: "删除中…",
-    deleted: "消息已删除。",
+    deleting: "删除中...",
+    deleted:
+      "消息已删除。",
     undo: "撤销",
-    restoring: "恢复中…",
+    restoring:
+      "恢复中...",
   },
 
   ja: {
     delete: "削除",
-    deleting: "削除中…",
-    deleted: "メッセージを削除しました。",
+    deleting: "削除中...",
+    deleted:
+      "メッセージを削除しました。",
     undo: "元に戻す",
-    restoring: "復元中…",
+    restoring:
+      "復元中...",
   },
 };
+
+function isUploadMessage(
+  message: ChatMessage,
+): boolean {
+  return (
+    message.role ===
+      "user" &&
+    (
+      /已上传\s+\d+\s+个输入/.test(
+        message.content,
+      ) ||
+      /\d+\s+inputs?\s+uploaded/i.test(
+        message.content,
+      ) ||
+      /\d+\s+件の入力をアップロードしました/.test(
+        message.content,
+      )
+    )
+  );
+}
+
+function getUploadCount(
+  message: ChatMessage,
+): number {
+  const match =
+    message.content.match(
+      /\d+/,
+    );
+
+  if (!match) {
+    return 0;
+  }
+
+  const count =
+    Number(match[0]);
+
+  return Number.isFinite(
+    count,
+  )
+    ? count
+    : 0;
+}
+
+function AttachmentPreview({
+  file,
+}: {
+  file: File;
+}) {
+  const [
+    objectUrl,
+    setObjectUrl,
+  ] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    const url =
+      URL.createObjectURL(
+        file,
+      );
+
+    setObjectUrl(
+      url,
+    );
+
+    return () => {
+      URL.revokeObjectURL(
+        url,
+      );
+    };
+  }, [
+    file,
+  ]);
+
+  if (!objectUrl) {
+    return (
+      <div
+        style={{
+          width:
+            "100%",
+          aspectRatio:
+            "16 / 10",
+          borderRadius:
+            12,
+          background:
+            "#f1f5f9",
+        }}
+      />
+    );
+  }
+
+  if (
+    file.type.startsWith(
+      "video/",
+    )
+  ) {
+    return (
+      <video
+        src={
+          objectUrl
+        }
+        controls
+        playsInline
+        preload="metadata"
+        style={{
+          display:
+            "block",
+          width:
+            "100%",
+          maxWidth:
+            420,
+          maxHeight:
+            320,
+          borderRadius:
+            12,
+          background:
+            "#020617",
+          objectFit:
+            "contain",
+        }}
+      />
+    );
+  }
+
+  if (
+    file.type.startsWith(
+      "image/",
+    )
+  ) {
+    return (
+      <img
+        src={
+          objectUrl
+        }
+        alt={
+          file.name ||
+          "Uploaded image"
+        }
+        style={{
+          display:
+            "block",
+          width:
+            "100%",
+          maxWidth:
+            420,
+          maxHeight:
+            320,
+          borderRadius:
+            12,
+          objectFit:
+            "contain",
+          background:
+            "#f8fafc",
+        }}
+      />
+    );
+  }
+
+  return null;
+}
+
+function MessageAttachments({
+  files,
+}: {
+  files: File[];
+}) {
+  if (
+    files.length ===
+    0
+  ) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        display:
+          "grid",
+        gridTemplateColumns:
+          files.length ===
+          1
+            ? "minmax(0, 420px)"
+            : "repeat(2, minmax(0, 1fr))",
+        gap: 8,
+        width:
+          "min(100%, 520px)",
+        marginBottom:
+          8,
+      }}
+    >
+      {files.map(
+        (
+          file,
+          index,
+        ) => (
+          <div
+            key={[
+              file.name,
+              file.size,
+              file.lastModified,
+              index,
+            ].join("-")}
+            style={{
+              minWidth:
+                0,
+              overflow:
+                "hidden",
+              borderRadius:
+                12,
+            }}
+          >
+            <AttachmentPreview
+              file={
+                file
+              }
+            />
+
+            <div
+              style={{
+                marginTop:
+                  4,
+                padding:
+                  "0 4px",
+                color:
+                  "#64748b",
+                fontSize:
+                  10,
+                overflow:
+                  "hidden",
+                textOverflow:
+                  "ellipsis",
+                whiteSpace:
+                  "nowrap",
+              }}
+            >
+              {file.name}
+            </div>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 export default function MessageList({
   messages,
@@ -91,7 +350,8 @@ export default function MessageList({
     deletedIds,
     setDeletedIds,
   ] = useState<Set<number>>(
-    () => new Set(),
+    () =>
+      new Set(),
   );
 
   const [
@@ -105,9 +365,15 @@ export default function MessageList({
   const [
     actionLoading,
     setActionLoading,
-  ] = useState<number | null>(
-    null,
-  );
+  ] =
+    useState<number | null>(
+      null,
+    );
+
+  const [
+    previewVersion,
+    setPreviewVersion,
+  ] = useState(0);
 
   useEffect(() => {
     setDeletedIds(
@@ -116,7 +382,9 @@ export default function MessageList({
           new Set(
             messages
               .map(
-                (message) =>
+                (
+                  message,
+                ) =>
                   message.id,
               )
               .filter(
@@ -134,9 +402,13 @@ export default function MessageList({
         current.forEach(
           (id) => {
             if (
-              visibleIds.has(id)
+              visibleIds.has(
+                id,
+              )
             ) {
-              next.add(id);
+              next.add(
+                id,
+              );
             }
           },
         );
@@ -144,7 +416,167 @@ export default function MessageList({
         return next;
       },
     );
-  }, [messages]);
+  }, [
+    messages,
+  ]);
+
+  useEffect(() => {
+    const timer =
+      window.setInterval(
+        () => {
+          setPreviewVersion(
+            (
+              value,
+            ) =>
+              value + 1,
+          );
+        },
+        1_000,
+      );
+
+    return () =>
+      window.clearInterval(
+        timer,
+      );
+  }, []);
+
+  const attachmentBatches =
+    useMemo(
+      () =>
+        getAIOSInputPreviewBatches(),
+      [
+        previewVersion,
+      ],
+    );
+
+  const uploadMessages =
+    useMemo(
+      () =>
+        messages.filter(
+          isUploadMessage,
+        ),
+      [
+        messages,
+      ],
+    );
+
+  const attachmentMap =
+    useMemo(() => {
+      const map =
+        new Map<
+          number,
+          File[]
+        >();
+
+      if (
+        attachmentBatches.length ===
+        0 ||
+        uploadMessages.length ===
+        0
+      ) {
+        return map;
+      }
+
+      /*
+       * Attach the newest preview batches
+       * to the newest upload messages.
+       *
+       * This keeps current-session attachments
+       * correctly associated without changing
+       * the persisted Memory schema.
+       */
+      const messageIndexes =
+        uploadMessages.map(
+          (
+            message,
+          ) =>
+            messages.indexOf(
+              message,
+            ),
+        );
+
+      const batchIndexes =
+        attachmentBatches
+          .map(
+            (
+              _,
+              index,
+            ) =>
+              index,
+          )
+          .slice(
+            -messageIndexes.length,
+          );
+
+      for (
+        let i = 0;
+        i <
+        batchIndexes.length;
+        i += 1
+      ) {
+        const messageIndex =
+          messageIndexes[
+            messageIndexes.length -
+              batchIndexes.length +
+              i
+          ];
+
+        const batchIndex =
+          batchIndexes[i];
+
+        if (
+          messageIndex ===
+            undefined ||
+          batchIndex ===
+            undefined
+        ) {
+          continue;
+        }
+
+        const message =
+          messages[
+            messageIndex
+          ];
+
+        const expectedCount =
+          getUploadCount(
+            message,
+          );
+
+        const batch =
+          attachmentBatches[
+            batchIndex
+          ];
+
+        if (
+          !batch ||
+          expectedCount <=
+            0
+        ) {
+          continue;
+        }
+
+        map.set(
+          messageIndex,
+          batch
+            .slice(
+              0,
+              expectedCount,
+            )
+            .map(
+              (
+                item,
+              ) =>
+                item.file,
+            ),
+        );
+      }
+
+      return map;
+    }, [
+      attachmentBatches,
+      messages,
+    ]);
 
   async function handleDelete(
     message: ChatMessage,
@@ -157,7 +589,8 @@ export default function MessageList({
     }
 
     if (
-      actionLoading !== null
+      actionLoading !==
+      null
     ) {
       return;
     }
@@ -166,22 +599,29 @@ export default function MessageList({
       message.id;
 
     const deletedRecord:
-      DeletedMemoryRecord = {
-      id,
-      role:
-        message.role,
-      content:
-        message.content,
-      timestamp:
-        Date.now(),
-    };
+      DeletedMemoryRecord =
+      {
+        id,
+        role:
+          message.role,
+        content:
+          message.content,
+        timestamp:
+          Date.now(),
+      };
 
     setDeletedIds(
-      (current) => {
+      (
+        current,
+      ) => {
         const next =
-          new Set(current);
+          new Set(
+            current,
+          );
 
-        next.add(id);
+        next.add(
+          id,
+        );
 
         return next;
       },
@@ -191,7 +631,9 @@ export default function MessageList({
       deletedRecord,
     );
 
-    setActionLoading(id);
+    setActionLoading(
+      id,
+    );
 
     try {
       const response =
@@ -235,18 +677,26 @@ export default function MessageList({
           onConversationChanged?.();
         },
       );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "[AIOS Chat Delete]",
         error,
       );
 
       setDeletedIds(
-        (current) => {
+        (
+          current,
+        ) => {
           const next =
-            new Set(current);
+            new Set(
+              current,
+            );
 
-          next.delete(id);
+          next.delete(
+            id,
+          );
 
           return next;
         },
@@ -265,7 +715,8 @@ export default function MessageList({
   async function handleUndo() {
     if (
       !undoRecord ||
-      actionLoading !== null
+      actionLoading !==
+        null
     ) {
       return;
     }
@@ -274,9 +725,13 @@ export default function MessageList({
       undoRecord;
 
     setDeletedIds(
-      (current) => {
+      (
+        current,
+      ) => {
         const next =
-          new Set(current);
+          new Set(
+            current,
+          );
 
         next.delete(
           record.id,
@@ -330,16 +785,22 @@ export default function MessageList({
       }
 
       onConversationChanged?.();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "[AIOS Chat Undo]",
         error,
       );
 
       setDeletedIds(
-        (current) => {
+        (
+          current,
+        ) => {
           const next =
-            new Set(current);
+            new Set(
+              current,
+            );
 
           next.add(
             record.id,
@@ -361,7 +822,9 @@ export default function MessageList({
 
   const visibleMessages =
     messages.filter(
-      (message) =>
+      (
+        message,
+      ) =>
         typeof message.id !==
           "number" ||
         !deletedIds.has(
@@ -375,95 +838,127 @@ export default function MessageList({
         (
           message,
           index,
-        ) => (
-          <div
-            key={
-              typeof message.id ===
-              "number"
-                ? message.id
-                : `${message.role}-${index}-${message.content.slice(0, 24)}`
-            }
-            style={{
-              position:
-                "relative",
-            }}
-          >
-            <MessageBubble
-              role={
-                message.role
-              }
-              content={
-                message.content
-              }
-            />
+        ) => {
+          const originalIndex =
+            messages.indexOf(
+              message,
+            );
 
-            {typeof message.id ===
-              "number" && (
-              <div
-                style={{
-                  display:
-                    "flex",
-                  justifyContent:
-                    message.role ===
-                    "user"
-                      ? "flex-end"
-                      : "flex-start",
-                  marginTop:
-                    -7,
-                  marginBottom:
-                    12,
-                  padding:
-                    "0 8px",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    void handleDelete(
-                      message,
-                    )
-                  }
-                  disabled={
-                    actionLoading !==
-                    null
-                  }
-                  aria-label={
-                    text.delete
-                  }
+          const attachments =
+            attachmentMap.get(
+              originalIndex,
+            ) ?? [];
+
+          return (
+            <div
+              key={
+                typeof message.id ===
+                "number"
+                  ? message.id
+                  : `${message.role}-${index}-${message.content.slice(0, 24)}`
+              }
+              style={{
+                position:
+                  "relative",
+              }}
+            >
+              {message.role ===
+                "user" &&
+                attachments.length >
+                  0 && (
+                  <div
+                    style={{
+                      display:
+                        "flex",
+                      justifyContent:
+                        "flex-end",
+                    }}
+                  >
+                    <MessageAttachments
+                      files={
+                        attachments
+                      }
+                    />
+                  </div>
+                )}
+
+              <MessageBubble
+                role={
+                  message.role
+                }
+                content={
+                  message.content
+                }
+              />
+
+              {typeof message.id ===
+                "number" && (
+                <div
                   style={{
-                    border:
-                      "1px solid #e5e7eb",
-                    borderRadius:
-                      7,
-                    background:
-                      "#ffffff",
-                    color:
-                      "#94a3b8",
+                    display:
+                      "flex",
+                    justifyContent:
+                      message.role ===
+                      "user"
+                        ? "flex-end"
+                        : "flex-start",
+                    marginTop:
+                      -7,
+                    marginBottom:
+                      12,
                     padding:
-                      "4px 8px",
-                    fontSize:
-                      10,
-                    cursor:
-                      actionLoading !==
-                      null
-                        ? "not-allowed"
-                        : "pointer",
-                    opacity:
-                      actionLoading ===
-                      message.id
-                        ? 0.5
-                        : 0.9,
+                      "0 8px",
                   }}
                 >
-                  {actionLoading ===
-                  message.id
-                    ? text.deleting
-                    : text.delete}
-                </button>
-              </div>
-            )}
-          </div>
-        ),
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDelete(
+                        message,
+                      )
+                    }
+                    disabled={
+                      actionLoading !==
+                      null
+                    }
+                    aria-label={
+                      text.delete
+                    }
+                    style={{
+                      border:
+                        "1px solid #e5e7eb",
+                      borderRadius:
+                        7,
+                      background:
+                        "#ffffff",
+                      color:
+                        "#94a3b8",
+                      padding:
+                        "4px 8px",
+                      fontSize:
+                        10,
+                      cursor:
+                        actionLoading !==
+                        null
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        actionLoading ===
+                        message.id
+                          ? 0.5
+                          : 0.9,
+                    }}
+                  >
+                    {actionLoading ===
+                    message.id
+                      ? text.deleting
+                      : text.delete}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        },
       )}
 
       {undoRecord && (
