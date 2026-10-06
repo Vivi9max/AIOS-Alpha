@@ -42,18 +42,6 @@ const globalMenus = [
     href: "/tasks",
   },
   {
-    icon: "◇",
-    label:
-      "planner.title" as MessageKey,
-    href: "/planner",
-  },
-  {
-    icon: "→",
-    label:
-      "execution.openOutcomes" as MessageKey,
-    href: "/execution",
-  },
-  {
     icon: "⚙",
     label:
       "nav.settings" as MessageKey,
@@ -136,11 +124,14 @@ export default function Sidebar() {
     locale,
   } = useLanguage();
 
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith("/cn/");
+    pathname.startsWith(
+      "/cn/",
+    );
 
   const menus =
     isCN
