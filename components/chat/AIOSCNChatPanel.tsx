@@ -159,8 +159,7 @@ function buildEvidencePrompt(
           typeof input.extractedText ===
             "string" &&
           input.extractedText
-            .trim()
-            .length > 0,
+            .trim().length > 0,
       )
       .map(
         (input) => {
@@ -391,9 +390,9 @@ export default function AIOSCNChatPanel() {
                     content:
                       localized(
                         locale,
-                        "AIOS CN 已准备就绪。可以直接提问，也可以使用相机、相册、文件、视频或语音输入。",
-                        "AIOS CN is ready. You can ask questions or use camera, photos, files, video, or voice input.",
-                        "AIOS CN の準備が完了しました。質問、カメラ、写真、ファイル、動画、音声入力を使用できます。",
+                        "可以直接提问，也可以使用相机、相册、文件、视频或语音输入。",
+                        "Ask a question or use camera, photos, files, video, or voice input.",
+                        "質問するか、カメラ、写真、ファイル、動画、音声入力を使用できます。",
                       ),
                   },
                 ],
@@ -607,8 +606,7 @@ export default function AIOSCNChatPanel() {
               typeof input.extractedText ===
                 "string" &&
               input.extractedText
-                .trim()
-                .length > 0,
+                .trim().length > 0,
           );
 
         if (!usable) {
@@ -651,9 +649,9 @@ export default function AIOSCNChatPanel() {
               content:
                 localized(
                   locale,
-                  "视频请使用下方的视频分析入口。当前不会把原始视频当作已读取事实发送给普通 Runtime。",
-                  "Use the Video Analysis entry below for video input. Raw video is not treated as already-read evidence.",
-                  "動画は下の動画分析入口を使用してください。未解析の動画を読み取り済みの事実として扱いません。",
+                  "视频请使用更多工具中的视频分析。当前不会把原始视频当作已读取事实发送给普通 Runtime。",
+                  "Use Video Analysis under More tools for video input. Raw video is not treated as already-read evidence.",
+                  "動画はその他のツールにある動画分析を使用してください。未解析の動画を読み取り済みの事実として扱いません。",
                 ),
             },
           ],
@@ -775,9 +773,9 @@ export default function AIOSCNChatPanel() {
           ? data.content.trim()
           : localized(
               locale,
-              "AIOS CN 没有返回可显示的内容。",
-              "AIOS CN returned no displayable content.",
-              "AIOS CN から表示可能な内容が返されませんでした。",
+              "没有返回可显示的内容。",
+              "No displayable content was returned.",
+              "表示可能な内容が返されませんでした。",
             );
 
       setMessages(
@@ -862,7 +860,7 @@ export default function AIOSCNChatPanel() {
     <section
       style={{
         minHeight:
-          "calc(100vh - 150px)",
+          "calc(100vh - 120px)",
         display:
           "flex",
         flexDirection:
@@ -879,94 +877,6 @@ export default function AIOSCNChatPanel() {
           "0 8px 28px rgba(15, 23, 42, 0.05)",
       }}
     >
-      <header
-        style={{
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "space-between",
-          gap: 12,
-          padding:
-            "14px 18px",
-          borderBottom:
-            "1px solid #eef2f7",
-          background:
-            "#ffffff",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              display:
-                "flex",
-              alignItems:
-                "center",
-              gap: 8,
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius:
-                  "50%",
-                background:
-                  "#22c55e",
-              }}
-            />
-
-            <strong
-              style={{
-                color:
-                  "#111827",
-                fontSize:
-                  15,
-              }}
-            >
-              AIOS CN
-            </strong>
-          </div>
-
-          <div
-            style={{
-              marginTop:
-                3,
-              color:
-                "#94a3b8",
-              fontSize:
-                11,
-            }}
-          >
-            {localized(
-              locale,
-              "统一智能工作区",
-              "Unified AI workspace",
-              "統合 AI ワークスペース",
-            )}
-          </div>
-        </div>
-
-        <div
-          style={{
-            color:
-              "#15803d",
-            fontSize:
-              11,
-            fontWeight:
-              700,
-          }}
-        >
-          {localized(
-            locale,
-            "运行正常",
-            "Ready",
-            "稼働中",
-          )}
-        </div>
-      </header>
-
       <div
         ref={scrollRef}
         style={{
@@ -1055,15 +965,15 @@ export default function AIOSCNChatPanel() {
                   800,
               }}
             >
-              CN
+              AI
             </span>
 
             <span>
               {localized(
                 locale,
-                "AIOS CN 正在处理...",
-                "AIOS CN is processing...",
-                "AIOS CN 処理中...",
+                "正在处理...",
+                "Processing...",
+                "処理中...",
               )}
             </span>
           </div>
@@ -1090,25 +1000,42 @@ export default function AIOSCNChatPanel() {
           }
         />
 
-        <AIOSCNVideoInput
-          disabled={
-            loading ||
-            historyLoading
-          }
-          onResult={
-            handleVideoResult
-          }
-        />
+        <details className="aios-cn-more-tools">
+          <summary>
+            {localized(
+              locale,
+              "更多工具",
+              "More tools",
+              "その他のツール",
+            )}
+          </summary>
 
-        <AIOSCNAudioInput
-          disabled={
-            loading ||
-            historyLoading
-          }
-          onResult={
-            handleAudioResult
-          }
-        />
+          <div className="aios-cn-more-tools-content">
+            <div className="aios-cn-media-tool">
+              <AIOSCNVideoInput
+                disabled={
+                  loading ||
+                  historyLoading
+                }
+                onResult={
+                  handleVideoResult
+                }
+              />
+            </div>
+
+            <div className="aios-cn-media-tool">
+              <AIOSCNAudioInput
+                disabled={
+                  loading ||
+                  historyLoading
+                }
+                onResult={
+                  handleAudioResult
+                }
+              />
+            </div>
+          </div>
+        </details>
       </div>
     </section>
   );
