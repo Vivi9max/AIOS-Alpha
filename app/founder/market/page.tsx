@@ -8,49 +8,6 @@ import {
 const STORAGE_KEY =
   "aios-founder-access-key";
 
-type RegressionResult = {
-  success?: boolean;
-  verified?: boolean;
-  code?: string;
-  stage?: string;
-  total?: number;
-  passed?: number;
-  failed?: number;
-  structuredDataVerified?: number;
-  webFallback?: number;
-  liveQuoteVerified?: number;
-  results?: Array<{
-    id?: string;
-    symbol?: string;
-    market?: string;
-    success?: boolean;
-    code?: string;
-    verified?: boolean;
-    structuredDataAvailable?: boolean;
-    structuredDataVerified?: boolean;
-    webEvidenceAvailable?: boolean;
-    dataQuality?: string;
-    liveQuoteAvailable?: boolean;
-    asOf?: string | null;
-    source?: string | null;
-    dataset?: string | null;
-    provider?: string;
-    providerAvailable?: boolean;
-    sourceCount?: number;
-    independentDomains?: number;
-    primarySourceFound?: boolean;
-    price?: number | null;
-    changePercent?: number | null;
-    error?: string | null;
-    latencyMs?: number;
-  }>;
-  metadata?: {
-    generatedAt?: string;
-    latencyMs?: number;
-    disclaimer?: string;
-  };
-};
-
 type MarketResult = {
   success?: boolean;
   verified?: boolean;
@@ -149,6 +106,7 @@ type MarketResult = {
     configured?: boolean;
     available?: boolean;
     supportsQuote?: boolean;
+    supportsRealtime?: boolean;
     supportsHistorical?: boolean;
     supportsFundamentals?: boolean;
     supportsMarkets?: string[];
@@ -166,6 +124,139 @@ type MarketResult = {
   latencyMs?: number;
 };
 
+type ProviderReadinessResult = {
+  success?: boolean;
+  code?: string;
+  stage?: string;
+
+  providerRegistry?: {
+    providers?: string[];
+    requestedProvider?: string | null;
+    activeProvider?: string | null;
+    availableProviders?: string[];
+  };
+
+  providerStatus?: {
+    provider?: string;
+    configured?: boolean;
+    available?: boolean;
+    supportsQuote?: boolean;
+    supportsRealtime?: boolean;
+    supportsHistorical?: boolean;
+    supportsFundamentals?: boolean;
+    supportsMarkets?: string[];
+    commercialStatus?: string;
+    reason?: string;
+  };
+
+  commercialAuthorization?: {
+    providerId?: string;
+    status?: string;
+    decision?: string;
+    authorized?: boolean;
+    gateOpen?: boolean;
+    source?: string;
+    verifiedAt?: string | null;
+    verifiedBy?: string | null;
+    contractReference?: string | null;
+    reason?: string;
+  };
+
+  readiness?: {
+    state?: string;
+    technicalReady?: boolean;
+    commercialReady?: boolean;
+    realtimeReady?: boolean;
+  };
+
+  runtimeState?: {
+    providerConfigured?: boolean;
+    technicalCapabilityReady?: boolean;
+    commercialGateOpen?: boolean;
+  };
+
+  safetyBoundary?: Record<
+    string,
+    boolean | string
+  >;
+
+  error?: string;
+};
+
+type TradingBoundaryResult = {
+  success?: boolean;
+  code?: string;
+  stage?: string;
+  status?: string;
+
+  readyForLiveExecution?: boolean;
+
+  orderIntent?: {
+    symbol?: string;
+    market?: string | null;
+    side?: string;
+    quantity?: number;
+    limitPrice?: number | null;
+    reason?: string | null;
+  } | null;
+
+  gates?: {
+    paperTradingVerified?: boolean;
+    humanReviewApproved?: boolean;
+    brokerConnected?: boolean;
+    liveExecutionRequested?: boolean;
+    brokerAdapterAvailable?: boolean;
+  };
+
+  blockedReasons?: string[];
+
+  execution?: {
+    tradingExecuted?: boolean;
+    liveOrderPlaced?: boolean;
+    brokerOrderId?: string | null;
+    plannerDispatched?: boolean;
+  };
+
+  safetyBoundary?: Record<
+    string,
+    boolean | string
+  >;
+
+  error?: string;
+};
+
+type BrokerBoundaryResult = {
+  success?: boolean;
+  code?: string;
+  stage?: string;
+  status?: string;
+  readyForBrokerExecution?: boolean;
+
+  broker?: {
+    provider?: string;
+    connectionStatus?: string;
+    connectionVerified?: boolean;
+    adapterAvailable?: boolean;
+    executionStatus?: string;
+  };
+
+  blockedReasons?: string[];
+
+  execution?: {
+    tradingExecuted?: boolean;
+    liveOrderPlaced?: boolean;
+    brokerOrderId?: string | null;
+    plannerDispatched?: boolean;
+  };
+
+  safetyBoundary?: Record<
+    string,
+    boolean | string
+  >;
+
+  error?: string;
+};
+
 function getAccessKey(): string {
   if (
     typeof window ===
@@ -181,11 +272,10 @@ function getAccessKey(): string {
   );
 }
 
-async function requestMarketAnalysis(
-  symbol: string,
-  market: string,
-  mode: string,
-): Promise<MarketResult> {
+async function founderFetch(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
   const key =
     getAccessKey();
 
@@ -195,29 +285,46 @@ async function requestMarketAnalysis(
     );
   }
 
+  return fetch(
+    path,
+    {
+      ...init,
+
+      headers: {
+        ...(init?.headers ?? {}),
+
+        Authorization:
+          `Bearer ${key}`,
+      },
+
+      cache:
+        "no-store",
+    },
+  );
+}
+
+async function requestMarketAnalysis(
+  symbol: string,
+  market: string,
+): Promise<MarketResult> {
   const response =
-    await fetch(
+    await founderFetch(
       "/api/founder/market/analyze",
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
           "Content-Type":
             "application/json",
-
-          Authorization:
-            `Bearer ${key}`,
         },
 
         body:
           JSON.stringify({
             symbol,
             market,
-            mode,
+            mode: "full",
           }),
-
-        cache:
-          "no-store",
       },
     );
 
@@ -230,42 +337,161 @@ async function requestMarketAnalysis(
     401
   ) {
     throw new Error(
-      "Founder authentication failed. Please return to Founder Console and re-enter the Founder Access Key.",
+      "Founder authentication failed.",
+    );
+  }
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      data.error ??
+        "Market analysis request failed.",
     );
   }
 
   return data;
 }
 
-async function requestRegression(): Promise<RegressionResult> {
-  const key =
-    getAccessKey();
-
-  if (!key) {
-    throw new Error(
-      "Founder Session not found.",
-    );
-  }
-
+async function requestProviderReadiness(): Promise<ProviderReadinessResult> {
   const response =
-    await fetch(
-      "/api/founder/market/regression",
+    await founderFetch(
+      "/api/founder/market/provider-readiness",
       {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${key}`,
-        },
-
-        cache:
-          "no-store",
+        method:
+          "GET",
       },
     );
 
   const data =
     (await response.json()) as
-      RegressionResult;
+      ProviderReadinessResult;
+
+  if (
+    response.status ===
+    401
+  ) {
+    throw new Error(
+      "Founder authentication failed.",
+    );
+  }
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      data.error ??
+        "Provider readiness request failed.",
+    );
+  }
+
+  return data;
+}
+
+async function requestLiveBoundary(
+  order: {
+    symbol: string;
+    market: string;
+    side: "buy" | "sell";
+    quantity: number;
+    limitPrice: number | null;
+    reason: string;
+  },
+): Promise<TradingBoundaryResult> {
+  const response =
+    await founderFetch(
+      "/api/founder/market/live-trading-boundary",
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            order,
+
+            paperTradingVerified:
+              false,
+
+            humanReviewApproved:
+              false,
+
+            brokerConnected:
+              false,
+
+            liveExecutionRequested:
+              true,
+          }),
+      },
+    );
+
+  const data =
+    (await response.json()) as
+      TradingBoundaryResult;
+
+  if (
+    response.status ===
+    401
+  ) {
+    throw new Error(
+      "Founder authentication failed.",
+    );
+  }
+
+  return data;
+}
+
+async function requestBrokerBoundary(
+  order: {
+    symbol: string;
+    market: string;
+    side: "buy" | "sell";
+    quantity: number;
+    limitPrice: number | null;
+    reason: string;
+  },
+): Promise<BrokerBoundaryResult> {
+  const response =
+    await founderFetch(
+      "/api/founder/market/broker-integration-boundary",
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            order,
+
+            paperTradingVerified:
+              false,
+
+            humanReviewApproved:
+              false,
+
+            provider:
+              "unconfigured",
+
+            connectionVerified:
+              false,
+
+            executionRequested:
+              true,
+          }),
+      },
+    );
+
+  const data =
+    (await response.json()) as
+      BrokerBoundaryResult;
 
   if (
     response.status ===
@@ -281,19 +507,21 @@ async function requestRegression(): Promise<RegressionResult> {
 
 function Section({
   title,
+  eyebrow,
   children,
 }: {
   title: string;
+  eyebrow?: string;
   children: React.ReactNode;
 }) {
   return (
     <section
       style={{
         border:
-          "1px solid rgba(255,255,255,0.10)",
+          "1px solid rgba(255,255,255,0.09)",
 
         borderRadius:
-          14,
+          16,
 
         padding:
           18,
@@ -302,11 +530,33 @@ function Section({
           "rgba(255,255,255,0.035)",
       }}
     >
+      {eyebrow && (
+        <div
+          style={{
+            fontSize:
+              10,
+
+            letterSpacing:
+              "0.12em",
+
+            opacity:
+              0.45,
+
+            marginBottom:
+              6,
+          }}
+        >
+          {eyebrow}
+        </div>
+      )}
+
       <h2
         style={{
-          marginTop: 0,
-          marginBottom: 12,
-          fontSize: 16,
+          margin:
+            "0 0 14px",
+
+          fontSize:
+            16,
         }}
       >
         {title}
@@ -317,49 +567,7 @@ function Section({
   );
 }
 
-function List({
-  items,
-}: {
-  items?: string[];
-}) {
-  if (!items?.length) {
-    return (
-      <div
-        style={{
-          opacity:
-            0.55,
-        }}
-      >
-        No structured signals.
-      </div>
-    );
-  }
-
-  return (
-    <ul
-      style={{
-        margin: 0,
-        paddingLeft: 20,
-        lineHeight: 1.7,
-      }}
-    >
-      {items.map(
-        (
-          item,
-          index,
-        ) => (
-          <li
-            key={`${item}-${index}`}
-          >
-            {item}
-          </li>
-        ),
-      )}
-    </ul>
-  );
-}
-
-function StatusBadge({
+function Badge({
   ok,
   children,
 }: {
@@ -370,7 +578,10 @@ function StatusBadge({
     <span
       style={{
         display:
-          "inline-block",
+          "inline-flex",
+
+        alignItems:
+          "center",
 
         padding:
           "4px 8px",
@@ -397,6 +608,106 @@ function StatusBadge({
   );
 }
 
+function Metric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        padding:
+          12,
+
+        borderRadius:
+          10,
+
+        background:
+          "rgba(255,255,255,0.035)",
+      }}
+    >
+      <div
+        style={{
+          fontSize:
+            11,
+
+          opacity:
+            0.5,
+
+          marginBottom:
+            5,
+        }}
+      >
+        {label}
+      </div>
+
+      <strong
+        style={{
+          fontSize:
+            14,
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function List({
+  items,
+}: {
+  items?: string[];
+}) {
+  if (!items?.length) {
+    return (
+      <div
+        style={{
+          opacity:
+            0.5,
+
+          fontSize:
+            13,
+        }}
+      >
+        No structured signals.
+      </div>
+    );
+  }
+
+  return (
+    <ul
+      style={{
+        margin:
+          0,
+
+        paddingLeft:
+          18,
+
+        lineHeight:
+          1.7,
+
+        fontSize:
+          13,
+      }}
+    >
+      {items.map(
+        (
+          item,
+          index,
+        ) => (
+          <li
+            key={`${item}-${index}`}
+          >
+            {item}
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}
+
 export default function FounderMarketPage() {
   const [
     sessionDetected,
@@ -414,9 +725,28 @@ export default function FounderMarketPage() {
   ] = useState("us");
 
   const [
-    mode,
-    setMode,
-  ] = useState("full");
+    side,
+    setSide,
+  ] = useState<
+    "buy" | "sell"
+  >("buy");
+
+  const [
+    quantity,
+    setQuantity,
+  ] = useState("1");
+
+  const [
+    limitPrice,
+    setLimitPrice,
+  ] = useState("");
+
+  const [
+    orderReason,
+    setOrderReason,
+  ] = useState(
+    "Founder-reviewed market execution intent.",
+  );
 
   const [
     loading,
@@ -424,8 +754,13 @@ export default function FounderMarketPage() {
   ] = useState(false);
 
   const [
-    regressionLoading,
-    setRegressionLoading,
+    tradingLoading,
+    setTradingLoading,
+  ] = useState(false);
+
+  const [
+    readinessLoading,
+    setReadinessLoading,
   ] = useState(false);
 
   const [
@@ -436,10 +771,26 @@ export default function FounderMarketPage() {
   );
 
   const [
-    regression,
-    setRegression,
+    readiness,
+    setReadiness,
   ] =
-    useState<RegressionResult | null>(
+    useState<ProviderReadinessResult | null>(
+      null,
+    );
+
+  const [
+    liveBoundary,
+    setLiveBoundary,
+  ] =
+    useState<TradingBoundaryResult | null>(
+      null,
+    );
+
+  const [
+    brokerBoundary,
+    setBrokerBoundary,
+  ] =
+    useState<BrokerBoundaryResult | null>(
       null,
     );
 
@@ -456,42 +807,31 @@ export default function FounderMarketPage() {
     );
   }, []);
 
-  async function runAnalysis() {
+  async function runResearch() {
     setLoading(true);
     setError("");
-    setResult(null);
 
     try {
       const data =
         await requestMarketAnalysis(
           symbol,
           market,
-          mode,
         );
 
       setResult(data);
-
-      if (
-        data.code ===
-        "FOUNDER_AUTH_REQUIRED"
-      ) {
-        setError(
-          "Founder authentication required.",
-        );
-      }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Market analysis request failed.",
+          : "Market research failed.",
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function runRegression() {
-    setRegressionLoading(
+  async function runReadiness() {
+    setReadinessLoading(
       true,
     );
 
@@ -499,21 +839,134 @@ export default function FounderMarketPage() {
 
     try {
       const data =
-        await requestRegression();
+        await requestProviderReadiness();
 
-      setRegression(data);
+      setReadiness(data);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Market regression failed.",
+          : "Provider readiness failed.",
       );
     } finally {
-      setRegressionLoading(
+      setReadinessLoading(
         false,
       );
     }
   }
+
+  async function evaluateTradingIntent() {
+    const parsedQuantity =
+      Number(
+        quantity,
+      );
+
+    if (
+      !Number.isFinite(
+        parsedQuantity,
+      ) ||
+      parsedQuantity <= 0
+    ) {
+      setError(
+        "Quantity must be greater than zero.",
+      );
+
+      return;
+    }
+
+    const parsedLimitPrice =
+      limitPrice.trim()
+        ? Number(
+            limitPrice,
+          )
+        : null;
+
+    if (
+      parsedLimitPrice !==
+        null &&
+      (
+        !Number.isFinite(
+          parsedLimitPrice,
+        ) ||
+        parsedLimitPrice <=
+          0
+      )
+    ) {
+      setError(
+        "Limit price must be a positive number.",
+      );
+
+      return;
+    }
+
+    setTradingLoading(
+      true,
+    );
+
+    setError("");
+
+    const order = {
+      symbol:
+        symbol
+          .trim()
+          .toUpperCase(),
+
+      market,
+
+      side,
+
+      quantity:
+        Math.floor(
+          parsedQuantity,
+        ),
+
+      limitPrice:
+        parsedLimitPrice,
+
+      reason:
+        orderReason.trim(),
+    };
+
+    try {
+      const [
+        liveResult,
+        brokerResult,
+      ] =
+        await Promise.all([
+          requestLiveBoundary(
+            order,
+          ),
+
+          requestBrokerBoundary(
+            order,
+          ),
+        ]);
+
+      setLiveBoundary(
+        liveResult,
+      );
+
+      setBrokerBoundary(
+        brokerResult,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Trading boundary evaluation failed.",
+      );
+    } finally {
+      setTradingLoading(
+        false,
+      );
+    }
+  }
+
+  const snapshot =
+    result?.snapshot;
+
+  const analysis =
+    result?.analysis;
 
   return (
     <main
@@ -528,7 +981,7 @@ export default function FounderMarketPage() {
           "#f4f4f5",
 
         padding:
-          "28px 18px 60px",
+          "26px 18px 70px",
 
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -537,836 +990,1216 @@ export default function FounderMarketPage() {
       <div
         style={{
           maxWidth:
-            920,
+            1120,
 
           margin:
             "0 auto",
         }}
       >
-        <div
+        <header
           style={{
             marginBottom:
-              26,
+              24,
           }}
         >
           <div
             style={{
               fontSize:
-                11,
+                10,
 
               letterSpacing:
-                "0.12em",
+                "0.14em",
 
               opacity:
-                0.55,
+                0.45,
 
               marginBottom:
                 8,
             }}
           >
-            PRIVATE FOUNDER ACCESS
+            PRIVATE FOUNDER TERMINAL
           </div>
 
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 28,
-            }}
-          >
-            AIOS Market Intelligence
-          </h1>
-
-          <p
-            style={{
-              opacity:
-                0.68,
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            C147.2.3 · US / HK / A-share
-            unified market intelligence
-          </p>
-        </div>
-
-        <Section title="Founder Session">
           <div
             style={{
               display:
                 "flex",
 
               alignItems:
-                "center",
+                "flex-start",
 
-              gap: 10,
-
-              marginBottom:
-                12,
-            }}
-          >
-            <span
-              style={{
-                width: 9,
-                height: 9,
-                borderRadius:
-                  "50%",
-
-                background:
-                  sessionDetected
-                    ? "#4ade80"
-                    : "#f87171",
-
-                display:
-                  "inline-block",
-              }}
-            />
-
-            <strong>
-              {sessionDetected
-                ? "Founder Session detected"
-                : "Founder Session not detected"}
-            </strong>
-          </div>
-
-          <div
-            style={{
-              opacity:
-                0.62,
-
-              fontSize:
-                13,
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            当前页面自动读取 Founder Console
-            的 sessionStorage，不显示或提交
-            Access Key。
-          </div>
-        </Section>
-
-        <div
-          style={{
-            height: 16,
-          }}
-        />
-
-        <Section title="Provider Status">
-          <div
-            style={{
-              display:
-                "grid",
+              justifyContent:
+                "space-between",
 
               gap:
-                10,
+                18,
+
+              flexWrap:
+                "wrap",
             }}
           >
-            <div
-              style={{
-                padding:
-                  12,
-
-                borderRadius:
-                  10,
-
-                background:
-                  "rgba(255,255,255,0.04)",
-
-                lineHeight:
-                  1.6,
-              }}
-            >
-              <strong>
-                Structured Market Provider
-              </strong>
-
-              <div
+            <div>
+              <h1
                 style={{
-                  marginTop:
-                    4,
+                  margin:
+                    0,
+
+                  fontSize:
+                    30,
+
+                  letterSpacing:
+                    "-0.02em",
+                }}
+              >
+                AIOS Market Terminal
+              </h1>
+
+              <p
+                style={{
+                  margin:
+                    "8px 0 0",
 
                   opacity:
-                    0.65,
+                    0.62,
+
+                  lineHeight:
+                    1.6,
 
                   fontSize:
                     13,
                 }}
               >
-                Nasdaq Data Link is optional.
-                未配置 API Key / DataTable
-                时，AIOS 自动使用 Web Intelligence
-                fallback。
-              </div>
-
-              <div
-                style={{
-                  marginTop:
-                    8,
-                }}
-              >
-                <StatusBadge ok={false}>
-                  Not configured
-                </StatusBadge>
-              </div>
+                Research → Evidence → Verification
+                → Decision → Paper Trade → Human Review
+                → Live Trading Boundary → Broker Execution
+              </p>
             </div>
 
-            <div
-              style={{
-                padding:
-                  12,
-
-                borderRadius:
-                  10,
-
-                background:
-                  "rgba(255,255,255,0.04)",
-
-                lineHeight:
-                  1.6,
-              }}
+            <Badge
+              ok={
+                sessionDetected
+              }
             >
-              <strong>
-                Web Intelligence
-              </strong>
-
-              <div
-                style={{
-                  marginTop:
-                    4,
-
-                  opacity:
-                    0.65,
-
-                  fontSize:
-                    13,
-                }}
-              >
-                用于没有结构化行情 Provider
-                时的证据检索与分析。
-              </div>
-
-              <div
-                style={{
-                  marginTop:
-                    8,
-                }}
-              >
-                <StatusBadge ok>
-                  Fallback enabled
-                </StatusBadge>
-              </div>
-            </div>
+              {sessionDetected
+                ? "Founder Session"
+                : "Session Required"}
+            </Badge>
           </div>
-        </Section>
+        </header>
 
         <div
           style={{
-            height: 16,
+            display:
+              "grid",
+
+            gap:
+              16,
           }}
-        />
-
-        <Section title="C147.2.3 Three-Market Regression">
-          <p
-            style={{
-              opacity:
-                0.68,
-
-              lineHeight:
-                1.6,
-
-              fontSize:
-                13,
-            }}
+        >
+          <Section
+            title="Market Research"
+            eyebrow="SHARED RESEARCH ENTRY"
           >
-            一次验证 US / Hong Kong / A-share
-            三个市场。不会把 Web Evidence
-            当成实时行情。
-          </p>
+            <div
+              style={{
+                display:
+                  "grid",
 
-          <button
-            onClick={
-              runRegression
-            }
-            disabled={
-              regressionLoading
-            }
-            style={{
-              width:
-                "100%",
+                gridTemplateColumns:
+                  "minmax(0, 1.5fr) minmax(140px, 0.7fr) auto",
 
-              padding:
-                "13px 16px",
+                gap:
+                  10,
+              }}
+            >
+              <input
+                value={
+                  symbol
+                }
+                onChange={(event) =>
+                  setSymbol(
+                    event.target.value,
+                  )
+                }
+                placeholder="Symbol"
+                style={{
+                  minWidth:
+                    0,
 
-              borderRadius:
-                10,
+                  padding:
+                    "12px 13px",
 
-              border:
-                "none",
+                  borderRadius:
+                    10,
 
-              background:
-                regressionLoading
-                  ? "#3f3f46"
-                  : "#fff",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
 
-              color:
-                regressionLoading
-                  ? "#aaa"
-                  : "#09090b",
+                  background:
+                    "rgba(255,255,255,0.04)",
 
-              fontWeight:
-                700,
+                  color:
+                    "#fff",
 
-              cursor:
-                regressionLoading
-                  ? "wait"
-                  : "pointer",
-            }}
-          >
-            {regressionLoading
-              ? "Running Regression…"
-              : "Run Three-Market Regression"}
-          </button>
+                  outline:
+                    "none",
+                }}
+              />
 
-          {regression && (
+              <select
+                value={
+                  market
+                }
+                onChange={(event) =>
+                  setMarket(
+                    event.target.value,
+                  )
+                }
+                style={{
+                  padding:
+                    "12px 13px",
+
+                  borderRadius:
+                    10,
+
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+
+                  background:
+                    "#18181b",
+
+                  color:
+                    "#fff",
+                }}
+              >
+                <option value="us">
+                  US
+                </option>
+
+                <option value="hk">
+                  HK
+                </option>
+
+                <option value="cn">
+                  A-share
+                </option>
+              </select>
+
+              <button
+                onClick={
+                  runResearch
+                }
+                disabled={
+                  loading ||
+                  !sessionDetected
+                }
+                style={{
+                  padding:
+                    "12px 18px",
+
+                  borderRadius:
+                    10,
+
+                  border:
+                    "none",
+
+                  background:
+                    loading
+                      ? "#3f3f46"
+                      : "#fff",
+
+                  color:
+                    loading
+                      ? "#aaa"
+                      : "#09090b",
+
+                  fontWeight:
+                    700,
+
+                  cursor:
+                    loading
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                {loading
+                  ? "Researching..."
+                  : "Run Research"}
+              </button>
+            </div>
+
             <div
               style={{
                 marginTop:
-                  16,
+                  12,
+
+                display:
+                  "flex",
+
+                gap:
+                  8,
+
+                flexWrap:
+                  "wrap",
               }}
             >
+              <Badge
+                ok={
+                  Boolean(
+                    result?.verification
+                      ?.verified,
+                  )
+                }
+              >
+                Evidence verification
+              </Badge>
+
+              <Badge
+                ok={
+                  Boolean(
+                    snapshot?.liveQuoteAvailable,
+                  )
+                }
+              >
+                Live quote
+              </Badge>
+
+              <Badge
+                ok={
+                  Boolean(
+                    result?.provider
+                      ?.configured,
+                  )
+                }
+              >
+                Structured provider
+              </Badge>
+            </div>
+          </Section>
+
+          {error && (
+            <div
+              style={{
+                padding:
+                  13,
+
+                borderRadius:
+                  10,
+
+                background:
+                  "rgba(248,113,113,0.10)",
+
+                border:
+                  "1px solid rgba(248,113,113,0.20)",
+
+                color:
+                  "#fca5a5",
+
+                fontSize:
+                  13,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {result && (
+            <>
+              <Section
+                title={
+                  `${result.instrument?.normalizedSymbol ?? symbol} Market Snapshot`
+                }
+                eyebrow="RESEARCH SNAPSHOT"
+              >
+                <div
+                  style={{
+                    display:
+                      "grid",
+
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+
+                    gap:
+                      10,
+                  }}
+                >
+                  <Metric
+                    label="Price"
+                    value={
+                      snapshot?.price !=
+                      null
+                        ? String(
+                            snapshot.price,
+                          )
+                        : "Unavailable"
+                    }
+                  />
+
+                  <Metric
+                    label="Change"
+                    value={
+                      snapshot?.changePercent !=
+                      null
+                        ? `${snapshot.changePercent}%`
+                        : "Unavailable"
+                    }
+                  />
+
+                  <Metric
+                    label="Data Quality"
+                    value={
+                      snapshot?.dataQuality ??
+                      "Unknown"
+                    }
+                  />
+
+                  <Metric
+                    label="As Of"
+                    value={
+                      snapshot?.asOf ??
+                      "Unknown"
+                    }
+                  />
+                </div>
+              </Section>
+
+              <Section
+                title="Research Conclusion"
+                eyebrow="DECISION SUPPORT"
+              >
+                <div
+                  style={{
+                    display:
+                      "grid",
+
+                    gap:
+                      14,
+                  }}
+                >
+                  <div>
+                    <strong>
+                      Current State
+                    </strong>
+
+                    <p
+                      style={{
+                        margin:
+                          "7px 0 0",
+
+                        lineHeight:
+                          1.7,
+
+                        opacity:
+                          0.72,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.decisionSupport
+                        ?.currentState ??
+                        "No structured conclusion available."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Supporting Factors
+                    </strong>
+
+                    <List
+                      items={
+                        analysis
+                          ?.decisionSupport
+                          ?.supportingFactors
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <strong>
+                      Invalidation Conditions
+                    </strong>
+
+                    <List
+                      items={
+                        analysis
+                          ?.decisionSupport
+                          ?.invalidationConditions
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <strong>
+                      Watch Metrics
+                    </strong>
+
+                    <List
+                      items={
+                        analysis
+                          ?.decisionSupport
+                          ?.watchMetrics
+                      }
+                    />
+                  </div>
+                </div>
+              </Section>
+
+              <Section
+                title="Research Blocks"
+                eyebrow="ANALYSIS"
+              >
+                <div
+                  style={{
+                    display:
+                      "grid",
+
+                    gridTemplateColumns:
+                      "repeat(2, minmax(0, 1fr))",
+
+                    gap:
+                      12,
+                  }}
+                >
+                  <div>
+                    <strong>
+                      Industry
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.industry
+                        ?.summary ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Company
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.company
+                        ?.summary ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Fundamentals
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.fundamentals
+                        ?.assessment ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Valuation
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.valuation
+                        ?.assessment ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Trend
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.trend
+                        ?.assessment ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong>
+                      Risk
+                    </strong>
+
+                    <p
+                      style={{
+                        lineHeight:
+                          1.65,
+
+                        opacity:
+                          0.68,
+
+                        fontSize:
+                          13,
+                      }}
+                    >
+                      {analysis?.risk
+                        ?.level ??
+                        "Unavailable."}
+                    </p>
+                  </div>
+                </div>
+              </Section>
+            </>
+          )}
+
+          <Section
+            title="Provider & Commercial Readiness"
+            eyebrow="FOUNDER CONTROL"
+          >
+            <div
+              style={{
+                display:
+                  "flex",
+
+                justifyContent:
+                  "space-between",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  12,
+
+                flexWrap:
+                  "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize:
+                      13,
+
+                    opacity:
+                      0.68,
+
+                    lineHeight:
+                      1.6,
+                  }}
+                >
+                  Technical market-data access,
+                  realtime verification and
+                  commercial authorization remain
+                  separate gates.
+                </div>
+              </div>
+
+              <button
+                onClick={
+                  runReadiness
+                }
+                disabled={
+                  readinessLoading
+                }
+                style={{
+                  padding:
+                    "10px 14px",
+
+                  borderRadius:
+                    10,
+
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+
+                  background:
+                    "rgba(255,255,255,0.06)",
+
+                  color:
+                    "#fff",
+
+                  fontWeight:
+                    650,
+                }}
+              >
+                {readinessLoading
+                  ? "Checking..."
+                  : "Run Readiness"}
+              </button>
+            </div>
+
+            {readiness && (
               <div
                 style={{
+                  marginTop:
+                    16,
+
                   display:
                     "grid",
 
                   gridTemplateColumns:
-                    "repeat(2, minmax(0, 1fr))",
+                    "repeat(4, minmax(0, 1fr))",
 
                   gap:
                     10,
-
-                  marginBottom:
-                    14,
                 }}
               >
-                <div
+                <Metric
+                  label="Provider"
+                  value={
+                    readiness.providerRegistry
+                      ?.activeProvider ??
+                    "None"
+                  }
+                />
+
+                <Metric
+                  label="Readiness"
+                  value={
+                    readiness.readiness
+                      ?.state ??
+                    "unknown"
+                  }
+                />
+
+                <Metric
+                  label="Commercial"
+                  value={
+                    readiness
+                      .commercialAuthorization
+                      ?.decision ??
+                    "unknown"
+                  }
+                />
+
+                <Metric
+                  label="Realtime"
+                  value={
+                    readiness.readiness
+                      ?.realtimeReady
+                      ? "Ready"
+                      : "Not verified"
+                  }
+                />
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Founder Trading Terminal"
+            eyebrow="FOUNDER ONLY · LIVE EXECUTION BOUNDARY"
+          >
+            <div
+              style={{
+                padding:
+                  13,
+
+                marginBottom:
+                  14,
+
+                borderRadius:
+                  10,
+
+                background:
+                  "rgba(251,191,36,0.08)",
+
+                border:
+                  "1px solid rgba(251,191,36,0.18)",
+
+                color:
+                  "#fcd34d",
+
+                fontSize:
+                  12,
+
+                lineHeight:
+                  1.65,
+              }}
+            >
+              Founder can create and evaluate a
+              real trading order intent here.
+              Actual live execution remains blocked
+              until C151 paper verification, explicit
+              human approval, a verified broker
+              connection and a real execution adapter
+              are all available.
+            </div>
+
+            <div
+              style={{
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "1.3fr 0.8fr 0.8fr",
+
+                gap:
+                  10,
+              }}
+            >
+              <div>
+                <label
                   style={{
+                    display:
+                      "block",
+
+                    fontSize:
+                      11,
+
+                    opacity:
+                      0.55,
+
+                    marginBottom:
+                      6,
+                  }}
+                >
+                  Symbol
+                </label>
+
+                <input
+                  value={
+                    symbol
+                  }
+                  onChange={(event) =>
+                    setSymbol(
+                      event.target.value,
+                    )
+                  }
+                  style={{
+                    width:
+                      "100%",
+
+                    boxSizing:
+                      "border-box",
+
                     padding:
-                      12,
+                      "11px 12px",
 
                     borderRadius:
-                      10,
+                      9,
+
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
 
                     background:
                       "rgba(255,255,255,0.04)",
+
+                    color:
+                      "#fff",
                   }}
-                >
-                  <div
-                    style={{
-                      opacity:
-                        0.55,
-
-                      fontSize:
-                        12,
-                    }}
-                  >
-                    Regression
-                  </div>
-
-                  <strong>
-                    {regression.passed ?? 0}
-                    /
-                    {regression.total ?? 0}
-                    passed
-                  </strong>
-                </div>
-
-                <div
-                  style={{
-                    padding:
-                      12,
-
-                    borderRadius:
-                      10,
-
-                    background:
-                      "rgba(255,255,255,0.04)",
-                  }}
-                >
-                  <div
-                    style={{
-                      opacity:
-                        0.55,
-
-                      fontSize:
-                        12,
-                    }}
-                  >
-                    Web fallback
-                  </div>
-
-                  <strong>
-                    {regression.webFallback ?? 0}
-                  </strong>
-                </div>
+                />
               </div>
 
-              {regression.results?.map(
-                (
-                  item,
-                ) => (
-                  <div
-                    key={
-                      item.id
-                    }
-                    style={{
-                      padding:
-                        14,
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
 
-                      marginTop:
-                        10,
+                    fontSize:
+                      11,
 
-                      borderRadius:
-                        10,
+                    opacity:
+                      0.55,
 
-                      background:
-                        "rgba(255,255,255,0.04)",
+                    marginBottom:
+                      6,
+                  }}
+                >
+                  Side
+                </label>
 
-                      border:
-                        "1px solid rgba(255,255,255,0.07)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display:
-                          "flex",
+                <select
+                  value={
+                    side
+                  }
+                  onChange={(event) =>
+                    setSide(
+                      event.target.value as
+                        | "buy"
+                        | "sell",
+                    )
+                  }
+                  style={{
+                    width:
+                      "100%",
 
-                        justifyContent:
-                          "space-between",
+                    padding:
+                      "11px 12px",
 
-                        gap:
-                          10,
+                    borderRadius:
+                      9,
 
-                        flexWrap:
-                          "wrap",
-                      }}
-                    >
-                      <strong>
-                        {item.symbol}
-                      </strong>
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
 
-                      <StatusBadge
-                        ok={
-                          Boolean(
-                            item.success &&
-                              item.verified,
-                          )
-                        }
-                      >
-                        {item.success &&
-                        item.verified
-                          ? "PASS"
-                          : "FAILED"}
-                      </StatusBadge>
-                    </div>
+                    background:
+                      "#18181b",
 
-                    <div
-                      style={{
-                        marginTop:
-                          10,
+                    color:
+                      "#fff",
+                  }}
+                >
+                  <option value="buy">
+                    Buy
+                  </option>
 
-                        display:
-                          "grid",
+                  <option value="sell">
+                    Sell
+                  </option>
+                </select>
+              </div>
 
-                        gap:
-                          5,
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
 
-                        fontSize:
-                          13,
+                    fontSize:
+                      11,
 
-                        opacity:
-                          0.72,
-                      }}
-                    >
-                      <div>
-                        Provider:{" "}
-                        {item.provider ??
-                          "unknown"}
-                      </div>
+                    opacity:
+                      0.55,
 
-                      <div>
-                        Data quality:{" "}
-                        {item.dataQuality ??
-                          "insufficient"}
-                      </div>
+                    marginBottom:
+                      6,
+                  }}
+                >
+                  Quantity
+                </label>
 
-                      <div>
-                        Structured verified:{" "}
-                        {item.structuredDataVerified
-                          ? "YES"
-                          : "NO"}
-                      </div>
+                <input
+                  value={
+                    quantity
+                  }
+                  onChange={(event) =>
+                    setQuantity(
+                      event.target.value,
+                    )
+                  }
+                  inputMode="numeric"
+                  style={{
+                    width:
+                      "100%",
 
-                      <div>
-                        Web evidence:{" "}
-                        {item.webEvidenceAvailable
-                          ? "YES"
-                          : "NO"}
-                      </div>
+                    boxSizing:
+                      "border-box",
 
-                      <div>
-                        Live quote verified:{" "}
-                        {item.liveQuoteAvailable
-                          ? "YES"
-                          : "NO"}
-                      </div>
+                    padding:
+                      "11px 12px",
 
-                      <div>
-                        Sources:{" "}
-                        {item.sourceCount ??
-                          0}
-                        {" · "}
-                        Domains:{" "}
-                        {item.independentDomains ??
-                          0}
-                      </div>
+                    borderRadius:
+                      9,
 
-                      {item.asOf && (
-                        <div>
-                          As of:{" "}
-                          {item.asOf}
-                        </div>
-                      )}
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
 
-                      {item.error && (
-                        <div
-                          style={{
-                            color:
-                              "#fca5a5",
-                          }}
-                        >
-                          Error:{" "}
-                          {item.error}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ),
-              )}
+                    background:
+                      "rgba(255,255,255,0.04)",
+
+                    color:
+                      "#fff",
+                  }}
+                />
+              </div>
             </div>
-          )}
-        </Section>
 
-        <div
-          style={{
-            height: 16,
-          }}
-        />
+            <div
+              style={{
+                display:
+                  "grid",
 
-        <Section title="Market Analysis">
-          <div
-            style={{
-              display:
-                "grid",
+                gridTemplateColumns:
+                  "0.8fr 1.6fr",
 
-              gridTemplateColumns:
-                "minmax(0, 1fr) 150px 150px",
+                gap:
+                  10,
 
-              gap:
-                10,
-            }}
-          >
-            <input
-              value={
-                symbol
+                marginTop:
+                  10,
+              }}
+            >
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
+
+                    fontSize:
+                      11,
+
+                    opacity:
+                      0.55,
+
+                    marginBottom:
+                      6,
+                  }}
+                >
+                  Limit Price
+                </label>
+
+                <input
+                  value={
+                    limitPrice
+                  }
+                  onChange={(event) =>
+                    setLimitPrice(
+                      event.target.value,
+                    )
+                  }
+                  inputMode="decimal"
+                  placeholder="Optional"
+                  style={{
+                    width:
+                      "100%",
+
+                    boxSizing:
+                      "border-box",
+
+                    padding:
+                      "11px 12px",
+
+                    borderRadius:
+                      9,
+
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
+
+                    background:
+                      "rgba(255,255,255,0.04)",
+
+                    color:
+                      "#fff",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
+
+                    fontSize:
+                      11,
+
+                    opacity:
+                      0.55,
+
+                    marginBottom:
+                      6,
+                  }}
+                >
+                  Order Reason
+                </label>
+
+                <input
+                  value={
+                    orderReason
+                  }
+                  onChange={(event) =>
+                    setOrderReason(
+                      event.target.value,
+                    )
+                  }
+                  style={{
+                    width:
+                      "100%",
+
+                    boxSizing:
+                      "border-box",
+
+                    padding:
+                      "11px 12px",
+
+                    borderRadius:
+                      9,
+
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
+
+                    background:
+                      "rgba(255,255,255,0.04)",
+
+                    color:
+                      "#fff",
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={
+                evaluateTradingIntent
               }
-              onChange={(
-                event,
-              ) =>
-                setSymbol(
-                  event.target.value,
-                )
+              disabled={
+                tradingLoading ||
+                !sessionDetected
               }
-              placeholder="NVDA / 0700.HK / 600519.SH"
               style={{
                 width:
                   "100%",
 
-                boxSizing:
-                  "border-box",
+                marginTop:
+                  12,
 
                 padding:
-                  "12px 13px",
+                  "13px 16px",
 
                 borderRadius:
                   10,
 
                 border:
-                  "1px solid rgba(255,255,255,0.15)",
-
-                background:
-                  "rgba(255,255,255,0.06)",
-
-                color:
-                  "#fff",
-
-                outline:
                   "none",
-              }}
-            />
-
-            <select
-              value={
-                market
-              }
-              onChange={(
-                event,
-              ) =>
-                setMarket(
-                  event.target.value,
-                )
-              }
-              style={{
-                padding:
-                  "12px",
-
-                borderRadius:
-                  10,
-
-                border:
-                  "1px solid rgba(255,255,255,0.15)",
 
                 background:
-                  "#18181b",
+                  tradingLoading
+                    ? "#3f3f46"
+                    : "#fff",
 
                 color:
-                  "#fff",
+                  tradingLoading
+                    ? "#aaa"
+                    : "#09090b",
+
+                fontWeight:
+                  750,
+
+                cursor:
+                  tradingLoading
+                    ? "wait"
+                    : "pointer",
               }}
             >
-              <option value="us">
-                US
-              </option>
+              {tradingLoading
+                ? "Evaluating Trading Boundary..."
+                : "Evaluate Live Trading Intent"}
+            </button>
 
-              <option value="hk">
-                HK
-              </option>
-
-              <option value="cn">
-                A-share
-              </option>
-            </select>
-
-            <select
-              value={
-                mode
-              }
-              onChange={(
-                event,
-              ) =>
-                setMode(
-                  event.target.value,
-                )
-              }
-              style={{
-                padding:
-                  "12px",
-
-                borderRadius:
-                  10,
-
-                border:
-                  "1px solid rgba(255,255,255,0.15)",
-
-                background:
-                  "#18181b",
-
-                color:
-                  "#fff",
-              }}
-            >
-              <option value="full">
-                Full
-              </option>
-
-              <option value="research">
-                Research
-              </option>
-
-              <option value="valuation">
-                Valuation
-              </option>
-
-              <option value="technical">
-                Technical
-              </option>
-
-              <option value="screen">
-                Screen
-              </option>
-            </select>
-          </div>
-
-          <button
-            onClick={
-              runAnalysis
-            }
-            disabled={
-              loading ||
-              !symbol.trim()
-            }
-            style={{
-              marginTop:
-                14,
-
-              width:
-                "100%",
-
-              padding:
-                "13px 16px",
-
-              borderRadius:
-                10,
-
-              border:
-                "none",
-
-              background:
-                loading
-                  ? "#3f3f46"
-                  : "#fff",
-
-              color:
-                loading
-                  ? "#aaa"
-                  : "#09090b",
-
-              fontWeight:
-                700,
-
-              cursor:
-                loading
-                  ? "wait"
-                  : "pointer",
-            }}
-          >
-            {loading
-              ? "Analyzing…"
-              : "Run Market Analysis"}
-          </button>
-        </Section>
-
-        {error && (
-          <>
-            <div
-              style={{
-                height:
-                  16,
-              }}
-            />
-
-            <Section title="Error">
+            {(liveBoundary ||
+              brokerBoundary) && (
               <div
                 style={{
-                  color:
-                    "#fca5a5",
+                  marginTop:
+                    16,
 
-                  lineHeight:
-                    1.6,
+                  display:
+                    "grid",
+
+                  gap:
+                    10,
                 }}
               >
-                {error}
-              </div>
-            </Section>
-          </>
-        )}
-
-        {result && (
-          <>
-            <div
-              style={{
-                height:
-                  16,
-              }}
-            />
-
-            <Section title="Runtime Result">
-              <pre
-                style={{
-                  overflowX:
-                    "auto",
-
-                  whiteSpace:
-                    "pre-wrap",
-
-                  wordBreak:
-                    "break-word",
-
-                  fontSize:
-                    12,
-
-                  lineHeight:
-                    1.5,
-
-                  opacity:
-                    0.85,
-                }}
-              >
-                {JSON.stringify(
-                  {
-                    success:
-                      result.success,
-
-                    verified:
-                      result.verified,
-
-                    code:
-                      result.code,
-
-                    latencyMs:
-                      result.latencyMs,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </Section>
-
-            {result.snapshot && (
-              <>
                 <div
                   style={{
-                    height:
-                      16,
+                    display:
+                      "grid",
+
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+
+                    gap:
+                      10,
                   }}
-                />
+                >
+                  <Metric
+                    label="Live Boundary"
+                    value={
+                      liveBoundary
+                        ?.status ??
+                      "unknown"
+                    }
+                  />
 
-                <Section title="Market Snapshot">
-                  <pre
-                    style={{
-                      margin:
-                        0,
+                  <Metric
+                    label="Broker"
+                    value={
+                      brokerBoundary
+                        ?.broker
+                        ?.connectionStatus ??
+                      "unknown"
+                    }
+                  />
 
-                      whiteSpace:
-                        "pre-wrap",
+                  <Metric
+                    label="Adapter"
+                    value={
+                      brokerBoundary
+                        ?.broker
+                        ?.adapterAvailable
+                        ? "Available"
+                        : "Not implemented"
+                    }
+                  />
 
-                      lineHeight:
-                        1.6,
-                    }}
-                  >
-                    {JSON.stringify(
-                      result.snapshot,
-                      null,
-                      2,
-                    )}
-                  </pre>
+                  <Metric
+                    label="Execution"
+                    value={
+                      brokerBoundary
+                        ?.execution
+                        ?.liveOrderPlaced
+                        ? "Placed"
+                        : "Blocked"
+                    }
+                  />
+                </div>
 
+                {liveBoundary?.blockedReasons
+                  ?.length ? (
                   <div
                     style={{
-                      marginTop:
-                        12,
-
                       padding:
                         12,
 
@@ -1374,550 +2207,179 @@ export default function FounderMarketPage() {
                         10,
 
                       background:
-                        "rgba(255,255,255,0.05)",
+                        "rgba(248,113,113,0.08)",
+
+                      border:
+                        "1px solid rgba(248,113,113,0.16)",
 
                       fontSize:
-                        13,
+                        12,
 
                       lineHeight:
-                        1.6,
+                        1.7,
                     }}
                   >
-                    Data quality:{" "}
                     <strong>
-                      {
-                        result
-                          .snapshot
-                          .dataQuality
-                      }
+                      Live Trading Gates
                     </strong>
 
-                    <br />
+                    <ul
+                      style={{
+                        margin:
+                          "7px 0 0",
 
-                    Live quote:{" "}
-                    <strong>
-                      {
-                        result
-                          .snapshot
-                          .liveQuoteAvailable
-                          ? "YES"
-                          : "NO"
-                      }
-                    </strong>
-
-                    <br />
-
-                    Source:{" "}
-                    <strong>
-                      {
-                        result
-                          .snapshot
-                          .source ??
-                        "N/A"
-                      }
-                    </strong>
-
-                    {result.snapshot
-                      .asOf && (
-                      <>
-                        <br />
-
-                        As of:{" "}
-                        <strong>
-                          {
-                            result
-                              .snapshot
-                              .asOf
-                          }
-                        </strong>
-                      </>
-                    )}
+                        paddingLeft:
+                          18,
+                      }}
+                    >
+                      {liveBoundary.blockedReasons.map(
+                        (
+                          reason,
+                        ) => (
+                          <li
+                            key={
+                              reason
+                            }
+                          >
+                            {reason}
+                          </li>
+                        ),
+                      )}
+                    </ul>
                   </div>
-                </Section>
-              </>
-            )}
+                ) : null}
 
-            {result.provider && (
-              <>
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Provider">
-                  <pre
-                    style={{
-                      margin:
-                        0,
-
-                      whiteSpace:
-                        "pre-wrap",
-
-                      lineHeight:
-                        1.6,
-                    }}
-                  >
-                    {JSON.stringify(
-                      result.provider,
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </Section>
-              </>
-            )}
-
-            {result.analysis && (
-              <>
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Industry">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .industry
-                        ?.summary
-                    }
-                  </p>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .industry
-                        ?.evidence
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Company">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .company
-                        ?.summary
-                    }
-                  </p>
-
-                  <h3>
-                    Strengths
-                  </h3>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .company
-                        ?.strengths
-                    }
-                  />
-
-                  <h3>
-                    Risks
-                  </h3>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .company
-                        ?.risks
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Fundamentals">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .fundamentals
-                        ?.assessment
-                    }
-                  </p>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .fundamentals
-                        ?.signals
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Valuation">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .valuation
-                        ?.assessment
-                    }
-                  </p>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .valuation
-                        ?.signals
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Trend">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .trend
-                        ?.assessment
-                    }
-                  </p>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .trend
-                        ?.signals
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Risk">
-                  <p>
-                    Risk level:{" "}
-                    <strong>
-                      {
-                        result
-                          .analysis
-                          .risk
-                          ?.level
-                      }
-                    </strong>
-                  </p>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .risk
-                        ?.factors
-                    }
-                  />
-                </Section>
-
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Decision Support">
-                  <p>
-                    {
-                      result
-                        .analysis
-                        .decisionSupport
-                        ?.currentState
-                    }
-                  </p>
-
-                  <h3>
-                    Supporting Factors
-                  </h3>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .decisionSupport
-                        ?.supportingFactors
-                    }
-                  />
-
-                  <h3>
-                    Watch Metrics
-                  </h3>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .decisionSupport
-                        ?.watchMetrics
-                    }
-                  />
-
-                  <h3>
-                    Invalidation Conditions
-                  </h3>
-
-                  <List
-                    items={
-                      result
-                        .analysis
-                        .decisionSupport
-                        ?.invalidationConditions
-                    }
-                  />
-
-                  <h3>
-                    Scenarios
-                  </h3>
-
-                  {result
-                    .analysis
-                    .decisionSupport
-                    ?.scenarios
-                    ?.map(
-                      (
-                        scenario,
-                        index,
-                      ) => (
-                        <div
-                          key={`${scenario.name}-${index}`}
-                          style={{
-                            marginTop:
-                              10,
-
-                            padding:
-                              12,
-
-                            borderRadius:
-                              10,
-
-                            background:
-                              "rgba(255,255,255,0.04)",
-                          }}
-                        >
-                          <strong>
-                            {
-                              scenario.name
-                            }
-                          </strong>
-
-                          <div
-                            style={{
-                              marginTop:
-                                5,
-
-                              opacity:
-                                0.75,
-                            }}
-                          >
-                            Condition:{" "}
-                            {
-                              scenario.condition
-                            }
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop:
-                                5,
-
-                              opacity:
-                                0.75,
-                            }}
-                          >
-                            Implication:{" "}
-                            {
-                              scenario.implication
-                            }
-                          </div>
-                        </div>
-                      ),
-                    )}
-                </Section>
-              </>
-            )}
-
-            {result.evidence?.length ? (
-              <>
-                <div
-                  style={{
-                    height:
-                      16,
-                  }}
-                />
-
-                <Section title="Evidence">
+                {brokerBoundary?.blockedReasons
+                  ?.length ? (
                   <div
                     style={{
+                      padding:
+                        12,
+
+                      borderRadius:
+                        10,
+
+                      background:
+                        "rgba(251,191,36,0.07)",
+
+                      border:
+                        "1px solid rgba(251,191,36,0.15)",
+
+                      fontSize:
+                        12,
+
                       lineHeight:
-                        1.6,
+                        1.7,
                     }}
                   >
-                    Sources:{" "}
-                    {
-                      result
-                        .verification
-                        ?.sourceCount
-                    }
+                    <strong>
+                      Broker Integration Gates
+                    </strong>
 
-                    <br />
+                    <ul
+                      style={{
+                        margin:
+                          "7px 0 0",
 
-                    Independent domains:{" "}
-                    {
-                      result
-                        .verification
-                        ?.independentDomains
-                    }
-
-                    <br />
-
-                    Primary source:{" "}
-                    {
-                      result
-                        .verification
-                        ?.primarySourceFound
-                        ? "YES"
-                        : "NO"
-                    }
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop:
-                        14,
-                    }}
-                  >
-                    {result.evidence.map(
-                      (
-                        item,
-                        index,
-                      ) => (
-                        <div
-                          key={`${item.url}-${index}`}
-                          style={{
-                            padding:
-                              "12px 0",
-
-                            borderTop:
-                              "1px solid rgba(255,255,255,0.08)",
-                          }}
-                        >
-                          <strong>
-                            {
-                              item.title
+                        paddingLeft:
+                          18,
+                      }}
+                    >
+                      {brokerBoundary.blockedReasons.map(
+                        (
+                          reason,
+                        ) => (
+                          <li
+                            key={
+                              reason
                             }
-                          </strong>
-
-                          <div
-                            style={{
-                              fontSize:
-                                12,
-
-                              opacity:
-                                0.55,
-
-                              marginTop:
-                                4,
-                            }}
                           >
-                            {
-                              item.hostname
-                            }
-                          </div>
-
-                          <div
-                            style={{
-                              fontSize:
-                                13,
-
-                              opacity:
-                                0.72,
-
-                              marginTop:
-                                5,
-                            }}
-                          >
-                            {
-                              item.snippet
-                            }
-                          </div>
-                        </div>
-                      ),
-                    )}
+                            {reason}
+                          </li>
+                        ),
+                      )}
+                    </ul>
                   </div>
-                </Section>
-              </>
-            ) : null}
-
-            {result.metadata
-              ?.disclaimer && (
-              <div
-                style={{
-                  marginTop:
-                    18,
-
-                  fontSize:
-                    12,
-
-                  opacity:
-                    0.5,
-
-                  lineHeight:
-                    1.6,
-                }}
-              >
-                {
-                  result
-                    .metadata
-                    .disclaimer
-                }
+                ) : null}
               </div>
             )}
-          </>
-        )}
+          </Section>
+
+          <Section
+            title="Founder Trading Safety Boundary"
+            eyebrow="EXECUTION POLICY"
+          >
+            <div
+              style={{
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "repeat(2, minmax(0, 1fr))",
+
+                gap:
+                  10,
+              }}
+            >
+              <Metric
+                label="Founder Only"
+                value="Yes"
+              />
+
+              <Metric
+                label="Human Review"
+                value="Required"
+              />
+
+              <Metric
+                label="Paper Trading"
+                value="Required"
+              />
+
+              <Metric
+                label="Broker Connection"
+                value="Required"
+              />
+
+              <Metric
+                label="Execution Adapter"
+                value="Required"
+              />
+
+              <Metric
+                label="Automatic Execution"
+                value="Disabled"
+              />
+            </div>
+          </Section>
+
+          <footer
+            style={{
+              marginTop:
+                4,
+
+              padding:
+                "8px 2px",
+
+              fontSize:
+                11,
+
+              lineHeight:
+                1.7,
+
+              opacity:
+                0.45,
+            }}
+          >
+            Founder Terminal is the private control
+            surface. Ordinary users receive the
+            commercial Market Research product only.
+            Research evidence is not automatically
+            converted into an order. Live execution
+            requires an independently verified broker
+            adapter and explicit human approval.
+          </footer>
+        </div>
       </div>
     </main>
   );
