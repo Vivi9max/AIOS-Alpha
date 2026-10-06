@@ -36,10 +36,9 @@ const globalMenus = [
     href: "/market-intelligence",
   },
   {
-    icon: "✓",
-    label:
-      "nav.tasks" as MessageKey,
-    href: "/tasks",
+    icon: "◆",
+    label: "Planner",
+    href: "/planner",
   },
   {
     icon: "⚙",
@@ -63,6 +62,12 @@ const marketResearchLabels = {
   ja: "市場リサーチ",
 } as const;
 
+const plannerLabels = {
+  en: "Planner",
+  "zh-CN": "战略规划器",
+  ja: "Planner",
+} as const;
+
 const productCopy = {
   en: {
     products: "Products",
@@ -74,7 +79,6 @@ const productCopy = {
       "China AIOS workspace",
     workspace: "Workspace",
     projects: "Projects",
-    online: "Runtime online",
   },
   "zh-CN": {
     products: "产品",
@@ -86,7 +90,6 @@ const productCopy = {
       "中国 AIOS 工作空间",
     workspace: "工作区",
     projects: "项目",
-    online: "Runtime 运行正常",
   },
   ja: {
     products: "製品",
@@ -98,7 +101,6 @@ const productCopy = {
       "中国向け AIOS ワークスペース",
     workspace: "ワークスペース",
     projects: "プロジェクト",
-    online: "Runtime 稼働中",
   },
 } as const;
 
@@ -298,13 +300,18 @@ export default function Sidebar() {
                   ? marketResearchLabels[
                       locale
                     ]
-                  : item.label.includes(
-                      ".",
-                    )
-                    ? t(
-                        item.label as MessageKey,
+                  : item.href ===
+                      "/planner"
+                    ? plannerLabels[
+                        locale
+                      ]
+                    : item.label.includes(
+                        ".",
                       )
-                    : item.label;
+                      ? t(
+                          item.label as MessageKey,
+                        )
+                      : item.label;
 
               return (
                 <Link
@@ -355,25 +362,6 @@ export default function Sidebar() {
             },
           )}
         </nav>
-      </div>
-
-      <div className="aios-sidebar-footer">
-        <div className="aios-sidebar-footer-status">
-          <span
-            className="aios-sidebar-status-dot"
-            aria-hidden="true"
-          />
-
-          <span>
-            {copy.online}
-          </span>
-        </div>
-
-        <span>
-          {isCN
-            ? "AIOS CN"
-            : "AIOS Global"}
-        </span>
       </div>
     </aside>
   );
