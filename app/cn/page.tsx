@@ -2,7 +2,6 @@
 
 import AIOSCNChatPanel from "@/components/chat/AIOSCNChatPanel";
 import WorkspaceShell from "@/components/layout/WorkspaceShell";
-
 import {
   useLanguage,
 } from "@/components/i18n/LanguageProvider";
@@ -27,11 +26,15 @@ const copy = {
     privacyValue: "Isolated session",
     capabilities: "Core capabilities",
     capabilityChat: "AI conversation",
+    capabilityChatDescription:
+      "Bring a goal, question, or task directly to AIOS.",
     capabilityInput: "Input understanding",
+    capabilityInputDescription:
+      "Camera, photos, files, video, and voice input.",
     capabilityEvidence:
       "Evidence-aware responses",
-    capabilityMedia:
-      "Camera, photo, file and voice input",
+    capabilityEvidenceDescription:
+      "Responses keep evidence and execution boundaries explicit.",
     note:
       "AIOS CN currently focuses on reliable understanding and execution boundaries. Unavailable capabilities are not presented as completed.",
   },
@@ -44,16 +47,21 @@ const copy = {
     runtime: "Runtime",
     runtimeValue: "DeepSeek",
     input: "输入",
-    inputValue: "文本 · 图片 · 文件 · 语音",
+    inputValue:
+      "文本 · 图片 · 文件 · 语音",
     privacy: "工作空间",
     privacyValue: "独立会话",
     capabilities: "核心能力",
     capabilityChat: "AI 对话",
+    capabilityChatDescription:
+      "直接告诉 AIOS 目标、问题或任务。",
     capabilityInput: "输入理解",
+    capabilityInputDescription:
+      "支持相机、相册、文件、视频与语音输入。",
     capabilityEvidence:
       "基于证据的回答",
-    capabilityMedia:
-      "相机、相册、文件与语音输入",
+    capabilityEvidenceDescription:
+      "明确区分证据、可确认内容与执行边界。",
     note:
       "AIOS CN 当前优先保证可靠理解与明确的执行边界。尚未具备的能力不会被展示为已经完成。",
   },
@@ -66,16 +74,21 @@ const copy = {
     runtime: "Runtime",
     runtimeValue: "DeepSeek",
     input: "入力",
-    inputValue: "テキスト · 画像 · ファイル · 音声",
+    inputValue:
+      "テキスト · 画像 · ファイル · 音声",
     privacy: "ワークスペース",
     privacyValue: "分離セッション",
     capabilities: "主要機能",
     capabilityChat: "AI 会話",
+    capabilityChatDescription:
+      "目標、質問、タスクをそのまま AIOS に入力できます。",
     capabilityInput: "入力理解",
+    capabilityInputDescription:
+      "カメラ、写真、ファイル、動画、音声に対応します。",
     capabilityEvidence:
       "エビデンスを考慮した回答",
-    capabilityMedia:
-      "カメラ、写真、ファイル、音声入力",
+    capabilityEvidenceDescription:
+      "エビデンスと実行範囲を明確に分けて回答します。",
     note:
       "AIOS CN は現在、信頼できる理解と明確な実行境界を優先しています。未対応の機能を完了済みとして表示することはありません。",
   },
@@ -120,13 +133,9 @@ function Capability({
       </span>
 
       <div>
-        <strong>
-          {title}
-        </strong>
+        <strong>{title}</strong>
 
-        <span>
-          {description}
-        </span>
+        <span>{description}</span>
       </div>
     </div>
   );
@@ -157,13 +166,9 @@ export default function CNPage() {
                 {ui.eyebrow}
               </span>
 
-              <h2>
-                {ui.title}
-              </h2>
+              <h2>{ui.title}</h2>
 
-              <p>
-                {ui.description}
-              </p>
+              <p>{ui.description}</p>
             </div>
 
             <div className="aios-cn-status-grid">
@@ -196,7 +201,7 @@ export default function CNPage() {
                 icon="◉"
                 title={ui.capabilityChat}
                 description={
-                  ui.description
+                  ui.capabilityChatDescription
                 }
               />
 
@@ -204,7 +209,7 @@ export default function CNPage() {
                 icon="◇"
                 title={ui.capabilityInput}
                 description={
-                  ui.capabilityMedia
+                  ui.capabilityInputDescription
                 }
               />
 
@@ -214,7 +219,7 @@ export default function CNPage() {
                   ui.capabilityEvidence
                 }
                 description={
-                  ui.note
+                  ui.capabilityEvidenceDescription
                 }
               />
             </div>
@@ -232,9 +237,7 @@ export default function CNPage() {
               i
             </span>
 
-            <span>
-              {ui.note}
-            </span>
+            <span>{ui.note}</span>
           </div>
         </div>
 
@@ -247,7 +250,7 @@ export default function CNPage() {
             background:
               radial-gradient(
                 circle at 80% 0%,
-                rgba(148, 163, 184, 0.16),
+                rgba(148, 163, 184, 0.14),
                 transparent 34%
               ),
               linear-gradient(
@@ -287,12 +290,7 @@ export default function CNPage() {
               );
             box-shadow:
               0 18px 50px
-                rgba(
-                  15,
-                  23,
-                  42,
-                  0.07
-                );
+                rgba(15, 23, 42, 0.07);
           }
 
           .aios-cn-eyebrow {
@@ -314,21 +312,12 @@ export default function CNPage() {
             background: #16a34a;
             box-shadow:
               0 0 0 4px
-                rgba(
-                  22,
-                  163,
-                  74,
-                  0.1
-                );
+                rgba(22, 163, 74, 0.1);
           }
 
           .aios-cn-hero-copy h2 {
             margin: 17px 0 9px;
-            font-size: clamp(
-              26px,
-              4vw,
-              42px
-            );
+            font-size: clamp(26px, 4vw, 42px);
             line-height: 1.08;
             letter-spacing: -0.045em;
             color: #0f172a;
@@ -357,20 +346,11 @@ export default function CNPage() {
             padding: 15px 17px;
             border: 1px solid #e2e8f0;
             border-radius: 18px;
-            background: rgba(
-              255,
-              255,
-              255,
-              0.88
-            );
+            background:
+              rgba(255, 255, 255, 0.88);
             box-shadow:
               0 10px 30px
-                rgba(
-                  15,
-                  23,
-                  42,
-                  0.045
-                );
+                rgba(15, 23, 42, 0.045);
           }
 
           .aios-cn-status-label {
@@ -393,12 +373,8 @@ export default function CNPage() {
             padding: 17px;
             border: 1px solid #e2e8f0;
             border-radius: 20px;
-            background: rgba(
-              255,
-              255,
-              255,
-              0.72
-            );
+            background:
+              rgba(255, 255, 255, 0.72);
           }
 
           .aios-cn-section-heading {
@@ -465,20 +441,117 @@ export default function CNPage() {
             min-width: 0;
           }
 
+          .aios-cn-chat-section
+            .aios-input-dock {
+            min-width: 0;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-actions {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 6px !important;
+            width: 100%;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-action {
+            appearance: none !important;
+            -webkit-appearance: none !important;
+            box-sizing: border-box !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 5px !important;
+            min-width: 0 !important;
+            min-height: 38px !important;
+            height: 38px !important;
+            padding: 0 11px !important;
+            border: 1px solid #d8e0e8 !important;
+            border-radius: 11px !important;
+            background: #ffffff !important;
+            color: #334155 !important;
+            font-size: 12px !important;
+            line-height: 1 !important;
+            font-weight: 800 !important;
+            box-shadow:
+              0 1px 2px
+                rgba(15, 23, 42, 0.03);
+            cursor: pointer;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-action:hover:not(
+              :disabled
+            ) {
+            border-color: #cbd5e1 !important;
+            background: #f8fafc !important;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-action:disabled {
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-action-icon {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 18px;
+            height: 18px;
+            flex: 0 0 18px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 9px !important;
+            line-height: 1 !important;
+            font-weight: 900 !important;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-action-label {
+            display: inline-block;
+            min-width: 0;
+            white-space: nowrap;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-error {
+            margin-top: 7px;
+            padding: 7px 9px;
+            border: 1px solid #fecaca;
+            border-radius: 9px;
+            background: #fef2f2;
+            color: #b91c1c;
+            font-size: 10px;
+            line-height: 1.45;
+          }
+
+          .aios-cn-chat-section
+            .aios-input-files {
+            min-width: 0;
+          }
+
+          .aios-cn-chat-section
+            textarea {
+            min-height: 48px !important;
+            max-height: 150px !important;
+          }
+
           .aios-cn-chat-section section {
             border-radius: 24px !important;
             border-color: #dfe5ec !important;
             box-shadow:
               0 20px 60px
-                rgba(
-                  15,
-                  23,
-                  42,
-                  0.08
-                ) !important;
+                rgba(15, 23, 42, 0.08) !important;
           }
 
-          .aios-cn-chat-section section > header {
+          .aios-cn-chat-section
+            section
+            > header {
             padding: 16px 20px !important;
             background:
               linear-gradient(
@@ -516,12 +589,7 @@ export default function CNPage() {
             border-color: #94a3b8 !important;
             box-shadow:
               0 0 0 3px
-                rgba(
-                  100,
-                  116,
-                  139,
-                  0.1
-                ) !important;
+                rgba(100, 116, 139, 0.1) !important;
           }
 
           .aios-cn-chat-section
@@ -538,7 +606,7 @@ export default function CNPage() {
             padding: 0 2px;
             font-size: 10px;
             line-height: 1.6;
-            color: #94a3b8;
+            color: #7c8da5;
           }
 
           .aios-cn-note-mark {
@@ -625,14 +693,44 @@ export default function CNPage() {
             .aios-cn-capability-grid {
               grid-template-columns:
                 minmax(0, 1fr);
+              gap: 6px;
             }
 
             .aios-cn-capability {
-              padding: 11px;
+              padding: 10px;
+              border-radius: 13px;
+            }
+
+            .aios-cn-capability strong {
+              font-size: 11px;
+            }
+
+            .aios-cn-capability span:not(
+                .aios-cn-capability-icon
+              ) {
+              font-size: 9px;
+              line-height: 1.4;
+            }
+
+            .aios-cn-chat-section
+              .aios-input-action {
+              flex: 1 1 calc(25% - 5px);
+              min-width: 0 !important;
+              padding: 0 7px !important;
+              font-size: 10px !important;
+            }
+
+            .aios-cn-chat-section
+              .aios-input-action-icon {
+              width: 16px;
+              height: 16px;
+              flex-basis: 16px;
+              font-size: 8px !important;
             }
 
             .aios-cn-chat-section section {
-              min-height: calc(100vh - 170px) !important;
+              min-height:
+                calc(100vh - 170px) !important;
               border-radius: 20px !important;
             }
 
