@@ -11,6 +11,8 @@ import type {
 import type {
   MarketDataProviderStatus,
   MarketInstrument,
+  MarketProviderCapability,
+  MarketProviderCommercialStatus,
   MarketRegion,
   MarketSnapshot,
 } from "./market-types";
@@ -22,27 +24,6 @@ export interface MarketStructuredProviderResult {
   historicalVerified: boolean;
   sourceCount: number;
   error?: string;
-}
-
-export type MarketProviderCommercialStatus =
-  | "unknown"
-  | "not_verified"
-  | "eligible"
-  | "restricted";
-
-export interface MarketProviderCapability {
-  market: MarketRegion;
-  technicalSupport: boolean;
-  accountEntitled:
-    | "verified"
-    | "denied"
-    | "unknown";
-  realtimeVerified: boolean;
-  commercialStatus:
-    MarketProviderCommercialStatus;
-  probeSymbol: string;
-  failureCode?: string | null;
-  reason?: string | null;
 }
 
 export interface MarketDataProviderAdapter {
@@ -58,6 +39,35 @@ export interface MarketDataProviderAdapter {
   ): Promise<MarketStructuredProviderResult>;
 
   probeCapabilities?(): Promise<unknown>;
+}
+
+function env(name: string): string {
+  return (
+    process.env[name] ??
+    ""
+  ).trim();
+}
+
+function normalizeProviderId(
+  value: string,
+): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+}
+
+function getRequestedProviderId(): string | null {
+  const value =
+    normalizeProviderId(
+      env("MARKET_DATA_PROVIDER"),
+    );
+
+  if (!value) {
+    return null;
+  }
+
+  return value;
 }
 
 function commercialStatusFromCapability(
@@ -204,6 +214,40 @@ const providers: MarketDataProviderAdapter[] =
     allTickProvider,
   ];
 
+function getConfiguredProvider(
+  providerList: MarketDataProviderAdapter[],
+): MarketDataProviderAdapter | null {
+  const requestedProvider =
+    getRequestedProviderId();
+
+  if (requestedProvider) {
+    const requested =
+      providerList.find(
+        (provider) =>
+          normalizeProviderId(
+            provider.id,
+          ) ===
+          requestedProvider,
+      );
+
+    if (
+      requested &&
+      requested.isConfigured()
+    ) {
+      return requested;
+    }
+
+    return null;
+  }
+
+  return (
+    providerList.find(
+      (provider) =>
+        provider.isConfigured(),
+    ) ?? null
+  );
+}
+
 export function getMarketDataProviders(): MarketDataProviderAdapter[] {
   return [
     ...providers,
@@ -211,23 +255,26 @@ export function getMarketDataProviders(): MarketDataProviderAdapter[] {
 }
 
 export function getPrimaryMarketDataProvider(): MarketDataProviderAdapter | null {
-  const configured =
-    providers.find(
-      (provider) =>
-        provider.isConfigured(),
-    );
-
-  return configured ?? null;
+  return getConfiguredProvider(
+    providers,
+  );
 }
 
 export function getMarketDataProvider(
   providerId: string,
 ): MarketDataProviderAdapter | null {
+  const normalizedId =
+    normalizeProviderId(
+      providerId,
+    );
+
   return (
     providers.find(
       (provider) =>
-        provider.id ===
-        providerId,
+        normalizeProviderId(
+          provider.id,
+        ) ===
+        normalizedId,
     ) ?? null
   );
 }
@@ -259,6 +306,27 @@ export function isAnyStructuredMarketProviderConfigured(): boolean {
     (provider) =>
       provider.isConfigured(),
   );
+}
+
+export function getMarketDataProviderSelection(): {
+  requestedProvider: string | null;
+  activeProvider: string | null;
+  availableProviders: string[];
+} {
+  const requestedProvider =
+    getRequestedProviderId();
+
+  const activeProvider =
+    getPrimaryMarketDataProvider();
+
+  return {
+    requestedProvider,
+    activeProvider:
+      activeProvider?.id ??
+      null,
+    availableProviders:
+      getMarketDataProviderIds(),
+  };
 }
 
 export async function retrievePrimaryStructuredMarketData(
@@ -425,6 +493,27 @@ export async function getPrimaryMarketProviderStatus(): Promise<MarketDataProvid
           capability.market,
       );
 
+  const commercialStatuses =
+    capabilities.map(
+      (capability) =>
+        capability.commercialStatus,
+    );
+
+  const commercialStatus =
+    commercialStatuses.includes(
+      "eligible",
+    )
+      ? "eligible"
+      : commercialStatuses.includes(
+            "restricted",
+          )
+        ? "restricted"
+        : commercialStatuses.includes(
+              "not_verified",
+            )
+          ? "not_verified"
+          : "unknown";
+
   const marketCapabilities =
     capabilities.reduce(
       (
@@ -491,8 +580,13 @@ export async function getPrimaryMarketProviderStatus(): Promise<MarketDataProvid
       provider.getSupportedMarkets(),
     entitledMarkets,
     realtimeVerifiedMarkets,
+    commercialStatus,
+    commercialStatusVerifiedAt:
+      null,
+    commercialStatusReason:
+      "Commercial authorization is not inferred from technical access, account entitlement, or realtime verification.",
     marketCapabilities,
     reason:
-      "Provider capability, account entitlement, and realtime verification are reported independently. Commercial authorization is not inferred from technical access or account entitlement.",
+      "Provider selection, technical capability, account entitlement, realtime verification, and commercial authorization are reported independently.",
   };
 }
