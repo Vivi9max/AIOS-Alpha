@@ -282,12 +282,21 @@ function buildControlDecision(
       .capabilities
       .executionEnabled;
 
+  /*
+   * C167.5.14 explicitly defines
+   * readyForExecution as the literal
+   * type false. Do not widen or bypass
+   * that safety contract here.
+   *
+   * The control chain can therefore
+   * only reach human-review-required
+   * or a blocking state at this stage.
+   */
   const executionReady =
     commercialGateOpen &&
     adapterReady &&
     brokerDiagnostic
-      .readyForExecution ===
-      true;
+      .readyForExecution;
 
   if (
     executionReady
