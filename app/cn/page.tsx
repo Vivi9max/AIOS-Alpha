@@ -155,9 +155,9 @@ export default function CNPage() {
           }
 
           /*
-           * The CN chat panel no longer needs a duplicated
-           * product header. Product identity is already handled
-           * by the global workspace header and sidebar.
+           * Product identity is already handled by
+           * WorkspaceShell and the global workspace navigation.
+           * The CN chat should remain focused on the actual work.
            */
           .aios-cn-chat-section
             .aios-cn-chat-header {
@@ -165,9 +165,9 @@ export default function CNPage() {
           }
 
           /*
-           * Media tools are secondary capabilities.
-           * They stay available but are hidden behind
-           * an explicit disclosure control.
+           * Video and audio are secondary capabilities.
+           * Keep them available without occupying the primary
+           * CN workspace by default.
            */
           .aios-cn-chat-section
             .aios-cn-more-tools {
@@ -377,7 +377,7 @@ export default function CNPage() {
                 10px !important;
             }
           }
-        `}
+        `}</style>
       </main>
     </WorkspaceShell>
   );
