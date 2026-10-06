@@ -9,6 +9,7 @@ import type {
 } from "./structured-provider";
 
 import type {
+  MarketDataProviderStatus,
   MarketInstrument,
   MarketRegion,
   MarketSnapshot,
@@ -21,6 +22,27 @@ export interface MarketStructuredProviderResult {
   historicalVerified: boolean;
   sourceCount: number;
   error?: string;
+}
+
+export type MarketProviderCommercialStatus =
+  | "unknown"
+  | "not_verified"
+  | "eligible"
+  | "restricted";
+
+export interface MarketProviderCapability {
+  market: MarketRegion;
+  technicalSupport: boolean;
+  accountEntitled:
+    | "verified"
+    | "denied"
+    | "unknown";
+  realtimeVerified: boolean;
+  commercialStatus:
+    MarketProviderCommercialStatus;
+  probeSymbol: string;
+  failureCode?: string | null;
+  reason?: string | null;
 }
 
 export interface MarketDataProviderAdapter {
@@ -36,6 +58,92 @@ export interface MarketDataProviderAdapter {
   ): Promise<MarketStructuredProviderResult>;
 
   probeCapabilities?(): Promise<unknown>;
+}
+
+function commercialStatusFromCapability(
+  capability:
+    | MarketProviderCapability
+    | null
+    | undefined,
+): MarketProviderCommercialStatus {
+  if (!capability) {
+    return "unknown";
+  }
+
+  if (
+    !capability.technicalSupport ||
+    capability.accountEntitled ===
+      "denied"
+  ) {
+    return "restricted";
+  }
+
+  if (
+    capability.accountEntitled ===
+      "verified" &&
+    capability.realtimeVerified
+  ) {
+    return "not_verified";
+  }
+
+  return "unknown";
+}
+
+function normalizeCapability(
+  market: MarketRegion,
+  capability: unknown,
+): MarketProviderCapability {
+  const value =
+    capability !== null &&
+    typeof capability === "object"
+      ? (capability as Record<
+          string,
+          unknown
+        >)
+      : {};
+
+  const accountEntitled =
+    value.accountEntitled ===
+      "verified" ||
+    value.accountEntitled ===
+      "denied"
+      ? value.accountEntitled
+      : "unknown";
+
+  const normalized: MarketProviderCapability = {
+    market,
+    technicalSupport:
+      value.technicalSupport ===
+      true,
+    accountEntitled,
+    realtimeVerified:
+      value.realtimeVerified ===
+      true,
+    commercialStatus:
+      "unknown",
+    probeSymbol:
+      typeof value.probeSymbol ===
+      "string"
+        ? value.probeSymbol
+        : "",
+    failureCode:
+      typeof value.failureCode ===
+      "string"
+        ? value.failureCode
+        : null,
+    reason:
+      typeof value.reason ===
+      "string"
+        ? value.reason
+        : null,
+  };
+
+  normalized.commercialStatus =
+    commercialStatusFromCapability(
+      normalized,
+    );
+
+  return normalized;
 }
 
 class AllTickMarketDataProvider
@@ -157,7 +265,9 @@ export async function retrievePrimaryStructuredMarketData(
   instrument: MarketInstrument,
 ): Promise<{
   provider: MarketDataProviderAdapter | null;
-  result: MarketStructuredProviderResult | null;
+  result:
+    | MarketStructuredProviderResult
+    | null;
 }> {
   const provider =
     getPrimaryMarketDataProvider();
@@ -216,4 +326,173 @@ export async function probePrimaryStructuredMarketProvider(): Promise<unknown | 
   }
 
   return provider.probeCapabilities();
+}
+
+export async function getPrimaryMarketProviderCapabilities(): Promise<
+  MarketProviderCapability[]
+> {
+  const provider =
+    getPrimaryMarketDataProvider();
+
+  if (!provider) {
+    return [];
+  }
+
+  if (
+    provider.id ===
+    "alltick"
+  ) {
+    const probe =
+      await probeAllTickCapabilities();
+
+    return (
+      Object.entries(
+        probe.marketCapabilities,
+      )
+        .map(
+          ([
+            market,
+            capability,
+          ]) =>
+            normalizeCapability(
+              market as MarketRegion,
+              capability,
+            ),
+        )
+        .sort(
+          (a, b) =>
+            a.market.localeCompare(
+              b.market,
+            ),
+        )
+    );
+  }
+
+  return provider
+    .getSupportedMarkets()
+    .map(
+      (market) => ({
+        market,
+        technicalSupport:
+          true,
+        accountEntitled:
+          "unknown",
+        realtimeVerified:
+          false,
+        commercialStatus:
+          "unknown",
+        probeSymbol:
+          "",
+        failureCode:
+          null,
+        reason:
+          "Provider capability has not been verified.",
+      }),
+    );
+}
+
+export async function getPrimaryMarketProviderStatus(): Promise<MarketDataProviderStatus | null> {
+  const provider =
+    getPrimaryMarketDataProvider();
+
+  if (!provider) {
+    return null;
+  }
+
+  const capabilities =
+    await getPrimaryMarketProviderCapabilities();
+
+  const entitledMarkets =
+    capabilities
+      .filter(
+        (capability) =>
+          capability.accountEntitled ===
+          "verified",
+      )
+      .map(
+        (capability) =>
+          capability.market,
+      );
+
+  const realtimeVerifiedMarkets =
+    capabilities
+      .filter(
+        (capability) =>
+          capability.realtimeVerified,
+      )
+      .map(
+        (capability) =>
+          capability.market,
+      );
+
+  const marketCapabilities =
+    capabilities.reduce(
+      (
+        result,
+        capability,
+      ) => {
+        result[
+          capability.market
+        ] = {
+          technicalSupport:
+            capability.technicalSupport,
+          accountEntitled:
+            capability.accountEntitled,
+          realtimeVerified:
+            capability.realtimeVerified,
+          probeSymbol:
+            capability.probeSymbol,
+          failureCode:
+            capability.failureCode,
+          reason:
+            capability.reason,
+        };
+
+        return result;
+      },
+      {} as Partial<
+        Record<
+          MarketRegion,
+          {
+            technicalSupport: boolean;
+            accountEntitled:
+              | "verified"
+              | "denied"
+              | "unknown";
+            realtimeVerified: boolean;
+            probeSymbol: string;
+            failureCode?:
+              | string
+              | null;
+            reason?:
+              | string
+              | null;
+          }
+        >
+      >,
+    );
+
+  return {
+    provider:
+      provider.id,
+    configured:
+      provider.isConfigured(),
+    available:
+      true,
+    supportsQuote:
+      true,
+    supportsRealtime:
+      true,
+    supportsHistorical:
+      true,
+    supportsFundamentals:
+      false,
+    supportsMarkets:
+      provider.getSupportedMarkets(),
+    entitledMarkets,
+    realtimeVerifiedMarkets,
+    marketCapabilities,
+    reason:
+      "Provider capability, account entitlement, and realtime verification are reported independently. Commercial authorization is not inferred from technical access or account entitlement.",
+  };
 }
