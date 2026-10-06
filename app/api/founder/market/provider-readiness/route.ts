@@ -61,9 +61,7 @@ function normalizeProviderId(
     .trim()
     .toLowerCase();
 
-  return normalized
-    ? normalized
-    : null;
+  return normalized || null;
 }
 
 function asRecord(
@@ -227,22 +225,25 @@ export async function GET(
             requestedProvider,
           );
 
-    const selectedProviderId =
-      requestedProvider ??
-      (
-        typeof selection.providerId ===
-        "string"
-          ? selection.providerId
-          : null
+    const activeProvider =
+      normalizeProviderId(
+        selection.activeProvider,
       );
 
+    const registryRequestedProvider =
+      normalizeProviderId(
+        selection.requestedProvider,
+      );
+
+    const selectedProviderId =
+      requestedProvider ??
+      activeProvider;
+
     const selectedProvider =
-      requestedProvider === null
+      selectedProviderId ===
+        primary?.id
         ? primary
-        : requestedProvider ===
-            primary?.id
-          ? primary
-          : null;
+        : null;
 
     const selectedStatus =
       selectedProviderId ===
@@ -257,9 +258,8 @@ export async function GET(
         : {};
 
     const selectedReadiness =
-      requestedProvider === null ||
-      requestedProvider ===
-        primary?.id
+      selectedProviderId ===
+          primary?.id
         ? primaryReadiness
         : {
             level:
@@ -293,17 +293,13 @@ export async function GET(
         },
 
         selection: {
-          configuredProvider:
-            selection.providerId ??
-            null,
-          source:
-            selection.source ??
-            null,
-          requestedProvider,
-          selectedProvider:
-            selectedProvider?.id ??
-            null,
-          requestedProviderKnown,
+          requestedProvider:
+            registryRequestedProvider,
+          activeProvider,
+          availableProviders:
+            selection.availableProviders,
+          effectiveProvider:
+            selectedProviderId,
         },
 
         primaryProvider: primary
@@ -315,18 +311,10 @@ export async function GET(
           : null,
 
         providerStatus:
-          requestedProvider === null ||
-          requestedProvider ===
-            primary?.id
-            ? primaryStatusRecord
-            : selectedStatus,
+          selectedStatus,
 
         capabilities:
-          requestedProvider === null ||
-          requestedProvider ===
-            primary?.id
-            ? primaryCapabilitiesRecord
-            : selectedCapabilities,
+          selectedCapabilities,
 
         readiness:
           selectedReadiness,
