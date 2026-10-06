@@ -8,6 +8,10 @@ import {
 } from "@/lib/founder/auth";
 
 import {
+  evaluateMarketProviderCommercialGate,
+} from "@/lib/runtime/market/market-provider-commercial-gate";
+
+import {
   getMarketDataProviderIds,
   getMarketDataProviderSelection,
   getPrimaryMarketDataProvider,
@@ -104,6 +108,9 @@ function evaluateReadiness(
     string,
     unknown
   >,
+  commercialGate: ReturnType<
+    typeof evaluateMarketProviderCommercialGate
+  > | null,
 ): ReadinessDecision {
   const configured =
     status.configured ===
@@ -116,12 +123,6 @@ function evaluateReadiness(
   const supportsRealtime =
     status.supportsRealtime ===
     true;
-
-  const commercialStatus =
-    typeof status.commercialStatus ===
-    "string"
-      ? status.commercialStatus
-      : "unknown";
 
   const marketCapabilities =
     Array.isArray(
@@ -153,7 +154,7 @@ function evaluateReadiness(
   }
 
   if (
-    commercialStatus ===
+    commercialGate?.decision ===
     "restricted"
   ) {
     return {
@@ -166,13 +167,13 @@ function evaluateReadiness(
       canUseForCommercialProduct:
         false,
       reason:
-        "Technical market access exists, but the provider is explicitly marked as commercially restricted.",
+        commercialGate.reason,
     };
   }
 
   if (
-    commercialStatus ===
-    "eligible"
+    commercialGate?.gateOpen ===
+    true
   ) {
     return {
       level:
@@ -184,7 +185,7 @@ function evaluateReadiness(
       canUseForCommercialProduct:
         true,
       reason:
-        "Provider technical capability and commercial eligibility are both explicitly available.",
+        "Provider technical capability is available and the independent commercial authorization gate is explicitly open.",
     };
   }
 
@@ -203,7 +204,9 @@ function evaluateReadiness(
       canUseForCommercialProduct:
         false,
       reason:
-        "Provider technical capability is available, but commercial authorization has not been verified.",
+        commercialGate
+          ? commercialGate.reason
+          : "Provider technical capability is available, but commercial authorization has not been verified.",
     };
   }
 
@@ -217,6 +220,7 @@ function evaluateReadiness(
     canUseForCommercialProduct:
       false,
     reason:
+      commercialGate?.reason ??
       "Provider status is available, but commercial and realtime readiness cannot be established from the current provider contract.",
   };
 }
@@ -305,20 +309,6 @@ export async function GET(
         },
       );
 
-    const primaryReadiness =
-      evaluateReadiness(
-        primaryStatusRecord,
-        primaryCapabilitiesRecord,
-      );
-
-    const requestedProviderKnown =
-      requestedProvider ===
-      null
-        ? true
-        : providerIds.includes(
-            requestedProvider,
-          );
-
     const activeProvider =
       normalizeProviderId(
         selection.activeProvider,
@@ -333,6 +323,14 @@ export async function GET(
       requestedProvider ??
       activeProvider;
 
+    const requestedProviderKnown =
+      requestedProvider ===
+      null
+        ? true
+        : providerIds.includes(
+            requestedProvider,
+          );
+
     const selectedIsPrimary =
       Boolean(
         selectedProviderId &&
@@ -342,11 +340,6 @@ export async function GET(
         ) ===
           selectedProviderId,
       );
-
-    const selectedProvider =
-      selectedIsPrimary
-        ? primary
-        : null;
 
     const selectedStatus =
       selectedIsPrimary
@@ -358,30 +351,48 @@ export async function GET(
         ? primaryCapabilitiesRecord
         : {};
 
+    const commercialGate =
+      selectedIsPrimary &&
+      selectedProviderId
+        ? evaluateMarketProviderCommercialGate(
+            selectedProviderId,
+          )
+        : null;
+
     const selectedReadiness =
       selectedIsPrimary
-        ? primaryReadiness
+        ? evaluateReadiness(
+            selectedStatus,
+            selectedCapabilities,
+            commercialGate,
+          )
         : buildUnknownReadiness(
             requestedProviderKnown,
           );
 
     const commercialStatus =
-      typeof selectedStatus.commercialStatus ===
-      "string"
-        ? selectedStatus.commercialStatus
-        : "unknown";
+      commercialGate?.status ??
+      "unknown";
+
+    const commercialDecision =
+      commercialGate?.decision ??
+      "unknown";
+
+    const commercialAuthorized =
+      commercialGate?.authorized ===
+      true;
+
+    const commercialGateOpen =
+      commercialGate?.gateOpen ===
+      true;
 
     const commercialStatusVerifiedAt =
-      typeof selectedStatus.commercialStatusVerifiedAt ===
-      "string"
-        ? selectedStatus.commercialStatusVerifiedAt
-        : null;
+      commercialGate?.verifiedAt ??
+      null;
 
     const commercialStatusReason =
-      typeof selectedStatus.commercialStatusReason ===
-      "string"
-        ? selectedStatus.commercialStatusReason
-        : "Commercial authorization is not inferred from technical access, account entitlement, or realtime verification.";
+      commercialGate?.reason ??
+      "Commercial authorization is not inferred from technical access, account entitlement, or realtime verification.";
 
     const supportsRealtime =
       selectedStatus.supportsRealtime ===
@@ -398,17 +409,17 @@ export async function GET(
     const recommendedAction =
       selectedReadiness.level ===
       "ready"
-        ? "Provider is eligible for commercial product integration subject to the provider contract and deployment configuration."
+        ? "Provider is commercially authorized by the independent gate and can be considered for commercial product integration, subject to provider contract and deployment configuration."
         : selectedReadiness.level ===
             "technical-only"
-          ? "Keep the provider available for technical research validation, but do not claim commercial authorization."
+          ? "Keep the provider available for technical research validation, but do not expose it as a commercially authorized production data source."
           : selectedReadiness.level ===
               "restricted"
-            ? "Do not use this provider as the commercial production data source until restrictions are resolved."
+            ? "Do not use this provider as the commercial production data source until the restriction is resolved and authorization is explicitly re-verified."
             : selectedReadiness.level ===
                 "not-configured"
               ? "Verify provider configuration and runtime availability before production adoption."
-              : "Verify provider configuration, entitlement, realtime capability and commercial authorization before production adoption.";
+              : "Verify provider configuration, account entitlement, realtime capability and explicit commercial authorization before production adoption.";
 
     return NextResponse.json(
       {
@@ -416,10 +427,10 @@ export async function GET(
           true,
 
         code:
-          "C167_5_10_MARKET_PROVIDER_READINESS",
+          "C167_5_12_MARKET_PROVIDER_READINESS",
 
         stage:
-          "C167.5.10",
+          "C167.5.12",
 
         requestedProvider,
 
@@ -462,6 +473,45 @@ export async function GET(
         readiness:
           selectedReadiness,
 
+        commercialAuthorization: {
+          providerId:
+            commercialGate?.providerId ??
+            selectedProviderId,
+
+          status:
+            commercialStatus,
+
+          decision:
+            commercialDecision,
+
+          authorized:
+            commercialAuthorized,
+
+          gateOpen:
+            commercialGateOpen,
+
+          source:
+            commercialGate?.source ??
+            "unknown",
+
+          verifiedAt:
+            commercialStatusVerifiedAt,
+
+          verifiedBy:
+            commercialGate?.verifiedBy ??
+            null,
+
+          contractReference:
+            commercialGate?.contractReference ??
+            null,
+
+          reason:
+            commercialStatusReason,
+
+          automaticApproval:
+            false,
+        },
+
         commercialBoundary: {
           technicalSupportIsNotCommercialAuthorization:
             true,
@@ -475,15 +525,13 @@ export async function GET(
           commercialAuthorizationRequired:
             true,
 
+          independentCommercialGate:
+            true,
+
           commercialAuthorizationVerified:
-            commercialStatus ===
-            "eligible",
+            commercialAuthorized,
 
-          commercialStatus,
-
-          commercialStatusVerifiedAt,
-
-          commercialStatusReason,
+          commercialGateOpen,
 
           automaticCommercialApproval:
             false,
@@ -495,6 +543,9 @@ export async function GET(
         controlPolicy: {
           providerSelection:
             "registry-and-environment-controlled",
+
+          commercialAuthorization:
+            "independent-gate-controlled",
 
           founderCanInspect:
             true,
@@ -527,6 +578,8 @@ export async function GET(
 
           commercialProductAllowed:
             selectedReadiness.canUseForCommercialProduct,
+
+          commercialGateOpen,
         },
 
         recommendedAction,
@@ -548,6 +601,9 @@ export async function GET(
             false,
 
           providerReadinessDoesNotEnableTrading:
+            true,
+
+          commercialGateDoesNotEnableTrading:
             true,
         },
 
@@ -573,10 +629,10 @@ export async function GET(
           false,
 
         code:
-          "C167_5_10_MARKET_PROVIDER_READINESS_ERROR",
+          "C167_5_12_MARKET_PROVIDER_READINESS_ERROR",
 
         stage:
-          "C167.5.10",
+          "C167.5.12",
 
         error:
           error instanceof Error
@@ -600,6 +656,9 @@ export async function GET(
             false,
 
           providerReadinessDoesNotEnableTrading:
+            true,
+
+          commercialGateDoesNotEnableTrading:
             true,
         },
       },
