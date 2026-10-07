@@ -214,9 +214,7 @@ function normalizeOrder(
     Number.isFinite(
       order.quantity,
     )
-      ? Math.floor(
-          order.quantity,
-        )
+      ? Math.floor(order.quantity)
       : 0;
 
   const market =
@@ -281,18 +279,18 @@ export function evaluateMarketPreTradeRisk(
     normalizedOrder !== null;
 
   const marketAllowed =
-    orderValid &&
+    normalizedOrder !== null &&
     policy.allowedMarkets.includes(
       normalizedOrder.market,
     );
 
   const quantityWithinLimit =
-    orderValid &&
+    normalizedOrder !== null &&
     normalizedOrder.quantity <=
       policy.maxOrderQuantity;
 
   const limitPriceValid =
-    !orderValid
+    normalizedOrder === null
       ? false
       : normalizedOrder.limitPrice ===
           null
@@ -305,7 +303,7 @@ export function evaluateMarketPreTradeRisk(
               0;
 
   const estimatedNotional =
-    orderValid &&
+    normalizedOrder !== null &&
     normalizedOrder.limitPrice !==
       null
       ? normalizedOrder.quantity *
