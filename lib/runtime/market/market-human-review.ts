@@ -1,7 +1,3 @@
-import type {
-  BrokerOrderIntent,
-} from "@/lib/runtime/market/broker-integration-boundary-types";
-
 export type MarketHumanReviewDecision =
   | "pending"
   | "approved"
@@ -16,9 +12,18 @@ export type MarketHumanReviewStatus =
   | "rejected"
   | "expired";
 
-export type MarketHumanReviewRequest = {
+export interface MarketHumanReviewOrder {
+  symbol: string;
+  market: string;
+  side: "buy" | "sell";
+  quantity: number;
+  limitPrice: number | null;
+  reason: string;
+}
+
+export interface MarketHumanReviewRequest {
   reviewId: string;
-  order: BrokerOrderIntent | null;
+  order: MarketHumanReviewOrder | null;
   requestedBy: string;
   requestedAt: string;
   expiresAt: string;
@@ -26,16 +31,16 @@ export type MarketHumanReviewRequest = {
   decidedBy: string | null;
   decidedAt: string | null;
   decisionReason: string | null;
-};
+}
 
-export type MarketHumanReviewEvaluation = {
+export interface MarketHumanReviewEvaluation {
   status: MarketHumanReviewStatus;
   decision: MarketHumanReviewDecision;
   reviewRequired: boolean;
   approved: boolean;
   executionEligible: false;
   reason: string;
-};
+}
 
 const REVIEW_TTL_MS = 15 * 60 * 1000;
 
@@ -45,7 +50,8 @@ function nowIso(): string {
 
 function createReviewId(): string {
   const randomPart =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
+    typeof crypto !== "undefined" &&
+    "randomUUID" in crypto
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
@@ -87,7 +93,7 @@ function isExpired(expiresAt: string): boolean {
 }
 
 export function createMarketHumanReviewRequest(
-  order: BrokerOrderIntent | null,
+  order: MarketHumanReviewOrder | null,
 ): MarketHumanReviewRequest {
   const requestedAt = new Date();
 
@@ -185,7 +191,7 @@ export function getMarketHumanReviewPolicy() {
 }
 
 export function getConfiguredHumanReviewEvaluation(
-  order: BrokerOrderIntent | null = null,
+  order: MarketHumanReviewOrder | null = null,
 ): MarketHumanReviewEvaluation {
   const decision = getConfiguredDecision();
 
@@ -237,10 +243,9 @@ export function getConfiguredHumanReviewEvaluation(
 
     const expiredRequest: MarketHumanReviewRequest = {
       ...requested,
-      expiresAt:
-        new Date(
-          Date.now() - 1000,
-        ).toISOString(),
+      expiresAt: new Date(
+        Date.now() - 1000,
+      ).toISOString(),
       decision: "pending",
     };
 
