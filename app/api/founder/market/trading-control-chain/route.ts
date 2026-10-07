@@ -26,10 +26,12 @@ import {
 } from "@/lib/runtime/market/broker-execution-adapter";
 
 import {
-  createMarketHumanReviewRequest,
-  evaluateMarketHumanReview,
-  getMarketHumanReviewPolicy,
-} from "@/lib/runtime/market/market-human-review";
+  getMarketHumanReview,
+} from "@/lib/runtime/market/market-human-review-runtime";
+
+import type {
+  MarketHumanReviewRecord,
+} from "@/lib/runtime/market/market-human-review-types";
 
 export const dynamic =
   "force-dynamic";
@@ -53,7 +55,7 @@ interface TradingControlChainBody {
   quantity?: unknown;
   limitPrice?: unknown;
   reason?: unknown;
-  requestHumanReview?: unknown;
+  taskId?: unknown;
 }
 
 interface OrderIntent {
@@ -279,6 +281,133 @@ function toBrokerOrder(
   };
 }
 
+function normalizeTaskId(
+  value: unknown,
+): string | null {
+  const taskId =
+    cleanText(value);
+
+  return taskId
+    ? taskId
+    : null;
+}
+
+function evaluatePersistentHumanReview(
+  review: MarketHumanReviewRecord | null,
+  order: OrderIntent,
+) {
+  if (!review) {
+    return {
+      requested: false,
+      approved: false,
+      decision: "not-found",
+      status: "blocked",
+      taskId: null,
+      reviewId: null,
+      reason:
+        "A persistent human review record is required before trading review can continue.",
+    };
+  }
+
+  const symbolMatches =
+    review.symbol ===
+    order.symbol;
+
+  const marketMatches =
+    review.market ===
+    order.market;
+
+  if (
+    !symbolMatches ||
+    !marketMatches
+  ) {
+    return {
+      requested: true,
+      approved: false,
+      decision:
+        review.decision,
+      status: "blocked",
+      taskId:
+        review.taskId,
+      reviewId:
+        review.reviewId,
+      reason:
+        "The persistent human review does not match the requested market order.",
+    };
+  }
+
+  if (
+    review.decision ===
+    "accepted"
+  ) {
+    return {
+      requested: true,
+      approved: true,
+      decision:
+        review.decision,
+      status: "approved",
+      taskId:
+        review.taskId,
+      reviewId:
+        review.reviewId,
+      reason:
+        "An explicit persistent human review decision accepted this market intent.",
+    };
+  }
+
+  if (
+    review.decision ===
+    "rejected"
+  ) {
+    return {
+      requested: true,
+      approved: false,
+      decision:
+        review.decision,
+      status: "rejected",
+      taskId:
+        review.taskId,
+      reviewId:
+        review.reviewId,
+      reason:
+        "The persistent human review rejected this market intent.",
+    };
+  }
+
+  if (
+    review.decision ===
+    "deferred"
+  ) {
+    return {
+      requested: true,
+      approved: false,
+      decision:
+        review.decision,
+      status: "deferred",
+      taskId:
+        review.taskId,
+      reviewId:
+        review.reviewId,
+      reason:
+        "The persistent human review deferred this market intent.",
+    };
+  }
+
+  return {
+    requested: true,
+    approved: false,
+    decision:
+      review.decision,
+    status: "acknowledged",
+    taskId:
+      review.taskId,
+    reviewId:
+      review.reviewId,
+    reason:
+      "Acknowledgement is not equivalent to explicit trading approval.",
+  };
+}
+
 export async function POST(
   request: NextRequest,
 ) {
@@ -309,7 +438,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_20_INVALID_JSON",
+          "C167_5_21_INVALID_JSON",
         error:
           "Request body must contain valid JSON.",
       },
@@ -327,7 +456,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_20_INVALID_ORDER_INTENT",
+          "C167_5_21_INVALID_ORDER_INTENT",
         error:
           normalized.error ||
           "Invalid order intent.",
@@ -339,8 +468,10 @@ export async function POST(
   const order =
     normalized.order;
 
-  const requestHumanReview =
-    body.requestHumanReview === true;
+  const taskId =
+    normalizeTaskId(
+      body.taskId,
+    );
 
   try {
     const [
@@ -348,6 +479,7 @@ export async function POST(
       providerStatus,
       providerCapabilities,
       brokerCapabilities,
+      persistentHumanReview,
     ] = await Promise.all([
       getPrimaryMarketDataProvider(),
       getPrimaryMarketProviderStatus(),
@@ -355,6 +487,13 @@ export async function POST(
       Promise.resolve(
         getBrokerExecutionAdapterCapabilities(),
       ),
+      taskId
+        ? getMarketHumanReview(
+            taskId,
+          )
+        : Promise.resolve(
+            null,
+          ),
     ]);
 
     const providerRecord =
@@ -383,16 +522,10 @@ export async function POST(
     const brokerOrder =
       toBrokerOrder(order);
 
-    const humanReviewRequest =
-      requestHumanReview
-        ? createMarketHumanReviewRequest(
-            order,
-          )
-        : null;
-
     const humanReview =
-      evaluateMarketHumanReview(
-        humanReviewRequest,
+      evaluatePersistentHumanReview(
+        persistentHumanReview,
+        order,
       );
 
     const brokerDiagnostic =
@@ -417,9 +550,6 @@ export async function POST(
             false,
         },
       );
-
-    const humanReviewPolicy =
-      getMarketHumanReviewPolicy();
 
     const providerStatusRecord =
       asRecord(providerStatus);
@@ -458,6 +588,7 @@ export async function POST(
 
     const allGatesPassed =
       providerReady &&
+      technicalProviderReady &&
       commercialGateOpen &&
       adapterReady &&
       brokerDiagnosticReady &&
@@ -499,13 +630,21 @@ export async function POST(
       );
     }
 
-    if (!humanReviewRequest) {
+    if (!taskId) {
       blockedReasons.push(
-        "Human review has not been requested.",
+        "Persistent human review taskId is required.",
       );
-    } else if (!humanReview.approved) {
+    }
+
+    if (!persistentHumanReview) {
       blockedReasons.push(
-        "Explicit human approval has not been granted.",
+        "Persistent human review record was not found.",
+      );
+    } else if (
+      !humanReview.approved
+    ) {
+      blockedReasons.push(
+        humanReview.reason,
       );
     }
 
@@ -517,12 +656,17 @@ export async function POST(
 
     return jsonResponse({
       success: true,
+
       code:
-        "C167_5_20_TRADING_CONTROL_CHAIN",
+        "C167_5_21_TRADING_CONTROL_CHAIN",
+
       stage:
-        "C167.5.20",
+        "C167.5.21",
 
       order,
+
+      humanReviewTaskId:
+        taskId,
 
       controlDecision: {
         executionReady,
@@ -541,23 +685,30 @@ export async function POST(
 
       controlChain: {
         research:
-          "founder-market-research",
-        provider:
           providerReady
             ? "passed"
             : "blocked",
+
+        technicalProvider:
+          technicalProviderReady
+            ? "passed"
+            : "blocked",
+
         commercial:
           commercialGateOpen
             ? "passed"
             : "blocked",
+
         brokerAdapter:
           brokerDiagnosticReady
             ? "passed"
             : "blocked",
+
         humanReview:
           humanReview.approved
             ? "approved"
             : "blocked",
+
         execution:
           executionReady
             ? "ready"
@@ -568,12 +719,15 @@ export async function POST(
         id:
           providerRecord.id ??
           null,
+
         status:
           providerStatusRecord.status ??
           providerStatusRecord.commercialStatus ??
           null,
+
         technicalReady:
           technicalProviderReady,
+
         commercialReady:
           commercialGateOpen,
       },
@@ -581,63 +735,126 @@ export async function POST(
       commercialAuthorization: {
         providerId:
           commercialGate.providerId,
+
         decision:
           commercialGate.decision,
+
         status:
           commercialGate.status,
+
         authorized:
           commercialGate.authorized,
+
         gateOpen:
           commercialGateOpen,
+
         source:
           commercialGate.source,
+
         verifiedAt:
           commercialGate.verifiedAt,
+
         verifiedBy:
           commercialGate.verifiedBy,
+
         contractReference:
           commercialGate.contractReference,
+
         reason:
           commercialGate.reason,
       },
 
       brokerAdapter: {
-        id: adapterId,
+        id:
+          adapterId,
+
         configured:
           adapterConfigured,
+
         ready:
           adapterReady,
+
         capabilities:
           brokerCapabilities,
+
         diagnostic:
           brokerDiagnostic,
       },
 
       humanReview: {
-        requested:
+        source:
+          "c147.15-persistent-runtime",
+
+        required:
+          true,
+
+        taskId:
+          taskId,
+
+        found:
           Boolean(
-            humanReviewRequest,
+            persistentHumanReview,
           ),
-        request:
-          humanReviewRequest,
-        evaluation:
-          humanReview,
-        policy:
-          humanReviewPolicy,
+
+        review:
+          persistentHumanReview,
+
+        requested:
+          humanReview.requested,
+
+        approved:
+          humanReview.approved,
+
+        decision:
+          humanReview.decision,
+
+        status:
+          humanReview.status,
+
+        reviewId:
+          humanReview.reviewId,
+
+        reason:
+          humanReview.reason,
+
+        approvalPolicy: {
+          acceptedOnly:
+            true,
+
+          acknowledgementIsApproval:
+            false,
+
+          deferredIsApproval:
+            false,
+
+          rejectedIsApproval:
+            false,
+
+          missingReviewIsApproval:
+            false,
+
+          automaticApproval:
+            false,
+        },
       },
 
       gates: {
         researchGate:
           providerReady,
+
         technicalProviderGate:
           technicalProviderReady,
+
         commercialGate:
           commercialGateOpen,
+
         brokerAdapterGate:
           adapterReady &&
           brokerDiagnosticReady,
-        humanReviewGate:
+
+        persistentHumanReviewGate:
           humanReview.approved,
+
         executionGate:
           executionReady,
       },
@@ -645,40 +862,69 @@ export async function POST(
       safetyBoundary: {
         founderOnly:
           true,
+
         ordinaryUserTrading:
           false,
+
         automaticOrderPlacement:
           false,
+
         liveOrderPlacement:
           false,
+
         tradingExecuted:
           false,
-        humanApprovalRequired:
+
+        persistentHumanReviewRequired:
           true,
+
+        explicitAcceptedDecisionRequired:
+          true,
+
+        acknowledgementDoesNotApprove:
+          true,
+
+        deferredDoesNotApprove:
+          true,
+
+        rejectedDoesNotApprove:
+          true,
+
         brokerConnectionRequired:
           true,
+
         paperTradingRequired:
           true,
+
         commercialAuthorizationRequired:
           true,
+
         executionAdapterRequired:
           true,
+
         currentLiveExecutionEnabled:
           false,
       },
 
       runtimeState: {
         providerReady,
+
         technicalProviderReady,
+
         commercialGateOpen,
+
         adapterConfigured,
+
         adapterReady,
-        humanReviewRequested:
+
+        persistentHumanReviewFound:
           Boolean(
-            humanReviewRequest,
+            persistentHumanReview,
           ),
-        humanReviewApproved:
+
+        persistentHumanReviewApproved:
           humanReview.approved,
+
         executionReady,
       },
 
@@ -693,23 +939,34 @@ export async function POST(
     return jsonResponse(
       {
         success: false,
+
         code:
-          "C167_5_20_TRADING_CONTROL_CHAIN_ERROR",
+          "C167_5_21_TRADING_CONTROL_CHAIN_ERROR",
+
         error:
           error instanceof Error
             ? error.message
             : "Trading control chain evaluation failed.",
+
         boundary: {
           humanDecisionRequired:
             true,
+
+          persistentHumanReviewRequired:
+            true,
+
           decisionAutomaticallyGenerated:
             false,
+
           brokerConnected:
             false,
+
           liveOrderPlaced:
             false,
+
           tradingExecuted:
             false,
+
           executionEnabled:
             false,
         },
@@ -741,38 +998,63 @@ export async function GET(
 
   return jsonResponse({
     success: true,
+
     code:
-      "C167_5_20_TRADING_CONTROL_CHAIN_READY",
+      "C167_5_21_TRADING_CONTROL_CHAIN_READY",
+
     stage:
-      "C167.5.20",
+      "C167.5.21",
+
     pipeline: [
       "Research",
-      "Provider",
+      "Technical Provider",
       "Commercial Authorization",
       "Broker Adapter",
-      "Human Review",
+      "C147.15 Persistent Human Review",
       "Execution Review",
     ],
+
+    humanReview: {
+      source:
+        "c147.15-persistent-runtime",
+
+      required:
+        true,
+
+      acceptedDecisionRequired:
+        true,
+
+      acknowledgementIsApproval:
+        false,
+
+      deferredIsApproval:
+        false,
+
+      rejectedIsApproval:
+        false,
+
+      automaticApproval:
+        false,
+    },
+
     boundaries: {
       ordinaryUserTrading:
         false,
+
       automaticExecution:
         false,
+
       liveOrderPlacement:
         false,
+
       tradingExecuted:
         false,
     },
-    humanReview: {
-      required: true,
-      approvalIsNonAutomatic:
-        true,
-      approvalDoesNotEnableExecution:
-        true,
-    },
+
     brokerExecution: {
       currentEnabled:
         false,
+
       externalAdapterRequired:
         true,
     },
