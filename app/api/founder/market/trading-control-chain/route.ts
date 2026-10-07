@@ -383,22 +383,6 @@ export async function POST(
     const brokerOrder =
       toBrokerOrder(order);
 
-    const brokerDiagnostic =
-      evaluateBrokerExecutionAdapter(
-        {
-          order: brokerOrder,
-          founderAuthenticated: true,
-          humanApproval: false,
-          paperTradingVerified: false,
-          brokerConnected:
-            adapterConfigured,
-          credentialsVerified: false,
-          accountVerified: false,
-          executionEnabled:
-            adapterReady,
-        },
-      );
-
     const humanReviewRequest =
       requestHumanReview
         ? createMarketHumanReviewRequest(
@@ -409,6 +393,29 @@ export async function POST(
     const humanReview =
       evaluateMarketHumanReview(
         humanReviewRequest,
+      );
+
+    const brokerDiagnostic =
+      evaluateBrokerExecutionAdapter(
+        brokerOrder,
+        {
+          founderAuthenticated:
+            true,
+          paperTradingVerified:
+            false,
+          humanReviewApproved:
+            humanReview.approved,
+          brokerConnectionVerified:
+            false,
+          brokerCredentialsVerified:
+            false,
+          brokerAccountVerified:
+            false,
+          executionRequested:
+            false,
+          liveExecutionEnabled:
+            false,
+        },
       );
 
     const humanReviewPolicy =
@@ -456,13 +463,6 @@ export async function POST(
       brokerDiagnosticReady &&
       humanReview.approved;
 
-    /*
-     * The current broker adapter deliberately exposes
-     * readyForExecution as literal false.
-     *
-     * Human approval can satisfy the human gate,
-     * but it cannot override broker safety.
-     */
     const executionReady =
       allGatesPassed &&
       brokerDiagnosticReady;
