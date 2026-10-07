@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import type { ReactNode } from "react";
 
 const STORAGE_KEY =
   "aios-founder-access-key";
@@ -107,26 +108,27 @@ type DiagnosticsResponse = {
   error?: string;
 };
 
+type RiskCheckItem = [
+  label: string,
+  value: boolean | undefined,
+];
+
 function getAccessKey(): string {
-  if (
-    typeof window ===
-    "undefined"
-  ) {
+  if (typeof window === "undefined") {
     return "";
   }
 
   return (
-    window.sessionStorage.getItem(
-      STORAGE_KEY,
-    )?.trim() ?? ""
+    window.sessionStorage
+      .getItem(STORAGE_KEY)
+      ?.trim() ?? ""
   );
 }
 
 async function requestDiagnostics(
   params: URLSearchParams,
 ): Promise<DiagnosticsResponse> {
-  const key =
-    getAccessKey();
+  const key = getAccessKey();
 
   if (!key) {
     throw new Error(
@@ -134,26 +136,21 @@ async function requestDiagnostics(
     );
   }
 
-  const response =
-    await fetch(
-      `/api/founder/market/pretrade-risk?${params.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization:
-            `Bearer ${key}`,
-        },
-        cache: "no-store",
+  const response = await fetch(
+    `/api/founder/market/pretrade-risk?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${key}`,
       },
-    );
+      cache: "no-store",
+    },
+  );
 
   const data =
     (await response.json()) as DiagnosticsResponse;
 
-  if (
-    response.status ===
-    401
-  ) {
+  if (response.status === 401) {
     throw new Error(
       "Founder authentication failed.",
     );
@@ -176,7 +173,7 @@ function Section({
 }: {
   title: string;
   eyebrow?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section
@@ -193,8 +190,7 @@ function Section({
         <div
           style={{
             fontSize: 10,
-            letterSpacing:
-              "0.12em",
+            letterSpacing: "0.12em",
             opacity: 0.45,
             marginBottom: 6,
           }}
@@ -205,8 +201,7 @@ function Section({
 
       <h2
         style={{
-          margin:
-            "0 0 14px",
+          margin: "0 0 14px",
           fontSize: 16,
         }}
       >
@@ -225,31 +220,26 @@ function Badge({
 }: {
   ok: boolean;
   warning?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  const background =
-    ok
-      ? "rgba(74,222,128,0.12)"
-      : warning
-        ? "rgba(251,191,36,0.12)"
-        : "rgba(248,113,113,0.12)";
+  const background = ok
+    ? "rgba(74,222,128,0.12)"
+    : warning
+      ? "rgba(251,191,36,0.12)"
+      : "rgba(248,113,113,0.12)";
 
-  const color =
-    ok
-      ? "#86efac"
-      : warning
-        ? "#fcd34d"
-        : "#fca5a5";
+  const color = ok
+    ? "#86efac"
+    : warning
+      ? "#fcd34d"
+      : "#fca5a5";
 
   return (
     <span
       style={{
-        display:
-          "inline-flex",
-        alignItems:
-          "center",
-        padding:
-          "4px 8px",
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "4px 8px",
         borderRadius: 999,
         fontSize: 11,
         background,
@@ -290,8 +280,7 @@ function Metric({
       <strong
         style={{
           fontSize: 14,
-          wordBreak:
-            "break-word",
+          wordBreak: "break-word",
         }}
       >
         {value}
@@ -308,14 +297,10 @@ function formatValue(
   }
 
   return value
-    .replace(
-      /-/g,
-      " ",
-    )
+    .replace(/-/g, " ")
     .replace(
       /\b\w/g,
-      (char) =>
-        char.toUpperCase(),
+      (char) => char.toUpperCase(),
     );
 }
 
@@ -435,9 +420,7 @@ export default function PreTradeRiskPage() {
         }
 
         const parsedQuantity =
-          Number(
-            quantity,
-          );
+          Number(quantity);
 
         if (
           !Number.isFinite(
@@ -447,6 +430,20 @@ export default function PreTradeRiskPage() {
         ) {
           setError(
             "Quantity must be greater than zero.",
+          );
+          return;
+        }
+
+        const normalizedQuantity =
+          Math.floor(
+            parsedQuantity,
+          );
+
+        if (
+          normalizedQuantity <= 0
+        ) {
+          setError(
+            "Quantity must be at least 1.",
           );
           return;
         }
@@ -462,8 +459,7 @@ export default function PreTradeRiskPage() {
             : null;
 
         if (
-          parsedLimitPrice !==
-            null &&
+          parsedLimitPrice !== null &&
           (
             !Number.isFinite(
               parsedLimitPrice,
@@ -509,9 +505,7 @@ export default function PreTradeRiskPage() {
           params.set(
             "quantity",
             String(
-              Math.floor(
-                parsedQuantity,
-              ),
+              normalizedQuantity,
             ),
           );
 
@@ -537,9 +531,7 @@ export default function PreTradeRiskPage() {
               params,
             );
 
-          setResult(
-            data,
-          );
+          setResult(data);
         } catch (err) {
           setError(
             err instanceof Error
@@ -561,11 +553,8 @@ export default function PreTradeRiskPage() {
     );
 
   useEffect(() => {
-    const key =
-      getAccessKey();
-
     setSessionDetected(
-      Boolean(key),
+      Boolean(getAccessKey()),
     );
   }, []);
 
@@ -586,51 +575,68 @@ export default function PreTradeRiskPage() {
     "not-evaluated";
 
   const decisionWarning =
-    decision ===
-    "review-required";
+    decision === "review-required";
 
   const decisionPassed =
-    decision ===
-    "pass";
+    decision === "pass";
+
+  const riskChecks: RiskCheckItem[] = [
+    [
+      "Order Valid",
+      checks?.orderValid,
+    ],
+    [
+      "Market Allowed",
+      checks?.marketAllowed,
+    ],
+    [
+      "Quantity Limit",
+      checks?.quantityWithinLimit,
+    ],
+    [
+      "Notional Limit",
+      checks?.notionalWithinLimit,
+    ],
+    [
+      "Limit Price",
+      checks?.limitPriceValid,
+    ],
+    [
+      "Review Threshold",
+      checks
+        ? !checks.reviewRequired
+        : undefined,
+    ],
+  ];
 
   return (
     <main
       style={{
-        minHeight:
-          "100vh",
-        background:
-          "#09090b",
-        color:
-          "#f4f4f5",
-        padding:
-          "26px 18px 70px",
+        minHeight: "100vh",
+        background: "#09090b",
+        color: "#f4f4f5",
+        padding: "26px 18px 70px",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       <div
         style={{
-          maxWidth:
-            1120,
-          margin:
-            "0 auto",
+          maxWidth: 1120,
+          margin: "0 auto",
         }}
       >
         <header
           style={{
-            marginBottom:
-              24,
+            marginBottom: 24,
           }}
         >
           <div
             style={{
               fontSize: 10,
-              letterSpacing:
-                "0.14em",
-              opacity:
-                0.45,
-              marginBottom:
-                8,
+              letterSpacing: "0.14em",
+              opacity: 0.45,
+              marginBottom: 8,
             }}
           >
             PRIVATE FOUNDER CONTROL
@@ -638,23 +644,19 @@ export default function PreTradeRiskPage() {
 
           <div
             style={{
-              display:
-                "flex",
-              alignItems:
-                "flex-start",
+              display: "flex",
+              alignItems: "flex-start",
               justifyContent:
                 "space-between",
               gap: 18,
-              flexWrap:
-                "wrap",
+              flexWrap: "wrap",
             }}
           >
             <div>
               <h1
                 style={{
                   margin: 0,
-                  fontSize:
-                    30,
+                  fontSize: 30,
                   letterSpacing:
                     "-0.02em",
                 }}
@@ -664,16 +666,11 @@ export default function PreTradeRiskPage() {
 
               <p
                 style={{
-                  margin:
-                    "8px 0 0",
-                  opacity:
-                    0.62,
-                  lineHeight:
-                    1.6,
-                  fontSize:
-                    13,
-                  maxWidth:
-                    760,
+                  margin: "8px 0 0",
+                  opacity: 0.62,
+                  lineHeight: 1.6,
+                  fontSize: 13,
+                  maxWidth: 760,
                 }}
               >
                 Independent server-side risk
@@ -683,9 +680,7 @@ export default function PreTradeRiskPage() {
             </div>
 
             <Badge
-              ok={
-                sessionDetected
-              }
+              ok={sessionDetected}
             >
               {sessionDetected
                 ? "Founder Session"
@@ -697,22 +692,16 @@ export default function PreTradeRiskPage() {
         {error ? (
           <div
             style={{
-              marginBottom:
-                16,
-              padding:
-                12,
-              borderRadius:
-                10,
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: 10,
               background:
                 "rgba(248,113,113,0.08)",
               border:
                 "1px solid rgba(248,113,113,0.16)",
-              color:
-                "#fca5a5",
-              fontSize:
-                12,
-              lineHeight:
-                1.6,
+              color: "#fca5a5",
+              fontSize: 12,
+              lineHeight: 1.6,
             }}
           >
             {error}
@@ -721,10 +710,8 @@ export default function PreTradeRiskPage() {
 
         <div
           style={{
-            display:
-              "grid",
-            gap:
-              14,
+            display: "grid",
+            gap: 14,
           }}
         >
           <Section
@@ -733,50 +720,37 @@ export default function PreTradeRiskPage() {
           >
             <div
               style={{
-                display:
-                  "grid",
+                display: "grid",
                 gridTemplateColumns:
                   "repeat(3, minmax(0, 1fr))",
-                gap:
-                  10,
+                gap: 10,
               }}
             >
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Symbol
                 <input
-                  value={
-                    symbol
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={symbol}
+                  onChange={(event) =>
                     setSymbol(
-                      event.target
-                        .value,
+                      event.target.value,
                     )
                   }
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
                     background:
                       "rgba(255,255,255,0.04)",
-                    color:
-                      "#fff",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -785,24 +759,16 @@ export default function PreTradeRiskPage() {
 
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Market
                 <select
-                  value={
-                    market
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={market}
+                  onChange={(event) =>
                     setMarket(
                       event.target
                         .value as
@@ -814,14 +780,11 @@ export default function PreTradeRiskPage() {
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
-                    background:
-                      "#18181b",
-                    color:
-                      "#fff",
+                    background: "#18181b",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -840,24 +803,16 @@ export default function PreTradeRiskPage() {
 
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Side
                 <select
-                  value={
-                    side
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={side}
+                  onChange={(event) =>
                     setSide(
                       event.target
                         .value as
@@ -868,14 +823,11 @@ export default function PreTradeRiskPage() {
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
-                    background:
-                      "#18181b",
-                    color:
-                      "#fff",
+                    background: "#18181b",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -891,41 +843,30 @@ export default function PreTradeRiskPage() {
 
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Quantity
                 <input
                   inputMode="numeric"
-                  value={
-                    quantity
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={quantity}
+                  onChange={(event) =>
                     setQuantity(
-                      event.target
-                        .value,
+                      event.target.value,
                     )
                   }
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
                     background:
                       "rgba(255,255,255,0.04)",
-                    color:
-                      "#fff",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -934,42 +875,31 @@ export default function PreTradeRiskPage() {
 
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Limit Price
                 <input
                   inputMode="decimal"
-                  value={
-                    limitPrice
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={limitPrice}
+                  onChange={(event) =>
                     setLimitPrice(
-                      event.target
-                        .value,
+                      event.target.value,
                     )
                   }
                   placeholder="Optional"
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
                     background:
                       "rgba(255,255,255,0.04)",
-                    color:
-                      "#fff",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -978,40 +908,29 @@ export default function PreTradeRiskPage() {
 
               <label
                 style={{
-                  display:
-                    "grid",
-                  gap:
-                    6,
-                  fontSize:
-                    11,
-                  opacity:
-                    0.72,
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 11,
+                  opacity: 0.72,
                 }}
               >
                 Reason
                 <input
-                  value={
-                    reason
-                  }
-                  onChange={(
-                    event,
-                  ) =>
+                  value={reason}
+                  onChange={(event) =>
                     setReason(
-                      event.target
-                        .value,
+                      event.target.value,
                     )
                   }
                   style={{
                     padding:
                       "11px 12px",
-                    borderRadius:
-                      9,
+                    borderRadius: 9,
                     border:
                       "1px solid rgba(255,255,255,0.12)",
                     background:
                       "rgba(255,255,255,0.04)",
-                    color:
-                      "#fff",
+                    color: "#fff",
                     fontFamily:
                       "inherit",
                   }}
@@ -1021,38 +940,27 @@ export default function PreTradeRiskPage() {
 
             <button
               type="button"
-              onClick={() =>
-                void runDiagnostics()
+              onClick={
+                runDiagnostics
               }
-              disabled={
-                loading ||
-                !sessionDetected
-              }
+              disabled={loading}
               style={{
-                marginTop:
-                  14,
-                padding:
-                  "11px 16px",
-                borderRadius:
-                  9,
+                marginTop: 14,
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 10,
                 border:
-                  "none",
+                  "1px solid rgba(255,255,255,0.14)",
                 background:
-                  "#fff",
-                color:
-                  "#09090b",
-                fontWeight:
-                  700,
-                cursor:
-                  loading ||
-                  !sessionDetected
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  loading ||
-                  !sessionDetected
-                    ? 0.55
-                    : 1,
+                  "rgba(255,255,255,0.08)",
+                color: "#fff",
+                cursor: loading
+                  ? "wait"
+                  : "pointer",
+                opacity: loading
+                  ? 0.55
+                  : 1,
+                fontWeight: 700,
               }}
             >
               {loading
@@ -1069,12 +977,10 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(4, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1112,14 +1018,11 @@ export default function PreTradeRiskPage() {
 
                 <div
                   style={{
-                    marginTop:
-                      12,
+                    marginTop: 12,
                   }}
                 >
                   <Badge
-                    ok={
-                      decisionPassed
-                    }
+                    ok={decisionPassed}
                     warning={
                       decisionWarning
                     }
@@ -1139,12 +1042,10 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(4, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1221,89 +1122,51 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(3, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
-                  {[
-                    [
-                      "Order Valid",
-                      checks?.orderValid,
-                    ],
-                    [
-                      "Market Allowed",
-                      checks?.marketAllowed,
-                    ],
-                    [
-                      "Quantity Limit",
-                      checks?.quantityWithinLimit,
-                    ],
-                    [
-                      "Notional Limit",
-                      checks?.notionalWithinLimit,
-                    ],
-                    [
-                      "Limit Price",
-                      checks?.limitPriceValid,
-                    ],
-                    [
-                      "Review Threshold",
-                      checks?.reviewRequired
-                        ? false
-                        : true,
-                    ],
-                  ].map(
-                    (item) => {
+                  {riskChecks.map(
+                    ([label, value]) => {
                       const state =
                         checkState(
-                          item[1],
+                          value,
                         );
 
                       return (
                         <div
-                          key={
-                            item[0]
-                          }
+                          key={label}
                           style={{
-                            padding:
-                              12,
-                            borderRadius:
-                              10,
+                            padding: 12,
+                            borderRadius: 10,
                             background:
                               "rgba(255,255,255,0.035)",
-                            display:
-                              "flex",
+                            display: "flex",
                             alignItems:
                               "center",
                             justifyContent:
                               "space-between",
-                            gap:
-                              10,
+                            gap: 10,
                           }}
                         >
                           <span
                             style={{
-                              fontSize:
-                                12,
+                              fontSize: 12,
                             }}
                           >
-                            {item[0]}
+                            {label}
                           </span>
 
                           <Badge
-                            ok={
-                              state.ok
-                            }
+                            ok={state.ok}
                             warning={
                               state.warning
                             }
                           >
                             {checks?.reviewRequired &&
-                            item[0] ===
+                            label ===
                               "Review Threshold"
                               ? "Review Required"
                               : state.label}
@@ -1319,12 +1182,9 @@ export default function PreTradeRiskPage() {
                   ?.length ? (
                   <div
                     style={{
-                      marginTop:
-                        12,
-                      padding:
-                        12,
-                      borderRadius:
-                        10,
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 10,
                       background:
                         "rgba(248,113,113,0.06)",
                       border:
@@ -1333,12 +1193,9 @@ export default function PreTradeRiskPage() {
                   >
                     <div
                       style={{
-                        fontSize:
-                          11,
-                        opacity:
-                          0.55,
-                        marginBottom:
-                          6,
+                        fontSize: 11,
+                        opacity: 0.55,
+                        marginBottom: 6,
                       }}
                     >
                       BLOCKED REASONS
@@ -1346,24 +1203,17 @@ export default function PreTradeRiskPage() {
 
                     <ul
                       style={{
-                        margin:
-                          0,
-                        paddingLeft:
-                          18,
-                        fontSize:
-                          12,
-                        lineHeight:
-                          1.7,
-                        color:
-                          "#fca5a5",
+                        margin: 0,
+                        paddingLeft: 18,
+                        fontSize: 12,
+                        lineHeight: 1.7,
+                        color: "#fca5a5",
                       }}
                     >
                       {diagnostic.blockedReasons.map(
                         (item) => (
                           <li
-                            key={
-                              item
-                            }
+                            key={item}
                           >
                             {item}
                           </li>
@@ -1380,12 +1230,10 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(4, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1435,10 +1283,8 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
-                    gap:
-                      8,
+                    display: "grid",
+                    gap: 8,
                   }}
                 >
                   {(
@@ -1447,23 +1293,16 @@ export default function PreTradeRiskPage() {
                       ?.previous ??
                     []
                   ).map(
-                    (
-                      item,
-                      index,
-                    ) => (
+                    (item, index) => (
                       <div
                         key={`${item}-${index}`}
                         style={{
-                          padding:
-                            10,
-                          borderRadius:
-                            9,
+                          padding: 10,
+                          borderRadius: 9,
                           background:
                             "rgba(255,255,255,0.035)",
-                          fontSize:
-                            12,
-                          opacity:
-                            0.62,
+                          fontSize: 12,
+                          opacity: 0.62,
                         }}
                       >
                         {item}
@@ -1473,16 +1312,13 @@ export default function PreTradeRiskPage() {
 
                   <div
                     style={{
-                      padding:
-                        12,
-                      borderRadius:
-                        10,
+                      padding: 12,
+                      borderRadius: 10,
                       border:
                         "1px solid rgba(255,255,255,0.14)",
                       background:
                         "rgba(255,255,255,0.07)",
-                      fontWeight:
-                        700,
+                      fontWeight: 700,
                     }}
                   >
                     {result
@@ -1497,23 +1333,16 @@ export default function PreTradeRiskPage() {
                       ?.next ??
                     []
                   ).map(
-                    (
-                      item,
-                      index,
-                    ) => (
+                    (item, index) => (
                       <div
                         key={`${item}-${index}`}
                         style={{
-                          padding:
-                            10,
-                          borderRadius:
-                            9,
+                          padding: 10,
+                          borderRadius: 9,
                           background:
                             "rgba(255,255,255,0.035)",
-                          fontSize:
-                            12,
-                          opacity:
-                            0.62,
+                          fontSize: 12,
+                          opacity: 0.62,
                         }}
                       >
                         {item}
@@ -1529,10 +1358,8 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
-                    gap:
-                      10,
+                    display: "grid",
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1568,14 +1395,11 @@ export default function PreTradeRiskPage() {
 
                 <div
                   style={{
-                    marginTop:
-                      12,
-                    display:
-                      "grid",
+                    marginTop: 12,
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(3, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1619,12 +1443,10 @@ export default function PreTradeRiskPage() {
               >
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gridTemplateColumns:
                       "repeat(4, minmax(0, 1fr))",
-                    gap:
-                      10,
+                    gap: 10,
                   }}
                 >
                   <Metric
@@ -1674,25 +1496,24 @@ export default function PreTradeRiskPage() {
 
                 <div
                   style={{
-                    marginTop:
-                      12,
-                    padding:
-                      12,
-                    borderRadius:
-                      10,
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 10,
                     background:
                       "rgba(251,191,36,0.06)",
                     border:
                       "1px solid rgba(251,191,36,0.12)",
-                    color:
-                      "#fcd34d",
-                    fontSize:
-                      11,
-                    lineHeight:
-                      1.65,
+                    color: "#fcd34d",
+                    fontSize: 11,
+                    lineHeight: 1.65,
                   }}
                 >
-                  Pre-trade risk is an independent server-side control. Passing the risk policy does not approve a trade, does not connect a broker, and does not place an order. Persistent human approval and broker-side verification remain mandatory.
+                  Pre-trade risk is an independent
+                  server-side control. Passing the risk
+                  policy does not approve a trade, does
+                  not connect a broker, and does not place
+                  an order. Persistent human approval and
+                  broker-side verification remain mandatory.
                 </div>
               </Section>
             </>
@@ -1703,12 +1524,9 @@ export default function PreTradeRiskPage() {
             >
               <div
                 style={{
-                  opacity:
-                    0.58,
-                  fontSize:
-                    13,
-                  lineHeight:
-                    1.7,
+                  opacity: 0.58,
+                  fontSize: 13,
+                  lineHeight: 1.7,
                 }}
               >
                 Submit an order intent above to evaluate
