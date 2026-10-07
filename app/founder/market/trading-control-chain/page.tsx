@@ -1649,8 +1649,8 @@ export default function TradingControlChainPage() {
                       result
                         .humanReview
                         ?.taskId ??
-                      taskId ||
-                      "Not supplied"
+                      (taskId ||
+                        "Not supplied")
                     }
                   />
 
