@@ -51,6 +51,15 @@ export interface MarketPreTradeRiskResult {
   generatedAt: string;
 }
 
+type NormalizedMarketOrder =
+  Omit<
+    BrokerOrderIntent,
+    "market" | "limitPrice"
+  > & {
+    market: "us" | "hk" | "cn";
+    limitPrice: number | null;
+  };
+
 const DEFAULT_POLICY: MarketPreTradeRiskPolicy = {
   enabled: true,
   allowedMarkets: ["us", "hk", "cn"],
@@ -195,7 +204,7 @@ function normalizeOrder(
     | BrokerOrderIntent
     | null
     | undefined,
-): BrokerOrderIntent | null {
+): NormalizedMarketOrder | null {
   if (!order) {
     return null;
   }
@@ -234,14 +243,17 @@ function normalizeOrder(
       ? order.limitPrice
       : null;
 
+  const side =
+    order.side === "buy" ||
+    order.side === "sell"
+      ? order.side
+      : null;
+
   if (
     !symbol ||
     quantity <= 0 ||
-    !market ||
-    (
-      order.side !== "buy" &&
-      order.side !== "sell"
-    )
+    market === null ||
+    side === null
   ) {
     return null;
   }
@@ -249,7 +261,7 @@ function normalizeOrder(
   return {
     symbol,
     market,
-    side: order.side,
+    side,
     quantity,
     limitPrice,
     reason:
@@ -278,17 +290,11 @@ export function evaluateMarketPreTradeRisk(
   const orderValid =
     normalizedOrder !== null;
 
-  const normalizedMarket =
-    normalizedOrder?.market;
-
   const marketAllowed =
-    normalizedMarket === "us" ||
-    normalizedMarket === "hk" ||
-    normalizedMarket === "cn"
-      ? policy.allowedMarkets.includes(
-          normalizedMarket,
-        )
-      : false;
+    normalizedOrder !== null &&
+    policy.allowedMarkets.includes(
+      normalizedOrder.market,
+    );
 
   const quantityWithinLimit =
     normalizedOrder !== null &&
@@ -302,11 +308,8 @@ export function evaluateMarketPreTradeRisk(
           null
         ? policy.allowMarketOrders &&
           !policy.requireLimitPrice
-        : Number.isFinite(
-              normalizedOrder.limitPrice,
-            ) &&
-            normalizedOrder.limitPrice >
-              0;
+        : normalizedOrder.limitPrice >
+          0;
 
   const estimatedNotional =
     normalizedOrder !== null &&
