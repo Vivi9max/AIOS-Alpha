@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "aios-founder-access-key";
 
@@ -32,6 +32,45 @@ type ReviewResponse = {
   taskId?: string;
   review?: ReviewRecord | null;
   humanDecisionRequired?: boolean;
+  error?: string;
+};
+
+type ReviewTask = {
+  taskId: string;
+  title: string;
+  description?: string;
+  status?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  symbol: string;
+  market: string;
+  reviewStatus?: string;
+  reviewId?: string | null;
+  selectable?: boolean;
+};
+
+type ReviewTaskResponse = {
+  success?: boolean;
+  code?: string;
+  tasks?: ReviewTask[];
+  selectableTasks?: ReviewTask[];
+  taskDiscovery?: {
+    source?: string;
+    reviewRuntime?: string;
+    total?: number;
+    selectable?: number;
+    maxResults?: number;
+  };
+  policy?: {
+    manualTaskIdStillSupported?: boolean;
+    automaticDiscovery?: boolean;
+    userScopeIsolation?: boolean;
+    completedTasksExcluded?: boolean;
+    existingReviewExcluded?: boolean;
+    explicitHumanDecisionRequired?: boolean;
+    automaticApproval?: boolean;
+    tradingExecution?: boolean;
+  };
   error?: string;
 };
 
@@ -116,7 +155,10 @@ type ChainResult = {
     plannerDispatched?: boolean;
   };
   nextRequirements?: string[];
-  safetyBoundary?: Record<string, boolean | string | null>;
+  safetyBoundary?: Record<
+    string,
+    boolean | string | null
+  >;
   error?: string;
 };
 
@@ -125,7 +167,11 @@ function getAccessKey(): string {
     return "";
   }
 
-  return window.sessionStorage.getItem(STORAGE_KEY)?.trim() ?? "";
+  return (
+    window.sessionStorage
+      .getItem(STORAGE_KEY)
+      ?.trim() ?? ""
+  );
 }
 
 async function requestJson(
@@ -148,6 +194,30 @@ async function requestJson(
     },
     cache: "no-store",
   });
+}
+
+async function requestTaskDiscovery(): Promise<ReviewTaskResponse> {
+  const response = await requestJson(
+    "/api/founder/market/human-review/tasks",
+  );
+
+  const data =
+    (await response.json()) as ReviewTaskResponse;
+
+  if (response.status === 401) {
+    throw new Error(
+      "Founder authentication failed.",
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.error ??
+        "Human review task discovery failed.",
+    );
+  }
+
+  return data;
 }
 
 async function requestControlChain(
@@ -179,10 +249,13 @@ async function requestControlChain(
     },
   );
 
-  const data = (await response.json()) as ChainResult;
+  const data =
+    (await response.json()) as ChainResult;
 
   if (response.status === 401) {
-    throw new Error("Founder authentication failed.");
+    throw new Error(
+      "Founder authentication failed.",
+    );
   }
 
   if (!response.ok) {
@@ -208,7 +281,9 @@ async function requestHumanReview(
     (await response.json()) as ReviewResponse;
 
   if (response.status === 401) {
-    throw new Error("Founder authentication failed.");
+    throw new Error(
+      "Founder authentication failed.",
+    );
   }
 
   if (!response.ok) {
@@ -246,7 +321,9 @@ async function submitHumanReview(
     (await response.json()) as ReviewResponse;
 
   if (response.status === 401) {
-    throw new Error("Founder authentication failed.");
+    throw new Error(
+      "Founder authentication failed.",
+    );
   }
 
   if (!response.ok) {
@@ -384,6 +461,8 @@ function decisionLabel(
       return "Rejected";
     case "deferred":
       return "Deferred";
+    case "pending":
+      return "Pending";
     default:
       return "Not Recorded";
   }
@@ -393,6 +472,18 @@ function decisionIsApproval(
   decision?: string,
 ): boolean {
   return decision === "accepted";
+}
+
+function taskStatusLabel(
+  task: ReviewTask,
+): string {
+  if (task.reviewStatus) {
+    return decisionLabel(
+      task.reviewStatus,
+    );
+  }
+
+  return "Pending";
 }
 
 export default function TradingControlChainPage() {
@@ -424,10 +515,28 @@ export default function TradingControlChainPage() {
   const [taskId, setTaskId] =
     useState("");
 
+  const [reviewerNote, setReviewerNote] =
+    useState("");
+
   const [
-    reviewerNote,
-    setReviewerNote,
+    reviewTasks,
+    setReviewTasks,
+  ] = useState<ReviewTask[]>([]);
+
+  const [
+    selectedTaskId,
+    setSelectedTaskId,
   ] = useState("");
+
+  const [
+    taskDiscoveryLoading,
+    setTaskDiscoveryLoading,
+  ] = useState(false);
+
+  const [
+    taskDiscoveryLoaded,
+    setTaskDiscoveryLoaded,
+  ] = useState(false);
 
   const [loading, setLoading] =
     useState(false);
@@ -454,11 +563,91 @@ export default function TradingControlChainPage() {
   const [error, setError] =
     useState("");
 
+  const discoverReviewTasks =
+    useCallback(async () => {
+      setTaskDiscoveryLoading(true);
+      setError("");
+
+      try {
+        const data =
+          await requestTaskDiscovery();
+
+        const selectable =
+          data.selectableTasks ??
+          (data.tasks ?? []).filter(
+            (item) =>
+              item.selectable,
+          );
+
+        setReviewTasks(
+          selectable,
+        );
+        setTaskDiscoveryLoaded(
+          true,
+        );
+
+        if (
+          selectedTaskId &&
+          !selectable.some(
+            (item) =>
+              item.taskId ===
+              selectedTaskId,
+          )
+        ) {
+          setSelectedTaskId("");
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Human review task discovery failed.",
+        );
+      } finally {
+        setTaskDiscoveryLoading(
+          false,
+        );
+      }
+    }, [selectedTaskId]);
+
   useEffect(() => {
+    const key =
+      getAccessKey();
+
     setSessionDetected(
-      Boolean(getAccessKey()),
+      Boolean(key),
     );
-  }, []);
+
+    if (key) {
+      void discoverReviewTasks();
+    }
+  }, [discoverReviewTasks]);
+
+  function applyTask(
+    task: ReviewTask,
+  ) {
+    setSelectedTaskId(
+      task.taskId,
+    );
+    setTaskId(
+      task.taskId,
+    );
+
+    if (task.symbol) {
+      setSymbol(
+        task.symbol,
+      );
+    }
+
+    if (task.market) {
+      setMarket(
+        task.market,
+      );
+    }
+
+    setReviewResult(null);
+    setResult(null);
+    setError("");
+  }
 
   async function loadHumanReview() {
     if (!taskId.trim()) {
@@ -480,11 +669,21 @@ export default function TradingControlChainPage() {
       setReviewResult(data);
 
       if (data.review?.symbol) {
-        setSymbol(data.review.symbol);
+        setSymbol(
+          data.review.symbol,
+        );
       }
 
       if (data.review?.market) {
-        setMarket(data.review.market);
+        setMarket(
+          data.review.market,
+        );
+      }
+
+      if (data.review?.taskId) {
+        setSelectedTaskId(
+          data.review.taskId,
+        );
       }
     } catch (err) {
       setError(
@@ -521,12 +720,18 @@ export default function TradingControlChainPage() {
       setReviewResult(data);
 
       if (data.review?.symbol) {
-        setSymbol(data.review.symbol);
+        setSymbol(
+          data.review.symbol,
+        );
       }
 
       if (data.review?.market) {
-        setMarket(data.review.market);
+        setMarket(
+          data.review.market,
+        );
       }
+
+      await discoverReviewTasks();
     } catch (err) {
       setError(
         err instanceof Error
@@ -534,7 +739,9 @@ export default function TradingControlChainPage() {
           : "Human review submission failed.",
       );
     } finally {
-      setReviewSubmitting(false);
+      setReviewSubmitting(
+        false,
+      );
     }
   }
 
@@ -627,7 +834,9 @@ export default function TradingControlChainPage() {
   }
 
   const gates = result?.gates;
-  const execution = result?.execution;
+  const execution =
+    result?.execution;
+
   const persistentReview =
     reviewResult?.review ??
     result?.humanReview?.review ??
@@ -747,6 +956,192 @@ export default function TradingControlChainPage() {
             gap: 16,
           }}
         >
+          <Section
+            title="Pending Review Tasks"
+            eyebrow="C167.5.25 · AUTOMATIC DISCOVERY"
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                gap: 10,
+                alignItems:
+                  "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  opacity: 0.62,
+                }}
+              >
+                Persistent market review tasks are discovered automatically within the current user scope. Selecting a task fills the review context below.
+              </div>
+
+              <button
+                onClick={() =>
+                  void discoverReviewTasks()
+                }
+                disabled={
+                  taskDiscoveryLoading ||
+                  !sessionDetected
+                }
+                style={{
+                  padding:
+                    "9px 12px",
+                  borderRadius: 9,
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  fontWeight: 650,
+                  cursor:
+                    taskDiscoveryLoading
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                {taskDiscoveryLoading
+                  ? "Discovering..."
+                  : "Refresh Tasks"}
+              </button>
+            </div>
+
+            {reviewTasks.length ? (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                  marginTop: 14,
+                }}
+              >
+                {reviewTasks.map(
+                  (task) => {
+                    const selected =
+                      task.taskId ===
+                      selectedTaskId;
+
+                    return (
+                      <button
+                        key={
+                          task.taskId
+                        }
+                        type="button"
+                        onClick={() =>
+                          applyTask(
+                            task,
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          textAlign:
+                            "left",
+                          padding: 13,
+                          borderRadius: 11,
+                          border: selected
+                            ? "1px solid rgba(255,255,255,0.35)"
+                            : "1px solid rgba(255,255,255,0.08)",
+                          background:
+                            selected
+                              ? "rgba(255,255,255,0.09)"
+                              : "rgba(255,255,255,0.035)",
+                          color: "#fff",
+                          cursor:
+                            "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            justifyContent:
+                              "space-between",
+                            gap: 12,
+                            alignItems:
+                              "center",
+                          }}
+                        >
+                          <strong
+                            style={{
+                              fontSize: 13,
+                            }}
+                          >
+                            {task.title}
+                          </strong>
+
+                          <Badge ok={false}>
+                            {taskStatusLabel(
+                              task,
+                            )}
+                          </Badge>
+                        </div>
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            gap: 10,
+                            flexWrap:
+                              "wrap",
+                            marginTop: 7,
+                            fontSize: 11,
+                            opacity:
+                              0.58,
+                          }}
+                        >
+                          <span>
+                            Task:{" "}
+                            {task.taskId}
+                          </span>
+                          <span>
+                            Symbol:{" "}
+                            {task.symbol}
+                          </span>
+                          <span>
+                            Market:{" "}
+                            {task.market.toUpperCase()}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 13,
+                  borderRadius: 10,
+                  background:
+                    "rgba(255,255,255,0.025)",
+                  color: "#a1a1aa",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                {taskDiscoveryLoaded
+                  ? "No selectable market human-review task was discovered."
+                  : "Run task discovery to load pending market human-review tasks."}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 11,
+                lineHeight: 1.6,
+                opacity: 0.48,
+              }}
+            >
+              Existing reviews, completed tasks, automatic approval, planner dispatch, and trading execution are excluded from this discovery layer.
+            </div>
+          </Section>
+
           <Section
             title="Order Intent"
             eyebrow="FOUNDER REVIEW INPUT"
@@ -911,67 +1306,28 @@ export default function TradingControlChainPage() {
               />
             </div>
 
-            <button
-              onClick={
-                evaluateChain
-              }
-              disabled={
-                loading ||
-                !sessionDetected
-              }
-              style={{
-                width: "100%",
-                marginTop: 12,
-                padding:
-                  "13px 16px",
-                borderRadius: 10,
-                border: "none",
-                background:
-                  loading
-                    ? "#3f3f46"
-                    : "#fff",
-                color:
-                  loading
-                    ? "#aaa"
-                    : "#09090b",
-                fontWeight: 750,
-                cursor:
-                  loading
-                    ? "wait"
-                    : "pointer",
-              }}
-            >
-              {loading
-                ? "Evaluating Control Chain..."
-                : "Evaluate Trading Control Chain"}
-            </button>
-          </Section>
-
-          <Section
-            title="Persistent Human Review"
-            eyebrow="C147.15 REVIEW RECORD"
-          >
             <div
               style={{
+                marginTop: 10,
                 display: "grid",
                 gridTemplateColumns:
-                  "minmax(0, 1fr) auto",
+                  "1fr auto",
                 gap: 10,
               }}
             >
               <input
                 value={taskId}
-                onChange={(event) =>
+                onChange={(event) => {
                   setTaskId(
                     event.target.value,
-                  )
-                }
-                placeholder="Persistent Task ID"
+                  );
+                  setSelectedTaskId("");
+                }}
+                placeholder="Task ID (optional manual fallback)"
                 style={{
-                  minWidth: 0,
                   padding:
-                    "12px 13px",
-                  borderRadius: 10,
+                    "11px 12px",
+                  borderRadius: 9,
                   border:
                     "1px solid rgba(255,255,255,0.12)",
                   background:
@@ -991,20 +1347,14 @@ export default function TradingControlChainPage() {
                 }
                 style={{
                   padding:
-                    "12px 16px",
-                  borderRadius: 10,
+                    "10px 14px",
+                  borderRadius: 9,
                   border:
                     "1px solid rgba(255,255,255,0.12)",
                   background:
-                    reviewLoading
-                      ? "#27272a"
-                      : "rgba(255,255,255,0.08)",
+                    "rgba(255,255,255,0.06)",
                   color: "#fff",
                   fontWeight: 650,
-                  cursor:
-                    reviewLoading
-                      ? "wait"
-                      : "pointer",
                 }}
               >
                 {reviewLoading
@@ -1013,9 +1363,45 @@ export default function TradingControlChainPage() {
               </button>
             </div>
 
+            <button
+              onClick={
+                evaluateChain
+              }
+              disabled={
+                loading ||
+                !sessionDetected
+              }
+              style={{
+                width: "100%",
+                marginTop: 12,
+                padding:
+                  "13px 16px",
+                borderRadius: 10,
+                border: "none",
+                background:
+                  loading
+                    ? "#3f3f46"
+                    : "#fff",
+                color: "#09090b",
+                fontWeight: 800,
+                cursor:
+                  loading
+                    ? "wait"
+                    : "pointer",
+              }}
+            >
+              {loading
+                ? "Evaluating Control Chain..."
+                : "Evaluate Control Chain"}
+            </button>
+          </Section>
+
+          <Section
+            title="Persistent Human Review"
+            eyebrow="C147.15 · EXPLICIT HUMAN DECISION"
+          >
             <div
               style={{
-                marginTop: 12,
                 display: "grid",
                 gridTemplateColumns:
                   "repeat(4, minmax(0, 1fr))",
@@ -1025,9 +1411,8 @@ export default function TradingControlChainPage() {
               <Metric
                 label="Task"
                 value={
-                  taskId.trim()
-                    ? taskId.trim()
-                    : "Not supplied"
+                  taskId ||
+                  "Not supplied"
                 }
               />
 
@@ -1042,255 +1427,178 @@ export default function TradingControlChainPage() {
                 label="Approval"
                 value={
                   reviewApproved
-                    ? "Accepted"
-                    : "Not approved"
+                    ? "Approved"
+                    : "Blocked"
                 }
               />
 
               <Metric
-                label="Source"
-                value="C147.15"
+                label="Review ID"
+                value={
+                  persistentReview
+                    ?.reviewId ??
+                  "None"
+                }
               />
             </div>
-
-            {persistentReview ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 10,
-                  background:
-                    "rgba(255,255,255,0.035)",
-                  border:
-                    "1px solid rgba(255,255,255,0.07)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    alignItems:
-                      "center",
-                    gap: 12,
-                    flexWrap:
-                      "wrap",
-                  }}
-                >
-                  <div>
-                    <strong
-                      style={{
-                        fontSize: 13,
-                      }}
-                    >
-                      {persistentReview.taskTitle ??
-                        "Persistent Human Review"}
-                    </strong>
-
-                    <div
-                      style={{
-                        marginTop: 5,
-                        fontSize: 11,
-                        opacity: 0.55,
-                      }}
-                    >
-                      {persistentReview.reviewId ??
-                        "Review record not available"}
-                    </div>
-                  </div>
-
-                  <Badge
-                    ok={
-                      reviewApproved
-                    }
-                  >
-                    {decisionLabel(
-                      reviewDecision,
-                    )}
-                  </Badge>
-                </div>
-
-                <p
-                  style={{
-                    margin:
-                      "12px 0 0",
-                    fontSize: 12,
-                    lineHeight: 1.6,
-                    opacity: 0.65,
-                  }}
-                >
-                  {persistentReview.reviewerNote ||
-                    "No reviewer note recorded."}
-                </p>
-              </div>
-            ) : null}
 
             <div
               style={{
                 marginTop: 12,
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
+                display: "grid",
+                gap: 10,
               }}
             >
-              <button
-                onClick={() =>
-                  submitReview(
-                    "accepted",
+              <textarea
+                value={reviewerNote}
+                onChange={(event) =>
+                  setReviewerNote(
+                    event.target.value,
                   )
                 }
-                disabled={
-                  reviewSubmitting ||
-                  !sessionDetected ||
-                  !taskId.trim() ||
-                  Boolean(
-                    persistentReview,
-                  )
-                }
+                placeholder="Reviewer note"
+                rows={3}
                 style={{
+                  width: "100%",
+                  boxSizing:
+                    "border-box",
+                  resize: "vertical",
                   padding:
-                    "10px 14px",
-                  borderRadius: 9,
-                  border: "none",
-                  background:
-                    "#fff",
-                  color: "#09090b",
-                  fontWeight: 700,
-                  cursor:
-                    reviewSubmitting
-                      ? "wait"
-                      : "pointer",
-                }}
-              >
-                Accept
-              </button>
-
-              <button
-                onClick={() =>
-                  submitReview(
-                    "acknowledged",
-                  )
-                }
-                disabled={
-                  reviewSubmitting ||
-                  !sessionDetected ||
-                  !taskId.trim() ||
-                  Boolean(
-                    persistentReview,
-                  )
-                }
-                style={{
-                  padding:
-                    "10px 14px",
+                    "11px 12px",
                   borderRadius: 9,
                   border:
                     "1px solid rgba(255,255,255,0.12)",
                   background:
-                    "rgba(255,255,255,0.06)",
+                    "rgba(255,255,255,0.04)",
                   color: "#fff",
-                  fontWeight: 650,
-                  cursor:
-                    reviewSubmitting
-                      ? "wait"
-                      : "pointer",
+                  fontFamily:
+                    "inherit",
                 }}
-              >
-                Acknowledge
-              </button>
+              />
 
-              <button
-                onClick={() =>
-                  submitReview(
-                    "deferred",
-                  )
-                }
-                disabled={
-                  reviewSubmitting ||
-                  !sessionDetected ||
-                  !taskId.trim() ||
-                  Boolean(
-                    persistentReview,
-                  )
-                }
+              <div
                 style={{
-                  padding:
-                    "10px 14px",
-                  borderRadius: 9,
-                  border:
-                    "1px solid rgba(255,255,255,0.12)",
-                  background:
-                    "rgba(255,255,255,0.06)",
-                  color: "#fff",
-                  fontWeight: 650,
-                  cursor:
-                    reviewSubmitting
-                      ? "wait"
-                      : "pointer",
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
                 }}
               >
-                Defer
-              </button>
+                <button
+                  onClick={() =>
+                    submitReview(
+                      "accepted",
+                    )
+                  }
+                  disabled={
+                    reviewSubmitting ||
+                    !sessionDetected ||
+                    !taskId.trim() ||
+                    Boolean(
+                      persistentReview,
+                    )
+                  }
+                  style={{
+                    padding:
+                      "10px 14px",
+                    borderRadius: 9,
+                    border: "none",
+                    background:
+                      "#fff",
+                    color: "#09090b",
+                    fontWeight: 700,
+                  }}
+                >
+                  Accept
+                </button>
 
-              <button
-                onClick={() =>
-                  submitReview(
-                    "rejected",
-                  )
-                }
-                disabled={
-                  reviewSubmitting ||
-                  !sessionDetected ||
-                  !taskId.trim() ||
-                  Boolean(
-                    persistentReview,
-                  )
-                }
-                style={{
-                  padding:
-                    "10px 14px",
-                  borderRadius: 9,
-                  border:
-                    "1px solid rgba(248,113,113,0.2)",
-                  background:
-                    "rgba(248,113,113,0.08)",
-                  color: "#fca5a5",
-                  fontWeight: 650,
-                  cursor:
-                    reviewSubmitting
-                      ? "wait"
-                      : "pointer",
-                }}
-              >
-                Reject
-              </button>
+                <button
+                  onClick={() =>
+                    submitReview(
+                      "acknowledged",
+                    )
+                  }
+                  disabled={
+                    reviewSubmitting ||
+                    !sessionDetected ||
+                    !taskId.trim() ||
+                    Boolean(
+                      persistentReview,
+                    )
+                  }
+                  style={{
+                    padding:
+                      "10px 14px",
+                    borderRadius: 9,
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
+                    background:
+                      "rgba(255,255,255,0.06)",
+                    color: "#fff",
+                    fontWeight: 650,
+                  }}
+                >
+                  Acknowledge
+                </button>
+
+                <button
+                  onClick={() =>
+                    submitReview(
+                      "deferred",
+                    )
+                  }
+                  disabled={
+                    reviewSubmitting ||
+                    !sessionDetected ||
+                    !taskId.trim() ||
+                    Boolean(
+                      persistentReview,
+                    )
+                  }
+                  style={{
+                    padding:
+                      "10px 14px",
+                    borderRadius: 9,
+                    border:
+                      "1px solid rgba(255,255,255,0.12)",
+                    background:
+                      "rgba(255,255,255,0.06)",
+                    color: "#fff",
+                    fontWeight: 650,
+                  }}
+                >
+                  Defer
+                </button>
+
+                <button
+                  onClick={() =>
+                    submitReview(
+                      "rejected",
+                    )
+                  }
+                  disabled={
+                    reviewSubmitting ||
+                    !sessionDetected ||
+                    !taskId.trim() ||
+                    Boolean(
+                      persistentReview,
+                    )
+                  }
+                  style={{
+                    padding:
+                      "10px 14px",
+                    borderRadius: 9,
+                    border:
+                      "1px solid rgba(248,113,113,0.2)",
+                    background:
+                      "rgba(248,113,113,0.08)",
+                    color: "#fca5a5",
+                    fontWeight: 650,
+                  }}
+                >
+                  Reject
+                </button>
+              </div>
             </div>
-
-            <textarea
-              value={reviewerNote}
-              onChange={(event) =>
-                setReviewerNote(
-                  event.target.value,
-                )
-              }
-              placeholder="Reviewer note"
-              rows={3}
-              style={{
-                width: "100%",
-                marginTop: 10,
-                boxSizing: "border-box",
-                resize: "vertical",
-                padding:
-                  "11px 12px",
-                borderRadius: 9,
-                border:
-                  "1px solid rgba(255,255,255,0.12)",
-                background:
-                  "rgba(255,255,255,0.04)",
-                color: "#fff",
-                fontFamily:
-                  "inherit",
-              }}
-            />
 
             <div
               style={{
@@ -1306,7 +1614,7 @@ export default function TradingControlChainPage() {
                 lineHeight: 1.6,
               }}
             >
-              Accepted is the only decision treated as human approval by the trading control chain. Acknowledged, deferred, rejected, missing, or silent review never becomes approval.
+              Accepted is the only persistent human-review decision treated as approval. Acknowledged, deferred, rejected, missing, or silent review never becomes approval.
             </div>
           </Section>
 
@@ -1632,114 +1940,6 @@ export default function TradingControlChainPage() {
               </Section>
 
               <Section
-                title="Human Review Gate"
-                eyebrow="PERSISTENT C147.15 STATE"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(4, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Task"
-                    value={
-                      result
-                        .humanReview
-                        ?.taskId ??
-                      (taskId ||
-                        "Not supplied")
-                    }
-                  />
-
-                  <Metric
-                    label="Found"
-                    value={
-                      result
-                        .humanReview
-                        ?.found
-                        ? "Yes"
-                        : "No"
-                    }
-                  />
-
-                  <Metric
-                    label="Decision"
-                    value={decisionLabel(
-                      result
-                        .humanReview
-                        ?.decision,
-                    )}
-                  />
-
-                  <Metric
-                    label="Gate"
-                    value={
-                      result
-                        .humanReview
-                        ?.approved
-                        ? "Approved"
-                        : "Blocked"
-                    }
-                  />
-                </div>
-
-                <p
-                  style={{
-                    margin:
-                      "14px 0 0",
-                    fontSize: 12,
-                    lineHeight: 1.65,
-                    opacity: 0.65,
-                  }}
-                >
-                  {result
-                    .humanReview
-                    ?.reason ??
-                    "Persistent human review is required."}
-                </p>
-              </Section>
-
-              <Section
-                title="Next Requirements"
-                eyebrow="CONTROL CHAIN BLOCKERS"
-              >
-                {result.nextRequirements
-                  ?.length ? (
-                  <ul
-                    style={{
-                      margin: 0,
-                      paddingLeft: 18,
-                      fontSize: 12,
-                      lineHeight: 1.8,
-                      opacity: 0.72,
-                    }}
-                  >
-                    {result.nextRequirements.map(
-                      (item) => (
-                        <li
-                          key={item}
-                        >
-                          {item}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                ) : (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.6,
-                    }}
-                  >
-                    No additional requirements returned.
-                  </div>
-                )}
-              </Section>
-
-              <Section
                 title="Execution Safety Boundary"
                 eyebrow="NON-AUTOMATIC EXECUTION"
               >
@@ -1794,7 +1994,7 @@ export default function TradingControlChainPage() {
                     opacity: 0.65,
                   }}
                 >
-                  Persistent human review is a required control gate. Even an accepted review does not independently enable live trading. Broker connection, credentials, account verification, paper verification, execution adapter readiness, commercial authorization, and final execution controls remain separate requirements.
+                  Persistent human review remains a required control gate. Even an accepted review does not independently enable live trading. Broker connection, credentials, account verification, paper verification, execution adapter readiness, commercial authorization, and final execution controls remain separate requirements.
                 </p>
               </Section>
             </>
