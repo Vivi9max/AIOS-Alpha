@@ -27,6 +27,10 @@ import {
   getMarketHumanReview,
 } from "@/lib/runtime/market/market-human-review-runtime";
 
+import type {
+  MarketHumanReviewDecision,
+} from "@/lib/runtime/market/market-human-review-types";
+
 export const dynamic =
   "force-dynamic";
 
@@ -41,6 +45,26 @@ const CODE =
 
 const MAX_RESULTS =
   50;
+
+type SupportedMarket =
+  | "us"
+  | "hk"
+  | "cn"
+  | "jp"
+  | "global";
+
+type ReviewDiscoveryStatus =
+  | "pending"
+  | MarketHumanReviewDecision;
+
+interface MarketReviewTaskCandidate {
+  task: Task;
+  symbol: string;
+  market: SupportedMarket;
+  reviewStatus: ReviewDiscoveryStatus;
+  reviewId: string | null;
+  selectable: boolean;
+}
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -90,11 +114,7 @@ function parseMarketContext(
 ): {
   symbol: string;
   market:
-    | "us"
-    | "hk"
-    | "cn"
-    | "jp"
-    | "global"
+    | SupportedMarket
     | null;
 } {
   const description =
@@ -123,7 +143,9 @@ function parseMarketContext(
     rawMarket === "cn" ||
     rawMarket === "jp" ||
     rawMarket === "global"
-      ? rawMarket
+      ? (
+          rawMarket as SupportedMarket
+        )
       : null;
 
   return {
@@ -151,8 +173,7 @@ function isMarketReviewCandidate(
   }
 
   const title =
-    task.title
-      .toLowerCase();
+    task.title.toLowerCase();
 
   const description =
     (
@@ -178,25 +199,7 @@ function isMarketReviewCandidate(
 }
 
 async function discoverTasks(): Promise<
-  Array<{
-    task: Task;
-    symbol: string;
-    market:
-      | "us"
-      | "hk"
-      | "cn"
-      | "jp"
-      | "global";
-    reviewStatus:
-      | "pending"
-      | "accepted"
-      | "acknowledged"
-      | "rejected"
-      | "deferred";
-    reviewId:
-      string | null;
-    selectable: boolean;
-  }>
+  MarketReviewTaskCandidate[]
 > {
   const tasks =
     await listPersistentTasks();
@@ -215,7 +218,11 @@ async function discoverTasks(): Promise<
   const results =
     await Promise.all(
       candidates.map(
-        async (task) => {
+        async (
+          task,
+        ): Promise<
+          MarketReviewTaskCandidate | null
+        > => {
           const context =
             parseMarketContext(
               task,
@@ -240,8 +247,7 @@ async function discoverTasks(): Promise<
                 review.symbol ||
                 context.symbol,
               market:
-                review.market ||
-                context.market,
+                review.market as SupportedMarket,
               reviewStatus:
                 review.decision,
               reviewId:
@@ -258,7 +264,7 @@ async function discoverTasks(): Promise<
             market:
               context.market,
             reviewStatus:
-              "pending",
+              "pending" as const,
             reviewId:
               null,
             selectable:
@@ -272,9 +278,7 @@ async function discoverTasks(): Promise<
     .filter(
       (
         item,
-      ): item is NonNullable<
-        typeof item
-      > =>
+      ): item is MarketReviewTaskCandidate =>
         item !== null,
     )
     .sort(
@@ -360,83 +364,79 @@ export async function GET(
           "C147.15-market-human-review-runtime",
 
         total:
-          result.discovered
-            .length,
+          result.discovered.length,
 
         selectable:
-          result.selectable
-            .length,
+          result.selectable.length,
 
         maxResults:
           MAX_RESULTS,
       },
 
       tasks:
-        result.discovered
-          .map(
-            (item) => ({
-              taskId:
-                item.task.id,
+        result.discovered.map(
+          (item) => ({
+            taskId:
+              item.task.id,
 
-              title:
-                item.task.title,
+            title:
+              item.task.title,
 
-              description:
-                item.task.description ??
-                "",
+            description:
+              item.task.description ??
+              "",
 
-              status:
-                item.task.status,
+            status:
+              item.task.status,
 
-              createdAt:
-                item.task.createdAt,
+            createdAt:
+              item.task.createdAt,
 
-              updatedAt:
-                item.task.updatedAt,
+            updatedAt:
+              item.task.updatedAt,
 
-              symbol:
-                item.symbol,
+            symbol:
+              item.symbol,
 
-              market:
-                item.market,
+            market:
+              item.market,
 
-              reviewStatus:
-                item.reviewStatus,
+            reviewStatus:
+              item.reviewStatus,
 
-              reviewId:
-                item.reviewId,
+            reviewId:
+              item.reviewId,
 
-              selectable:
-                item.selectable,
-            }),
-          ),
+            selectable:
+              item.selectable,
+          }),
+        ),
 
       selectableTasks:
-        result.selectable
-          .map(
-            (item) => ({
-              taskId:
-                item.task.id,
+        result.selectable.map(
+          (item) => ({
+            taskId:
+              item.task.id,
 
-              title:
-                item.task.title,
+            title:
+              item.task.title,
 
-              symbol:
-                item.symbol,
+            symbol:
+              item.symbol,
 
-              market:
-                item.market,
+            market:
+              item.market,
 
-              status:
-                item.task.status,
+            status:
+              item.task.status,
 
-              reviewStatus:
-                item.reviewStatus,
+            reviewStatus:
+              item.reviewStatus,
 
-              selectable:
-                true,
-            }),
-          ),
+            selectable:
+              true,
+          }),
+        ),
 
       policy: {
         manualTaskIdStillSupported:
