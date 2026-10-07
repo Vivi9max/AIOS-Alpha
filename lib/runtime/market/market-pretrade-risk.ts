@@ -278,11 +278,17 @@ export function evaluateMarketPreTradeRisk(
   const orderValid =
     normalizedOrder !== null;
 
+  const normalizedMarket =
+    normalizedOrder?.market;
+
   const marketAllowed =
-    normalizedOrder !== null &&
-    policy.allowedMarkets.includes(
-      normalizedOrder.market,
-    );
+    normalizedMarket === "us" ||
+    normalizedMarket === "hk" ||
+    normalizedMarket === "cn"
+      ? policy.allowedMarkets.includes(
+          normalizedMarket,
+        )
+      : false;
 
   const quantityWithinLimit =
     normalizedOrder !== null &&
