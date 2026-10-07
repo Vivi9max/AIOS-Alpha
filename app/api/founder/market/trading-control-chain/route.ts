@@ -18,6 +18,10 @@ import {
 } from "@/lib/runtime/market/market-data-provider";
 
 import {
+  evaluateMarketPreTradeRisk,
+} from "@/lib/runtime/market/market-pretrade-risk";
+
+import {
   evaluateBrokerExecutionAdapter,
   getBrokerExecutionAdapterCapabilities,
   getBrokerExecutionAdapterId,
@@ -487,7 +491,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_24_INVALID_JSON",
+          "C167_5_28_INVALID_JSON",
         error:
           "Request body must contain valid JSON.",
       },
@@ -512,7 +516,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_24_INVALID_ORDER_INTENT",
+          "C167_5_28_INVALID_ORDER_INTENT",
         error:
           normalized.error ||
           "Invalid order intent.",
@@ -582,6 +586,19 @@ export async function POST(
       toBrokerOrder(
         order,
       );
+
+    const preTradeRisk =
+      evaluateMarketPreTradeRisk(
+        brokerOrder,
+      );
+
+    const preTradeRiskPassed =
+      preTradeRisk.decision ===
+      "pass";
+
+    const preTradeRiskReviewRequired =
+      preTradeRisk.decision ===
+      "review-required";
 
     const humanReview =
       evaluatePersistentHumanReview(
@@ -656,6 +673,7 @@ export async function POST(
       providerReady &&
       technicalProviderReady &&
       commercialGateOpen &&
+      preTradeRiskPassed &&
       adapterReady &&
       brokerDiagnosticReady &&
       humanReview.approved;
@@ -689,6 +707,31 @@ export async function POST(
       blockedReasons.push(
         "Commercial authorization gate is not open.",
       );
+    }
+
+    if (
+      !preTradeRiskPassed
+    ) {
+      if (
+        preTradeRiskReviewRequired
+      ) {
+        blockedReasons.push(
+          "Pre-trade risk review is required before the order can continue.",
+        );
+      } else if (
+        preTradeRisk.blockedReasons.length >
+        0
+      ) {
+        blockedReasons.push(
+          `Pre-trade risk blocked the order: ${preTradeRisk.blockedReasons.join(
+            ", ",
+          )}.`,
+        );
+      } else {
+        blockedReasons.push(
+          "Pre-trade risk gate did not pass.",
+        );
+      }
     }
 
     if (
@@ -739,10 +782,10 @@ export async function POST(
       success: true,
 
       code:
-        "C167_5_24_TRADING_CONTROL_CHAIN",
+        "C167_5_28_TRADING_CONTROL_CHAIN",
 
       stage:
-        "C167.5.24",
+        "C167.5.28",
 
       orderIntent:
         order,
@@ -805,13 +848,15 @@ export async function POST(
         },
         {
           stage:
-            "Broker Adapter",
+            "Pre-Trade Risk",
           state:
-            brokerDiagnosticReady
+            preTradeRiskPassed
               ? "passed"
-              : "blocked",
+              : preTradeRiskReviewRequired
+                ? "review-required"
+                : "blocked",
           description:
-            "Broker execution adapter must independently pass its safety contract.",
+            "Order quantity, market, notional and limit-price policy must pass before human review and broker evaluation.",
         },
         {
           stage:
@@ -822,6 +867,16 @@ export async function POST(
               : "blocked",
           description:
             "Only an explicit accepted C147.15 decision can pass this gate.",
+        },
+        {
+          stage:
+            "Broker Adapter",
+          state:
+            brokerDiagnosticReady
+              ? "passed"
+              : "blocked",
+          description:
+            "Broker execution adapter must independently pass its safety contract.",
         },
         {
           stage:
@@ -882,6 +937,32 @@ export async function POST(
 
         reason:
           commercialGate.reason,
+      },
+
+      preTradeRisk: {
+        decision:
+          preTradeRisk.decision,
+
+        approved:
+          preTradeRisk.approved,
+
+        estimatedNotional:
+          preTradeRisk.estimatedNotional,
+
+        blockedReasons:
+          preTradeRisk.blockedReasons,
+
+        policy:
+          preTradeRisk.policy,
+
+        checks:
+          preTradeRisk.checks,
+
+        reviewRequired:
+          preTradeRiskReviewRequired,
+
+        safetyBoundary:
+          preTradeRisk.safetyBoundary,
       },
 
       brokerAdapter: {
@@ -968,6 +1049,9 @@ export async function POST(
         commercialGate:
           commercialGateOpen,
 
+        preTradeRiskGate:
+          preTradeRiskPassed,
+
         brokerAdapterGate:
           adapterReady &&
           brokerDiagnosticReady,
@@ -993,6 +1077,15 @@ export async function POST(
           false,
 
         tradingExecuted:
+          false,
+
+        preTradeRiskRequired:
+          true,
+
+        automaticRiskOverrideAllowed:
+          false,
+
+        callerCanBypassRiskLimits:
           false,
 
         persistentHumanReviewRequired:
@@ -1033,6 +1126,10 @@ export async function POST(
 
         commercialGateOpen,
 
+        preTradeRiskPassed,
+
+        preTradeRiskReviewRequired,
+
         adapterConfigured,
 
         adapterReady,
@@ -1050,7 +1147,11 @@ export async function POST(
 
       nextRequirements:
         blockedReasons.length > 0
-          ? blockedReasons
+          ? Array.from(
+              new Set(
+                blockedReasons,
+              ),
+            )
           : [
               "All control gates passed. External execution review remains required.",
             ],
@@ -1061,7 +1162,7 @@ export async function POST(
         success: false,
 
         code:
-          "C167_5_24_TRADING_CONTROL_CHAIN_ERROR",
+          "C167_5_28_TRADING_CONTROL_CHAIN_ERROR",
 
         error:
           error instanceof Error
@@ -1073,6 +1174,9 @@ export async function POST(
             true,
 
           persistentHumanReviewRequired:
+            true,
+
+          preTradeRiskRequired:
             true,
 
           decisionAutomaticallyGenerated:
@@ -1120,10 +1224,10 @@ export async function GET(
     success: true,
 
     code:
-      "C167_5_24_TRADING_CONTROL_CHAIN_READY",
+      "C167_5_28_TRADING_CONTROL_CHAIN_READY",
 
     stage:
-      "C167.5.24",
+      "C167.5.28",
 
     requestContract: {
       supportedForms: [
@@ -1164,10 +1268,25 @@ export async function GET(
       "Research",
       "Technical Provider",
       "Commercial Authorization",
-      "Broker Adapter",
+      "Pre-Trade Risk",
       "C147.15 Persistent Human Review",
+      "Broker Adapter",
       "Execution Review",
     ],
+
+    preTradeRisk: {
+      required:
+        true,
+
+      automaticOverride:
+        false,
+
+      callerBypass:
+        false,
+
+      liveExecutionEnabled:
+        false,
+    },
 
     humanReview: {
       source:
