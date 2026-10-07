@@ -357,8 +357,19 @@ export async function POST(
       ),
     ]);
 
+    const providerRecord =
+      asRecord(provider);
+
+    const providerId =
+      typeof providerRecord.id === "string" &&
+      providerRecord.id.trim()
+        ? providerRecord.id.trim()
+        : "unconfigured";
+
     const commercialGate =
-      evaluateMarketProviderCommercialGate();
+      evaluateMarketProviderCommercialGate(
+        providerId,
+      );
 
     const adapterId =
       getBrokerExecutionAdapterId();
@@ -402,9 +413,6 @@ export async function POST(
 
     const humanReviewPolicy =
       getMarketHumanReviewPolicy();
-
-    const providerRecord =
-      asRecord(provider);
 
     const providerStatusRecord =
       asRecord(providerStatus);
@@ -571,6 +579,8 @@ export async function POST(
       },
 
       commercialAuthorization: {
+        providerId:
+          commercialGate.providerId,
         decision:
           commercialGate.decision,
         status:
@@ -585,6 +595,8 @@ export async function POST(
           commercialGate.verifiedAt,
         verifiedBy:
           commercialGate.verifiedBy,
+        contractReference:
+          commercialGate.contractReference,
         reason:
           commercialGate.reason,
       },
