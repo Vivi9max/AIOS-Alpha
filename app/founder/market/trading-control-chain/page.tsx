@@ -4,6 +4,37 @@ import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "aios-founder-access-key";
 
+type ReviewDecision =
+  | "acknowledged"
+  | "accepted"
+  | "rejected"
+  | "deferred";
+
+type ReviewRecord = {
+  reviewId?: string;
+  taskId?: string;
+  symbol?: string;
+  market?: string;
+  taskTitle?: string;
+  decision?: ReviewDecision;
+  reviewerNote?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  humanDecisionRequired?: boolean;
+  automatedExecutionStarted?: boolean;
+  plannerDispatched?: boolean;
+  tradingExecuted?: boolean;
+};
+
+type ReviewResponse = {
+  success?: boolean;
+  code?: string;
+  taskId?: string;
+  review?: ReviewRecord | null;
+  humanDecisionRequired?: boolean;
+  error?: string;
+};
+
 type ChainResult = {
   success?: boolean;
   code?: string;
@@ -43,12 +74,26 @@ type ChainResult = {
       blockedReasons?: string[];
     };
   };
+  humanReview?: {
+    source?: string;
+    required?: boolean;
+    taskId?: string | null;
+    found?: boolean;
+    requested?: boolean;
+    approved?: boolean;
+    decision?: string;
+    status?: string;
+    reviewId?: string | null;
+    reason?: string;
+    review?: ReviewRecord | null;
+  };
   controlDecision?: {
     state?: string;
     executionAllowed?: boolean;
     reason?: string;
   };
   gates?: {
+    researchGate?: boolean;
     providerTechnicalReady?: boolean;
     providerRealtimeVerified?: boolean;
     commercialGateOpen?: boolean;
@@ -58,6 +103,7 @@ type ChainResult = {
     brokerCredentialsVerified?: boolean;
     brokerAccountVerified?: boolean;
     paperTradingVerified?: boolean;
+    persistentHumanReviewGate?: boolean;
     humanReviewApproved?: boolean;
     liveExecutionEnabled?: boolean;
   };
@@ -82,6 +128,28 @@ function getAccessKey(): string {
   return window.sessionStorage.getItem(STORAGE_KEY)?.trim() ?? "";
 }
 
+async function requestJson(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const key = getAccessKey();
+
+  if (!key) {
+    throw new Error(
+      "Founder Session not found. Please return to Founder Console and enter the Founder Access Key.",
+    );
+  }
+
+  return fetch(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+}
+
 async function requestControlChain(
   order: {
     symbol: string;
@@ -91,25 +159,23 @@ async function requestControlChain(
     limitPrice: number | null;
     reason: string;
   },
+  taskId: string,
 ): Promise<ChainResult> {
-  const key = getAccessKey();
-
-  if (!key) {
-    throw new Error(
-      "Founder Session not found. Please return to Founder Console and enter the Founder Access Key.",
-    );
-  }
-
-  const response = await fetch(
+  const response = await requestJson(
     "/api/founder/market/trading-control-chain",
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
       },
-      cache: "no-store",
-      body: JSON.stringify({ order }),
+      body: JSON.stringify({
+        order,
+        ...(taskId.trim()
+          ? {
+              taskId: taskId.trim(),
+            }
+          : {}),
+      }),
     },
   );
 
@@ -121,7 +187,72 @@ async function requestControlChain(
 
   if (!response.ok) {
     throw new Error(
-      data.error ?? "Trading control chain request failed.",
+      data.error ??
+        "Trading control chain request failed.",
+    );
+  }
+
+  return data;
+}
+
+async function requestHumanReview(
+  taskId: string,
+): Promise<ReviewResponse> {
+  const response = await requestJson(
+    `/api/founder/market/human-review?taskId=${encodeURIComponent(
+      taskId.trim(),
+    )}`,
+  );
+
+  const data =
+    (await response.json()) as ReviewResponse;
+
+  if (response.status === 401) {
+    throw new Error("Founder authentication failed.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.error ??
+        "Human review lookup failed.",
+    );
+  }
+
+  return data;
+}
+
+async function submitHumanReview(
+  taskId: string,
+  decision: ReviewDecision,
+  reviewerNote: string,
+): Promise<ReviewResponse> {
+  const response = await requestJson(
+    "/api/founder/market/human-review",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        taskId: taskId.trim(),
+        decision,
+        reviewerNote:
+          reviewerNote.trim() || null,
+      }),
+    },
+  );
+
+  const data =
+    (await response.json()) as ReviewResponse;
+
+  if (response.status === 401) {
+    throw new Error("Founder authentication failed.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.error ??
+        "Human review submission failed.",
     );
   }
 
@@ -140,10 +271,12 @@ function Section({
   return (
     <section
       style={{
-        border: "1px solid rgba(255,255,255,0.09)",
+        border:
+          "1px solid rgba(255,255,255,0.09)",
         borderRadius: 16,
         padding: 18,
-        background: "rgba(255,255,255,0.035)",
+        background:
+          "rgba(255,255,255,0.035)",
       }}
     >
       {eyebrow ? (
@@ -191,7 +324,9 @@ function Badge({
         background: ok
           ? "rgba(74,222,128,0.12)"
           : "rgba(248,113,113,0.12)",
-        color: ok ? "#86efac" : "#fca5a5",
+        color: ok
+          ? "#86efac"
+          : "#fca5a5",
       }}
     >
       {children}
@@ -211,7 +346,8 @@ function Metric({
       style={{
         padding: 12,
         borderRadius: 10,
-        background: "rgba(255,255,255,0.035)",
+        background:
+          "rgba(255,255,255,0.035)",
       }}
     >
       <div
@@ -224,46 +360,215 @@ function Metric({
         {label}
       </div>
 
-      <strong style={{ fontSize: 14 }}>{value}</strong>
+      <strong
+        style={{
+          fontSize: 14,
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </strong>
     </div>
   );
 }
 
+function decisionLabel(
+  decision?: string,
+): string {
+  switch (decision) {
+    case "accepted":
+      return "Accepted";
+    case "acknowledged":
+      return "Acknowledged";
+    case "rejected":
+      return "Rejected";
+    case "deferred":
+      return "Deferred";
+    default:
+      return "Not Recorded";
+  }
+}
+
+function decisionIsApproval(
+  decision?: string,
+): boolean {
+  return decision === "accepted";
+}
+
 export default function TradingControlChainPage() {
-  const [sessionDetected, setSessionDetected] = useState(false);
-  const [symbol, setSymbol] = useState("NVDA");
-  const [market, setMarket] = useState("us");
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [quantity, setQuantity] = useState("1");
-  const [limitPrice, setLimitPrice] = useState("");
-  const [reason, setReason] = useState(
-    "Founder-reviewed market execution intent.",
-  );
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ChainResult | null>(null);
-  const [error, setError] = useState("");
+  const [
+    sessionDetected,
+    setSessionDetected,
+  ] = useState(false);
+
+  const [symbol, setSymbol] =
+    useState("NVDA");
+
+  const [market, setMarket] =
+    useState("us");
+
+  const [side, setSide] =
+    useState<"buy" | "sell">("buy");
+
+  const [quantity, setQuantity] =
+    useState("1");
+
+  const [limitPrice, setLimitPrice] =
+    useState("");
+
+  const [reason, setReason] =
+    useState(
+      "Founder-reviewed market execution intent.",
+    );
+
+  const [taskId, setTaskId] =
+    useState("");
+
+  const [
+    reviewerNote,
+    setReviewerNote,
+  ] = useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [
+    reviewLoading,
+    setReviewLoading,
+  ] = useState(false);
+
+  const [
+    reviewSubmitting,
+    setReviewSubmitting,
+  ] = useState(false);
+
+  const [result, setResult] =
+    useState<ChainResult | null>(null);
+
+  const [
+    reviewResult,
+    setReviewResult,
+  ] =
+    useState<ReviewResponse | null>(null);
+
+  const [error, setError] =
+    useState("");
 
   useEffect(() => {
-    setSessionDetected(Boolean(getAccessKey()));
+    setSessionDetected(
+      Boolean(getAccessKey()),
+    );
   }, []);
 
-  async function evaluateChain() {
-    const parsedQuantity = Number(quantity);
-
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
-      setError("Quantity must be greater than zero.");
+  async function loadHumanReview() {
+    if (!taskId.trim()) {
+      setError(
+        "Task ID is required to load persistent human review.",
+      );
       return;
     }
 
-    const parsedLimitPrice = limitPrice.trim()
-      ? Number(limitPrice)
-      : null;
+    setReviewLoading(true);
+    setError("");
+
+    try {
+      const data =
+        await requestHumanReview(
+          taskId,
+        );
+
+      setReviewResult(data);
+
+      if (data.review?.symbol) {
+        setSymbol(data.review.symbol);
+      }
+
+      if (data.review?.market) {
+        setMarket(data.review.market);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Human review lookup failed.",
+      );
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
+  async function submitReview(
+    decision: ReviewDecision,
+  ) {
+    if (!taskId.trim()) {
+      setError(
+        "Task ID is required before recording a human decision.",
+      );
+      return;
+    }
+
+    setReviewSubmitting(true);
+    setError("");
+
+    try {
+      const data =
+        await submitHumanReview(
+          taskId,
+          decision,
+          reviewerNote,
+        );
+
+      setReviewResult(data);
+
+      if (data.review?.symbol) {
+        setSymbol(data.review.symbol);
+      }
+
+      if (data.review?.market) {
+        setMarket(data.review.market);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Human review submission failed.",
+      );
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }
+
+  async function evaluateChain() {
+    const parsedQuantity =
+      Number(quantity);
+
+    if (
+      !Number.isFinite(
+        parsedQuantity,
+      ) ||
+      parsedQuantity <= 0
+    ) {
+      setError(
+        "Quantity must be greater than zero.",
+      );
+      return;
+    }
+
+    const parsedLimitPrice =
+      limitPrice.trim()
+        ? Number(limitPrice)
+        : null;
 
     if (
       parsedLimitPrice !== null &&
-      (!Number.isFinite(parsedLimitPrice) || parsedLimitPrice <= 0)
+      (!Number.isFinite(
+        parsedLimitPrice,
+      ) ||
+        parsedLimitPrice <= 0)
     ) {
-      setError("Limit price must be a positive number.");
+      setError(
+        "Limit price must be a positive number.",
+      );
       return;
     }
 
@@ -271,16 +576,45 @@ export default function TradingControlChainPage() {
     setError("");
 
     try {
-      const data = await requestControlChain({
-        symbol: symbol.trim().toUpperCase(),
-        market,
-        side,
-        quantity: Math.floor(parsedQuantity),
-        limitPrice: parsedLimitPrice,
-        reason: reason.trim(),
-      });
+      const data =
+        await requestControlChain(
+          {
+            symbol:
+              symbol
+                .trim()
+                .toUpperCase(),
+            market,
+            side,
+            quantity:
+              Math.floor(
+                parsedQuantity,
+              ),
+            limitPrice:
+              parsedLimitPrice,
+            reason:
+              reason.trim(),
+          },
+          taskId,
+        );
 
       setResult(data);
+
+      if (
+        data.humanReview?.review
+      ) {
+        setReviewResult({
+          success: true,
+          code:
+            "C147_15_HUMAN_REVIEW_FOUND",
+          taskId:
+            data.humanReview.taskId ??
+            taskId,
+          review:
+            data.humanReview.review,
+          humanDecisionRequired:
+            true,
+        });
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -294,6 +628,19 @@ export default function TradingControlChainPage() {
 
   const gates = result?.gates;
   const execution = result?.execution;
+  const persistentReview =
+    reviewResult?.review ??
+    result?.humanReview?.review ??
+    null;
+
+  const reviewDecision =
+    persistentReview?.decision ??
+    result?.humanReview?.decision;
+
+  const reviewApproved =
+    decisionIsApproval(
+      reviewDecision,
+    );
 
   return (
     <main
@@ -301,17 +648,28 @@ export default function TradingControlChainPage() {
         minHeight: "100vh",
         background: "#09090b",
         color: "#f4f4f5",
-        padding: "26px 18px 70px",
+        padding:
+          "26px 18px 70px",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
-        <header style={{ marginBottom: 24 }}>
+      <div
+        style={{
+          maxWidth: 1120,
+          margin: "0 auto",
+        }}
+      >
+        <header
+          style={{
+            marginBottom: 24,
+          }}
+        >
           <div
             style={{
               fontSize: 10,
-              letterSpacing: "0.14em",
+              letterSpacing:
+                "0.14em",
               opacity: 0.45,
               marginBottom: 8,
             }}
@@ -322,8 +680,10 @@ export default function TradingControlChainPage() {
           <div
             style={{
               display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
+              alignItems:
+                "flex-start",
+              justifyContent:
+                "space-between",
               gap: 18,
               flexWrap: "wrap",
             }}
@@ -333,7 +693,8 @@ export default function TradingControlChainPage() {
                 style={{
                   margin: 0,
                   fontSize: 30,
-                  letterSpacing: "-0.02em",
+                  letterSpacing:
+                    "-0.02em",
                 }}
               >
                 Trading Control Chain
@@ -341,7 +702,8 @@ export default function TradingControlChainPage() {
 
               <p
                 style={{
-                  margin: "8px 0 0",
+                  margin:
+                    "8px 0 0",
                   opacity: 0.62,
                   lineHeight: 1.6,
                   fontSize: 13,
@@ -351,8 +713,12 @@ export default function TradingControlChainPage() {
               </p>
             </div>
 
-            <Badge ok={sessionDetected}>
-              {sessionDetected ? "Founder Session" : "Session Required"}
+            <Badge
+              ok={sessionDetected}
+            >
+              {sessionDetected
+                ? "Founder Session"
+                : "Session Required"}
             </Badge>
           </div>
         </header>
@@ -363,8 +729,10 @@ export default function TradingControlChainPage() {
               marginBottom: 16,
               padding: 12,
               borderRadius: 10,
-              background: "rgba(248,113,113,0.08)",
-              border: "1px solid rgba(248,113,113,0.16)",
+              background:
+                "rgba(248,113,113,0.08)",
+              border:
+                "1px solid rgba(248,113,113,0.16)",
               color: "#fca5a5",
               fontSize: 12,
             }}
@@ -373,8 +741,16 @@ export default function TradingControlChainPage() {
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gap: 16 }}>
-          <Section title="Order Intent" eyebrow="FOUNDER REVIEW INPUT">
+        <div
+          style={{
+            display: "grid",
+            gap: 16,
+          }}
+        >
+          <Section
+            title="Order Intent"
+            eyebrow="FOUNDER REVIEW INPUT"
+          >
             <div
               style={{
                 display: "grid",
@@ -385,115 +761,184 @@ export default function TradingControlChainPage() {
             >
               <input
                 value={symbol}
-                onChange={(event) => setSymbol(event.target.value)}
+                onChange={(event) =>
+                  setSymbol(
+                    event.target.value,
+                  )
+                }
                 placeholder="Symbol"
                 style={{
                   minWidth: 0,
-                  padding: "12px 13px",
+                  padding:
+                    "12px 13px",
                   borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.04)",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.04)",
                   color: "#fff",
                 }}
               />
 
               <select
                 value={market}
-                onChange={(event) => setMarket(event.target.value)}
+                onChange={(event) =>
+                  setMarket(
+                    event.target.value,
+                  )
+                }
                 style={{
-                  padding: "12px 13px",
+                  padding:
+                    "12px 13px",
                   borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "#18181b",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "#18181b",
                   color: "#fff",
                 }}
               >
-                <option value="us">US</option>
-                <option value="hk">HK</option>
-                <option value="cn">CN</option>
+                <option value="us">
+                  US
+                </option>
+                <option value="hk">
+                  HK
+                </option>
+                <option value="cn">
+                  CN
+                </option>
               </select>
 
               <select
                 value={side}
                 onChange={(event) =>
-                  setSide(event.target.value as "buy" | "sell")
+                  setSide(
+                    event.target
+                      .value as
+                      | "buy"
+                      | "sell",
+                  )
                 }
                 style={{
-                  padding: "12px 13px",
+                  padding:
+                    "12px 13px",
                   borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "#18181b",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "#18181b",
                   color: "#fff",
                 }}
               >
-                <option value="buy">Buy</option>
-                <option value="sell">Sell</option>
+                <option value="buy">
+                  Buy
+                </option>
+                <option value="sell">
+                  Sell
+                </option>
               </select>
             </div>
 
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "0.6fr 0.7fr 1.7fr",
+                gridTemplateColumns:
+                  "0.6fr 0.7fr 1.7fr",
                 gap: 10,
                 marginTop: 10,
               }}
             >
               <input
                 value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
+                onChange={(event) =>
+                  setQuantity(
+                    event.target.value,
+                  )
+                }
                 inputMode="numeric"
                 placeholder="Quantity"
                 style={{
-                  padding: "11px 12px",
+                  padding:
+                    "11px 12px",
                   borderRadius: 9,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.04)",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.04)",
                   color: "#fff",
                 }}
               />
 
               <input
                 value={limitPrice}
-                onChange={(event) => setLimitPrice(event.target.value)}
+                onChange={(event) =>
+                  setLimitPrice(
+                    event.target.value,
+                  )
+                }
                 inputMode="decimal"
                 placeholder="Limit price"
                 style={{
-                  padding: "11px 12px",
+                  padding:
+                    "11px 12px",
                   borderRadius: 9,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.04)",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.04)",
                   color: "#fff",
                 }}
               />
 
               <input
                 value={reason}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) =>
+                  setReason(
+                    event.target.value,
+                  )
+                }
                 placeholder="Order reason"
                 style={{
-                  padding: "11px 12px",
+                  padding:
+                    "11px 12px",
                   borderRadius: 9,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.04)",
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.04)",
                   color: "#fff",
                 }}
               />
             </div>
 
             <button
-              onClick={evaluateChain}
-              disabled={loading || !sessionDetected}
+              onClick={
+                evaluateChain
+              }
+              disabled={
+                loading ||
+                !sessionDetected
+              }
               style={{
                 width: "100%",
                 marginTop: 12,
-                padding: "13px 16px",
+                padding:
+                  "13px 16px",
                 borderRadius: 10,
                 border: "none",
-                background: loading ? "#3f3f46" : "#fff",
-                color: loading ? "#aaa" : "#09090b",
+                background:
+                  loading
+                    ? "#3f3f46"
+                    : "#fff",
+                color:
+                  loading
+                    ? "#aaa"
+                    : "#09090b",
                 fontWeight: 750,
-                cursor: loading ? "wait" : "pointer",
+                cursor:
+                  loading
+                    ? "wait"
+                    : "pointer",
               }}
             >
               {loading
@@ -502,25 +947,399 @@ export default function TradingControlChainPage() {
             </button>
           </Section>
 
+          <Section
+            title="Persistent Human Review"
+            eyebrow="C147.15 REVIEW RECORD"
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "minmax(0, 1fr) auto",
+                gap: 10,
+              }}
+            >
+              <input
+                value={taskId}
+                onChange={(event) =>
+                  setTaskId(
+                    event.target.value,
+                  )
+                }
+                placeholder="Persistent Task ID"
+                style={{
+                  minWidth: 0,
+                  padding:
+                    "12px 13px",
+                  borderRadius: 10,
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.04)",
+                  color: "#fff",
+                }}
+              />
+
+              <button
+                onClick={
+                  loadHumanReview
+                }
+                disabled={
+                  reviewLoading ||
+                  !sessionDetected ||
+                  !taskId.trim()
+                }
+                style={{
+                  padding:
+                    "12px 16px",
+                  borderRadius: 10,
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    reviewLoading
+                      ? "#27272a"
+                      : "rgba(255,255,255,0.08)",
+                  color: "#fff",
+                  fontWeight: 650,
+                  cursor:
+                    reviewLoading
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                {reviewLoading
+                  ? "Loading..."
+                  : "Load Review"}
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(4, minmax(0, 1fr))",
+                gap: 10,
+              }}
+            >
+              <Metric
+                label="Task"
+                value={
+                  taskId.trim()
+                    ? taskId.trim()
+                    : "Not supplied"
+                }
+              />
+
+              <Metric
+                label="Decision"
+                value={decisionLabel(
+                  reviewDecision,
+                )}
+              />
+
+              <Metric
+                label="Approval"
+                value={
+                  reviewApproved
+                    ? "Accepted"
+                    : "Not approved"
+                }
+              />
+
+              <Metric
+                label="Source"
+                value="C147.15"
+              />
+            </div>
+
+            {persistentReview ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 10,
+                  background:
+                    "rgba(255,255,255,0.035)",
+                  border:
+                    "1px solid rgba(255,255,255,0.07)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems:
+                      "center",
+                    gap: 12,
+                    flexWrap:
+                      "wrap",
+                  }}
+                >
+                  <div>
+                    <strong
+                      style={{
+                        fontSize: 13,
+                      }}
+                    >
+                      {persistentReview.taskTitle ??
+                        "Persistent Human Review"}
+                    </strong>
+
+                    <div
+                      style={{
+                        marginTop: 5,
+                        fontSize: 11,
+                        opacity: 0.55,
+                      }}
+                    >
+                      {persistentReview.reviewId ??
+                        "Review record not available"}
+                    </div>
+                  </div>
+
+                  <Badge
+                    ok={
+                      reviewApproved
+                    }
+                  >
+                    {decisionLabel(
+                      reviewDecision,
+                    )}
+                  </Badge>
+                </div>
+
+                <p
+                  style={{
+                    margin:
+                      "12px 0 0",
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    opacity: 0.65,
+                  }}
+                >
+                  {persistentReview.reviewerNote ||
+                    "No reviewer note recorded."}
+                </p>
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() =>
+                  submitReview(
+                    "accepted",
+                  )
+                }
+                disabled={
+                  reviewSubmitting ||
+                  !sessionDetected ||
+                  !taskId.trim() ||
+                  Boolean(
+                    persistentReview,
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 14px",
+                  borderRadius: 9,
+                  border: "none",
+                  background:
+                    "#fff",
+                  color: "#09090b",
+                  fontWeight: 700,
+                  cursor:
+                    reviewSubmitting
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                Accept
+              </button>
+
+              <button
+                onClick={() =>
+                  submitReview(
+                    "acknowledged",
+                  )
+                }
+                disabled={
+                  reviewSubmitting ||
+                  !sessionDetected ||
+                  !taskId.trim() ||
+                  Boolean(
+                    persistentReview,
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 14px",
+                  borderRadius: 9,
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  fontWeight: 650,
+                  cursor:
+                    reviewSubmitting
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                Acknowledge
+              </button>
+
+              <button
+                onClick={() =>
+                  submitReview(
+                    "deferred",
+                  )
+                }
+                disabled={
+                  reviewSubmitting ||
+                  !sessionDetected ||
+                  !taskId.trim() ||
+                  Boolean(
+                    persistentReview,
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 14px",
+                  borderRadius: 9,
+                  border:
+                    "1px solid rgba(255,255,255,0.12)",
+                  background:
+                    "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  fontWeight: 650,
+                  cursor:
+                    reviewSubmitting
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                Defer
+              </button>
+
+              <button
+                onClick={() =>
+                  submitReview(
+                    "rejected",
+                  )
+                }
+                disabled={
+                  reviewSubmitting ||
+                  !sessionDetected ||
+                  !taskId.trim() ||
+                  Boolean(
+                    persistentReview,
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 14px",
+                  borderRadius: 9,
+                  border:
+                    "1px solid rgba(248,113,113,0.2)",
+                  background:
+                    "rgba(248,113,113,0.08)",
+                  color: "#fca5a5",
+                  fontWeight: 650,
+                  cursor:
+                    reviewSubmitting
+                      ? "wait"
+                      : "pointer",
+                }}
+              >
+                Reject
+              </button>
+            </div>
+
+            <textarea
+              value={reviewerNote}
+              onChange={(event) =>
+                setReviewerNote(
+                  event.target.value,
+                )
+              }
+              placeholder="Reviewer note"
+              rows={3}
+              style={{
+                width: "100%",
+                marginTop: 10,
+                boxSizing: "border-box",
+                resize: "vertical",
+                padding:
+                  "11px 12px",
+                borderRadius: 9,
+                border:
+                  "1px solid rgba(255,255,255,0.12)",
+                background:
+                  "rgba(255,255,255,0.04)",
+                color: "#fff",
+                fontFamily:
+                  "inherit",
+              }}
+            />
+
+            <div
+              style={{
+                marginTop: 10,
+                padding: 11,
+                borderRadius: 9,
+                background:
+                  "rgba(251,191,36,0.06)",
+                border:
+                  "1px solid rgba(251,191,36,0.12)",
+                color: "#fcd34d",
+                fontSize: 11,
+                lineHeight: 1.6,
+              }}
+            >
+              Accepted is the only decision treated as human approval by the trading control chain. Acknowledged, deferred, rejected, missing, or silent review never becomes approval.
+            </div>
+          </Section>
+
           {result ? (
             <>
-              <Section title="Control Decision" eyebrow="SERVER-SIDE DECISION">
+              <Section
+                title="Control Decision"
+                eyebrow="SERVER-SIDE DECISION"
+              >
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(3, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
                     label="State"
-                    value={result.controlDecision?.state ?? "unknown"}
+                    value={
+                      result
+                        .controlDecision
+                        ?.state ??
+                      "unknown"
+                    }
                   />
 
                   <Metric
                     label="Execution"
                     value={
-                      result.controlDecision?.executionAllowed
+                      result
+                        .controlDecision
+                        ?.executionAllowed
                         ? "Allowed"
                         : "Blocked"
                     }
@@ -529,7 +1348,8 @@ export default function TradingControlChainPage() {
                   <Metric
                     label="Live Execution"
                     value={
-                      execution?.readyForLiveExecution
+                      execution
+                        ?.readyForLiveExecution
                         ? "Ready"
                         : "Disabled"
                     }
@@ -538,60 +1358,94 @@ export default function TradingControlChainPage() {
 
                 <p
                   style={{
-                    margin: "14px 0 0",
+                    margin:
+                      "14px 0 0",
                     fontSize: 13,
                     lineHeight: 1.7,
                     opacity: 0.7,
                   }}
                 >
-                  {result.controlDecision?.reason ??
+                  {result
+                    .controlDecision
+                    ?.reason ??
                     "No control decision returned."}
                 </p>
               </Section>
 
-              <Section title="Control Chain" eyebrow="GATE-BY-GATE STATUS">
-                <div style={{ display: "grid", gap: 9 }}>
-                  {result.controlChain?.map((item) => {
-                    const blocked =
-                      item.state === "blocked" ||
-                      item.state === "not-authorized" ||
-                      item.state === "disabled" ||
-                      item.state === "diagnostic-only" ||
-                      item.state === "not-configured";
+              <Section
+                title="Control Chain"
+                eyebrow="GATE-BY-GATE STATUS"
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 9,
+                  }}
+                >
+                  {result.controlChain?.map(
+                    (item) => {
+                      const blocked =
+                        item.state ===
+                          "blocked" ||
+                        item.state ===
+                          "not-authorized" ||
+                        item.state ===
+                          "disabled" ||
+                        item.state ===
+                          "diagnostic-only" ||
+                        item.state ===
+                          "not-configured";
 
-                    return (
-                      <div
-                        key={item.stage}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "140px 170px 1fr",
-                          gap: 12,
-                          alignItems: "center",
-                          padding: 12,
-                          borderRadius: 10,
-                          background: "rgba(255,255,255,0.035)",
-                        }}
-                      >
-                        <strong style={{ fontSize: 13 }}>
-                          {item.stage ?? "unknown"}
-                        </strong>
-
-                        <Badge ok={!blocked}>
-                          {item.state ?? "unknown"}
-                        </Badge>
-
-                        <span
+                      return (
+                        <div
+                          key={
+                            item.stage
+                          }
                           style={{
-                            fontSize: 12,
-                            lineHeight: 1.55,
-                            opacity: 0.62,
+                            display:
+                              "grid",
+                            gridTemplateColumns:
+                              "160px 170px 1fr",
+                            gap: 12,
+                            alignItems:
+                              "center",
+                            padding: 12,
+                            borderRadius: 10,
+                            background:
+                              "rgba(255,255,255,0.035)",
                           }}
                         >
-                          {item.description ?? ""}
-                        </span>
-                      </div>
-                    );
-                  })}
+                          <strong
+                            style={{
+                              fontSize: 13,
+                            }}
+                          >
+                            {item.stage ??
+                              "unknown"}
+                          </strong>
+
+                          <Badge
+                            ok={!blocked}
+                          >
+                            {item.state ??
+                              "unknown"}
+                          </Badge>
+
+                          <span
+                            style={{
+                              fontSize: 12,
+                              lineHeight: 1.55,
+                              opacity:
+                                0.62,
+                            }}
+                          >
+                            {item.description ??
+                              ""}
+                          </span>
+                        </div>
+                      );
+                    },
+                  )}
                 </div>
               </Section>
 
@@ -602,26 +1456,35 @@ export default function TradingControlChainPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
                     label="Provider"
-                    value={result.provider?.id ?? "None"}
+                    value={
+                      result.provider
+                        ?.id ??
+                      "None"
+                    }
                   />
 
                   <Metric
                     label="Technical"
                     value={
-                      result.provider?.technicalReady ? "Ready" : "Blocked"
+                      result.provider
+                        ?.technicalReady
+                        ? "Ready"
+                        : "Blocked"
                     }
                   />
 
                   <Metric
                     label="Realtime"
                     value={
-                      result.provider?.realtimeVerified
+                      result.provider
+                        ?.realtimeVerified
                         ? "Verified"
                         : "Not verified"
                     }
@@ -630,7 +1493,10 @@ export default function TradingControlChainPage() {
                   <Metric
                     label="Commercial"
                     value={
-                      result.commercialAuthorization?.decision ?? "unknown"
+                      result
+                        .commercialAuthorization
+                        ?.decision ??
+                      "unknown"
                     }
                   />
                 </div>
@@ -639,14 +1505,17 @@ export default function TradingControlChainPage() {
                   style={{
                     marginTop: 10,
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(3, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
                     label="Commercial Gate"
                     value={
-                      result.commercialAuthorization?.gateOpen
+                      result
+                        .commercialAuthorization
+                        ?.gateOpen
                         ? "Open"
                         : "Closed"
                     }
@@ -655,7 +1524,9 @@ export default function TradingControlChainPage() {
                   <Metric
                     label="Authorized"
                     value={
-                      result.commercialAuthorization?.authorized
+                      result
+                        .commercialAuthorization
+                        ?.authorized
                         ? "Yes"
                         : "No"
                     }
@@ -664,7 +1535,10 @@ export default function TradingControlChainPage() {
                   <Metric
                     label="Reason"
                     value={
-                      result.commercialAuthorization?.reason ?? "Not verified"
+                      result
+                        .commercialAuthorization
+                        ?.reason ??
+                      "Not verified"
                     }
                   />
                 </div>
@@ -677,101 +1551,189 @@ export default function TradingControlChainPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
                     label="Adapter"
-                    value={result.brokerAdapter?.id ?? "unconfigured"}
+                    value={
+                      result
+                        .brokerAdapter
+                        ?.id ??
+                      "unconfigured"
+                    }
                   />
 
                   <Metric
                     label="Configured"
                     value={
-                      result.brokerAdapter?.configured ? "Yes" : "No"
+                      result
+                        .brokerAdapter
+                        ?.configured
+                        ? "Yes"
+                        : "No"
                     }
                   />
 
                   <Metric
                     label="Ready"
-                    value={result.brokerAdapter?.ready ? "Yes" : "No"}
+                    value={
+                      result
+                        .brokerAdapter
+                        ?.ready
+                        ? "Yes"
+                        : "No"
+                    }
                   />
 
                   <Metric
                     label="Diagnostic"
                     value={
-                      result.brokerAdapter?.diagnostic?.status ?? "unknown"
+                      result
+                        .brokerAdapter
+                        ?.diagnostic
+                        ?.status ??
+                      "unknown"
                     }
                   />
                 </div>
 
-                {result.brokerAdapter?.diagnostic?.blockedReasons?.length ? (
+                {result
+                  .brokerAdapter
+                  ?.diagnostic
+                  ?.blockedReasons
+                  ?.length ? (
                   <ul
                     style={{
-                      margin: "14px 0 0",
+                      margin:
+                        "14px 0 0",
                       paddingLeft: 18,
                       fontSize: 12,
                       lineHeight: 1.7,
                       opacity: 0.72,
                     }}
                   >
-                    {result.brokerAdapter.diagnostic.blockedReasons.map(
-                      (item) => (
-                        <li key={item}>{item}</li>
-                      ),
-                    )}
+                    {result
+                      .brokerAdapter
+                      .diagnostic
+                      .blockedReasons.map(
+                        (item) => (
+                          <li
+                            key={item}
+                          >
+                            {item}
+                          </li>
+                        ),
+                      )}
                   </ul>
                 ) : null}
               </Section>
 
-              <Section title="All Gates" eyebrow="SERVER-VERIFIED STATE">
+              <Section
+                title="Human Review Gate"
+                eyebrow="PERSISTENT C147.15 STATE"
+              >
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
-                  {[
-                    ["Provider Technical", gates?.providerTechnicalReady],
-                    ["Provider Realtime", gates?.providerRealtimeVerified],
-                    ["Commercial", gates?.commercialGateOpen],
-                    ["Broker Configured", gates?.brokerAdapterConfigured],
-                    ["Broker Ready", gates?.brokerAdapterReady],
-                    ["Broker Connection", gates?.brokerConnectionVerified],
-                    ["Broker Credentials", gates?.brokerCredentialsVerified],
-                    ["Broker Account", gates?.brokerAccountVerified],
-                    ["Paper Trading", gates?.paperTradingVerified],
-                    ["Human Review", gates?.humanReviewApproved],
-                    ["Live Execution", gates?.liveExecutionEnabled],
-                  ].map(([label, value]) => (
-                    <Metric
-                      key={String(label)}
-                      label={String(label)}
-                      value={value ? "PASS" : "BLOCKED"}
-                    />
-                  ))}
+                  <Metric
+                    label="Task"
+                    value={
+                      result
+                        .humanReview
+                        ?.taskId ??
+                      taskId ||
+                      "Not supplied"
+                    }
+                  />
+
+                  <Metric
+                    label="Found"
+                    value={
+                      result
+                        .humanReview
+                        ?.found
+                        ? "Yes"
+                        : "No"
+                    }
+                  />
+
+                  <Metric
+                    label="Decision"
+                    value={decisionLabel(
+                      result
+                        .humanReview
+                        ?.decision,
+                    )}
+                  />
+
+                  <Metric
+                    label="Gate"
+                    value={
+                      result
+                        .humanReview
+                        ?.approved
+                        ? "Approved"
+                        : "Blocked"
+                    }
+                  />
                 </div>
+
+                <p
+                  style={{
+                    margin:
+                      "14px 0 0",
+                    fontSize: 12,
+                    lineHeight: 1.65,
+                    opacity: 0.65,
+                  }}
+                >
+                  {result
+                    .humanReview
+                    ?.reason ??
+                    "Persistent human review is required."}
+                </p>
               </Section>
 
-              <Section title="Next Requirements" eyebrow="REMAINING CLOSURE">
-                {result.nextRequirements?.length ? (
-                  <ol
+              <Section
+                title="Next Requirements"
+                eyebrow="CONTROL CHAIN BLOCKERS"
+              >
+                {result.nextRequirements
+                  ?.length ? (
+                  <ul
                     style={{
                       margin: 0,
-                      paddingLeft: 20,
-                      fontSize: 13,
+                      paddingLeft: 18,
+                      fontSize: 12,
                       lineHeight: 1.8,
-                      opacity: 0.75,
+                      opacity: 0.72,
                     }}
                   >
-                    {result.nextRequirements.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ol>
+                    {result.nextRequirements.map(
+                      (item) => (
+                        <li
+                          key={item}
+                        >
+                          {item}
+                        </li>
+                      ),
+                    )}
+                  </ul>
                 ) : (
-                  <div style={{ opacity: 0.55, fontSize: 13 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.6,
+                    }}
+                  >
                     No additional requirements returned.
                   </div>
                 )}
@@ -779,28 +1741,22 @@ export default function TradingControlChainPage() {
 
               <Section
                 title="Execution Safety Boundary"
-                eyebrow="NON-BYPASSABLE"
+                eyebrow="NON-AUTOMATIC EXECUTION"
               >
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(3, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
-                    label="Automatic Execution"
+                    label="Automatic Order"
                     value={
-                      result.safetyBoundary?.automaticExecutionAllowed
-                        ? "Enabled"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Live Execution"
-                    value={
-                      result.safetyBoundary?.liveExecutionEnabled
+                      result
+                        .safetyBoundary
+                        ?.automaticOrderPlacement
                         ? "Enabled"
                         : "Disabled"
                     }
@@ -809,49 +1765,40 @@ export default function TradingControlChainPage() {
                   <Metric
                     label="Live Order"
                     value={
-                      execution?.liveOrderPlaced ? "Placed" : "Not placed"
-                    }
-                  />
-
-                  <Metric
-                    label="Trading"
-                    value={
-                      execution?.tradingExecuted ? "Executed" : "Not executed"
-                    }
-                  />
-
-                  <Metric
-                    label="Planner Dispatch"
-                    value={
-                      execution?.plannerDispatched
-                        ? "Dispatched"
+                      result
+                        .safetyBoundary
+                        ?.liveOrderPlacement
+                        ? "Enabled"
                         : "Disabled"
                     }
                   />
 
                   <Metric
-                    label="Human Review"
+                    label="Trading Executed"
                     value={
-                      gates?.humanReviewApproved ? "Approved" : "Required"
+                      result
+                        .safetyBoundary
+                        ?.tradingExecuted
+                        ? "Yes"
+                        : "No"
                     }
                   />
                 </div>
+
+                <p
+                  style={{
+                    margin:
+                      "14px 0 0",
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    opacity: 0.65,
+                  }}
+                >
+                  Persistent human review is a required control gate. Even an accepted review does not independently enable live trading. Broker connection, credentials, account verification, paper verification, execution adapter readiness, commercial authorization, and final execution controls remain separate requirements.
+                </p>
               </Section>
             </>
           ) : null}
-
-          <footer
-            style={{
-              padding: "8px 2px",
-              fontSize: 11,
-              lineHeight: 1.7,
-              opacity: 0.45,
-            }}
-          >
-            Founder-only control surface. This page evaluates the server-side
-            trading control chain and never places a live order. Ordinary users
-            remain research-only.
-          </footer>
         </div>
       </div>
     </main>
