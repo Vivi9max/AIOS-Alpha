@@ -12,7 +12,6 @@ import {
 } from "@/lib/runtime/market/market-provider-commercial-gate";
 
 import {
-  getMarketDataProviderSelection,
   getPrimaryMarketDataProvider,
   getPrimaryMarketProviderCapabilities,
   getPrimaryMarketProviderStatus,
@@ -26,9 +25,11 @@ import {
   isBrokerExecutionAdapterReady,
 } from "@/lib/runtime/market/broker-execution-adapter";
 
-import type {
-  BrokerOrderIntent,
-} from "@/lib/runtime/market/broker-integration-boundary-types";
+import {
+  createMarketHumanReviewRequest,
+  evaluateMarketHumanReview,
+  getMarketHumanReviewPolicy,
+} from "@/lib/runtime/market/market-human-review";
 
 export const dynamic =
   "force-dynamic";
@@ -45,63 +46,79 @@ type OrderSide =
   | "buy"
   | "sell";
 
-type ControlChainOrder = {
+interface TradingControlChainBody {
+  symbol?: unknown;
+  market?: unknown;
+  side?: unknown;
+  quantity?: unknown;
+  limitPrice?: unknown;
+  reason?: unknown;
+  requestHumanReview?: unknown;
+}
+
+interface OrderIntent {
   symbol: string;
   market: MarketRegion;
   side: OrderSide;
   quantity: number;
   limitPrice: number | null;
-  reason: string | null;
-};
-
-function noStoreHeaders() {
-  return {
-    "Cache-Control":
-      "no-store",
-    "Content-Type":
-      "application/json; charset=utf-8",
-  };
+  reason: string;
 }
 
-function unauthorized() {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+) {
   return NextResponse.json(
+    body,
     {
-      success: false,
-      code:
-        "FOUNDER_AUTH_REQUIRED",
-      error:
-        "Founder authentication required.",
-    },
-    {
-      status: 401,
-      headers:
-        noStoreHeaders(),
+      status,
+      headers: {
+        "Cache-Control":
+          "no-store",
+        "Content-Type":
+          "application/json; charset=utf-8",
+      },
     },
   );
 }
 
-function isRecord(
+function asRecord(
   value: unknown,
-): value is Record<
-  string,
-  unknown
-> {
-  return (
+): Record<string, unknown> {
+  if (
     value !== null &&
-    typeof value ===
-      "object"
-  );
+    typeof value === "object"
+  ) {
+    return value as Record<
+      string,
+      unknown
+    >;
+  }
+
+  return {};
+}
+
+function cleanText(
+  value: unknown,
+): string {
+  return typeof value === "string"
+    ? value.trim()
+    : "";
 }
 
 function normalizeMarket(
   value: unknown,
 ): MarketRegion | null {
+  const normalized =
+    cleanText(value).toLowerCase();
+
   if (
-    value === "us" ||
-    value === "hk" ||
-    value === "cn"
+    normalized === "us" ||
+    normalized === "hk" ||
+    normalized === "cn"
   ) {
-    return value;
+    return normalized;
   }
 
   return null;
@@ -110,240 +127,155 @@ function normalizeMarket(
 function normalizeSide(
   value: unknown,
 ): OrderSide | null {
+  const normalized =
+    cleanText(value).toLowerCase();
+
   if (
-    value === "buy" ||
-    value === "sell"
+    normalized === "buy" ||
+    normalized === "sell"
+  ) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function normalizePositiveNumber(
+  value: unknown,
+): number | null {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0
   ) {
     return value;
+  }
+
+  if (
+    typeof value === "string"
+  ) {
+    const parsed =
+      Number(value.trim());
+
+    if (
+      Number.isFinite(parsed) &&
+      parsed > 0
+    ) {
+      return parsed;
+    }
   }
 
   return null;
 }
 
 function normalizeOrder(
-  value: unknown,
-): ControlChainOrder | null {
-  if (
-    !isRecord(value)
-  ) {
-    return null;
-  }
-
+  body: TradingControlChainBody,
+): {
+  order: OrderIntent | null;
+  error: string | null;
+} {
   const symbol =
-    typeof value.symbol ===
-      "string"
-      ? value.symbol
-          .trim()
-          .toUpperCase()
-      : "";
+    cleanText(body.symbol).toUpperCase();
 
   const market =
-    normalizeMarket(
-      value.market,
-    );
+    normalizeMarket(body.market);
 
   const side =
-    normalizeSide(
-      value.side,
-    );
-
-  const rawQuantity =
-    typeof value.quantity ===
-      "number"
-      ? value.quantity
-      : Number(
-          value.quantity,
-        );
+    normalizeSide(body.side);
 
   const quantity =
-    Number.isFinite(
-      rawQuantity,
-    )
-      ? Math.floor(
-          rawQuantity,
-        )
-      : 0;
-
-  const rawLimitPrice =
-    value.limitPrice ===
-      null ||
-    value.limitPrice ===
-      undefined ||
-    value.limitPrice ===
-      ""
-      ? null
-      : typeof value.limitPrice ===
-          "number"
-        ? value.limitPrice
-        : Number(
-            value.limitPrice,
-          );
+    normalizePositiveNumber(
+      body.quantity,
+    );
 
   const limitPrice =
-    rawLimitPrice ===
-      null
+    body.limitPrice === null ||
+    body.limitPrice === undefined ||
+    body.limitPrice === ""
       ? null
-      : Number.isFinite(
-          rawLimitPrice,
-        ) &&
-        rawLimitPrice >
-          0
-        ? rawLimitPrice
-        : null;
+      : normalizePositiveNumber(
+          body.limitPrice,
+        );
 
   const reason =
-    typeof value.reason ===
-      "string"
-      ? value.reason.trim()
-      : "";
+    cleanText(body.reason);
+
+  if (!symbol) {
+    return {
+      order: null,
+      error:
+        "symbol is required.",
+    };
+  }
+
+  if (!market) {
+    return {
+      order: null,
+      error:
+        "market must be us, hk or cn.",
+    };
+  }
+
+  if (!side) {
+    return {
+      order: null,
+      error:
+        "side must be buy or sell.",
+    };
+  }
+
+  if (quantity === null) {
+    return {
+      order: null,
+      error:
+        "quantity must be greater than zero.",
+    };
+  }
 
   if (
-    !symbol ||
-    !market ||
-    !side ||
-    quantity <=
-      0
+    body.limitPrice !== null &&
+    body.limitPrice !== undefined &&
+    body.limitPrice !== "" &&
+    limitPrice === null
   ) {
-    return null;
+    return {
+      order: null,
+      error:
+        "limitPrice must be greater than zero when supplied.",
+    };
+  }
+
+  if (!reason) {
+    return {
+      order: null,
+      error:
+        "reason is required.",
+    };
   }
 
   return {
-    symbol,
-    market,
-    side,
-    quantity,
-    limitPrice,
-    reason:
-      reason ||
-      null,
+    order: {
+      symbol,
+      market,
+      side,
+      quantity,
+      limitPrice,
+      reason,
+    },
+    error: null,
   };
 }
 
 function toBrokerOrder(
-  order:
-    | ControlChainOrder
-    | null,
-): BrokerOrderIntent | null {
-  if (!order) {
-    return null;
-  }
-
-  return {
-    symbol:
-      order.symbol,
-    market:
-      order.market,
-    side:
-      order.side,
-    quantity:
-      order.quantity,
-    limitPrice:
-      order.limitPrice,
-    reason:
-      order.reason,
-  };
-}
-
-function asRecord(
-  value: unknown,
-): Record<
-  string,
-  unknown
-> {
-  if (
-    isRecord(value)
-  ) {
-    return value;
-  }
-
-  return {};
-}
-
-function buildControlDecision(
-  brokerDiagnostic: ReturnType<
-    typeof evaluateBrokerExecutionAdapter
-  >,
-  commercialGateOpen: boolean,
+  order: OrderIntent,
 ) {
-  const adapterReady =
-    brokerDiagnostic
-      .capabilities
-      .available &&
-    brokerDiagnostic
-      .capabilities
-      .connectionVerified &&
-    brokerDiagnostic
-      .capabilities
-      .credentialsVerified &&
-    brokerDiagnostic
-      .capabilities
-      .accountVerified &&
-    brokerDiagnostic
-      .capabilities
-      .executionEnabled;
-
-  /*
-   * C167.5.14 explicitly defines
-   * readyForExecution as the literal
-   * type false. Do not widen or bypass
-   * that safety contract here.
-   *
-   * The control chain can therefore
-   * only reach human-review-required
-   * or a blocking state at this stage.
-   */
-  const executionReady =
-    commercialGateOpen &&
-    adapterReady &&
-    brokerDiagnostic
-      .readyForExecution;
-
-  if (
-    executionReady
-  ) {
-    return {
-      state:
-        "ready-for-human-review",
-      executionAllowed:
-        false,
-      reason:
-        "All technical and commercial gates are observable, but explicit human execution approval remains required.",
-    };
-  }
-
-  if (
-    !commercialGateOpen
-  ) {
-    return {
-      state:
-        "commercial-gate-blocked",
-      executionAllowed:
-        false,
-      reason:
-        "Market provider commercial authorization is not explicitly open.",
-    };
-  }
-
-  if (
-    !adapterReady
-  ) {
-    return {
-      state:
-        "broker-adapter-blocked",
-      executionAllowed:
-        false,
-      reason:
-        "The broker execution adapter is not independently verified and enabled.",
-    };
-  }
-
   return {
-    state:
-      "human-review-required",
-    executionAllowed:
-      false,
-    reason:
-      "The control chain requires explicit human review before any future execution.",
+    symbol: order.symbol,
+    market: order.market,
+    side: order.side,
+    quantity: order.quantity,
+    limitPrice: order.limitPrice,
+    reason: order.reason,
   };
 }
 
@@ -355,85 +287,78 @@ export async function POST(
       request,
     )
   ) {
-    return unauthorized();
+    return jsonResponse(
+      {
+        success: false,
+        code:
+          "FOUNDER_AUTH_REQUIRED",
+        error:
+          "Founder authentication required.",
+      },
+      401,
+    );
   }
 
+  let body: TradingControlChainBody;
+
   try {
-    const body =
-      await request.json();
+    body =
+      (await request.json()) as TradingControlChainBody;
+  } catch {
+    return jsonResponse(
+      {
+        success: false,
+        code:
+          "C167_5_20_INVALID_JSON",
+        error:
+          "Request body must contain valid JSON.",
+      },
+      400,
+    );
+  }
 
-    const order =
-      normalizeOrder(
-        isRecord(body)
-          ? body.order
-          : null,
-      );
+  const normalized =
+    normalizeOrder(body);
 
-    if (
-      isRecord(body) &&
-      body.order !==
-        undefined &&
-      !order
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          code:
-            "C167_5_17_INVALID_ORDER",
-          error:
-            "The supplied order intent is invalid.",
-          safetyBoundary: {
-            liveOrderPlaced:
-              false,
-            tradingExecuted:
-              false,
-            plannerDispatched:
-              false,
-            automaticExecutionAllowed:
-              false,
-          },
-        },
-        {
-          status: 400,
-          headers:
-            noStoreHeaders(),
-        },
-      );
-    }
+  if (
+    !normalized.order
+  ) {
+    return jsonResponse(
+      {
+        success: false,
+        code:
+          "C167_5_20_INVALID_ORDER_INTENT",
+        error:
+          normalized.error ||
+          "Invalid order intent.",
+      },
+      400,
+    );
+  }
 
-    const selection =
-      getMarketDataProviderSelection();
+  const order =
+    normalized.order;
 
-    const primary =
-      getPrimaryMarketDataProvider();
+  const requestHumanReview =
+    body.requestHumanReview === true;
 
+  try {
     const [
+      provider,
       providerStatus,
       providerCapabilities,
-    ] =
-      await Promise.all([
-        getPrimaryMarketProviderStatus(),
-        getPrimaryMarketProviderCapabilities(),
-      ]);
-
-    const activeProvider =
-      selection.activeProvider;
-
-    const providerId =
-      primary?.id ??
-      activeProvider ??
-      null;
+      brokerCapabilities,
+    ] = await Promise.all([
+      getPrimaryMarketDataProvider(),
+      getPrimaryMarketProviderStatus(),
+      getPrimaryMarketProviderCapabilities(),
+      Promise.resolve(
+        getBrokerExecutionAdapterCapabilities(),
+      ),
+    ]);
 
     const commercialGate =
-      providerId
-        ? evaluateMarketProviderCommercialGate(
-            providerId,
-          )
-        : null;
-
-    const commercialGateOpen =
-      commercialGate?.gateOpen ===
-      true;
+      evaluateMarketProviderCommercialGate();
 
     const adapterId =
       getBrokerExecutionAdapterId();
@@ -444,497 +369,400 @@ export async function POST(
     const adapterReady =
       isBrokerExecutionAdapterReady();
 
-    const adapterCapabilities =
-      getBrokerExecutionAdapterCapabilities();
+    const brokerOrder =
+      toBrokerOrder(order);
 
     const brokerDiagnostic =
       evaluateBrokerExecutionAdapter(
-        toBrokerOrder(
-          order,
-        ),
         {
-          founderAuthenticated:
-            true,
-
-          paperTradingVerified:
-            false,
-
-          humanReviewApproved:
-            false,
-
-          brokerConnectionVerified:
-            adapterCapabilities
-              .connectionVerified,
-
-          brokerCredentialsVerified:
-            adapterCapabilities
-              .credentialsVerified,
-
-          brokerAccountVerified:
-            adapterCapabilities
-              .accountVerified,
-
-          executionRequested:
-            false,
-
-          liveExecutionEnabled:
-            false,
+          order: brokerOrder,
+          founderAuthenticated: true,
+          humanApproval: false,
+          paperTradingVerified: false,
+          brokerConnected:
+            adapterConfigured,
+          credentialsVerified: false,
+          accountVerified: false,
+          executionEnabled:
+            adapterReady,
         },
       );
 
-    const controlDecision =
-      buildControlDecision(
-        brokerDiagnostic,
-        commercialGateOpen,
+    const humanReviewRequest =
+      requestHumanReview
+        ? createMarketHumanReviewRequest(
+            order,
+          )
+        : null;
+
+    const humanReview =
+      evaluateMarketHumanReview(
+        humanReviewRequest,
       );
 
+    const humanReviewPolicy =
+      getMarketHumanReviewPolicy();
+
+    const providerRecord =
+      asRecord(provider);
+
     const providerStatusRecord =
-      asRecord(
-        providerStatus,
-      );
+      asRecord(providerStatus);
 
     const providerCapabilitiesRecord =
       asRecord(
         providerCapabilities,
       );
 
-    const providerTechnicalReady =
-      providerStatusRecord
-        .configured ===
-        true &&
-      providerStatusRecord
-        .available ===
-        true;
-
-    const realtimeVerified =
-      providerStatusRecord
-        .supportsRealtime ===
-        true;
-
-    const commercialStatus =
-      commercialGate?.status ??
-      "unknown";
-
-    const commercialDecision =
-      commercialGate?.decision ??
-      "unknown";
-
-    return NextResponse.json(
-      {
-        success:
-          true,
-
-        code:
-          "C167_5_17_TRADING_CONTROL_CHAIN",
-
-        stage:
-          "C167.5.17",
-
-        controlChain: [
-          {
-            stage:
-              "research",
-            state:
-              "available",
-            description:
-              "Founder market research remains available through the shared Market Terminal.",
-          },
-
-          {
-            stage:
-              "provider",
-            state:
-              providerTechnicalReady
-                ? "technical-ready"
-                : "blocked",
-            description:
-              "Market provider technical capability is evaluated independently from commercial authorization.",
-          },
-
-          {
-            stage:
-              "commercial",
-            state:
-              commercialGateOpen
-                ? "authorized"
-                : "not-authorized",
-            description:
-              "Commercial authorization is controlled by the independent provider commercial gate.",
-          },
-
-          {
-            stage:
-              "broker-adapter",
-            state:
-              adapterConfigured
-                ? adapterReady
-                  ? "ready-for-review"
-                  : "diagnostic-only"
-                : "not-configured",
-            description:
-              "Broker adapter diagnostics establish capability state without enabling live execution.",
-          },
-
-          {
-            stage:
-              "human-review",
-            state:
-              "required",
-            description:
-              "Explicit human approval remains mandatory.",
-          },
-
-          {
-            stage:
-              "execution",
-            state:
-              "disabled",
-            description:
-              "Live order execution remains disabled at this stage.",
-          },
-        ],
-
-        orderIntent:
-          order,
-
-        provider: {
-          id:
-            providerId,
-
-          requestedProvider:
-            selection.requestedProvider,
-
-          activeProvider:
-            activeProvider,
-
-          availableProviders:
-            selection.availableProviders,
-
-          technicalReady:
-            providerTechnicalReady,
-
-          realtimeVerified,
-
-          status:
-            providerStatusRecord,
-
-          capabilities:
-            providerCapabilitiesRecord,
-        },
-
-        commercialAuthorization: {
-          providerId:
-            commercialGate
-              ?.providerId ??
-            providerId,
-
-          status:
-            commercialStatus,
-
-          decision:
-            commercialDecision,
-
-          authorized:
-            commercialGate
-              ?.authorized ===
-            true,
-
-          gateOpen:
-            commercialGateOpen,
-
-          source:
-            commercialGate
-              ?.source ??
-            "unknown",
-
-          verifiedAt:
-            commercialGate
-              ?.verifiedAt ??
-            null,
-
-          verifiedBy:
-            commercialGate
-              ?.verifiedBy ??
-            null,
-
-          contractReference:
-            commercialGate
-              ?.contractReference ??
-            null,
-
-          reason:
-            commercialGate
-              ?.reason ??
-            "Commercial authorization has not been explicitly verified.",
-
-          automaticApproval:
-            false,
-        },
-
-        brokerAdapter: {
-          id:
-            adapterId,
-
-          configured:
-            adapterConfigured,
-
-          ready:
-            adapterReady,
-
-          capabilities:
-            adapterCapabilities,
-
-          diagnostic: {
-            status:
-              brokerDiagnostic.status,
-
-            blockedReasons:
-              brokerDiagnostic
-                .blockedReasons,
-
-            execution:
-              brokerDiagnostic
-                .execution,
-
-            safetyBoundary:
-              brokerDiagnostic
-                .safetyBoundary,
-
-            generatedAt:
-              brokerDiagnostic
-                .generatedAt,
-          },
-        },
-
-        controlDecision,
-
-        gates: {
-          founderAuthenticated:
-            true,
-
-          providerTechnicalReady,
-
-          providerRealtimeVerified:
-            realtimeVerified,
-
-          commercialGateOpen,
-
-          brokerAdapterConfigured:
-            adapterConfigured,
-
-          brokerAdapterReady:
-            adapterReady,
-
-          brokerConnectionVerified:
-            adapterCapabilities
-              .connectionVerified,
-
-          brokerCredentialsVerified:
-            adapterCapabilities
-              .credentialsVerified,
-
-          brokerAccountVerified:
-            adapterCapabilities
-              .accountVerified,
-
-          paperTradingVerified:
-            false,
-
-          humanReviewApproved:
-            false,
-
-          liveExecutionEnabled:
-            false,
-        },
-
-        execution: {
-          readyForLiveExecution:
-            false,
-
-          executionRequested:
-            false,
-
-          liveOrderPlaced:
-            false,
-
-          tradingExecuted:
-            false,
-
-          brokerOrderId:
-            null,
-
-          plannerDispatched:
-            false,
-        },
-
-        nextRequirements: [
-          !providerTechnicalReady
-            ? "Verify the selected market provider technical configuration and runtime availability."
-            : null,
-
-          !realtimeVerified
-            ? "Verify realtime market-data capability before making realtime claims."
-            : null,
-
-          !commercialGateOpen
-            ? "Complete and explicitly verify the independent market provider commercial authorization gate."
-            : null,
-
-          !adapterConfigured
-            ? "Configure a verified broker execution adapter."
-            : null,
-
-          adapterConfigured &&
-          !adapterCapabilities
-            .connectionVerified
-            ? "Verify broker connection server-side."
-            : null,
-
-          adapterConfigured &&
-          !adapterCapabilities
-            .credentialsVerified
-            ? "Verify broker credentials server-side."
-            : null,
-
-          adapterConfigured &&
-          !adapterCapabilities
-            .accountVerified
-            ? "Verify broker account server-side."
-            : null,
-
-          !adapterCapabilities
-            .executionEnabled
-            ? "Keep live execution disabled until the broker adapter is independently verified."
-            : null,
-
-          "Complete paper-trading verification before any live execution review.",
-
-          "Require explicit human approval before any future live execution.",
-        ].filter(
-          (
-            value,
-          ): value is string =>
-            value !== null,
+    const commercialGateOpen =
+      commercialGate.gateOpen ===
+      true;
+
+    const providerReady =
+      Boolean(
+        providerRecord &&
+        providerRecord.id,
+      ) &&
+      Boolean(
+        providerStatusRecord &&
+        (
+          providerStatusRecord.status ===
+            "eligible" ||
+          providerStatusRecord.commercialStatus ===
+            "eligible"
         ),
+      );
 
-        safetyBoundary: {
-          founderOnly:
-            true,
+    const technicalProviderReady =
+      Object.keys(
+        providerCapabilitiesRecord,
+      ).length > 0;
 
-          researchOnlyForOrdinaryUsers:
-            true,
+    const brokerDiagnosticReady =
+      brokerDiagnostic.readyForExecution;
 
-          technicalProviderAccessDoesNotAuthorizeTrading:
-            true,
+    const allGatesPassed =
+      providerReady &&
+      commercialGateOpen &&
+      adapterReady &&
+      brokerDiagnosticReady &&
+      humanReview.approved;
 
-          commercialAuthorizationDoesNotAuthorizeTrading:
-            true,
+    /*
+     * The current broker adapter deliberately exposes
+     * readyForExecution as literal false.
+     *
+     * Human approval can satisfy the human gate,
+     * but it cannot override broker safety.
+     */
+    const executionReady =
+      allGatesPassed &&
+      brokerDiagnosticReady;
 
-          brokerAdapterConfigurationDoesNotAuthorizeTrading:
-            true,
+    const blockedReasons: string[] = [];
 
-          paperTradingRequired:
-            true,
+    if (!providerReady) {
+      blockedReasons.push(
+        "Market provider is not commercially ready.",
+      );
+    }
 
-          humanReviewRequired:
-            true,
+    if (!technicalProviderReady) {
+      blockedReasons.push(
+        "Technical market provider capability is unavailable.",
+      );
+    }
 
-          automaticExecutionAllowed:
-            false,
+    if (!commercialGateOpen) {
+      blockedReasons.push(
+        "Commercial authorization gate is not open.",
+      );
+    }
 
-          liveExecutionEnabled:
-            false,
+    if (!adapterConfigured) {
+      blockedReasons.push(
+        "Broker execution adapter is not configured.",
+      );
+    }
 
-          liveOrderPlaced:
-            false,
+    if (!adapterReady) {
+      blockedReasons.push(
+        "Broker execution adapter is not ready for execution.",
+      );
+    }
 
-          tradingExecuted:
-            false,
+    if (!humanReviewRequest) {
+      blockedReasons.push(
+        "Human review has not been requested.",
+      );
+    } else if (!humanReview.approved) {
+      blockedReasons.push(
+        "Explicit human approval has not been granted.",
+      );
+    }
 
-          brokerOrderId:
-            null,
+    if (!brokerDiagnosticReady) {
+      blockedReasons.push(
+        "Live execution remains disabled by the broker adapter safety contract.",
+      );
+    }
 
-          plannerDispatched:
-            false,
-        },
+    return jsonResponse({
+      success: true,
+      code:
+        "C167_5_20_TRADING_CONTROL_CHAIN",
+      stage:
+        "C167.5.20",
 
-        generatedAt:
-          new Date().toISOString(),
-      },
-      {
-        status:
-          200,
+      order,
 
-        headers:
-          noStoreHeaders(),
-      },
-    );
-  } catch (
-    error
-  ) {
-    return NextResponse.json(
-      {
-        success:
+      controlDecision: {
+        executionReady,
+        decision:
+          executionReady
+            ? "execution-review-ready"
+            : "blocked",
+        blockedReasons,
+        automaticExecution:
           false,
+        orderPlaced:
+          false,
+        tradingExecuted:
+          false,
+      },
 
+      controlChain: {
+        research:
+          "founder-market-research",
+        provider:
+          providerReady
+            ? "passed"
+            : "blocked",
+        commercial:
+          commercialGateOpen
+            ? "passed"
+            : "blocked",
+        brokerAdapter:
+          brokerDiagnosticReady
+            ? "passed"
+            : "blocked",
+        humanReview:
+          humanReview.approved
+            ? "approved"
+            : "blocked",
+        execution:
+          executionReady
+            ? "ready"
+            : "blocked",
+      },
+
+      provider: {
+        id:
+          providerRecord.id ??
+          null,
+        status:
+          providerStatusRecord.status ??
+          providerStatusRecord.commercialStatus ??
+          null,
+        technicalReady:
+          technicalProviderReady,
+        commercialReady:
+          commercialGateOpen,
+      },
+
+      commercialAuthorization: {
+        decision:
+          commercialGate.decision,
+        status:
+          commercialGate.status,
+        authorized:
+          commercialGate.authorized,
+        gateOpen:
+          commercialGateOpen,
+        source:
+          commercialGate.source,
+        verifiedAt:
+          commercialGate.verifiedAt,
+        verifiedBy:
+          commercialGate.verifiedBy,
+        reason:
+          commercialGate.reason,
+      },
+
+      brokerAdapter: {
+        id: adapterId,
+        configured:
+          adapterConfigured,
+        ready:
+          adapterReady,
+        capabilities:
+          brokerCapabilities,
+        diagnostic:
+          brokerDiagnostic,
+      },
+
+      humanReview: {
+        requested:
+          Boolean(
+            humanReviewRequest,
+          ),
+        request:
+          humanReviewRequest,
+        evaluation:
+          humanReview,
+        policy:
+          humanReviewPolicy,
+      },
+
+      gates: {
+        researchGate:
+          providerReady,
+        technicalProviderGate:
+          technicalProviderReady,
+        commercialGate:
+          commercialGateOpen,
+        brokerAdapterGate:
+          adapterReady &&
+          brokerDiagnosticReady,
+        humanReviewGate:
+          humanReview.approved,
+        executionGate:
+          executionReady,
+      },
+
+      safetyBoundary: {
+        founderOnly:
+          true,
+        ordinaryUserTrading:
+          false,
+        automaticOrderPlacement:
+          false,
+        liveOrderPlacement:
+          false,
+        tradingExecuted:
+          false,
+        humanApprovalRequired:
+          true,
+        brokerConnectionRequired:
+          true,
+        paperTradingRequired:
+          true,
+        commercialAuthorizationRequired:
+          true,
+        executionAdapterRequired:
+          true,
+        currentLiveExecutionEnabled:
+          false,
+      },
+
+      runtimeState: {
+        providerReady,
+        technicalProviderReady,
+        commercialGateOpen,
+        adapterConfigured,
+        adapterReady,
+        humanReviewRequested:
+          Boolean(
+            humanReviewRequest,
+          ),
+        humanReviewApproved:
+          humanReview.approved,
+        executionReady,
+      },
+
+      nextRequirements:
+        blockedReasons.length > 0
+          ? blockedReasons
+          : [
+              "All control gates passed. External execution review remains required.",
+            ],
+    });
+  } catch (error) {
+    return jsonResponse(
+      {
+        success: false,
         code:
-          "C167_5_17_TRADING_CONTROL_CHAIN_ERROR",
-
-        stage:
-          "C167.5.17",
-
+          "C167_5_20_TRADING_CONTROL_CHAIN_ERROR",
         error:
           error instanceof Error
             ? error.message
             : "Trading control chain evaluation failed.",
-
-        execution: {
-          readyForLiveExecution:
-            false,
-
-          executionRequested:
-            false,
-
-          liveOrderPlaced:
-            false,
-
-          tradingExecuted:
-            false,
-
-          brokerOrderId:
-            null,
-
-          plannerDispatched:
-            false,
-        },
-
-        safetyBoundary: {
-          founderOnly:
+        boundary: {
+          humanDecisionRequired:
             true,
-
-          automaticExecutionAllowed:
+          decisionAutomaticallyGenerated:
             false,
-
-          liveExecutionEnabled:
+          brokerConnected:
             false,
-
           liveOrderPlaced:
             false,
-
           tradingExecuted:
             false,
-
-          plannerDispatched:
+          executionEnabled:
             false,
         },
       },
-      {
-        status:
-          500,
-
-        headers:
-          noStoreHeaders(),
-      },
+      500,
     );
   }
+}
+
+export async function GET(
+  request: NextRequest,
+) {
+  if (
+    !isFounderRequest(
+      request,
+    )
+  ) {
+    return jsonResponse(
+      {
+        success: false,
+        code:
+          "FOUNDER_AUTH_REQUIRED",
+        error:
+          "Founder authentication required.",
+      },
+      401,
+    );
+  }
+
+  return jsonResponse({
+    success: true,
+    code:
+      "C167_5_20_TRADING_CONTROL_CHAIN_READY",
+    stage:
+      "C167.5.20",
+    pipeline: [
+      "Research",
+      "Provider",
+      "Commercial Authorization",
+      "Broker Adapter",
+      "Human Review",
+      "Execution Review",
+    ],
+    boundaries: {
+      ordinaryUserTrading:
+        false,
+      automaticExecution:
+        false,
+      liveOrderPlacement:
+        false,
+      tradingExecuted:
+        false,
+    },
+    humanReview: {
+      required: true,
+      approvalIsNonAutomatic:
+        true,
+      approvalDoesNotEnableExecution:
+        true,
+    },
+    brokerExecution: {
+      currentEnabled:
+        false,
+      externalAdapterRequired:
+        true,
+    },
+  });
 }
