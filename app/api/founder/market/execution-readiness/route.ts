@@ -294,10 +294,10 @@ export async function GET(
 
   return jsonResponse({
     code:
-      "C167_5_37_EXECUTION_READINESS_DIAGNOSTICS",
+      "C167_5_42_EXECUTION_READINESS_DIAGNOSTICS",
 
     stage:
-      "C167.5.37",
+      "C167.5.42",
 
     success:
       readiness.success,
@@ -425,10 +425,10 @@ export async function POST(
 
   return jsonResponse({
     code:
-      "C167_5_37_EXECUTION_READINESS",
+      "C167_5_42_EXECUTION_READINESS",
 
     stage:
-      "C167.5.37",
+      "C167.5.42",
 
     success:
       readiness.success,
