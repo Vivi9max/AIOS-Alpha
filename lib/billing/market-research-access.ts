@@ -1,7 +1,10 @@
 import {
   getEntitlement,
-  type AIOSPlanId,
 } from "@/lib/billing/entitlements";
+
+import type {
+  AIOSPlanId,
+} from "@/lib/billing/plans";
 
 import {
   checkMarketResearchUsage,
