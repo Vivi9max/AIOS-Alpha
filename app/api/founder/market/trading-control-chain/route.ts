@@ -1121,6 +1121,24 @@ export async function POST(
       },
 
       brokerConnectionVerification: {
+        broker:
+          brokerConnectionVerification.broker,
+
+        verification:
+          brokerConnectionVerification.readiness,
+
+        readiness:
+          brokerConnectionVerification.readiness,
+
+        gate:
+          brokerConnectionVerification.gate,
+
+        safetyBoundary:
+          brokerConnectionVerification.safetyBoundary,
+
+        generatedAt:
+          brokerConnectionVerification.generatedAt,
+
         brokerId:
           brokerConnectionVerification
             .broker
