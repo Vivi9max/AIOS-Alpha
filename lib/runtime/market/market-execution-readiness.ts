@@ -153,12 +153,6 @@ export interface MarketExecutionReadinessResult {
 type NormalizedOrder =
   MarketExecutionReadinessOrder;
 
-function readBoolean(
-  value: unknown,
-): boolean {
-  return value === true;
-}
-
 function readString(
   value: unknown,
   fallback = "",
@@ -306,11 +300,6 @@ export async function evaluateMarketExecutionReadiness(
       : Promise.resolve(null),
   ]);
 
-  /*
-   * MarketDataProviderAdapter already exposes
-   * id directly. Do not cast the adapter to
-   * Record<string, unknown>.
-   */
   const providerId =
     provider?.id ??
     null;
@@ -325,9 +314,14 @@ export async function evaluateMarketExecutionReadiness(
       true ||
     providerStatus?.configured ===
       true ||
-    providerStatus?.realtimeVerifiedMarkets
-      .length >
-      0;
+    (
+      (
+        providerStatus
+          ?.realtimeVerifiedMarkets
+          ?.length ??
+        0
+      ) > 0
+    );
 
   const commercialGate =
     providerId
@@ -362,10 +356,6 @@ export async function evaluateMarketExecutionReadiness(
   const brokerAdapterCapabilities =
     getBrokerExecutionAdapterCapabilities();
 
-  /*
-   * The real repository contract requires
-   * BrokerExecutionAdapterCapabilities.
-   */
   const brokerConnection =
     evaluateBrokerConnectionVerification(
       brokerAdapterCapabilities,
