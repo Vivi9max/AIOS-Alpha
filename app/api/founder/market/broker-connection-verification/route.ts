@@ -47,13 +47,35 @@ function unauthorized(): NextResponse {
     {
       success:
         false,
+
       code:
         "FOUNDER_AUTH_REQUIRED",
+
       error:
         "Founder authentication required.",
     },
     401,
   );
+}
+
+function resolveAdapterStatus(
+  adapterConfigured: boolean,
+  adapterAvailable: boolean,
+  executionEnabled: boolean,
+): "unconfigured" | "unavailable" | "diagnostic-only" | "execution-disabled" {
+  if (!adapterConfigured) {
+    return "unconfigured";
+  }
+
+  if (!adapterAvailable) {
+    return "unavailable";
+  }
+
+  if (!executionEnabled) {
+    return "execution-disabled";
+  }
+
+  return "diagnostic-only";
 }
 
 export async function GET(
@@ -85,6 +107,13 @@ export async function GET(
     const policy =
       getBrokerConnectionVerificationPolicy();
 
+    const adapterStatus =
+      resolveAdapterStatus(
+        adapterConfigured,
+        capabilities.available,
+        capabilities.executionEnabled,
+      );
+
     return jsonResponse({
       success:
         true,
@@ -101,12 +130,15 @@ export async function GET(
       adapter: {
         id:
           adapterId,
+
         configured:
           adapterConfigured,
+
         available:
           capabilities.available,
+
         status:
-          capabilities.status,
+          adapterStatus,
       },
 
       capabilities,
@@ -129,36 +161,45 @@ export async function GET(
 
       diagnostics: {
         adapterConfigured,
+
         adapterAvailable:
           capabilities.available,
 
         connectionVerified:
-          verification.broker.connectionVerified,
+          verification.broker
+            .connectionVerified,
 
         credentialsVerified:
-          verification.broker.credentialsVerified,
+          verification.broker
+            .credentialsVerified,
 
         accountVerified:
-          verification.broker.accountVerified,
+          verification.broker
+            .accountVerified,
 
         executionEnabled:
-          verification.broker.executionEnabled,
+          verification.broker
+            .executionEnabled,
 
         verificationComplete:
           verification.readiness
             .verificationComplete,
 
         decision:
-          verification.broker.decision,
+          verification.broker
+            .decision,
 
         status:
-          verification.broker.status,
+          verification.broker
+            .status,
 
         failureCodes:
-          verification.broker.failureCodes,
+          verification.broker
+            .failureCodes,
 
         reason:
-          verification.broker.reason,
+          verification.broker
+            .reason,
       },
 
       controlChain: {
@@ -256,12 +297,16 @@ export async function GET(
         safetyBoundary: {
           diagnosticOnly:
             true,
+
           brokerApiCalled:
             false,
+
           orderPlaced:
             false,
+
           automaticExecution:
             false,
+
           liveExecutionEnabled:
             false,
         },
