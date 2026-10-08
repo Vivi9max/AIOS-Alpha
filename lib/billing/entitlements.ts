@@ -14,12 +14,14 @@ export type AIOSCapability =
   | "automation"
   | "advanced-providers"
   | "api"
-  | "team-workspace";
+  | "team-workspace"
+  | "market-research";
 
 export interface AIOSUsageLimits {
   executionsPerDay: number | null;
   memoryItems: number | null;
   automationJobs: number | null;
+  marketResearchReportsPerMonth: number | null;
 }
 
 export interface AIOSEntitlement {
@@ -44,6 +46,19 @@ export interface CapabilityCheck {
 const DEFAULT_PLAN: AIOSPlanId =
   "alpha";
 
+const AIOS_CAPABILITIES: AIOSCapability[] = [
+  "chat",
+  "memory",
+  "planner",
+  "execution",
+  "retry",
+  "automation",
+  "advanced-providers",
+  "api",
+  "team-workspace",
+  "market-research",
+];
+
 function normalizePlanId(
   value?: string | null,
 ): AIOSPlanId {
@@ -58,6 +73,16 @@ function normalizePlanId(
   }
 
   return DEFAULT_PLAN;
+}
+
+function isAIOSCapability(
+  value: string,
+): value is AIOSCapability {
+  return (
+    AIOS_CAPABILITIES.includes(
+      value as AIOSCapability,
+    )
+  );
 }
 
 export function resolvePlan(
@@ -90,23 +115,28 @@ export function getEntitlement(
         (
           capability,
         ): capability is AIOSCapability =>
-          [
-            "chat",
-            "memory",
-            "planner",
-            "execution",
-            "retry",
-            "automation",
-            "advanced-providers",
-            "api",
-            "team-workspace",
-          ].includes(
+          isAIOSCapability(
             capability,
           ),
       ),
 
-    limits:
-      plan.limits,
+    limits: {
+      executionsPerDay:
+        plan.limits
+          .executionsPerDay,
+
+      memoryItems:
+        plan.limits
+          .memoryItems,
+
+      automationJobs:
+        plan.limits
+          .automationJobs,
+
+      marketResearchReportsPerMonth:
+        plan.limits
+          .marketResearchReportsPerMonth,
+    },
 
     active: true,
 
@@ -119,18 +149,29 @@ export function getEntitlement(
 }
 
 export function canUseCapability(
-  planId: string | null | undefined,
-  capability: AIOSCapability,
+  planId:
+    | string
+    | null
+    | undefined,
+  capability:
+    AIOSCapability,
 ): CapabilityCheck {
   const entitlement =
-    getEntitlement(planId);
+    getEntitlement(
+      planId,
+    );
 
-  if (!entitlement.active) {
+  if (
+    !entitlement.active
+  ) {
     return {
       allowed: false,
+
       capability,
+
       planId:
         entitlement.planId,
+
       reason:
         "inactive_plan",
     };
@@ -144,9 +185,12 @@ export function canUseCapability(
   ) {
     return {
       allowed: true,
+
       capability,
+
       planId:
         entitlement.planId,
+
       reason:
         "allowed",
     };
@@ -154,9 +198,12 @@ export function canUseCapability(
 
   return {
     allowed: false,
+
     capability,
+
     planId:
       entitlement.planId,
+
     reason:
       "capability_not_in_plan",
   };
@@ -166,20 +213,42 @@ export function getCapabilityMatrix() {
   return Object.values(
     AIOS_PLANS,
   ).map((plan) => ({
-    planId: plan.id,
+    planId:
+      plan.id,
+
     capabilities:
       plan.capabilities,
-    limits:
-      plan.limits,
+
+    limits: {
+      executionsPerDay:
+        plan.limits
+          .executionsPerDay,
+
+      memoryItems:
+        plan.limits
+          .memoryItems,
+
+      automationJobs:
+        plan.limits
+          .automationJobs,
+
+      marketResearchReportsPerMonth:
+        plan.limits
+          .marketResearchReportsPerMonth,
+    },
   }));
 }
 
 export function getPlanLimit(
-  planId: string | null | undefined,
+  planId:
+    | string
+    | null
+    | undefined,
   limit:
     | "executionsPerDay"
     | "memoryItems"
-    | "automationJobs",
+    | "automationJobs"
+    | "marketResearchReportsPerMonth",
 ): number | null {
   return getEntitlement(
     planId,
