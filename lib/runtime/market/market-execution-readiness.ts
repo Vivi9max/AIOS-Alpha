@@ -1,24 +1,30 @@
 import {
   evaluateMarketProviderCommercialGate,
 } from "./market-provider-commercial-gate";
+
 import {
   getPrimaryMarketDataProvider,
   getPrimaryMarketProviderCapabilities,
   getPrimaryMarketProviderStatus,
 } from "./market-data-provider";
+
 import {
   evaluateMarketPreTradeRisk,
   type MarketPreTradeRiskDecision,
 } from "./market-pretrade-risk";
+
 import {
   getMarketHumanReview,
 } from "./market-human-review-runtime";
+
 import type {
   MarketHumanReviewRecord,
 } from "./market-human-review-types";
+
 import {
   evaluateBrokerConnectionVerification,
 } from "./broker-connection-verification";
+
 import {
   getBrokerExecutionAdapterCapabilities,
   getBrokerExecutionAdapterId,
@@ -115,7 +121,9 @@ export interface MarketExecutionReadinessResult {
       supportsPaperOrders: boolean;
       supportsCancelOrders: boolean;
       supportsOrderStatus: boolean;
-      supportedMarkets: Array<"us" | "hk" | "cn">;
+      supportedMarkets: Array<
+        "us" | "hk" | "cn"
+      >;
       executionEnabled: boolean;
     };
   };
@@ -130,7 +138,8 @@ export interface MarketExecutionReadinessResult {
     execution: boolean;
   };
 
-  failureCodes: MarketExecutionReadinessFailureCode[];
+  failureCodes:
+    MarketExecutionReadinessFailureCode[];
 
   safetyBoundary: {
     founderOnly: true;
@@ -170,20 +179,25 @@ function normalizeOrder(
       order.symbol
         .trim()
         .toUpperCase(),
+
     market:
       order.market,
+
     side:
       order.side,
+
     quantity:
       Math.floor(
         order.quantity,
       ),
+
     limitPrice:
       order.limitPrice === null
         ? null
         : Number(
             order.limitPrice,
           ),
+
     reason:
       order.reason.trim(),
   };
@@ -242,7 +256,8 @@ function getHumanReviewState(
         "not-requested",
       status:
         "not-requested",
-      reviewId: null,
+      reviewId:
+        null,
     };
   }
 
@@ -297,7 +312,9 @@ export async function evaluateMarketExecutionReadiness(
       ? getMarketHumanReview(
           taskId,
         )
-      : Promise.resolve(null),
+      : Promise.resolve(
+          null,
+        ),
   ]);
 
   const providerId =
@@ -382,8 +399,19 @@ export async function evaluateMarketExecutionReadiness(
   const verificationComplete =
     brokerReadiness.verificationComplete;
 
-  const brokerGateOpen =
+  /*
+   * brokerGate.open represents the final execution
+   * authorization boundary. It must not be used as
+   * the connection verification state.
+   */
+  const brokerExecutionGateOpen =
     brokerGate.open;
+
+  const brokerConnectionGatePassed =
+    connectionVerified &&
+    credentialsVerified &&
+    accountVerified &&
+    verificationComplete;
 
   const failures:
     MarketExecutionReadinessFailureCode[] =
@@ -496,8 +524,9 @@ export async function evaluateMarketExecutionReadiness(
   }
 
   /*
-   * C167.5.36 is a readiness boundary only.
-   * Actual execution remains disabled.
+   * C167.5.40 remains a readiness-only boundary.
+   * No code path in this evaluator can authorize
+   * or place a live order.
    */
   addFailure(
     failures,
@@ -508,17 +537,32 @@ export async function evaluateMarketExecutionReadiness(
     risk.decision ===
     "pass";
 
-  const executionReady =
+  /*
+   * brokerConnectionGatePassed means that the
+   * connection, credentials, account and verification
+   * requirements are satisfied.
+   *
+   * brokerExecutionGateOpen is intentionally tracked
+   * separately because the broker runtime can report
+   * verification without opening execution authorization.
+   */
+  const executionPrerequisitesPassed =
     technicalProviderReady &&
     commercialGateOpen &&
     preTradeRiskPassed &&
     human.approved &&
-    connectionVerified &&
-    credentialsVerified &&
-    accountVerified &&
-    verificationComplete &&
-    brokerGateOpen &&
+    brokerConnectionGatePassed &&
+    brokerAdapterConfigured &&
     brokerAdapterReady &&
+    brokerExecutionGateOpen;
+
+  /*
+   * Live execution remains permanently disabled at
+   * this stage. Therefore readiness can be diagnosed,
+   * but executionReady cannot become true.
+   */
+  const executionReady =
+    executionPrerequisitesPassed &&
     false;
 
   const decision:
@@ -534,7 +578,8 @@ export async function evaluateMarketExecutionReadiness(
           : "blocked";
 
   return {
-    success: true,
+    success:
+      true,
 
     decision,
 
@@ -631,8 +676,14 @@ export async function evaluateMarketExecutionReadiness(
 
       verificationComplete,
 
+      /*
+       * This field represents the broker runtime's
+       * final execution authorization gate.
+       * It is intentionally false for the current
+       * safety boundary.
+       */
       gateOpen:
-        brokerGateOpen,
+        brokerExecutionGateOpen,
 
       failureCodes:
         brokerRecord.failureCodes,
@@ -710,16 +761,21 @@ export async function evaluateMarketExecutionReadiness(
       humanReview:
         human.approved,
 
+      /*
+       * This gate means "broker connection verification
+       * requirements are satisfied", not final execution
+       * authorization.
+       */
       brokerConnection:
-        connectionVerified &&
-        credentialsVerified &&
-        accountVerified &&
-        verificationComplete &&
-        brokerGateOpen,
+        brokerConnectionGatePassed,
 
       brokerAdapter:
         brokerAdapterReady,
 
+      /*
+       * Execution remains disabled even if every
+       * prerequisite is otherwise satisfied.
+       */
       execution:
         executionReady,
     },
@@ -728,7 +784,8 @@ export async function evaluateMarketExecutionReadiness(
       failures,
 
     safetyBoundary: {
-      founderOnly: true,
+      founderOnly:
+        true,
 
       automaticExecution:
         false,
