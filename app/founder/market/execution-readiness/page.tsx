@@ -1669,16 +1669,18 @@ export default function ExecutionReadinessPage() {
                   />
 
                   <Metric
-                    label="Gate"
-                    value={formatBoolean(
+                    label="Execution Gate"
+                    value={
                       brokerConnection
-                        ?.gateOpen,
-                    )}
+                        ?.gateOpen
+                        ? "Open"
+                        : "Closed"
+                    }
                     tone={
                       brokerConnection
                         ?.gateOpen
                         ? "success"
-                        : "danger"
+                        : "neutral"
                     }
                   />
                 </div>
@@ -1764,6 +1766,18 @@ export default function ExecutionReadinessPage() {
                   {brokerConnection
                     ?.reason ??
                     "Broker connection verification is not complete."}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 9,
+                    color: "#71717a",
+                    fontSize: 11,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Execution Gate is the execution authorization boundary.
+                  It remains closed while live execution is disabled.
                 </div>
 
                 {brokerConnection
