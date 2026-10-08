@@ -150,7 +150,8 @@ export interface MarketExecutionReadinessResult {
   generatedAt: string;
 }
 
-type NormalizedOrder = MarketExecutionReadinessOrder;
+type NormalizedOrder =
+  MarketExecutionReadinessOrder;
 
 function asRecord(
   value: unknown,
@@ -159,7 +160,10 @@ function asRecord(
     typeof value === "object" &&
     value !== null
   ) {
-    return value as Record<string, unknown>;
+    return value as Record<
+      string,
+      unknown
+    >;
   }
 
   return {};
@@ -184,29 +188,67 @@ function normalizeOrder(
   order: MarketExecutionReadinessOrder,
 ): NormalizedOrder {
   return {
-    symbol: order.symbol.trim().toUpperCase(),
+    symbol:
+      order.symbol
+        .trim()
+        .toUpperCase(),
     market: order.market,
     side: order.side,
-    quantity: Math.floor(order.quantity),
+    quantity:
+      Math.floor(
+        order.quantity,
+      ),
     limitPrice:
       order.limitPrice === null
         ? null
-        : Number(order.limitPrice),
-    reason: order.reason.trim(),
+        : Number(
+            order.limitPrice,
+          ),
+    reason:
+      order.reason.trim(),
   };
 }
 
 function addFailure(
-  failures: MarketExecutionReadinessFailureCode[],
-  code: MarketExecutionReadinessFailureCode,
+  failures:
+    MarketExecutionReadinessFailureCode[],
+  code:
+    MarketExecutionReadinessFailureCode,
 ): void {
-  if (!failures.includes(code)) {
+  if (
+    !failures.includes(code)
+  ) {
     failures.push(code);
   }
 }
 
+function getHumanReviewStatus(
+  decision:
+    | MarketHumanReviewRecord["decision"]
+    | null,
+): string {
+  if (!decision) {
+    return "not-requested";
+  }
+
+  switch (decision) {
+    case "accepted":
+      return "approved";
+    case "rejected":
+      return "rejected";
+    case "deferred":
+      return "deferred";
+    case "acknowledged":
+      return "acknowledged";
+    default:
+      return "not-requested";
+  }
+}
+
 function getHumanReviewState(
-  review: MarketHumanReviewRecord | null,
+  review:
+    | MarketHumanReviewRecord
+    | null,
 ) {
   if (!review) {
     return {
@@ -221,29 +263,33 @@ function getHumanReviewState(
   return {
     found: true,
     approved:
-      review.decision === "accepted",
-    decision: readString(
+      review.decision ===
+      "accepted",
+    decision:
       review.decision,
-      "not-requested",
-    ),
-    status: readString(
-      review.status,
-      "not-requested",
-    ),
+    status:
+      getHumanReviewStatus(
+        review.decision,
+      ),
     reviewId:
-      typeof review.reviewId === "string"
+      typeof review.reviewId ===
+      "string"
         ? review.reviewId
         : null,
   };
 }
 
 export async function evaluateMarketExecutionReadiness(
-  orderInput: MarketExecutionReadinessOrder,
+  orderInput:
+    MarketExecutionReadinessOrder,
   taskId?: string | null,
-): Promise<MarketExecutionReadinessResult> {
-  const order = normalizeOrder(
-    orderInput,
-  );
+): Promise<
+  MarketExecutionReadinessResult
+> {
+  const order =
+    normalizeOrder(
+      orderInput,
+    );
 
   const [
     provider,
@@ -256,35 +302,50 @@ export async function evaluateMarketExecutionReadiness(
     getPrimaryMarketProviderCapabilities(),
     getPrimaryMarketProviderStatus(),
     taskId
-      ? getMarketHumanReview(taskId)
+      ? getMarketHumanReview(
+          taskId,
+        )
       : Promise.resolve(null),
     evaluateBrokerConnectionVerification(),
   ]);
 
   const providerId =
-    typeof provider === "object" &&
+    typeof provider ===
+      "object" &&
     provider !== null &&
     "id" in provider
       ? readString(
-          (provider as Record<string, unknown>).id,
+          (
+            provider as Record<
+              string,
+              unknown
+            >
+          ).id,
         )
       : null;
 
   const providerStatusRecord =
-    asRecord(providerStatus);
+    asRecord(
+      providerStatus,
+    );
 
   const providerCapabilitiesRecord =
-    asRecord(providerCapabilities);
+    asRecord(
+      providerCapabilities,
+    );
 
   const technicalProviderReady =
     readBoolean(
-      providerCapabilitiesRecord.available,
+      providerCapabilitiesRecord
+        .available,
     ) ||
     readBoolean(
-      providerStatusRecord.realtimeVerified,
+      providerStatusRecord
+        .realtimeVerified,
     ) ||
     readBoolean(
-      providerStatusRecord.configured,
+      providerStatusRecord
+        .configured,
     );
 
   const commercialGate =
@@ -295,7 +356,8 @@ export async function evaluateMarketExecutionReadiness(
       : null;
 
   const commercialGateOpen =
-    commercialGate?.gateOpen === true;
+    commercialGate?.gateOpen ===
+    true;
 
   const risk =
     evaluateMarketPreTradeRisk(
@@ -314,37 +376,44 @@ export async function evaluateMarketExecutionReadiness(
 
   const brokerRecord =
     asRecord(
-      brokerConnectionRecord.broker,
+      brokerConnectionRecord
+        .broker,
     );
 
   const brokerVerificationRecord =
     asRecord(
-      brokerConnectionRecord.verification,
+      brokerConnectionRecord
+        .verification,
     );
 
   const brokerGateRecord =
     asRecord(
-      brokerConnectionRecord.gate,
+      brokerConnectionRecord
+        .gate,
     );
 
   const connectionVerified =
     readBoolean(
-      brokerVerificationRecord.connectionVerified,
+      brokerVerificationRecord
+        .connectionVerified,
     );
 
   const credentialsVerified =
     readBoolean(
-      brokerVerificationRecord.credentialsVerified,
+      brokerVerificationRecord
+        .credentialsVerified,
     );
 
   const accountVerified =
     readBoolean(
-      brokerVerificationRecord.accountVerified,
+      brokerVerificationRecord
+        .accountVerified,
     );
 
   const verificationComplete =
     readBoolean(
-      brokerVerificationRecord.verificationComplete,
+      brokerVerificationRecord
+        .verificationComplete,
     );
 
   const brokerGateOpen =
@@ -368,14 +437,18 @@ export async function evaluateMarketExecutionReadiness(
     MarketExecutionReadinessFailureCode[] =
     [];
 
-  if (!technicalProviderReady) {
+  if (
+    !technicalProviderReady
+  ) {
     addFailure(
       failures,
       "PROVIDER_NOT_READY",
     );
   }
 
-  if (!commercialGateOpen) {
+  if (
+    !commercialGateOpen
+  ) {
     addFailure(
       failures,
       "PROVIDER_COMMERCIAL_GATE_CLOSED",
@@ -383,7 +456,8 @@ export async function evaluateMarketExecutionReadiness(
   }
 
   if (
-    risk.decision === "blocked"
+    risk.decision ===
+    "blocked"
   ) {
     addFailure(
       failures,
@@ -406,49 +480,63 @@ export async function evaluateMarketExecutionReadiness(
       failures,
       "HUMAN_REVIEW_REQUIRED",
     );
-  } else if (!human.approved) {
+  } else if (
+    !human.approved
+  ) {
     addFailure(
       failures,
       "HUMAN_REVIEW_NOT_ACCEPTED",
     );
   }
 
-  if (!connectionVerified) {
+  if (
+    !connectionVerified
+  ) {
     addFailure(
       failures,
       "BROKER_CONNECTION_NOT_VERIFIED",
     );
   }
 
-  if (!credentialsVerified) {
+  if (
+    !credentialsVerified
+  ) {
     addFailure(
       failures,
       "BROKER_CREDENTIALS_NOT_VERIFIED",
     );
   }
 
-  if (!accountVerified) {
+  if (
+    !accountVerified
+  ) {
     addFailure(
       failures,
       "BROKER_ACCOUNT_NOT_VERIFIED",
     );
   }
 
-  if (!verificationComplete) {
+  if (
+    !verificationComplete
+  ) {
     addFailure(
       failures,
       "BROKER_VERIFICATION_INCOMPLETE",
     );
   }
 
-  if (!brokerAdapterConfigured) {
+  if (
+    !brokerAdapterConfigured
+  ) {
     addFailure(
       failures,
       "BROKER_ADAPTER_NOT_CONFIGURED",
     );
   }
 
-  if (!brokerAdapterReady) {
+  if (
+    !brokerAdapterReady
+  ) {
     addFailure(
       failures,
       "BROKER_ADAPTER_NOT_READY",
@@ -525,7 +613,7 @@ export async function evaluateMarketExecutionReadiness(
 
     humanReview: {
       taskId:
-        taskId?.trim() ||
+        taskId?.trim() ??
         null,
       found:
         human.found,
@@ -565,15 +653,18 @@ export async function evaluateMarketExecutionReadiness(
         brokerGateOpen,
       failureCodes:
         Array.isArray(
-          brokerRecord.failureCodes,
+          brokerRecord
+            .failureCodes,
         )
-          ? brokerRecord.failureCodes.filter(
-              (
-                item,
-              ): item is string =>
-                typeof item ===
-                "string",
-            )
+          ? brokerRecord
+              .failureCodes
+              .filter(
+                (
+                  item,
+                ): item is string =>
+                  typeof item ===
+                  "string",
+              )
           : [],
       reason:
         readString(
@@ -591,25 +682,35 @@ export async function evaluateMarketExecutionReadiness(
         brokerAdapterReady,
       capabilities: {
         available:
-          brokerAdapterCapabilities.available,
+          brokerAdapterCapabilities
+            .available,
         connectionVerified:
-          brokerAdapterCapabilities.connectionVerified,
+          brokerAdapterCapabilities
+            .connectionVerified,
         credentialsVerified:
-          brokerAdapterCapabilities.credentialsVerified,
+          brokerAdapterCapabilities
+            .credentialsVerified,
         accountVerified:
-          brokerAdapterCapabilities.accountVerified,
+          brokerAdapterCapabilities
+            .accountVerified,
         supportsLiveOrders:
-          brokerAdapterCapabilities.supportsLiveOrders,
+          brokerAdapterCapabilities
+            .supportsLiveOrders,
         supportsPaperOrders:
-          brokerAdapterCapabilities.supportsPaperOrders,
+          brokerAdapterCapabilities
+            .supportsPaperOrders,
         supportsCancelOrders:
-          brokerAdapterCapabilities.supportsCancelOrders,
+          brokerAdapterCapabilities
+            .supportsCancelOrders,
         supportsOrderStatus:
-          brokerAdapterCapabilities.supportsOrderStatus,
+          brokerAdapterCapabilities
+            .supportsOrderStatus,
         supportedMarkets:
-          brokerAdapterCapabilities.supportedMarkets,
+          brokerAdapterCapabilities
+            .supportedMarkets,
         executionEnabled:
-          brokerAdapterCapabilities.executionEnabled,
+          brokerAdapterCapabilities
+            .executionEnabled,
       },
     },
 
@@ -658,11 +759,14 @@ export async function evaluateMarketExecutionReadiness(
 }
 
 export function isMarketExecutionReady(
-  result: MarketExecutionReadinessResult,
+  result:
+    MarketExecutionReadinessResult,
 ): boolean {
   return (
-    result.executionReady === true &&
+    result.executionReady ===
+      true &&
     result.safetyBoundary
-      .liveExecutionEnabled === false
+      .liveExecutionEnabled ===
+      false
   );
 }
