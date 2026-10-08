@@ -150,23 +150,8 @@ export interface MarketExecutionReadinessResult {
   generatedAt: string;
 }
 
-type NormalizedOrder = MarketExecutionReadinessOrder;
-
-function asRecord(
-  value: unknown,
-): Record<string, unknown> {
-  if (
-    typeof value === "object" &&
-    value !== null
-  ) {
-    return value as Record<
-      string,
-      unknown
-    >;
-  }
-
-  return {};
-}
+type NormalizedOrder =
+  MarketExecutionReadinessOrder;
 
 function readBoolean(
   value: unknown,
@@ -191,8 +176,10 @@ function normalizeOrder(
       order.symbol
         .trim()
         .toUpperCase(),
-    market: order.market,
-    side: order.side,
+    market:
+      order.market,
+    side:
+      order.side,
     quantity:
       Math.floor(
         order.quantity,
@@ -233,12 +220,16 @@ function getHumanReviewStatus(
   switch (decision) {
     case "accepted":
       return "approved";
+
     case "rejected":
       return "rejected";
+
     case "deferred":
       return "deferred";
+
     case "acknowledged":
       return "acknowledged";
+
     default:
       return "not-requested";
   }
@@ -253,23 +244,29 @@ function getHumanReviewState(
     return {
       found: false,
       approved: false,
-      decision: "not-requested",
-      status: "not-requested",
+      decision:
+        "not-requested",
+      status:
+        "not-requested",
       reviewId: null,
     };
   }
 
   return {
     found: true,
+
     approved:
       review.decision ===
       "accepted",
+
     decision:
       review.decision,
+
     status:
       getHumanReviewStatus(
         review.decision,
       ),
+
     reviewId:
       typeof review.reviewId ===
       "string"
@@ -297,8 +294,11 @@ export async function evaluateMarketExecutionReadiness(
     humanReview,
   ] = await Promise.all([
     getPrimaryMarketDataProvider(),
+
     getPrimaryMarketProviderCapabilities(),
+
     getPrimaryMarketProviderStatus(),
+
     taskId
       ? getMarketHumanReview(
           taskId,
@@ -306,44 +306,28 @@ export async function evaluateMarketExecutionReadiness(
       : Promise.resolve(null),
   ]);
 
+  /*
+   * MarketDataProviderAdapter already exposes
+   * id directly. Do not cast the adapter to
+   * Record<string, unknown>.
+   */
   const providerId =
-    typeof provider ===
-      "object" &&
-    provider !== null &&
-    "id" in provider
-      ? readString(
-          (
-            provider as Record<
-              string,
-              unknown
-            >
-          ).id,
-        )
-      : null;
-
-  const providerStatusRecord =
-    asRecord(
-      providerStatus,
-    );
-
-  const providerCapabilitiesRecord =
-    asRecord(
-      providerCapabilities,
-    );
+    provider?.id ??
+    null;
 
   const technicalProviderReady =
-    readBoolean(
-      providerCapabilitiesRecord
-        .available,
+    providerCapabilities.some(
+      (capability) =>
+        capability.technicalSupport ===
+        true,
     ) ||
-    readBoolean(
-      providerStatusRecord
-        .realtimeVerified,
-    ) ||
-    readBoolean(
-      providerStatusRecord
-        .configured,
-    );
+    providerStatus?.available ===
+      true ||
+    providerStatus?.configured ===
+      true ||
+    providerStatus?.realtimeVerifiedMarkets
+      .length >
+      0;
 
   const commercialGate =
     providerId
@@ -379,9 +363,8 @@ export async function evaluateMarketExecutionReadiness(
     getBrokerExecutionAdapterCapabilities();
 
   /*
-   * Broker connection verification has a real
-   * repository contract that requires the adapter
-   * capabilities as its input.
+   * The real repository contract requires
+   * BrokerExecutionAdapterCapabilities.
    */
   const brokerConnection =
     evaluateBrokerConnectionVerification(
@@ -532,7 +515,8 @@ export async function evaluateMarketExecutionReadiness(
   );
 
   const preTradeRiskPassed =
-    risk.decision === "pass";
+    risk.decision ===
+    "pass";
 
   const executionReady =
     technicalProviderReady &&
@@ -569,7 +553,8 @@ export async function evaluateMarketExecutionReadiness(
     order,
 
     provider: {
-      id: providerId,
+      id:
+        providerId,
 
       technicalReady:
         technicalProviderReady,
