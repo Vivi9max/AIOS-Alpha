@@ -12,13 +12,14 @@ import {
 } from "./market-pretrade-risk";
 import {
   getMarketHumanReview,
-  type MarketHumanReviewRecord,
 } from "./market-human-review-runtime";
+import type {
+  MarketHumanReviewRecord,
+} from "./market-human-review-types";
 import {
   evaluateBrokerConnectionVerification,
 } from "./broker-connection-verification";
 import {
-  evaluateBrokerExecutionAdapter,
   getBrokerExecutionAdapterCapabilities,
   getBrokerExecutionAdapterId,
   isBrokerExecutionAdapterConfigured,
@@ -240,7 +241,9 @@ export async function evaluateMarketExecutionReadiness(
   orderInput: MarketExecutionReadinessOrder,
   taskId?: string | null,
 ): Promise<MarketExecutionReadinessResult> {
-  const order = normalizeOrder(orderInput);
+  const order = normalizeOrder(
+    orderInput,
+  );
 
   const [
     provider,
@@ -284,25 +287,30 @@ export async function evaluateMarketExecutionReadiness(
       providerStatusRecord.configured,
     );
 
-  const commercialGate = providerId
-    ? evaluateMarketProviderCommercialGate(
-        providerId,
-      )
-    : null;
+  const commercialGate =
+    providerId
+      ? evaluateMarketProviderCommercialGate(
+          providerId,
+        )
+      : null;
 
   const commercialGateOpen =
     commercialGate?.gateOpen === true;
 
-  const risk = evaluateMarketPreTradeRisk(
-    order,
-  );
+  const risk =
+    evaluateMarketPreTradeRisk(
+      order,
+    );
 
-  const human = getHumanReviewState(
-    humanReview,
-  );
+  const human =
+    getHumanReviewState(
+      humanReview,
+    );
 
   const brokerConnectionRecord =
-    asRecord(brokerConnection);
+    asRecord(
+      brokerConnection,
+    );
 
   const brokerRecord =
     asRecord(
@@ -340,7 +348,9 @@ export async function evaluateMarketExecutionReadiness(
     );
 
   const brokerGateOpen =
-    readBoolean(brokerGateRecord.open);
+    readBoolean(
+      brokerGateRecord.open,
+    );
 
   const brokerAdapterId =
     getBrokerExecutionAdapterId();
@@ -354,7 +364,8 @@ export async function evaluateMarketExecutionReadiness(
   const brokerAdapterCapabilities =
     getBrokerExecutionAdapterCapabilities();
 
-  const failures: MarketExecutionReadinessFailureCode[] =
+  const failures:
+    MarketExecutionReadinessFailureCode[] =
     [];
 
   if (!technicalProviderReady) {
@@ -465,7 +476,8 @@ export async function evaluateMarketExecutionReadiness(
     brokerAdapterReady &&
     false;
 
-  const decision: MarketExecutionReadinessDecision =
+  const decision:
+    MarketExecutionReadinessDecision =
     executionReady
       ? "ready"
       : risk.decision ===
@@ -496,8 +508,10 @@ export async function evaluateMarketExecutionReadiness(
     },
 
     preTradeRisk: {
-      decision: risk.decision,
-      passed: preTradeRiskPassed,
+      decision:
+        risk.decision,
+      passed:
+        preTradeRiskPassed,
       reviewRequired:
         risk.decision ===
         "review-required",
@@ -505,60 +519,76 @@ export async function evaluateMarketExecutionReadiness(
         risk.estimatedNotional ??
         null,
       blockedReasons:
-        risk.blockedReasons ?? [],
+        risk.blockedReasons ??
+        [],
     },
 
     humanReview: {
       taskId:
-        taskId?.trim() || null,
-      found: human.found,
-      required: true,
-      approved: human.approved,
-      decision: human.decision,
-      status: human.status,
-      reviewId: human.reviewId,
+        taskId?.trim() ||
+        null,
+      found:
+        human.found,
+      required:
+        true,
+      approved:
+        human.approved,
+      decision:
+        human.decision,
+      status:
+        human.status,
+      reviewId:
+        human.reviewId,
     },
 
     brokerConnection: {
-      brokerId: readString(
-        brokerRecord.brokerId,
-        "unconfigured",
-      ),
-      status: readString(
-        brokerRecord.status,
-        "unknown",
-      ),
-      decision: readString(
-        brokerRecord.decision,
-        "not-ready",
-      ),
+      brokerId:
+        readString(
+          brokerRecord.brokerId,
+          "unconfigured",
+        ),
+      status:
+        readString(
+          brokerRecord.status,
+          "unknown",
+        ),
+      decision:
+        readString(
+          brokerRecord.decision,
+          "not-ready",
+        ),
       connectionVerified,
       credentialsVerified,
       accountVerified,
       verificationComplete,
-      gateOpen: brokerGateOpen,
-      failureCodes: Array.isArray(
-        brokerRecord.failureCodes,
-      )
-        ? brokerRecord.failureCodes.filter(
-            (
-              item,
-            ): item is string =>
-              typeof item ===
-              "string",
-          )
-        : [],
-      reason: readString(
-        brokerRecord.reason,
-        "Broker connection verification is not complete.",
-      ),
+      gateOpen:
+        brokerGateOpen,
+      failureCodes:
+        Array.isArray(
+          brokerRecord.failureCodes,
+        )
+          ? brokerRecord.failureCodes.filter(
+              (
+                item,
+              ): item is string =>
+                typeof item ===
+                "string",
+            )
+          : [],
+      reason:
+        readString(
+          brokerRecord.reason,
+          "Broker connection verification is not complete.",
+        ),
     },
 
     brokerAdapter: {
-      id: brokerAdapterId,
+      id:
+        brokerAdapterId,
       configured:
         brokerAdapterConfigured,
-      ready: brokerAdapterReady,
+      ready:
+        brokerAdapterReady,
       capabilities: {
         available:
           brokerAdapterCapabilities.available,
@@ -604,7 +634,8 @@ export async function evaluateMarketExecutionReadiness(
         executionReady,
     },
 
-    failureCodes: failures,
+    failureCodes:
+      failures,
 
     safetyBoundary: {
       founderOnly: true,
