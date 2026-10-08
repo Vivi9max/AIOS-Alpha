@@ -3,163 +3,139 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 
 const STORAGE_KEY = "aios-founder-access-key";
 
+type Market = "us" | "hk" | "cn";
+type Side = "buy" | "sell";
+
+type ExecutionOrder = {
+  symbol: string;
+  market: Market;
+  side: Side;
+  quantity: number;
+  limitPrice: number | null;
+  reason: string;
+};
+
+type ReadinessFailureCode =
+  | "PROVIDER_NOT_READY"
+  | "PROVIDER_COMMERCIAL_GATE_CLOSED"
+  | "PRETRADE_RISK_BLOCKED"
+  | "PRETRADE_RISK_REVIEW_REQUIRED"
+  | "HUMAN_REVIEW_REQUIRED"
+  | "HUMAN_REVIEW_NOT_ACCEPTED"
+  | "BROKER_CONNECTION_NOT_VERIFIED"
+  | "BROKER_CREDENTIALS_NOT_VERIFIED"
+  | "BROKER_ACCOUNT_NOT_VERIFIED"
+  | "BROKER_VERIFICATION_INCOMPLETE"
+  | "BROKER_ADAPTER_NOT_CONFIGURED"
+  | "BROKER_ADAPTER_NOT_READY"
+  | "EXECUTION_DISABLED"
+  | string;
+
 type ReadinessResult = {
-  success?: boolean;
-  decision?: string;
-  executionReady?: boolean;
-  provider?: {
-    id?: string | null;
-    displayName?: string | null;
-    configured?: boolean;
-    technicalReady?: boolean;
-    commercialReady?: boolean;
-    status?: string | null;
-    reason?: string;
+  success: boolean;
+  decision:
+    | "ready"
+    | "blocked"
+    | "review-required"
+    | "not-configured"
+    | "unknown"
+    | string;
+  executionReady: boolean;
+  order: ExecutionOrder;
+
+  provider: {
+    id: string | null;
+    technicalReady: boolean;
+    commercialGateOpen: boolean;
+    commercialDecision: string;
+    commercialReason: string;
   };
-  commercialAuthorization?: {
-    providerId?: string | null;
-    status?: string | null;
-    decision?: string | null;
-    authorized?: boolean;
-    gateOpen?: boolean;
-    source?: string | null;
-    verifiedAt?: string | null;
-    verifiedBy?: string | null;
-    contractReference?: string | null;
-    reason?: string | null;
+
+  preTradeRisk: {
+    decision: string;
+    passed: boolean;
+    reviewRequired: boolean;
+    estimatedNotional: number | null;
+    blockedReasons: string[];
   };
-  preTradeRisk?: {
-    decision?: string;
-    approved?: boolean;
-    estimatedNotional?: number | null;
-    blockedReasons?: string[];
-    reviewRequired?: boolean;
-    policy?: {
-      enabled?: boolean;
-      allowedMarkets?: string[];
-      maxOrderQuantity?: number;
-      maxOrderNotional?: number;
-      requireLimitPrice?: boolean;
-      allowMarketOrders?: boolean;
-      reviewRequiredAboveNotional?: number;
-      version?: string;
-    };
-    checks?: {
-      orderValid?: boolean;
-      marketAllowed?: boolean;
-      quantityWithinLimit?: boolean;
-      notionalWithinLimit?: boolean;
-      limitPriceValid?: boolean;
-      reviewRequired?: boolean;
-    };
+
+  humanReview: {
+    taskId: string | null;
+    found: boolean;
+    required: boolean;
+    approved: boolean;
+    decision: string;
+    status: string;
+    reviewId: string | null;
   };
-  humanReview?: {
-    taskId?: string | null;
-    found?: boolean;
-    required?: boolean;
-    requested?: boolean;
-    approved?: boolean;
-    decision?: string | null;
-    status?: string | null;
-    reviewId?: string | null;
-    reason?: string | null;
-    review?: {
-      reviewId?: string;
-      taskId?: string;
-      symbol?: string;
-      market?: string;
-      taskTitle?: string;
-      decision?: string;
-      reviewerNote?: string;
-      createdAt?: string;
-      updatedAt?: string;
-      humanDecisionRequired?: boolean;
-      automatedExecutionStarted?: boolean;
-      plannerDispatched?: boolean;
-      tradingExecuted?: boolean;
-    } | null;
+
+  brokerConnection: {
+    brokerId: string;
+    status: string;
+    decision: string;
+    connectionVerified: boolean;
+    credentialsVerified: boolean;
+    accountVerified: boolean;
+    verificationComplete: boolean;
+    gateOpen: boolean;
+    failureCodes: string[];
+    reason: string;
   };
-  brokerConnection?: {
-    success?: boolean;
-    broker?: {
-      brokerId?: string;
-      status?: string;
-      decision?: string;
-      source?: string;
-      connectionVerified?: boolean;
-      credentialsVerified?: boolean;
-      accountVerified?: boolean;
-      executionEnabled?: boolean;
-      verifiedAt?: string | null;
-      verifiedBy?: string | null;
-      contractReference?: string | null;
-      reason?: string;
-      failureCodes?: string[];
-    };
-    verification?: {
-      connectionVerified?: boolean;
-      credentialsVerified?: boolean;
-      accountVerified?: boolean;
-      verificationComplete?: boolean;
-    };
-    gate?: {
-      open?: boolean;
-      reason?: string;
+
+  brokerAdapter: {
+    id: string;
+    configured: boolean;
+    ready: boolean;
+    capabilities: {
+      available: boolean;
+      connectionVerified: boolean;
+      credentialsVerified: boolean;
+      accountVerified: boolean;
+      supportsLiveOrders: boolean;
+      supportsPaperOrders: boolean;
+      supportsCancelOrders: boolean;
+      supportsOrderStatus: boolean;
+      supportedMarkets: Market[];
+      executionEnabled: boolean;
     };
   };
-  brokerAdapter?: {
-    id?: string;
-    configured?: boolean;
-    ready?: boolean;
-    capabilities?: {
-      available?: boolean;
-      connectionVerified?: boolean;
-      credentialsVerified?: boolean;
-      accountVerified?: boolean;
-      supportsLiveOrders?: boolean;
-      supportsPaperOrders?: boolean;
-      supportsCancelOrders?: boolean;
-      supportsOrderStatus?: boolean;
-      executionEnabled?: boolean;
-    };
-    diagnostic?: {
-      status?: string;
-      blockedReasons?: string[];
-    };
+
+  gates: {
+    provider: boolean;
+    commercial: boolean;
+    preTradeRisk: boolean;
+    humanReview: boolean;
+    brokerConnection: boolean;
+    brokerAdapter: boolean;
+    execution: boolean;
   };
-  gates?: {
-    providerGate?: boolean;
-    technicalProviderGate?: boolean;
-    commercialGate?: boolean;
-    preTradeRiskGate?: boolean;
-    persistentHumanReviewGate?: boolean;
-    brokerConnectionVerificationGate?: boolean;
-    brokerAdapterGate?: boolean;
-    executionGate?: boolean;
+
+  failureCodes: ReadinessFailureCode[];
+
+  safetyBoundary: {
+    founderOnly: true;
+    automaticExecution: false;
+    liveOrderPlacement: false;
+    tradingExecuted: false;
+    callerCanOverride: false;
+    callerCanBypass: false;
+    commercialAuthorizationRequired: true;
+    preTradeRiskRequired: true;
+    persistentHumanReviewRequired: true;
+    brokerConnectionVerificationRequired: true;
+    brokerExecutionAdapterRequired: true;
+    liveExecutionEnabled: false;
   };
-  failureCodes?: string[];
-  safetyBoundary?: {
-    founderOnly?: boolean;
-    automaticExecution?: boolean;
-    liveOrderPlacement?: boolean;
-    tradingExecuted?: boolean;
-    liveExecutionEnabled?: boolean;
-    callerCanOverride?: boolean;
-    callerCanBypass?: boolean;
-    preTradeRiskRequired?: boolean;
-    persistentHumanReviewRequired?: boolean;
-    commercialAuthorizationRequired?: boolean;
-    brokerConnectionRequired?: boolean;
-    executionAdapterRequired?: boolean;
-  };
-  nextRequirements?: string[];
-  generatedAt?: string;
+
+  generatedAt: string;
 };
 
 type ReadinessResponse = {
@@ -167,19 +143,12 @@ type ReadinessResponse = {
   stage?: string;
   success?: boolean;
   readiness?: ReadinessResult;
-  orderIntent?: {
-    symbol?: string;
-    market?: string;
-    side?: string;
-    quantity?: number;
-    limitPrice?: number | null;
-    reason?: string;
-  };
+  orderIntent?: ExecutionOrder;
   humanReviewTaskId?: string | null;
   controlDecision?: string;
   executionReady?: boolean;
   gates?: ReadinessResult["gates"];
-  failureCodes?: string[];
+  failureCodes?: ReadinessFailureCode[];
   safetyBoundary?: ReadinessResult["safetyBoundary"];
   executionPolicy?: {
     readinessOnly?: boolean;
@@ -189,7 +158,9 @@ type ReadinessResponse = {
     tradingExecuted?: boolean;
     liveExecutionEnabled?: boolean;
   };
+  generatedAt?: string;
   error?: string;
+  message?: string;
 };
 
 function getAccessKey(): string {
@@ -204,44 +175,24 @@ function getAccessKey(): string {
   );
 }
 
-async function requestJson(
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
-  const key = getAccessKey();
+async function requestReadiness(
+  order: ExecutionOrder,
+  taskId: string,
+): Promise<ReadinessResponse> {
+  const accessKey = getAccessKey();
 
-  if (!key) {
+  if (!accessKey) {
     throw new Error(
       "Founder Session not found. Please return to Founder Console and enter the Founder Access Key.",
     );
   }
 
-  return fetch(path, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-}
-
-async function evaluateReadiness(
-  order: {
-    symbol: string;
-    market: string;
-    side: "buy" | "sell";
-    quantity: number;
-    limitPrice: number | null;
-    reason: string;
-  },
-  taskId: string,
-): Promise<ReadinessResponse> {
-  const response = await requestJson(
+  const response = await fetch(
     "/api/founder/market/execution-readiness",
     {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${accessKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -252,35 +203,166 @@ async function evaluateReadiness(
             }
           : {}),
       }),
+      cache: "no-store",
     },
   );
 
-  const data =
+  const payload =
     (await response.json()) as ReadinessResponse;
 
   if (response.status === 401) {
     throw new Error(
-      "Founder authentication failed.",
+      payload.error ??
+        payload.message ??
+        "Founder authentication failed.",
     );
   }
 
   if (!response.ok) {
     throw new Error(
-      data.error ??
+      payload.error ??
+        payload.message ??
         "Execution readiness evaluation failed.",
     );
   }
 
-  return data;
+  return payload;
+}
+
+function formatDecision(
+  value?: string | null,
+): string {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  return value
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (character) =>
+      character.toUpperCase(),
+    );
+}
+
+function formatBoolean(
+  value?: boolean,
+): string {
+  return value ? "Yes" : "No";
+}
+
+function formatNumber(
+  value?: number | null,
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "Not available";
+  }
+
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      maximumFractionDigits: 2,
+    },
+  ).format(value);
+}
+
+function decisionTone(
+  decision?: string,
+): "success" | "warning" | "danger" | "neutral" {
+  switch (decision) {
+    case "ready":
+    case "approved":
+    case "accepted":
+    case "pass":
+    case "verified":
+      return "success";
+
+    case "review-required":
+    case "pending":
+    case "deferred":
+      return "warning";
+
+    case "blocked":
+    case "rejected":
+    case "not-configured":
+      return "danger";
+
+    default:
+      return "neutral";
+  }
+}
+
+function ToneBadge({
+  tone,
+  children,
+}: {
+  tone: "success" | "warning" | "danger" | "neutral";
+  children: ReactNode;
+}) {
+  const styles: Record<
+    typeof tone,
+    CSSProperties
+  > = {
+    success: {
+      background:
+        "rgba(74,222,128,0.12)",
+      border:
+        "1px solid rgba(74,222,128,0.2)",
+      color: "#86efac",
+    },
+    warning: {
+      background:
+        "rgba(251,191,36,0.12)",
+      border:
+        "1px solid rgba(251,191,36,0.2)",
+      color: "#fcd34d",
+    },
+    danger: {
+      background:
+        "rgba(248,113,113,0.12)",
+      border:
+        "1px solid rgba(248,113,113,0.2)",
+      color: "#fca5a5",
+    },
+    neutral: {
+      background:
+        "rgba(255,255,255,0.06)",
+      border:
+        "1px solid rgba(255,255,255,0.1)",
+      color: "#d4d4d8",
+    },
+  };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        minHeight: 26,
+        padding: "4px 9px",
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 650,
+        whiteSpace: "nowrap",
+        ...styles[tone],
+      }}
+    >
+      {children}
+    </span>
+  );
 }
 
 function Section({
-  title,
   eyebrow,
+  title,
+  description,
   children,
 }: {
-  title: string;
   eyebrow?: string;
+  title: string;
+  description?: string;
   children: ReactNode;
 }) {
   return (
@@ -298,8 +380,8 @@ function Section({
         <div
           style={{
             fontSize: 10,
-            letterSpacing: "0.12em",
-            opacity: 0.45,
+            letterSpacing: "0.13em",
+            color: "#71717a",
             marginBottom: 6,
           }}
         >
@@ -309,172 +391,237 @@ function Section({
 
       <h2
         style={{
-          margin: "0 0 14px",
+          margin: 0,
           fontSize: 16,
+          lineHeight: 1.35,
         }}
       >
         {title}
       </h2>
+
+      {description ? (
+        <p
+          style={{
+            margin:
+              "7px 0 16px",
+            color: "#71717a",
+            fontSize: 12,
+            lineHeight: 1.65,
+          }}
+        >
+          {description}
+        </p>
+      ) : null}
 
       {children}
     </section>
   );
 }
 
-function Badge({
-  ok,
-  warning,
-  children,
-}: {
-  ok: boolean;
-  warning?: boolean;
-  children: ReactNode;
-}) {
-  const background = ok
-    ? "rgba(74,222,128,0.12)"
-    : warning
-      ? "rgba(251,191,36,0.12)"
-      : "rgba(248,113,113,0.12)";
-
-  const color = ok
-    ? "#86efac"
-    : warning
-      ? "#fcd34d"
-      : "#fca5a5";
-
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "4px 8px",
-        borderRadius: 999,
-        fontSize: 11,
-        background,
-        color,
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 function Metric({
   label,
   value,
+  tone,
 }: {
   label: string;
   value: string;
+  tone?: "success" | "warning" | "danger" | "neutral";
 }) {
   return (
     <div
       style={{
+        minWidth: 0,
         padding: 12,
-        borderRadius: 10,
+        borderRadius: 11,
         background:
           "rgba(255,255,255,0.035)",
+        border:
+          "1px solid rgba(255,255,255,0.055)",
       }}
     >
       <div
         style={{
-          fontSize: 11,
-          opacity: 0.5,
-          marginBottom: 5,
+          marginBottom: 6,
+          color: "#71717a",
+          fontSize: 10,
+          letterSpacing: "0.04em",
         }}
       >
         {label}
       </div>
 
-      <strong
-        style={{
-          fontSize: 14,
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
-      </strong>
+      {tone ? (
+        <ToneBadge tone={tone}>
+          {value}
+        </ToneBadge>
+      ) : (
+        <div
+          style={{
+            color: "#e4e4e7",
+            fontSize: 13,
+            fontWeight: 600,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {value}
+        </div>
+      )}
     </div>
   );
 }
 
-function boolText(
-  value?: boolean,
-): string {
-  return value ? "Yes" : "No";
+function GateCard({
+  label,
+  value,
+}: {
+  label: string;
+  value?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 11,
+        background:
+          "rgba(255,255,255,0.035)",
+        border:
+          "1px solid rgba(255,255,255,0.055)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            color: "#a1a1aa",
+            fontSize: 11,
+          }}
+        >
+          {label}
+        </span>
+
+        <ToneBadge
+          tone={
+            value
+              ? "success"
+              : "danger"
+          }
+        >
+          {value
+            ? "Passed"
+            : "Blocked"}
+        </ToneBadge>
+      </div>
+    </div>
+  );
 }
 
-function formatDecision(
-  value?: string | null,
-): string {
-  if (!value) {
-    return "Not recorded";
-  }
+function BooleanRow({
+  label,
+  value,
+}: {
+  label: string;
+  value?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding:
+          "9px 0",
+        borderBottom:
+          "1px solid rgba(255,255,255,0.05)",
+      }}
+    >
+      <span
+        style={{
+          color: "#a1a1aa",
+          fontSize: 12,
+        }}
+      >
+        {label}
+      </span>
 
-  return value
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (char) =>
-      char.toUpperCase(),
-    );
+      <ToneBadge
+        tone={
+          value
+            ? "success"
+            : "neutral"
+        }
+      >
+        {formatBoolean(value)}
+      </ToneBadge>
+    </div>
+  );
 }
 
-function gateState(
-  value?: boolean,
-): {
-  ok: boolean;
-  warning: boolean;
-} {
-  return {
-    ok: value === true,
-    warning: false,
-  };
+function InputLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gap: 6,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          color: "#a1a1aa",
+          fontSize: 11,
+        }}
+      >
+        {label}
+      </span>
+
+      {children}
+    </label>
+  );
 }
 
-function decisionState(
-  decision?: string,
-): {
-  ok: boolean;
-  warning: boolean;
-} {
-  if (
-    decision === "ready" ||
-    decision === "approved" ||
-    decision === "pass" ||
-    decision === "verified"
-  ) {
-    return {
-      ok: true,
-      warning: false,
-    };
-  }
-
-  if (
-    decision === "review-required" ||
-    decision === "pending"
-  ) {
-    return {
-      ok: false,
-      warning: true,
-    };
-  }
-
-  return {
-    ok: false,
-    warning: false,
-  };
-}
+const inputStyle: CSSProperties = {
+  width: "100%",
+  minHeight: 42,
+  boxSizing: "border-box",
+  border:
+    "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 10,
+  padding:
+    "9px 11px",
+  background:
+    "rgba(255,255,255,0.045)",
+  color: "#f4f4f5",
+  outline: "none",
+  fontSize: 13,
+};
 
 export default function ExecutionReadinessPage() {
-  const [sessionDetected, setSessionDetected] =
-    useState(false);
+  const [
+    sessionDetected,
+    setSessionDetected,
+  ] = useState(false);
 
   const [symbol, setSymbol] =
     useState("NVDA");
 
   const [market, setMarket] =
-    useState("us");
+    useState<Market>("us");
 
   const [side, setSide] =
-    useState<"buy" | "sell">("buy");
+    useState<Side>("buy");
 
   const [quantity, setQuantity] =
     useState("1");
@@ -490,13 +637,18 @@ export default function ExecutionReadinessPage() {
   const [taskId, setTaskId] =
     useState("");
 
-  const [result, setResult] =
+  const [
+    result,
+    setResult,
+  ] =
     useState<ReadinessResponse | null>(
       null,
     );
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
   const [error, setError] =
     useState("");
@@ -504,8 +656,28 @@ export default function ExecutionReadinessPage() {
   const [loadedAt, setLoadedAt] =
     useState<string | null>(null);
 
-  const handleEvaluate = useCallback(
-    async () => {
+  useEffect(() => {
+    setSessionDetected(
+      Boolean(
+        getAccessKey(),
+      ),
+    );
+  }, []);
+
+  const handleEvaluate =
+    useCallback(async () => {
+      const normalizedSymbol =
+        symbol
+          .trim()
+          .toUpperCase();
+
+      if (!normalizedSymbol) {
+        setError(
+          "Symbol is required.",
+        );
+        return;
+      }
+
       const parsedQuantity =
         Number(quantity);
 
@@ -522,7 +694,9 @@ export default function ExecutionReadinessPage() {
       }
 
       const normalizedQuantity =
-        Math.floor(parsedQuantity);
+        Math.floor(
+          parsedQuantity,
+        );
 
       if (
         normalizedQuantity <= 0
@@ -551,13 +725,6 @@ export default function ExecutionReadinessPage() {
         return;
       }
 
-      if (!symbol.trim()) {
-        setError(
-          "Symbol is required.",
-        );
-        return;
-      }
-
       if (!reason.trim()) {
         setError(
           "Reason is required.",
@@ -569,45 +736,40 @@ export default function ExecutionReadinessPage() {
       setError("");
 
       try {
-        const data =
-          await evaluateReadiness(
-            {
-              symbol:
-                symbol
-                  .trim()
-                  .toUpperCase(),
+        const order: ExecutionOrder =
+          {
+            symbol:
+              normalizedSymbol,
+            market,
+            side,
+            quantity:
+              normalizedQuantity,
+            limitPrice:
+              parsedLimitPrice,
+            reason:
+              reason.trim(),
+          };
 
-              market,
-
-              side,
-
-              quantity:
-                normalizedQuantity,
-
-              limitPrice:
-                parsedLimitPrice,
-
-              reason:
-                reason.trim(),
-            },
+        const payload =
+          await requestReadiness(
+            order,
             taskId.trim(),
           );
 
-        setResult(data);
+        setResult(payload);
         setLoadedAt(
           new Date().toISOString(),
         );
-      } catch (err) {
+      } catch (value) {
         setError(
-          err instanceof Error
-            ? err.message
+          value instanceof Error
+            ? value.message
             : "Execution readiness evaluation failed.",
         );
       } finally {
         setLoading(false);
       }
-    },
-    [
+    }, [
       limitPrice,
       market,
       quantity,
@@ -615,20 +777,10 @@ export default function ExecutionReadinessPage() {
       side,
       symbol,
       taskId,
-    ],
-  );
-
-  useEffect(() => {
-    const key =
-      getAccessKey();
-
-    setSessionDetected(
-      Boolean(key),
-    );
-  }, []);
+    ]);
 
   const readiness =
-    result?.readiness;
+    result?.readiness ?? null;
 
   const decision =
     result?.controlDecision ??
@@ -637,11 +789,20 @@ export default function ExecutionReadinessPage() {
 
   const executionReady =
     result?.executionReady === true ||
-    readiness?.executionReady ===
-      true;
+    readiness?.executionReady === true;
 
-  const decisionVisual =
-    decisionState(decision);
+  const gates =
+    result?.gates ??
+    readiness?.gates;
+
+  const failures =
+    result?.failureCodes ??
+    readiness?.failureCodes ??
+    [];
+
+  const safety =
+    result?.safetyBoundary ??
+    readiness?.safetyBoundary;
 
   const risk =
     readiness?.preTradeRisk;
@@ -655,57 +816,48 @@ export default function ExecutionReadinessPage() {
   const brokerAdapter =
     readiness?.brokerAdapter;
 
-  const gates =
-    result?.gates ??
-    readiness?.gates;
+  const generatedAt =
+    result?.generatedAt ??
+    readiness?.generatedAt ??
+    loadedAt;
 
-  const safety =
-    result?.safetyBoundary ??
-    readiness?.safetyBoundary;
+  const decisionToneValue =
+    decisionTone(decision);
 
-  const failureCodes =
-    result?.failureCodes ??
-    readiness?.failureCodes ??
-    [];
+  const orderSummary =
+    useMemo(() => {
+      if (!readiness?.order) {
+        return null;
+      }
 
-  const nextRequirements =
-    readiness?.nextRequirements ??
-    [];
+      return readiness.order;
+    }, [readiness]);
 
   return (
     <main
       style={{
         minHeight: "100vh",
-        background: "#09090b",
+        background:
+          "#09090b",
         color: "#f4f4f5",
         padding:
-          "26px 18px 70px",
+          "28px 18px 70px",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       <div
         style={{
+          width: "100%",
           maxWidth: 1120,
           margin: "0 auto",
         }}
       >
         <header
           style={{
-            marginBottom: 24,
+            marginBottom: 22,
           }}
         >
-          <div
-            style={{
-              fontSize: 10,
-              letterSpacing: "0.14em",
-              opacity: 0.45,
-              marginBottom: 8,
-            }}
-          >
-            PRIVATE FOUNDER CONTROL
-          </div>
-
           <div
             style={{
               display: "flex",
@@ -718,12 +870,26 @@ export default function ExecutionReadinessPage() {
             }}
           >
             <div>
+              <div
+                style={{
+                  color: "#71717a",
+                  fontSize: 10,
+                  letterSpacing:
+                    "0.15em",
+                  marginBottom: 8,
+                }}
+              >
+                PRIVATE FOUNDER CONTROL
+              </div>
+
               <h1
                 style={{
                   margin: 0,
-                  fontSize: 30,
+                  fontSize:
+                    "clamp(26px, 4vw, 34px)",
+                  lineHeight: 1.1,
                   letterSpacing:
-                    "-0.02em",
+                    "-0.025em",
                 }}
               >
                 Execution Readiness
@@ -731,51 +897,51 @@ export default function ExecutionReadinessPage() {
 
               <p
                 style={{
+                  maxWidth: 820,
                   margin:
-                    "8px 0 0",
-                  opacity: 0.62,
-                  lineHeight: 1.6,
-                  fontSize: 13,
+                    "9px 0 0",
+                  color: "#71717a",
+                  fontSize: 12,
+                  lineHeight: 1.7,
                 }}
               >
-                Provider
-                {" -> "}
-                Commercial
-                {" -> "}
-                Risk
-                {" -> "}
-                Human Review
-                {" -> "}
-                Broker Verification
-                {" -> "}
-                Broker Adapter
-                {" -> "}
+                Provider {" -> "}
+                Commercial Authorization {" -> "}
+                Pre-Trade Risk {" -> "}
+                Human Review {" -> "}
+                Broker Verification {" -> "}
+                Broker Adapter {" -> "}
                 Final Readiness
               </p>
             </div>
 
-            <Badge
-              ok={sessionDetected}
+            <ToneBadge
+              tone={
+                sessionDetected
+                  ? "success"
+                  : "warning"
+              }
             >
               {sessionDetected
                 ? "Founder Session"
                 : "Session Required"}
-            </Badge>
+            </ToneBadge>
           </div>
         </header>
 
         {error ? (
           <div
             style={{
-              marginBottom: 16,
-              padding: 12,
-              borderRadius: 10,
+              marginBottom: 14,
+              padding: 13,
+              borderRadius: 11,
+              border:
+                "1px solid rgba(248,113,113,0.18)",
               background:
                 "rgba(248,113,113,0.08)",
-              border:
-                "1px solid rgba(248,113,113,0.16)",
               color: "#fca5a5",
               fontSize: 12,
+              lineHeight: 1.6,
             }}
           >
             {error}
@@ -789,8 +955,9 @@ export default function ExecutionReadinessPage() {
           }}
         >
           <Section
-            title="Readiness Evaluation"
             eyebrow="FOUNDER INPUT"
+            title="Readiness Evaluation"
+            description="Submit an execution intent for server-side readiness evaluation. This page never places an order."
           >
             <div
               style={{
@@ -800,15 +967,7 @@ export default function ExecutionReadinessPage() {
                 gap: 10,
               }}
             >
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Symbol
+              <InputLabel label="Symbol">
                 <input
                   value={symbol}
                   onChange={(event) =>
@@ -817,54 +976,24 @@ export default function ExecutionReadinessPage() {
                     )
                   }
                   placeholder="NVDA"
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    color:
-                      "#f4f4f5",
-                    outline: "none",
-                  }}
+                  style={
+                    inputStyle
+                  }
                 />
-              </label>
+              </InputLabel>
 
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Market
+              <InputLabel label="Market">
                 <select
                   value={market}
                   onChange={(event) =>
                     setMarket(
-                      event.target.value,
+                      event.target
+                        .value as Market,
                     )
                   }
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "#111113",
-                    color:
-                      "#f4f4f5",
-                  }}
+                  style={
+                    inputStyle
+                  }
                 >
                   <option value="us">
                     US
@@ -873,44 +1002,23 @@ export default function ExecutionReadinessPage() {
                     HK
                   </option>
                   <option value="cn">
-                    CN
+                    A-SHARE
                   </option>
                 </select>
-              </label>
+              </InputLabel>
 
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Side
+              <InputLabel label="Side">
                 <select
                   value={side}
                   onChange={(event) =>
                     setSide(
                       event.target
-                        .value as
-                        | "buy"
-                        | "sell",
+                        .value as Side,
                     )
                   }
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "#111113",
-                    color:
-                      "#f4f4f5",
-                  }}
+                  style={
+                    inputStyle
+                  }
                 >
                   <option value="buy">
                     Buy
@@ -919,17 +1027,9 @@ export default function ExecutionReadinessPage() {
                     Sell
                   </option>
                 </select>
-              </label>
+              </InputLabel>
 
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Quantity
+              <InputLabel label="Quantity">
                 <input
                   value={quantity}
                   onChange={(event) =>
@@ -938,34 +1038,13 @@ export default function ExecutionReadinessPage() {
                     )
                   }
                   inputMode="numeric"
-                  placeholder="1"
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    color:
-                      "#f4f4f5",
-                    outline: "none",
-                  }}
+                  style={
+                    inputStyle
+                  }
                 />
-              </label>
+              </InputLabel>
 
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Limit Price
+              <InputLabel label="Limit Price">
                 <input
                   value={limitPrice}
                   onChange={(event) =>
@@ -975,33 +1054,13 @@ export default function ExecutionReadinessPage() {
                   }
                   inputMode="decimal"
                   placeholder="Optional"
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    color:
-                      "#f4f4f5",
-                    outline: "none",
-                  }}
+                  style={
+                    inputStyle
+                  }
                 />
-              </label>
+              </InputLabel>
 
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 11,
-                  opacity: 0.72,
-                }}
-              >
-                Human Review Task ID
+              <InputLabel label="Human Review Task ID">
                 <input
                   value={taskId}
                   onChange={(event) =>
@@ -1009,64 +1068,39 @@ export default function ExecutionReadinessPage() {
                       event.target.value,
                     )
                   }
-                  placeholder="Optional persistent task"
-                  style={{
-                    width: "100%",
-                    boxSizing:
-                      "border-box",
-                    padding:
-                      "10px 11px",
-                    borderRadius: 9,
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    color:
-                      "#f4f4f5",
-                    outline: "none",
-                  }}
+                  placeholder="Optional persistent review ID"
+                  style={
+                    inputStyle
+                  }
                 />
-              </label>
-            </div>
+              </InputLabel>
 
-            <label
-              style={{
-                display: "grid",
-                gap: 6,
-                marginTop: 10,
-                fontSize: 11,
-                opacity: 0.72,
-              }}
-            >
-              Reason
-              <textarea
-                value={reason}
-                onChange={(event) =>
-                  setReason(
-                    event.target.value,
-                  )
-                }
-                rows={3}
+              <div
                 style={{
-                  width: "100%",
-                  boxSizing:
-                    "border-box",
-                  resize: "vertical",
-                  padding:
-                    "10px 11px",
-                  borderRadius: 9,
-                  border:
-                    "1px solid rgba(255,255,255,0.1)",
-                  background:
-                    "rgba(255,255,255,0.04)",
-                  color:
-                    "#f4f4f5",
-                  outline: "none",
-                  fontFamily:
-                    "inherit",
+                  gridColumn:
+                    "1 / -1",
                 }}
-              />
-            </label>
+              >
+                <InputLabel label="Reason">
+                  <textarea
+                    value={reason}
+                    onChange={(event) =>
+                      setReason(
+                        event.target.value,
+                      )
+                    }
+                    rows={3}
+                    style={{
+                      ...inputStyle,
+                      resize:
+                        "vertical",
+                      minHeight: 78,
+                      lineHeight: 1.55,
+                    }}
+                  />
+                </InputLabel>
+              </div>
+            </div>
 
             <div
               style={{
@@ -1080,27 +1114,32 @@ export default function ExecutionReadinessPage() {
             >
               <button
                 type="button"
-                onClick={() =>
-                  void handleEvaluate()
-                }
                 disabled={
                   loading ||
                   !sessionDetected
                 }
+                onClick={
+                  handleEvaluate
+                }
                 style={{
-                  border: "none",
-                  borderRadius: 10,
+                  minHeight: 42,
                   padding:
-                    "11px 16px",
+                    "0 16px",
+                  borderRadius: 10,
+                  border:
+                    "1px solid rgba(255,255,255,0.14)",
                   background:
-                    loading
-                      ? "rgba(255,255,255,0.08)"
+                    loading ||
+                    !sessionDetected
+                      ? "rgba(255,255,255,0.05)"
                       : "#f4f4f5",
                   color:
-                    loading
-                      ? "#a1a1aa"
+                    loading ||
+                    !sessionDetected
+                      ? "#71717a"
                       : "#09090b",
                   fontWeight: 700,
+                  fontSize: 12,
                   cursor:
                     loading ||
                     !sessionDetected
@@ -1115,11 +1154,11 @@ export default function ExecutionReadinessPage() {
 
               <span
                 style={{
+                  color: "#52525b",
                   fontSize: 11,
-                  opacity: 0.5,
                 }}
               >
-                Server-side readiness evaluation only.
+                Readiness only. No order execution.
               </span>
             </div>
           </Section>
@@ -1127,8 +1166,293 @@ export default function ExecutionReadinessPage() {
           {result ? (
             <>
               <Section
-                title="Final Readiness"
-                eyebrow="SERVER-SIDE DECISION"
+                eyebrow="FINAL DECISION"
+                title="Readiness Status"
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "space-between",
+                    gap: 16,
+                    flexWrap:
+                      "wrap",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        color: "#71717a",
+                        fontSize: 11,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Control Decision
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems:
+                          "center",
+                        gap: 10,
+                        flexWrap:
+                          "wrap",
+                      }}
+                    >
+                      <ToneBadge
+                        tone={
+                          decisionToneValue
+                        }
+                      >
+                        {formatDecision(
+                          decision,
+                        )}
+                      </ToneBadge>
+
+                      <span
+                        style={{
+                          color:
+                            executionReady
+                              ? "#86efac"
+                              : "#a1a1aa",
+                          fontSize: 13,
+                          fontWeight: 650,
+                        }}
+                      >
+                        {executionReady
+                          ? "Execution Ready"
+                          : "Execution Not Ready"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign:
+                        "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#71717a",
+                        fontSize: 10,
+                      }}
+                    >
+                      Runtime Stage
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 13,
+                        fontWeight: 650,
+                      }}
+                    >
+                      {result.stage ??
+                        "C167.5.37"}
+                    </div>
+                  </div>
+                </div>
+
+                {orderSummary ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(5, minmax(0, 1fr))",
+                      gap: 10,
+                      marginTop: 16,
+                    }}
+                  >
+                    <Metric
+                      label="Symbol"
+                      value={
+                        orderSummary.symbol
+                      }
+                    />
+                    <Metric
+                      label="Market"
+                      value={
+                        orderSummary.market.toUpperCase()
+                      }
+                    />
+                    <Metric
+                      label="Side"
+                      value={
+                        orderSummary.side.toUpperCase()
+                      }
+                    />
+                    <Metric
+                      label="Quantity"
+                      value={String(
+                        orderSummary.quantity,
+                      )}
+                    />
+                    <Metric
+                      label="Limit Price"
+                      value={
+                        orderSummary.limitPrice ===
+                        null
+                          ? "Not set"
+                          : formatNumber(
+                              orderSummary.limitPrice,
+                            )
+                      }
+                    />
+                  </div>
+                ) : null}
+              </Section>
+
+              <Section
+                eyebrow="CONTROL CHAIN"
+                title="Execution Gates"
+                description="Every gate is evaluated independently by the runtime. A readiness result does not enable live execution."
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <GateCard
+                    label="Provider"
+                    value={
+                      gates?.provider
+                    }
+                  />
+                  <GateCard
+                    label="Commercial"
+                    value={
+                      gates?.commercial
+                    }
+                  />
+                  <GateCard
+                    label="Pre-Trade Risk"
+                    value={
+                      gates?.preTradeRisk
+                    }
+                  />
+                  <GateCard
+                    label="Human Review"
+                    value={
+                      gates?.humanReview
+                    }
+                  />
+                  <GateCard
+                    label="Broker Connection"
+                    value={
+                      gates?.brokerConnection
+                    }
+                  />
+                  <GateCard
+                    label="Broker Adapter"
+                    value={
+                      gates?.brokerAdapter
+                    }
+                  />
+                  <GateCard
+                    label="Execution"
+                    value={
+                      gates?.execution
+                    }
+                  />
+                </div>
+              </Section>
+
+              <Section
+                eyebrow="MARKET DATA"
+                title="Provider"
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <Metric
+                    label="Provider ID"
+                    value={
+                      readiness
+                        ?.provider.id ??
+                      "Not configured"
+                    }
+                  />
+
+                  <Metric
+                    label="Technical Ready"
+                    value={
+                      formatBoolean(
+                        readiness
+                          ?.provider
+                          .technicalReady,
+                      )
+                    }
+                    tone={
+                      readiness
+                        ?.provider
+                        .technicalReady
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+
+                  <Metric
+                    label="Commercial Gate"
+                    value={
+                      formatBoolean(
+                        readiness
+                          ?.provider
+                          .commercialGateOpen,
+                      )
+                    }
+                    tone={
+                      readiness
+                        ?.provider
+                        .commercialGateOpen
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+
+                  <Metric
+                    label="Commercial Decision"
+                    value={formatDecision(
+                      readiness
+                        ?.provider
+                        .commercialDecision,
+                    )}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    background:
+                      "rgba(255,255,255,0.025)",
+                    color: "#a1a1aa",
+                    fontSize: 12,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  {readiness
+                    ?.provider
+                    .commercialReason ??
+                    "Commercial authorization information is not available."}
+                </div>
+              </Section>
+
+              <Section
+                eyebrow="RISK CONTROL"
+                title="Pre-Trade Risk"
               >
                 <div
                   style={{
@@ -1141,33 +1465,220 @@ export default function ExecutionReadinessPage() {
                   <Metric
                     label="Decision"
                     value={formatDecision(
-                      decision,
+                      risk?.decision,
+                    )}
+                    tone={decisionTone(
+                      risk?.decision,
                     )}
                   />
 
                   <Metric
-                    label="Execution Ready"
-                    value={
-                      executionReady
-                        ? "Yes"
-                        : "No"
+                    label="Passed"
+                    value={formatBoolean(
+                      risk?.passed,
+                    )}
+                    tone={
+                      risk?.passed
+                        ? "success"
+                        : "danger"
                     }
                   />
 
                   <Metric
-                    label="Stage"
-                    value={
-                      result.stage ??
-                      "C167.5.37"
+                    label="Review Required"
+                    value={formatBoolean(
+                      risk?.reviewRequired,
+                    )}
+                    tone={
+                      risk?.reviewRequired
+                        ? "warning"
+                        : "neutral"
                     }
                   />
 
                   <Metric
-                    label="Result"
+                    label="Estimated Notional"
+                    value={formatNumber(
+                      risk?.estimatedNotional,
+                    )}
+                  />
+                </div>
+
+                {risk?.blockedReasons
+                  ?.length ? (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "grid",
+                      gap: 7,
+                    }}
+                  >
+                    {risk.blockedReasons.map(
+                      (item) => (
+                        <div
+                          key={item}
+                          style={{
+                            padding: 10,
+                            borderRadius: 9,
+                            background:
+                              "rgba(248,113,113,0.06)",
+                            border:
+                              "1px solid rgba(248,113,113,0.12)",
+                            color:
+                              "#fca5a5",
+                            fontSize: 11,
+                          }}
+                        >
+                          {item}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </Section>
+
+              <Section
+                eyebrow="HUMAN CONTROL"
+                title="Persistent Human Review"
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <Metric
+                    label="Task ID"
                     value={
-                      result.success
-                        ? "Success"
-                        : "Blocked"
+                      humanReview
+                        ?.taskId ??
+                      "Not provided"
+                    }
+                  />
+
+                  <Metric
+                    label="Review Found"
+                    value={formatBoolean(
+                      humanReview
+                        ?.found,
+                    )}
+                    tone={
+                      humanReview?.found
+                        ? "success"
+                        : "warning"
+                    }
+                  />
+
+                  <Metric
+                    label="Required"
+                    value={formatBoolean(
+                      humanReview
+                        ?.required,
+                    )}
+                    tone="neutral"
+                  />
+
+                  <Metric
+                    label="Approved"
+                    value={formatBoolean(
+                      humanReview
+                        ?.approved,
+                    )}
+                    tone={
+                      humanReview?.approved
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(3, minmax(0, 1fr))",
+                    gap: 10,
+                    marginTop: 10,
+                  }}
+                >
+                  <Metric
+                    label="Decision"
+                    value={formatDecision(
+                      humanReview
+                        ?.decision,
+                    )}
+                  />
+
+                  <Metric
+                    label="Status"
+                    value={formatDecision(
+                      humanReview
+                        ?.status,
+                    )}
+                  />
+
+                  <Metric
+                    label="Review ID"
+                    value={
+                      humanReview
+                        ?.reviewId ??
+                      "Not recorded"
+                    }
+                  />
+                </div>
+              </Section>
+
+              <Section
+                eyebrow="BROKER CONTROL"
+                title="Broker Connection Verification"
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(4, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <Metric
+                    label="Broker"
+                    value={
+                      brokerConnection
+                        ?.brokerId ??
+                      "unconfigured"
+                    }
+                  />
+
+                  <Metric
+                    label="Status"
+                    value={
+                      brokerConnection
+                        ?.status ??
+                      "unknown"
+                    }
+                  />
+
+                  <Metric
+                    label="Decision"
+                    value={formatDecision(
+                      brokerConnection
+                        ?.decision,
+                    )}
+                  />
+
+                  <Metric
+                    label="Gate"
+                    value={formatBoolean(
+                      brokerConnection
+                        ?.gateOpen,
+                    )}
+                    tone={
+                      brokerConnection
+                        ?.gateOpen
+                        ? "success"
+                        : "danger"
                     }
                   />
                 </div>
@@ -1175,104 +1686,65 @@ export default function ExecutionReadinessPage() {
                 <div
                   style={{
                     marginTop: 12,
-                    display: "flex",
-                    alignItems:
-                      "center",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Badge
-                    ok={
-                      decisionVisual.ok
-                    }
-                    warning={
-                      decisionVisual.warning
-                    }
-                  >
-                    {executionReady
-                      ? "Execution Readiness Open"
-                      : "Execution Readiness Closed"}
-                  </Badge>
-
-                  <span
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.62,
-                    }}
-                  >
-                    Final readiness is deliberately
-                    independent from research and
-                    authorization claims.
-                  </span>
-                </div>
-              </Section>
-
-              <Section
-                title="Order Intent"
-                eyebrow="EVALUATED REQUEST"
-              >
-                <div
-                  style={{
                     display: "grid",
                     gridTemplateColumns:
-                      "repeat(6, minmax(0, 1fr))",
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
-                    label="Symbol"
-                    value={
-                      result.orderIntent
-                        ?.symbol ??
-                      symbol.toUpperCase()
-                    }
-                  />
-
-                  <Metric
-                    label="Market"
-                    value={
-                      result.orderIntent
-                        ?.market ??
-                      market
-                    }
-                  />
-
-                  <Metric
-                    label="Side"
-                    value={
-                      result.orderIntent
-                        ?.side ??
-                      side
-                    }
-                  />
-
-                  <Metric
-                    label="Quantity"
-                    value={String(
-                      result.orderIntent
-                        ?.quantity ??
-                        quantity,
+                    label="Connection"
+                    value={formatBoolean(
+                      brokerConnection
+                        ?.connectionVerified,
                     )}
-                  />
-
-                  <Metric
-                    label="Limit Price"
-                    value={
-                      result.orderIntent?.limitPrice != null
-                        ? String(
-                            result.orderIntent.limitPrice,
-                          )
-                        : "Market"
+                    tone={
+                      brokerConnection
+                        ?.connectionVerified
+                        ? "success"
+                        : "danger"
                     }
                   />
 
                   <Metric
-                    label="Task ID"
-                    value={
-                      result
-                        .humanReviewTaskId ??
-                      "Not supplied"
+                    label="Credentials"
+                    value={formatBoolean(
+                      brokerConnection
+                        ?.credentialsVerified,
+                    )}
+                    tone={
+                      brokerConnection
+                        ?.credentialsVerified
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+
+                  <Metric
+                    label="Account"
+                    value={formatBoolean(
+                      brokerConnection
+                        ?.accountVerified,
+                    )}
+                    tone={
+                      brokerConnection
+                        ?.accountVerified
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+
+                  <Metric
+                    label="Verification Complete"
+                    value={formatBoolean(
+                      brokerConnection
+                        ?.verificationComplete,
+                    )}
+                    tone={
+                      brokerConnection
+                        ?.verificationComplete
+                        ? "success"
+                        : "danger"
                     }
                   />
                 </div>
@@ -1283,516 +1755,18 @@ export default function ExecutionReadinessPage() {
                     padding: 12,
                     borderRadius: 10,
                     background:
-                      "rgba(255,255,255,0.035)",
+                      "rgba(255,255,255,0.025)",
+                    color: "#a1a1aa",
                     fontSize: 12,
-                    lineHeight: 1.6,
-                    opacity: 0.7,
+                    lineHeight: 1.65,
                   }}
                 >
-                  {result.orderIntent
+                  {brokerConnection
                     ?.reason ??
-                    reason}
-                </div>
-              </Section>
-
-              <Section
-                title="Provider Gate"
-                eyebrow="MARKET DATA"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(5, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Provider"
-                    value={
-                      readiness?.provider
-                        ?.id ??
-                      "None"
-                    }
-                  />
-
-                  <Metric
-                    label="Configured"
-                    value={boolText(
-                      readiness
-                        ?.provider
-                        ?.configured,
-                    )}
-                  />
-
-                  <Metric
-                    label="Technical"
-                    value={
-                      readiness
-                        ?.provider
-                        ?.technicalReady
-                        ? "Ready"
-                        : "Blocked"
-                    }
-                  />
-
-                  <Metric
-                    label="Commercial"
-                    value={
-                      readiness
-                        ?.provider
-                        ?.commercialReady
-                        ? "Ready"
-                        : "Blocked"
-                    }
-                  />
-
-                  <Metric
-                    label="Status"
-                    value={
-                      readiness
-                        ?.provider
-                        ?.status ??
-                      "Unknown"
-                    }
-                  />
-                </div>
-              </Section>
-
-              <Section
-                title="Commercial Authorization"
-                eyebrow="INDEPENDENT AUTHORIZATION GATE"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(5, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Decision"
-                    value={formatDecision(
-                      readiness
-                        ?.commercialAuthorization
-                        ?.decision,
-                    )}
-                  />
-
-                  <Metric
-                    label="Authorized"
-                    value={boolText(
-                      readiness
-                        ?.commercialAuthorization
-                        ?.authorized,
-                    )}
-                  />
-
-                  <Metric
-                    label="Gate"
-                    value={
-                      readiness
-                        ?.commercialAuthorization
-                        ?.gateOpen
-                        ? "Open"
-                        : "Closed"
-                    }
-                  />
-
-                  <Metric
-                    label="Source"
-                    value={
-                      readiness
-                        ?.commercialAuthorization
-                        ?.source ??
-                      "Unknown"
-                    }
-                  />
-
-                  <Metric
-                    label="Verified By"
-                    value={
-                      readiness
-                        ?.commercialAuthorization
-                        ?.verifiedBy ??
-                      "Not recorded"
-                    }
-                  />
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 11,
-                    borderRadius: 9,
-                    background:
-                      "rgba(251,191,36,0.06)",
-                    border:
-                      "1px solid rgba(251,191,36,0.12)",
-                    color: "#fcd34d",
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Technical provider access, account entitlement,
-                  and realtime verification do not automatically
-                  authorize commercial use.
-                </div>
-              </Section>
-
-              <Section
-                title="Pre-Trade Risk"
-                eyebrow="RISK CONTROL"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(5, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Decision"
-                    value={formatDecision(
-                      risk?.decision,
-                    )}
-                  />
-
-                  <Metric
-                    label="Approved"
-                    value={boolText(
-                      risk?.approved,
-                    )}
-                  />
-
-                  <Metric
-                    label="Estimated Notional"
-                    value={
-                      risk
-                        ?.estimatedNotional !=
-                      null
-                        ? String(
-                            risk.estimatedNotional,
-                          )
-                        : "Not available"
-                    }
-                  />
-
-                  <Metric
-                    label="Review Required"
-                    value={boolText(
-                      risk?.reviewRequired,
-                    )}
-                  />
-
-                  <Metric
-                    label="Policy"
-                    value={
-                      risk?.policy
-                        ?.version ??
-                      "Unknown"
-                    }
-                  />
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(6, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Order Valid"
-                    value={boolText(
-                      risk?.checks
-                        ?.orderValid,
-                    )}
-                  />
-
-                  <Metric
-                    label="Market"
-                    value={boolText(
-                      risk?.checks
-                        ?.marketAllowed,
-                    )}
-                  />
-
-                  <Metric
-                    label="Quantity"
-                    value={boolText(
-                      risk?.checks
-                        ?.quantityWithinLimit,
-                    )}
-                  />
-
-                  <Metric
-                    label="Notional"
-                    value={boolText(
-                      risk?.checks
-                        ?.notionalWithinLimit,
-                    )}
-                  />
-
-                  <Metric
-                    label="Limit Price"
-                    value={boolText(
-                      risk?.checks
-                        ?.limitPriceValid,
-                    )}
-                  />
-
-                  <Metric
-                    label="Review"
-                    value={boolText(
-                      risk?.checks
-                        ?.reviewRequired,
-                    )}
-                  />
-                </div>
-
-                {risk?.blockedReasons
-                  ?.length ? (
-                  <ul
-                    style={{
-                      margin:
-                        "12px 0 0",
-                      paddingLeft: 20,
-                      fontSize: 12,
-                      lineHeight: 1.7,
-                      color: "#fca5a5",
-                    }}
-                  >
-                    {risk.blockedReasons.map(
-                      (item) => (
-                        <li key={item}>
-                          {item}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                ) : null}
-              </Section>
-
-              <Section
-                title="Persistent Human Review"
-                eyebrow="EXPLICIT HUMAN DECISION"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(6, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Task"
-                    value={
-                      humanReview
-                        ?.taskId ??
-                      result.humanReviewTaskId ??
-                      "Not supplied"
-                    }
-                  />
-
-                  <Metric
-                    label="Found"
-                    value={boolText(
-                      humanReview?.found,
-                    )}
-                  />
-
-                  <Metric
-                    label="Required"
-                    value={boolText(
-                      humanReview?.required,
-                    )}
-                  />
-
-                  <Metric
-                    label="Requested"
-                    value={boolText(
-                      humanReview?.requested,
-                    )}
-                  />
-
-                  <Metric
-                    label="Decision"
-                    value={formatDecision(
-                      humanReview?.decision,
-                    )}
-                  />
-
-                  <Metric
-                    label="Approved"
-                    value={boolText(
-                      humanReview?.approved,
-                    )}
-                  />
-                </div>
-
-                {humanReview?.reason ? (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: 12,
-                      borderRadius: 10,
-                      background:
-                        "rgba(255,255,255,0.035)",
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      opacity: 0.7,
-                    }}
-                  >
-                    {humanReview.reason}
-                  </div>
-                ) : null}
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 11,
-                    borderRadius: 9,
-                    background:
-                      "rgba(251,191,36,0.06)",
-                    border:
-                      "1px solid rgba(251,191,36,0.12)",
-                    color: "#fcd34d",
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Only an explicit accepted persistent human review
-                  can satisfy this gate. Acknowledgement, silence,
-                  deferred, or rejected decisions do not authorize execution.
-                </div>
-              </Section>
-
-              <Section
-                title="Broker Connection Verification"
-                eyebrow="BROKER CONTROL"
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(6, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Broker"
-                    value={
-                      brokerConnection
-                        ?.broker
-                        ?.brokerId ??
-                      "Not configured"
-                    }
-                  />
-
-                  <Metric
-                    label="Status"
-                    value={
-                      brokerConnection
-                        ?.broker
-                        ?.status ??
-                      "Unknown"
-                    }
-                  />
-
-                  <Metric
-                    label="Decision"
-                    value={formatDecision(
-                      brokerConnection
-                        ?.broker
-                        ?.decision,
-                    )}
-                  />
-
-                  <Metric
-                    label="Connection"
-                    value={boolText(
-                      brokerConnection
-                        ?.broker
-                        ?.connectionVerified,
-                    )}
-                  />
-
-                  <Metric
-                    label="Credentials"
-                    value={boolText(
-                      brokerConnection
-                        ?.broker
-                        ?.credentialsVerified,
-                    )}
-                  />
-
-                  <Metric
-                    label="Account"
-                    value={boolText(
-                      brokerConnection
-                        ?.broker
-                        ?.accountVerified,
-                    )}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(4, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <Metric
-                    label="Verification Complete"
-                    value={boolText(
-                      brokerConnection
-                        ?.verification
-                        ?.verificationComplete,
-                    )}
-                  />
-
-                  <Metric
-                    label="Gate"
-                    value={
-                      brokerConnection
-                        ?.gate
-                        ?.open
-                        ? "Open"
-                        : "Closed"
-                    }
-                  />
-
-                  <Metric
-                    label="Execution Enabled"
-                    value={boolText(
-                      brokerConnection
-                        ?.broker
-                        ?.executionEnabled,
-                    )}
-                  />
-
-                  <Metric
-                    label="Source"
-                    value={
-                      brokerConnection
-                        ?.broker
-                        ?.source ??
-                      "Unknown"
-                    }
-                  />
+                    "Broker connection verification is not complete."}
                 </div>
 
                 {brokerConnection
-                  ?.broker
                   ?.failureCodes
                   ?.length ? (
                   <ul
@@ -1800,12 +1774,13 @@ export default function ExecutionReadinessPage() {
                       margin:
                         "12px 0 0",
                       paddingLeft: 20,
-                      fontSize: 12,
-                      lineHeight: 1.7,
-                      color: "#fca5a5",
+                      color:
+                        "#fca5a5",
+                      fontSize: 11,
+                      lineHeight: 1.75,
                     }}
                   >
-                    {brokerConnection.broker.failureCodes.map(
+                    {brokerConnection.failureCodes.map(
                       (item) => (
                         <li key={item}>
                           {item}
@@ -1817,19 +1792,19 @@ export default function ExecutionReadinessPage() {
               </Section>
 
               <Section
-                title="Broker Execution Adapter"
                 eyebrow="EXECUTION ADAPTER"
+                title="Broker Adapter"
               >
                 <div
                   style={{
                     display: "grid",
                     gridTemplateColumns:
-                      "repeat(5, minmax(0, 1fr))",
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
                   <Metric
-                    label="Adapter"
+                    label="Adapter ID"
                     value={
                       brokerAdapter
                         ?.id ??
@@ -1839,36 +1814,46 @@ export default function ExecutionReadinessPage() {
 
                   <Metric
                     label="Configured"
-                    value={boolText(
+                    value={formatBoolean(
                       brokerAdapter
                         ?.configured,
                     )}
+                    tone={
+                      brokerAdapter
+                        ?.configured
+                        ? "success"
+                        : "danger"
+                    }
                   />
 
                   <Metric
                     label="Ready"
-                    value={boolText(
+                    value={formatBoolean(
                       brokerAdapter
                         ?.ready,
                     )}
+                    tone={
+                      brokerAdapter
+                        ?.ready
+                        ? "success"
+                        : "danger"
+                    }
                   />
 
                   <Metric
-                    label="Available"
-                    value={boolText(
+                    label="Execution Enabled"
+                    value={formatBoolean(
                       brokerAdapter
                         ?.capabilities
-                        ?.available,
+                        .executionEnabled,
                     )}
-                  />
-
-                  <Metric
-                    label="Execution"
-                    value={boolText(
+                    tone={
                       brokerAdapter
                         ?.capabilities
-                        ?.executionEnabled,
-                    )}
+                        .executionEnabled
+                        ? "success"
+                        : "neutral"
+                    }
                   />
                 </div>
 
@@ -1882,225 +1867,159 @@ export default function ExecutionReadinessPage() {
                   }}
                 >
                   <Metric
-                    label="Live Orders"
-                    value={boolText(
+                    label="Available"
+                    value={formatBoolean(
                       brokerAdapter
                         ?.capabilities
-                        ?.supportsLiveOrders,
+                        .available,
+                    )}
+                  />
+
+                  <Metric
+                    label="Connection Verified"
+                    value={formatBoolean(
+                      brokerAdapter
+                        ?.capabilities
+                        .connectionVerified,
+                    )}
+                  />
+
+                  <Metric
+                    label="Credentials Verified"
+                    value={formatBoolean(
+                      brokerAdapter
+                        ?.capabilities
+                        .credentialsVerified,
+                    )}
+                  />
+
+                  <Metric
+                    label="Account Verified"
+                    value={formatBoolean(
+                      brokerAdapter
+                        ?.capabilities
+                        .accountVerified,
+                    )}
+                  />
+
+                  <Metric
+                    label="Live Orders"
+                    value={formatBoolean(
+                      brokerAdapter
+                        ?.capabilities
+                        .supportsLiveOrders,
                     )}
                   />
 
                   <Metric
                     label="Paper Orders"
-                    value={boolText(
+                    value={formatBoolean(
                       brokerAdapter
                         ?.capabilities
-                        ?.supportsPaperOrders,
+                        .supportsPaperOrders,
                     )}
                   />
 
                   <Metric
                     label="Cancel Orders"
-                    value={boolText(
+                    value={formatBoolean(
                       brokerAdapter
                         ?.capabilities
-                        ?.supportsCancelOrders,
+                        .supportsCancelOrders,
                     )}
                   />
 
                   <Metric
                     label="Order Status"
-                    value={boolText(
+                    value={formatBoolean(
                       brokerAdapter
                         ?.capabilities
-                        ?.supportsOrderStatus,
+                        .supportsOrderStatus,
                     )}
                   />
                 </div>
 
-                {brokerAdapter
-                  ?.diagnostic
-                  ?.blockedReasons
-                  ?.length ? (
-                  <ul
-                    style={{
-                      margin:
-                        "12px 0 0",
-                      paddingLeft: 20,
-                      fontSize: 12,
-                      lineHeight: 1.7,
-                      color: "#fca5a5",
-                    }}
-                  >
-                    {brokerAdapter.diagnostic.blockedReasons.map(
-                      (item) => (
-                        <li key={item}>
-                          {item}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                ) : null}
-              </Section>
-
-              <Section
-                title="Execution Gates"
-                eyebrow="FINAL CONTROL CHAIN"
-              >
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(4, minmax(0, 1fr))",
-                    gap: 10,
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    background:
+                      "rgba(255,255,255,0.025)",
+                    color: "#a1a1aa",
+                    fontSize: 11,
+                    lineHeight: 1.65,
                   }}
                 >
-                  {[
-                    [
-                      "Provider",
-                      gates?.providerGate,
-                    ],
-                    [
-                      "Technical Provider",
-                      gates?.technicalProviderGate,
-                    ],
-                    [
-                      "Commercial",
-                      gates?.commercialGate,
-                    ],
-                    [
-                      "Pre-Trade Risk",
-                      gates?.preTradeRiskGate,
-                    ],
-                    [
-                      "Human Review",
-                      gates?.persistentHumanReviewGate,
-                    ],
-                    [
-                      "Broker Verification",
-                      gates?.brokerConnectionVerificationGate,
-                    ],
-                    [
-                      "Broker Adapter",
-                      gates?.brokerAdapterGate,
-                    ],
-                    [
-                      "Execution",
-                      gates?.executionGate,
-                    ],
-                  ].map(
-                    ([label, value]) => {
-                      const state =
-                        gateState(
-                          value as
-                            | boolean
-                            | undefined,
-                        );
-
-                      return (
-                        <div
-                          key={
-                            label as string
-                          }
-                          style={{
-                            padding: 12,
-                            borderRadius: 10,
-                            background:
-                              "rgba(255,255,255,0.035)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems:
-                                "center",
-                              justifyContent:
-                                "space-between",
-                              gap: 8,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 12,
-                                opacity: 0.7,
-                              }}
-                            >
-                              {label as string}
-                            </span>
-
-                            <Badge
-                              ok={
-                                state.ok
-                              }
-                              warning={
-                                state.warning
-                              }
-                            >
-                              {value
-                                ? "Passed"
-                                : "Blocked"}
-                            </Badge>
-                          </div>
-                        </div>
-                      );
-                    },
-                  )}
+                  Supported markets:{" "}
+                  {brokerAdapter
+                    ?.capabilities
+                    .supportedMarkets
+                    ?.map(
+                      (item) =>
+                        item.toUpperCase(),
+                    )
+                    .join(", ") ??
+                    "Not reported"}
                 </div>
               </Section>
 
-              {failureCodes.length ? (
+              {failures.length ? (
                 <Section
-                  title="Failure Codes"
                   eyebrow="BLOCKING CONDITIONS"
+                  title="Failure Codes"
+                  description="These are the runtime conditions preventing a fully executable state."
                 >
-                  <ul
+                  <div
                     style={{
-                      margin: 0,
-                      paddingLeft: 20,
-                      fontSize: 12,
-                      lineHeight: 1.8,
-                      color: "#fca5a5",
+                      display: "grid",
+                      gap: 7,
                     }}
                   >
-                    {failureCodes.map(
+                    {failures.map(
                       (item) => (
-                        <li key={item}>
-                          {item}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                </Section>
-              ) : null}
+                        <div
+                          key={item}
+                          style={{
+                            display: "flex",
+                            alignItems:
+                              "center",
+                            gap: 9,
+                            padding:
+                              "10px 11px",
+                            borderRadius: 9,
+                            background:
+                              "rgba(248,113,113,0.055)",
+                            border:
+                              "1px solid rgba(248,113,113,0.11)",
+                          }}
+                        >
+                          <ToneBadge tone="danger">
+                            Blocked
+                          </ToneBadge>
 
-              {nextRequirements.length ? (
-                <Section
-                  title="Next Requirements"
-                  eyebrow="REMAINING CONTROLS"
-                >
-                  <ul
-                    style={{
-                      margin: 0,
-                      paddingLeft: 20,
-                      fontSize: 12,
-                      lineHeight: 1.8,
-                      opacity: 0.72,
-                    }}
-                  >
-                    {nextRequirements.map(
-                      (item) => (
-                        <li key={item}>
-                          {item}
-                        </li>
+                          <code
+                            style={{
+                              color:
+                                "#fca5a5",
+                              fontSize: 11,
+                              overflowWrap:
+                                "anywhere",
+                            }}
+                          >
+                            {item}
+                          </code>
+                        </div>
                       ),
                     )}
-                  </ul>
+                  </div>
                 </Section>
               ) : null}
 
               <Section
+                eyebrow="SAFETY BOUNDARY"
                 title="Execution Safety Boundary"
-                eyebrow="NON-AUTOMATIC EXECUTION"
+                description="This runtime intentionally stops before actual trading execution."
               >
                 <div
                   style={{
@@ -2112,9 +2031,55 @@ export default function ExecutionReadinessPage() {
                 >
                   <Metric
                     label="Founder Only"
-                    value={boolText(
+                    value={formatBoolean(
                       safety?.founderOnly,
                     )}
+                    tone="success"
+                  />
+
+                  <Metric
+                    label="Automatic Execution"
+                    value={formatBoolean(
+                      safety?.automaticExecution,
+                    )}
+                  />
+
+                  <Metric
+                    label="Live Order Placement"
+                    value={formatBoolean(
+                      safety?.liveOrderPlacement,
+                    )}
+                  />
+
+                  <Metric
+                    label="Trading Executed"
+                    value={formatBoolean(
+                      safety?.tradingExecuted,
+                    )}
+                  />
+
+                  <Metric
+                    label="Caller Override"
+                    value={formatBoolean(
+                      safety?.callerCanOverride,
+                    )}
+                  />
+
+                  <Metric
+                    label="Caller Bypass"
+                    value={formatBoolean(
+                      safety?.callerCanBypass,
+                    )}
+                  />
+
+                  <Metric
+                    label="Commercial Auth"
+                    value={
+                      safety
+                        ?.commercialAuthorizationRequired
+                        ? "Required"
+                        : "Not required"
+                    }
                   />
 
                   <Metric
@@ -2123,7 +2088,7 @@ export default function ExecutionReadinessPage() {
                       safety
                         ?.preTradeRiskRequired
                         ? "Required"
-                        : "Disabled"
+                        : "Not required"
                     }
                   />
 
@@ -2133,131 +2098,68 @@ export default function ExecutionReadinessPage() {
                       safety
                         ?.persistentHumanReviewRequired
                         ? "Required"
-                        : "Disabled"
+                        : "Not required"
                     }
                   />
 
                   <Metric
-                    label="Commercial Auth"
+                    label="Broker Verification"
                     value={
                       safety
-                        ?.commercialAuthorizationRequired
+                        ?.brokerConnectionVerificationRequired
                         ? "Required"
-                        : "Disabled"
+                        : "Not required"
                     }
                   />
 
                   <Metric
-                    label="Broker Connection"
+                    label="Broker Adapter"
                     value={
                       safety
-                        ?.brokerConnectionRequired
+                        ?.brokerExecutionAdapterRequired
                         ? "Required"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Execution Adapter"
-                    value={
-                      safety
-                        ?.executionAdapterRequired
-                        ? "Required"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Automatic Execution"
-                    value={
-                      safety
-                        ?.automaticExecution
-                        ? "Enabled"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Live Order Placement"
-                    value={
-                      safety
-                        ?.liveOrderPlacement
-                        ? "Enabled"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Trading Executed"
-                    value={
-                      safety
-                        ?.tradingExecuted
-                        ? "Yes"
-                        : "No"
+                        : "Not required"
                     }
                   />
 
                   <Metric
                     label="Live Execution"
-                    value={
-                      safety
-                        ?.liveExecutionEnabled
-                        ? "Enabled"
-                        : "Disabled"
-                    }
-                  />
-
-                  <Metric
-                    label="Caller Override"
-                    value={
-                      safety
-                        ?.callerCanOverride
-                        ? "Allowed"
-                        : "Blocked"
-                    }
-                  />
-
-                  <Metric
-                    label="Caller Bypass"
-                    value={
-                      safety
-                        ?.callerCanBypass
-                        ? "Allowed"
-                        : "Blocked"
-                    }
+                    value={formatBoolean(
+                      safety?.liveExecutionEnabled,
+                    )}
                   />
                 </div>
 
                 <div
                   style={{
                     marginTop: 14,
-                    padding: 12,
+                    padding: 13,
                     borderRadius: 10,
-                    background:
-                      "rgba(251,191,36,0.06)",
                     border:
-                      "1px solid rgba(251,191,36,0.12)",
+                      "1px solid rgba(251,191,36,0.13)",
+                    background:
+                      "rgba(251,191,36,0.055)",
                     color: "#fcd34d",
                     fontSize: 11,
-                    lineHeight: 1.65,
+                    lineHeight: 1.7,
                   }}
                 >
-                  This page evaluates execution readiness only.
-                  It does not place orders, connect to a broker,
-                  verify credentials on behalf of the caller,
-                  bypass risk controls, or enable live execution.
+                  Readiness evaluation only. This page does not
+                  place orders, does not enable live execution,
+                  does not bypass risk controls, and does not
+                  allow the caller to override the execution boundary.
                 </div>
               </Section>
 
               <Section
+                eyebrow="RUNTIME DIAGNOSTIC"
                 title="Runtime Metadata"
-                eyebrow="DIAGNOSTIC"
               >
                 <div
                   style={{
                     display: "grid",
                     gridTemplateColumns:
-                      "repeat(3, minmax(0, 1fr))",
+                      "repeat(4, minmax(0, 1fr))",
                     gap: 10,
                   }}
                 >
@@ -2278,10 +2180,21 @@ export default function ExecutionReadinessPage() {
                   />
 
                   <Metric
+                    label="Success"
+                    value={formatBoolean(
+                      result.success,
+                    )}
+                    tone={
+                      result.success
+                        ? "success"
+                        : "danger"
+                    }
+                  />
+
+                  <Metric
                     label="Generated At"
                     value={
-                      result.generatedAt ??
-                      loadedAt ??
+                      generatedAt ??
                       "Not recorded"
                     }
                   />
@@ -2290,8 +2203,8 @@ export default function ExecutionReadinessPage() {
             </>
           ) : (
             <Section
-              title="Execution Readiness"
               eyebrow="WAITING FOR EVALUATION"
+              title="Execution Readiness"
             >
               <div
                 style={{
@@ -2299,14 +2212,14 @@ export default function ExecutionReadinessPage() {
                   borderRadius: 12,
                   background:
                     "rgba(255,255,255,0.025)",
-                  color: "#a1a1aa",
-                  fontSize: 13,
+                  color: "#71717a",
+                  fontSize: 12,
                   lineHeight: 1.7,
                 }}
               >
-                Configure the order intent above and run
-                the server-side readiness evaluation.
-                No order will be placed.
+                Configure the execution intent above and run
+                the server-side readiness evaluation. No order
+                will be placed.
               </div>
             </Section>
           )}
