@@ -5,7 +5,8 @@ import {
 export type AIOSUsageType =
   | "execution"
   | "memory"
-  | "automation";
+  | "automation"
+  | "market-research";
 
 export interface UsageCheckResult {
   allowed: boolean;
@@ -20,10 +21,39 @@ export interface UsageCheckResult {
     | "unlimited";
 }
 
+export interface MarketResearchUsage {
+  reportsThisMonth: number;
+}
+
+export interface MarketResearchUsageCheck
+  extends UsageCheckResult {
+  type: "market-research";
+  period: "month";
+}
+
+function normalizeCurrentUsage(
+  current: number,
+): number {
+  if (
+    !Number.isFinite(
+      current,
+    )
+  ) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.floor(
+      current,
+    ),
+  );
+}
+
 function getLimit(
   planId: string,
   type: AIOSUsageType,
-) {
+): number | null {
   if (
     type ===
     "execution"
@@ -44,9 +74,19 @@ function getLimit(
     );
   }
 
+  if (
+    type ===
+    "automation"
+  ) {
+    return getPlanLimit(
+      planId,
+      "automationJobs",
+    );
+  }
+
   return getPlanLimit(
     planId,
-    "automationJobs",
+    "marketResearchReportsPerMonth",
   );
 }
 
@@ -55,6 +95,11 @@ export function checkUsageLimit(
   type: AIOSUsageType,
   current: number,
 ): UsageCheckResult {
+  const normalizedCurrent =
+    normalizeCurrentUsage(
+      current,
+    );
+
   const limit =
     getLimit(
       planId,
@@ -69,7 +114,8 @@ export function checkUsageLimit(
       allowed: true,
       type,
       planId,
-      current,
+      current:
+        normalizedCurrent,
       limit: null,
       remaining: null,
       reason:
@@ -80,18 +126,20 @@ export function checkUsageLimit(
   const remaining =
     Math.max(
       0,
-      limit - current,
+      limit -
+        normalizedCurrent,
     );
 
   if (
-    current >=
+    normalizedCurrent >=
     limit
   ) {
     return {
       allowed: false,
       type,
       planId,
-      current,
+      current:
+        normalizedCurrent,
       limit,
       remaining: 0,
       reason:
@@ -103,12 +151,44 @@ export function checkUsageLimit(
     allowed: true,
     type,
     planId,
-    current,
+    current:
+      normalizedCurrent,
     limit,
     remaining,
     reason:
       "allowed",
   };
+}
+
+export function checkMarketResearchUsage(
+  planId: string,
+  reportsThisMonth: number,
+): MarketResearchUsageCheck {
+  const result =
+    checkUsageLimit(
+      planId,
+      "market-research",
+      reportsThisMonth,
+    );
+
+  return {
+    ...result,
+    type:
+      "market-research",
+    period:
+      "month",
+  };
+}
+
+export function getMarketResearchUsageSnapshot(
+  planId: string,
+  usage?: MarketResearchUsage,
+): MarketResearchUsageCheck {
+  return checkMarketResearchUsage(
+    planId,
+    usage?.reportsThisMonth ??
+      0,
+  );
 }
 
 export function getUsageSnapshot(
@@ -117,6 +197,7 @@ export function getUsageSnapshot(
     executionsToday?: number;
     memoryItems?: number;
     automationJobs?: number;
+    marketResearchReportsThisMonth?: number;
   },
 ) {
   const executionsToday =
@@ -129,6 +210,10 @@ export function getUsageSnapshot(
 
   const automationJobs =
     usage?.automationJobs ??
+    0;
+
+  const marketResearchReportsThisMonth =
+    usage?.marketResearchReportsThisMonth ??
     0;
 
   return {
@@ -151,6 +236,15 @@ export function getUsageSnapshot(
         planId,
         "automation",
         automationJobs,
+      ),
+
+    marketResearch:
+      getMarketResearchUsageSnapshot(
+        planId,
+        {
+          reportsThisMonth:
+            marketResearchReportsThisMonth,
+        },
       ),
   };
 }
