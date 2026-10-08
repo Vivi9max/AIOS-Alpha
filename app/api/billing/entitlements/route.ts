@@ -86,6 +86,14 @@ function getUsageFromRequest(
         "0",
     );
 
+  const marketResearch =
+    Number(
+      params.get(
+        "marketResearchReportsThisMonth",
+      ) ??
+        "0",
+    );
+
   return {
     executionsToday:
       Number.isFinite(
@@ -109,6 +117,14 @@ function getUsageFromRequest(
       ) &&
       automation >= 0
         ? automation
+        : 0,
+
+    marketResearchReportsThisMonth:
+      Number.isFinite(
+        marketResearch,
+      ) &&
+      marketResearch >= 0
+        ? marketResearch
         : 0,
   };
 }
@@ -197,6 +213,32 @@ export async function GET(
 
     usage:
       usageSnapshot,
+
+    marketResearch: {
+      capability:
+        entitlement.capabilities.includes(
+          "market-research",
+        ),
+
+      monthlyLimit:
+        entitlement.limits
+          .marketResearchReportsPerMonth,
+
+      reportsThisMonth:
+        usageSnapshot
+          .marketResearch
+          .current,
+
+      remaining:
+        usageSnapshot
+          .marketResearch
+          .remaining,
+
+      allowed:
+        usageSnapshot
+          .marketResearch
+          .allowed,
+    },
 
     capabilityMatrix:
       getCapabilityMatrix(),
@@ -297,6 +339,7 @@ export async function POST(
     "advanced-providers",
     "api",
     "team-workspace",
+    "market-research",
   ];
 
   if (
@@ -336,6 +379,21 @@ export async function POST(
       capability as AIOSCapability,
     );
 
+  const usage =
+    getUsageSnapshot(
+      planId,
+      {
+        marketResearchReportsThisMonth:
+          0,
+      },
+    );
+
+  const marketResearchUsage =
+    capability ===
+    "market-research"
+      ? usage.marketResearch
+      : null;
+
   return NextResponse.json({
     success: true,
 
@@ -354,6 +412,9 @@ export async function POST(
       allowed
         ? "allowed"
         : "capability_not_in_plan",
+
+    usage:
+      marketResearchUsage,
 
     runtime:
       APP_CONFIG.runtimeId,
