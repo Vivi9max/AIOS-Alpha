@@ -1259,9 +1259,11 @@ export default function ExecutionReadinessPage() {
                   <Metric
                     label="Limit Price"
                     value={
-                      result.orderIntent
-                        ?.limitPrice ??
-                      "Market"
+                      result.orderIntent?.limitPrice != null
+                        ? String(
+                            result.orderIntent.limitPrice,
+                          )
+                        : "Market"
                     }
                   />
 
