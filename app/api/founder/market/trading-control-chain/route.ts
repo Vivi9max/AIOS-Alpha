@@ -22,6 +22,10 @@ import {
 } from "@/lib/runtime/market/market-pretrade-risk";
 
 import {
+  evaluateBrokerConnectionVerification,
+} from "@/lib/runtime/market/broker-connection-verification";
+
+import {
   evaluateBrokerExecutionAdapter,
   getBrokerExecutionAdapterCapabilities,
   getBrokerExecutionAdapterId,
@@ -491,7 +495,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_28_INVALID_JSON",
+          "C167_5_34_INVALID_JSON",
         error:
           "Request body must contain valid JSON.",
       },
@@ -516,7 +520,7 @@ export async function POST(
       {
         success: false,
         code:
-          "C167_5_28_INVALID_ORDER_INTENT",
+          "C167_5_34_INVALID_ORDER_INTENT",
         error:
           normalized.error ||
           "Invalid order intent.",
@@ -606,6 +610,34 @@ export async function POST(
         order,
       );
 
+    const brokerConnectionVerification =
+      evaluateBrokerConnectionVerification(
+        brokerCapabilities,
+      );
+
+    const brokerConnectionVerified =
+      brokerConnectionVerification.broker
+        .connectionVerified;
+
+    const brokerCredentialsVerified =
+      brokerConnectionVerification.broker
+        .credentialsVerified;
+
+    const brokerAccountVerified =
+      brokerConnectionVerification.broker
+        .accountVerified;
+
+    const brokerVerificationComplete =
+      brokerConnectionVerification
+        .readiness
+        .verificationComplete;
+
+    const brokerVerificationPassed =
+      brokerVerificationComplete &&
+      brokerConnectionVerified &&
+      brokerCredentialsVerified &&
+      brokerAccountVerified;
+
     const brokerDiagnostic =
       evaluateBrokerExecutionAdapter(
         brokerOrder,
@@ -620,13 +652,13 @@ export async function POST(
             humanReview.approved,
 
           brokerConnectionVerified:
-            false,
+            brokerConnectionVerified,
 
           brokerCredentialsVerified:
-            false,
+            brokerCredentialsVerified,
 
           brokerAccountVerified:
-            false,
+            brokerAccountVerified,
 
           executionRequested:
             false,
@@ -674,9 +706,10 @@ export async function POST(
       technicalProviderReady &&
       commercialGateOpen &&
       preTradeRiskPassed &&
+      humanReview.approved &&
+      brokerVerificationPassed &&
       adapterReady &&
-      brokerDiagnosticReady &&
-      humanReview.approved;
+      brokerDiagnosticReady;
 
     const executionReady =
       allGatesPassed &&
@@ -735,22 +768,8 @@ export async function POST(
     }
 
     if (
-      !adapterConfigured
+      !taskId
     ) {
-      blockedReasons.push(
-        "Broker execution adapter is not configured.",
-      );
-    }
-
-    if (
-      !adapterReady
-    ) {
-      blockedReasons.push(
-        "Broker execution adapter is not ready for execution.",
-      );
-    }
-
-    if (!taskId) {
       blockedReasons.push(
         "Persistent human review taskId is required.",
       );
@@ -771,6 +790,70 @@ export async function POST(
     }
 
     if (
+      !brokerVerificationPassed
+    ) {
+      if (
+        brokerConnectionVerification
+          .broker
+          .status ===
+        "not-configured"
+      ) {
+        blockedReasons.push(
+          "Broker connection provider is not configured.",
+        );
+      } else if (
+        brokerConnectionVerification
+          .broker
+          .status ===
+        "restricted"
+      ) {
+        blockedReasons.push(
+          "Broker connection verification is restricted.",
+        );
+      } else if (
+        !brokerConnectionVerified
+      ) {
+        blockedReasons.push(
+          "Broker connection has not been independently verified.",
+        );
+      } else if (
+        !brokerCredentialsVerified
+      ) {
+        blockedReasons.push(
+          "Broker credentials have not been independently verified.",
+        );
+      } else if (
+        !brokerAccountVerified
+      ) {
+        blockedReasons.push(
+          "Broker account has not been independently verified.",
+        );
+      } else {
+        blockedReasons.push(
+          brokerConnectionVerification
+            .broker
+            .reason,
+        );
+      }
+    }
+
+    if (
+      !adapterConfigured
+    ) {
+      blockedReasons.push(
+        "Broker execution adapter is not configured.",
+      );
+    }
+
+    if (
+      !adapterReady
+    ) {
+      blockedReasons.push(
+        "Broker execution adapter is not ready for execution.",
+      );
+    }
+
+    if (
       !brokerDiagnosticReady
     ) {
       blockedReasons.push(
@@ -782,10 +865,10 @@ export async function POST(
       success: true,
 
       code:
-        "C167_5_28_TRADING_CONTROL_CHAIN",
+        "C167_5_34_TRADING_CONTROL_CHAIN",
 
       stage:
-        "C167.5.28",
+        "C167.5.34",
 
       orderIntent:
         order,
@@ -803,7 +886,12 @@ export async function POST(
             ? "execution-review-ready"
             : "blocked",
 
-        blockedReasons,
+        blockedReasons:
+          Array.from(
+            new Set(
+              blockedReasons,
+            ),
+          ),
 
         automaticExecution:
           false,
@@ -867,6 +955,16 @@ export async function POST(
               : "blocked",
           description:
             "Only an explicit accepted C147.15 decision can pass this gate.",
+        },
+        {
+          stage:
+            "Broker Connection Verification",
+          state:
+            brokerVerificationPassed
+              ? "passed"
+              : "blocked",
+          description:
+            "Broker connection, credentials and account verification must be independently satisfied.",
         },
         {
           stage:
@@ -965,23 +1063,6 @@ export async function POST(
           preTradeRisk.safetyBoundary,
       },
 
-      brokerAdapter: {
-        id:
-          adapterId,
-
-        configured:
-          adapterConfigured,
-
-        ready:
-          adapterReady,
-
-        capabilities:
-          brokerCapabilities,
-
-        diagnostic:
-          brokerDiagnostic,
-      },
-
       humanReview: {
         source:
           "c147.15-persistent-runtime",
@@ -1039,6 +1120,92 @@ export async function POST(
         },
       },
 
+      brokerConnectionVerification: {
+        brokerId:
+          brokerConnectionVerification
+            .broker
+            .brokerId,
+
+        status:
+          brokerConnectionVerification
+            .broker
+            .status,
+
+        decision:
+          brokerConnectionVerification
+            .broker
+            .decision,
+
+        source:
+          brokerConnectionVerification
+            .broker
+            .source,
+
+        connectionVerified:
+          brokerConnectionVerified,
+
+        credentialsVerified:
+          brokerCredentialsVerified,
+
+        accountVerified:
+          brokerAccountVerified,
+
+        executionEnabled:
+          brokerConnectionVerification
+            .broker
+            .executionEnabled,
+
+        verifiedAt:
+          brokerConnectionVerification
+            .broker
+            .verifiedAt,
+
+        verifiedBy:
+          brokerConnectionVerification
+            .broker
+            .verifiedBy,
+
+        contractReference:
+          brokerConnectionVerification
+            .broker
+            .contractReference,
+
+        reason:
+          brokerConnectionVerification
+            .broker
+            .reason,
+
+        failureCodes:
+          brokerConnectionVerification
+            .broker
+            .failureCodes,
+
+        verificationComplete:
+          brokerVerificationComplete,
+
+        gateOpen:
+          brokerConnectionVerification
+            .gate
+            .open,
+      },
+
+      brokerAdapter: {
+        id:
+          adapterId,
+
+        configured:
+          adapterConfigured,
+
+        ready:
+          adapterReady,
+
+        capabilities:
+          brokerCapabilities,
+
+        diagnostic:
+          brokerDiagnostic,
+      },
+
       gates: {
         researchGate:
           providerReady,
@@ -1052,12 +1219,15 @@ export async function POST(
         preTradeRiskGate:
           preTradeRiskPassed,
 
+        persistentHumanReviewGate:
+          humanReview.approved,
+
+        brokerConnectionVerificationGate:
+          brokerVerificationPassed,
+
         brokerAdapterGate:
           adapterReady &&
           brokerDiagnosticReady,
-
-        persistentHumanReviewGate:
-          humanReview.approved,
 
         executionGate:
           executionReady,
@@ -1103,8 +1273,23 @@ export async function POST(
         rejectedDoesNotApprove:
           true,
 
-        brokerConnectionRequired:
+        brokerConnectionVerificationRequired:
           true,
+
+        brokerConnectionCallerCanSelfVerify:
+          false,
+
+        brokerConnectionCallerCanOverride:
+          false,
+
+        brokerConnectionCallerCanBypass:
+          false,
+
+        brokerConnectionAutomaticVerification:
+          false,
+
+        brokerConnectionExecutionAuthorization:
+          false,
 
         paperTradingRequired:
           true,
@@ -1142,6 +1327,16 @@ export async function POST(
         persistentHumanReviewApproved:
           humanReview.approved,
 
+        brokerConnectionVerified,
+
+        brokerCredentialsVerified,
+
+        brokerAccountVerified,
+
+        brokerVerificationComplete,
+
+        brokerVerificationPassed,
+
         executionReady,
       },
 
@@ -1162,7 +1357,10 @@ export async function POST(
         success: false,
 
         code:
-          "C167_5_28_TRADING_CONTROL_CHAIN_ERROR",
+          "C167_5_34_TRADING_CONTROL_CHAIN_ERROR",
+
+        stage:
+          "C167.5.34",
 
         error:
           error instanceof Error
@@ -1179,10 +1377,22 @@ export async function POST(
           preTradeRiskRequired:
             true,
 
+          brokerConnectionVerificationRequired:
+            true,
+
           decisionAutomaticallyGenerated:
             false,
 
           brokerConnected:
+            false,
+
+          brokerConnectionVerified:
+            false,
+
+          brokerCredentialsVerified:
+            false,
+
+          brokerAccountVerified:
             false,
 
           liveOrderPlaced:
@@ -1224,10 +1434,10 @@ export async function GET(
     success: true,
 
     code:
-      "C167_5_28_TRADING_CONTROL_CHAIN_READY",
+      "C167_5_34_TRADING_CONTROL_CHAIN_READY",
 
     stage:
-      "C167.5.28",
+      "C167.5.34",
 
     requestContract: {
       supportedForms: [
@@ -1270,9 +1480,42 @@ export async function GET(
       "Commercial Authorization",
       "Pre-Trade Risk",
       "C147.15 Persistent Human Review",
+      "Broker Connection Verification",
       "Broker Adapter",
       "Execution Review",
     ],
+
+    brokerConnectionVerification: {
+      required:
+        true,
+
+      independent:
+        true,
+
+      connectionRequired:
+        true,
+
+      credentialsRequired:
+        true,
+
+      accountRequired:
+        true,
+
+      callerCanSelfVerify:
+        false,
+
+      callerCanOverride:
+        false,
+
+      callerCanBypass:
+        false,
+
+      automaticVerification:
+        false,
+
+      executionAuthorization:
+        false,
+    },
 
     preTradeRisk: {
       required:
