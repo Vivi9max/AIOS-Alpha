@@ -150,8 +150,7 @@ export interface MarketExecutionReadinessResult {
   generatedAt: string;
 }
 
-type NormalizedOrder =
-  MarketExecutionReadinessOrder;
+type NormalizedOrder = MarketExecutionReadinessOrder;
 
 function asRecord(
   value: unknown,
@@ -296,7 +295,6 @@ export async function evaluateMarketExecutionReadiness(
     providerCapabilities,
     providerStatus,
     humanReview,
-    brokerConnection,
   ] = await Promise.all([
     getPrimaryMarketDataProvider(),
     getPrimaryMarketProviderCapabilities(),
@@ -306,7 +304,6 @@ export async function evaluateMarketExecutionReadiness(
           taskId,
         )
       : Promise.resolve(null),
-    evaluateBrokerConnectionVerification(),
   ]);
 
   const providerId =
@@ -369,58 +366,6 @@ export async function evaluateMarketExecutionReadiness(
       humanReview,
     );
 
-  const brokerConnectionRecord =
-    asRecord(
-      brokerConnection,
-    );
-
-  const brokerRecord =
-    asRecord(
-      brokerConnectionRecord
-        .broker,
-    );
-
-  const brokerVerificationRecord =
-    asRecord(
-      brokerConnectionRecord
-        .verification,
-    );
-
-  const brokerGateRecord =
-    asRecord(
-      brokerConnectionRecord
-        .gate,
-    );
-
-  const connectionVerified =
-    readBoolean(
-      brokerVerificationRecord
-        .connectionVerified,
-    );
-
-  const credentialsVerified =
-    readBoolean(
-      brokerVerificationRecord
-        .credentialsVerified,
-    );
-
-  const accountVerified =
-    readBoolean(
-      brokerVerificationRecord
-        .accountVerified,
-    );
-
-  const verificationComplete =
-    readBoolean(
-      brokerVerificationRecord
-        .verificationComplete,
-    );
-
-  const brokerGateOpen =
-    readBoolean(
-      brokerGateRecord.open,
-    );
-
   const brokerAdapterId =
     getBrokerExecutionAdapterId();
 
@@ -432,6 +377,40 @@ export async function evaluateMarketExecutionReadiness(
 
   const brokerAdapterCapabilities =
     getBrokerExecutionAdapterCapabilities();
+
+  /*
+   * Broker connection verification has a real
+   * repository contract that requires the adapter
+   * capabilities as its input.
+   */
+  const brokerConnection =
+    evaluateBrokerConnectionVerification(
+      brokerAdapterCapabilities,
+    );
+
+  const brokerRecord =
+    brokerConnection.broker;
+
+  const brokerReadiness =
+    brokerConnection.readiness;
+
+  const brokerGate =
+    brokerConnection.gate;
+
+  const connectionVerified =
+    brokerReadiness.connectionVerified;
+
+  const credentialsVerified =
+    brokerReadiness.credentialsVerified;
+
+  const accountVerified =
+    brokerReadiness.accountVerified;
+
+  const verificationComplete =
+    brokerReadiness.verificationComplete;
+
+  const brokerGateOpen =
+    brokerGate.open;
 
   const failures:
     MarketExecutionReadinessFailureCode[] =
@@ -543,6 +522,10 @@ export async function evaluateMarketExecutionReadiness(
     );
   }
 
+  /*
+   * C167.5.36 is a readiness boundary only.
+   * Actual execution remains disabled.
+   */
   addFailure(
     failures,
     "EXECUTION_DISABLED",
@@ -578,18 +561,25 @@ export async function evaluateMarketExecutionReadiness(
 
   return {
     success: true,
+
     decision,
+
     executionReady,
+
     order,
 
     provider: {
       id: providerId,
+
       technicalReady:
         technicalProviderReady,
+
       commercialGateOpen,
+
       commercialDecision:
         commercialGate?.decision ??
         "unknown",
+
       commercialReason:
         commercialGate?.reason ??
         "Commercial authorization gate unavailable.",
@@ -598,14 +588,18 @@ export async function evaluateMarketExecutionReadiness(
     preTradeRisk: {
       decision:
         risk.decision,
+
       passed:
         preTradeRiskPassed,
+
       reviewRequired:
         risk.decision ===
         "review-required",
+
       estimatedNotional:
         risk.estimatedNotional ??
         null,
+
       blockedReasons:
         risk.blockedReasons ??
         [],
@@ -615,16 +609,22 @@ export async function evaluateMarketExecutionReadiness(
       taskId:
         taskId?.trim() ??
         null,
+
       found:
         human.found,
+
       required:
         true,
+
       approved:
         human.approved,
+
       decision:
         human.decision,
+
       status:
         human.status,
+
       reviewId:
         human.reviewId,
     },
@@ -635,37 +635,33 @@ export async function evaluateMarketExecutionReadiness(
           brokerRecord.brokerId,
           "unconfigured",
         ),
+
       status:
         readString(
           brokerRecord.status,
           "unknown",
         ),
+
       decision:
         readString(
           brokerRecord.decision,
           "not-ready",
         ),
+
       connectionVerified,
+
       credentialsVerified,
+
       accountVerified,
+
       verificationComplete,
+
       gateOpen:
         brokerGateOpen,
+
       failureCodes:
-        Array.isArray(
-          brokerRecord
-            .failureCodes,
-        )
-          ? brokerRecord
-              .failureCodes
-              .filter(
-                (
-                  item,
-                ): item is string =>
-                  typeof item ===
-                  "string",
-              )
-          : [],
+        brokerRecord.failureCodes,
+
       reason:
         readString(
           brokerRecord.reason,
@@ -676,38 +672,50 @@ export async function evaluateMarketExecutionReadiness(
     brokerAdapter: {
       id:
         brokerAdapterId,
+
       configured:
         brokerAdapterConfigured,
+
       ready:
         brokerAdapterReady,
+
       capabilities: {
         available:
           brokerAdapterCapabilities
             .available,
+
         connectionVerified:
           brokerAdapterCapabilities
             .connectionVerified,
+
         credentialsVerified:
           brokerAdapterCapabilities
             .credentialsVerified,
+
         accountVerified:
           brokerAdapterCapabilities
             .accountVerified,
+
         supportsLiveOrders:
           brokerAdapterCapabilities
             .supportsLiveOrders,
+
         supportsPaperOrders:
           brokerAdapterCapabilities
             .supportsPaperOrders,
+
         supportsCancelOrders:
           brokerAdapterCapabilities
             .supportsCancelOrders,
+
         supportsOrderStatus:
           brokerAdapterCapabilities
             .supportsOrderStatus,
+
         supportedMarkets:
           brokerAdapterCapabilities
             .supportedMarkets,
+
         executionEnabled:
           brokerAdapterCapabilities
             .executionEnabled,
@@ -717,20 +725,26 @@ export async function evaluateMarketExecutionReadiness(
     gates: {
       provider:
         technicalProviderReady,
+
       commercial:
         commercialGateOpen,
+
       preTradeRisk:
         preTradeRiskPassed,
+
       humanReview:
         human.approved,
+
       brokerConnection:
         connectionVerified &&
         credentialsVerified &&
         accountVerified &&
         verificationComplete &&
         brokerGateOpen,
+
       brokerAdapter:
         brokerAdapterReady,
+
       execution:
         executionReady,
     },
@@ -740,17 +754,39 @@ export async function evaluateMarketExecutionReadiness(
 
     safetyBoundary: {
       founderOnly: true,
-      automaticExecution: false,
-      liveOrderPlacement: false,
-      tradingExecuted: false,
-      callerCanOverride: false,
-      callerCanBypass: false,
-      commercialAuthorizationRequired: true,
-      preTradeRiskRequired: true,
-      persistentHumanReviewRequired: true,
-      brokerConnectionVerificationRequired: true,
-      brokerExecutionAdapterRequired: true,
-      liveExecutionEnabled: false,
+
+      automaticExecution:
+        false,
+
+      liveOrderPlacement:
+        false,
+
+      tradingExecuted:
+        false,
+
+      callerCanOverride:
+        false,
+
+      callerCanBypass:
+        false,
+
+      commercialAuthorizationRequired:
+        true,
+
+      preTradeRiskRequired:
+        true,
+
+      persistentHumanReviewRequired:
+        true,
+
+      brokerConnectionVerificationRequired:
+        true,
+
+      brokerExecutionAdapterRequired:
+        true,
+
+      liveExecutionEnabled:
+        false,
     },
 
     generatedAt:
