@@ -14,6 +14,15 @@ import {
 } from "@/lib/billing/usage";
 
 import {
+  getMarketResearchUsage,
+} from "@/lib/billing/market-research-usage";
+
+import {
+  AIOS_USER_COOKIE,
+  resolveAlphaIdentity,
+} from "@/lib/auth/identity";
+
+import {
   APP_CONFIG,
 } from "@/lib/config/app";
 
@@ -56,6 +65,28 @@ function normalizePlan(
   return "alpha";
 }
 
+function applyIdentityCookie(
+  response: NextResponse,
+  userId: string,
+) {
+  response.cookies.set(
+    AIOS_USER_COOKIE,
+    userId,
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure:
+        process.env.NODE_ENV ===
+        "production",
+      path: "/",
+      maxAge:
+        60 * 60 * 24 * 365,
+    },
+  );
+
+  return response;
+}
+
 function getUsageFromRequest(
   request: NextRequest,
 ) {
@@ -86,14 +117,6 @@ function getUsageFromRequest(
         "0",
     );
 
-  const marketResearch =
-    Number(
-      params.get(
-        "marketResearchReportsThisMonth",
-      ) ??
-        "0",
-    );
-
   return {
     executionsToday:
       Number.isFinite(
@@ -118,14 +141,6 @@ function getUsageFromRequest(
       automation >= 0
         ? automation
         : 0,
-
-    marketResearchReportsThisMonth:
-      Number.isFinite(
-        marketResearch,
-      ) &&
-      marketResearch >= 0
-        ? marketResearch
-        : 0,
   };
 }
 
@@ -133,7 +148,14 @@ export async function GET(
   request: NextRequest,
 ) {
   const requestId =
-    getRequestId(request);
+    getRequestId(
+      request,
+    );
+
+  const identity =
+    resolveAlphaIdentity(
+      request,
+    );
 
   const planId =
     normalizePlan(
@@ -147,6 +169,19 @@ export async function GET(
       planId,
     );
 
+  /*
+   * C167.5.50
+   *
+   * Execution, memory and automation
+   * usage remain compatible with the
+   * existing API contract.
+   *
+   * Market Research usage is different:
+   * it is now resolved from the
+   * server-side user-scoped persistent
+   * meter and is never accepted from
+   * the client.
+   */
   const usage =
     getUsageFromRequest(
       request,
@@ -158,119 +193,192 @@ export async function GET(
       usage,
     );
 
-  return NextResponse.json({
-    success: true,
+  let marketResearchUsage:
+    Awaited<
+      ReturnType<
+        typeof getMarketResearchUsage
+      >
+    >;
 
-    apiVersion:
-      API_VERSION,
+  try {
+    marketResearchUsage =
+      await getMarketResearchUsage();
+  } catch {
+    const response =
+      NextResponse.json(
+        {
+          success: false,
 
-    requestId,
+          apiVersion:
+            API_VERSION,
 
-    product: {
-      name:
-        APP_CONFIG.name,
+          requestId,
 
-      stage:
-        APP_CONFIG.stage,
+          error:
+            "Market Research usage could not be resolved.",
 
-      version:
-        APP_CONFIG.version,
+          code:
+            "MARKET_RESEARCH_USAGE_UNAVAILABLE",
 
-      release:
-        APP_CONFIG.release,
+          timestamp:
+            Date.now(),
+        },
+        {
+          status: 503,
+        },
+      );
 
-      runtime:
-        APP_CONFIG.runtimeId,
-    },
+    return applyIdentityCookie(
+      response,
+      identity.userId,
+    );
+  }
 
-    plan: {
-      id:
-        entitlement.planId,
+  const response =
+    NextResponse.json({
+      success: true,
 
-      name:
-        entitlement.plan.name,
+      apiVersion:
+        API_VERSION,
 
-      description:
-        entitlement.plan
-          .description,
+      requestId,
 
-      priceLabel:
-        entitlement.plan
-          .priceLabel,
+      product: {
+        name:
+          APP_CONFIG.name,
 
-      active:
-        entitlement.active,
+        stage:
+          APP_CONFIG.stage,
 
-      source:
-        entitlement.source,
-    },
+        version:
+          APP_CONFIG.version,
 
-    capabilities:
-      entitlement.capabilities,
+        release:
+          APP_CONFIG.release,
 
-    limits:
-      entitlement.limits,
+        runtime:
+          APP_CONFIG.runtimeId,
+      },
 
-    usage:
-      usageSnapshot,
+      plan: {
+        id:
+          entitlement.planId,
 
-    marketResearch: {
-      capability:
-        entitlement.capabilities.includes(
-          "market-research",
-        ),
+        name:
+          entitlement.plan.name,
 
-      monthlyLimit:
-        entitlement.limits
-          .marketResearchReportsPerMonth,
+        description:
+          entitlement.plan
+            .description,
 
-      reportsThisMonth:
-        usageSnapshot
-          .marketResearch
-          .current,
+        priceLabel:
+          entitlement.plan
+            .priceLabel,
 
-      remaining:
-        usageSnapshot
-          .marketResearch
-          .remaining,
+        active:
+          entitlement.active,
 
-      allowed:
-        usageSnapshot
-          .marketResearch
-          .allowed,
-    },
+        source:
+          entitlement.source,
+      },
 
-    capabilityMatrix:
-      getCapabilityMatrix(),
+      capabilities:
+        entitlement.capabilities,
 
-    client: {
-      web: true,
-      ios: true,
-      android: true,
-      api: true,
-    },
+      limits:
+        entitlement.limits,
 
-    future: {
-      paymentProvider:
-        null,
+      usage: {
+        ...usageSnapshot,
 
-      subscriptionStatus:
-        "not_connected",
+        marketResearch: {
+          type:
+            "market-research",
 
-      billingEnabled:
-        false,
-    },
+          period:
+            "month",
 
-    timestamp:
-      Date.now(),
-  });
+          current:
+            marketResearchUsage.used,
+
+          limit:
+            marketResearchUsage.limit,
+
+          remaining:
+            marketResearchUsage.remaining,
+
+          allowed:
+            marketResearchUsage.allowed,
+
+          reason:
+            marketResearchUsage.allowed
+              ? "allowed"
+              : "limit_reached",
+        },
+      },
+
+      marketResearch: {
+        capability:
+          entitlement.capabilities.includes(
+            "market-research",
+          ),
+
+        monthlyLimit:
+          marketResearchUsage.limit,
+
+        reportsThisMonth:
+          marketResearchUsage.used,
+
+        remaining:
+          marketResearchUsage.remaining,
+
+        allowed:
+          marketResearchUsage.allowed,
+      },
+
+      capabilityMatrix:
+        getCapabilityMatrix(),
+
+      client: {
+        web: true,
+        ios: true,
+        android: true,
+        api: true,
+      },
+
+      future: {
+        paymentProvider:
+          null,
+
+        subscriptionStatus:
+          "not_connected",
+
+        billingEnabled:
+          false,
+      },
+
+      timestamp:
+        Date.now(),
+    });
+
+  return applyIdentityCookie(
+    response,
+    identity.userId,
+  );
 }
 
 export async function POST(
   request: NextRequest,
 ) {
   const requestId =
-    getRequestId(request);
+    getRequestId(
+      request,
+    );
+
+  const identity =
+    resolveAlphaIdentity(
+      request,
+    );
 
   let body:
     | {
@@ -286,7 +394,8 @@ export async function POST(
         capability?: unknown;
       };
   } catch {
-    body = undefined;
+    body =
+      undefined;
   }
 
   const planId =
@@ -306,25 +415,31 @@ export async function POST(
   if (
     !capability
   ) {
-    return NextResponse.json(
-      {
-        success:
-          false,
+    const response =
+      NextResponse.json(
+        {
+          success:
+            false,
 
-        apiVersion:
-          API_VERSION,
+          apiVersion:
+            API_VERSION,
 
-        requestId,
+          requestId,
 
-        error:
-          "Capability is required.",
+          error:
+            "Capability is required.",
 
-        code:
-          "CAPABILITY_REQUIRED",
-      },
-      {
-        status: 400,
-      },
+          code:
+            "CAPABILITY_REQUIRED",
+        },
+        {
+          status: 400,
+        },
+      );
+
+    return applyIdentityCookie(
+      response,
+      identity.userId,
     );
   }
 
@@ -347,25 +462,31 @@ export async function POST(
       capability as AIOSCapability,
     )
   ) {
-    return NextResponse.json(
-      {
-        success:
-          false,
+    const response =
+      NextResponse.json(
+        {
+          success:
+            false,
 
-        apiVersion:
-          API_VERSION,
+          apiVersion:
+            API_VERSION,
 
-        requestId,
+          requestId,
 
-        error:
-          "Unknown AIOS capability.",
+          error:
+            "Unknown AIOS capability.",
 
-        code:
-          "UNKNOWN_CAPABILITY",
-      },
-      {
-        status: 400,
-      },
+          code:
+            "UNKNOWN_CAPABILITY",
+        },
+        {
+          status: 400,
+        },
+      );
+
+    return applyIdentityCookie(
+      response,
+      identity.userId,
     );
   }
 
@@ -379,53 +500,107 @@ export async function POST(
       capability as AIOSCapability,
     );
 
-  const usage =
-    getUsageSnapshot(
-      planId,
-      {
-        marketResearchReportsThisMonth:
-          0,
-      },
-    );
+  let marketResearchUsage:
+    Awaited<
+      ReturnType<
+        typeof getMarketResearchUsage
+      >
+    > | null =
+    null;
 
-  const marketResearchUsage =
+  if (
     capability ===
     "market-research"
-      ? usage.marketResearch
-      : null;
+  ) {
+    try {
+      marketResearchUsage =
+        await getMarketResearchUsage();
+    } catch {
+      const response =
+        NextResponse.json(
+          {
+            success:
+              false,
 
-  return NextResponse.json({
-    success: true,
+            apiVersion:
+              API_VERSION,
 
-    apiVersion:
-      API_VERSION,
+            requestId,
 
-    requestId,
+            error:
+              "Market Research usage could not be resolved.",
 
-    planId,
+            code:
+              "MARKET_RESEARCH_USAGE_UNAVAILABLE",
+          },
+          {
+            status: 503,
+          },
+        );
 
-    capability,
+      return applyIdentityCookie(
+        response,
+        identity.userId,
+      );
+    }
+  }
 
-    allowed,
+  const response =
+    NextResponse.json({
+      success: true,
 
-    reason:
-      allowed
-        ? "allowed"
-        : "capability_not_in_plan",
+      apiVersion:
+        API_VERSION,
 
-    usage:
-      marketResearchUsage,
+      requestId,
 
-    runtime:
-      APP_CONFIG.runtimeId,
+      planId,
 
-    runtimeVersion:
-      APP_CONFIG.version,
+      capability,
 
-    release:
-      APP_CONFIG.release,
+      allowed:
+        capability ===
+        "market-research"
+          ? allowed &&
+            Boolean(
+              marketResearchUsage?.allowed,
+            )
+          : allowed,
 
-    timestamp:
-      Date.now(),
-  });
+      reason:
+        capability ===
+        "market-research"
+          ? !allowed
+            ? "capability_not_in_plan"
+            : marketResearchUsage
+                ?.allowed
+              ? "allowed"
+              : "monthly_limit_reached"
+          : allowed
+            ? "allowed"
+            : "capability_not_in_plan",
+
+      usage:
+        capability ===
+        "market-research"
+          ? marketResearchUsage
+          : null,
+
+      runtime:
+        APP_CONFIG.runtimeId,
+
+      runtimeVersion:
+        APP_CONFIG.version,
+
+      release:
+        APP_CONFIG.release,
+
+      timestamp:
+        Date.now(),
+    });
+
+  return applyIdentityCookie(
+    response,
+    identity.userId,
+  );
 }
