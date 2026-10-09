@@ -1,33 +1,25 @@
-
 import "server-only";
-
 import {
   NextRequest,
   NextResponse,
 } from "next/server";
-
 import {
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
-
 import {
   runWithUserContext,
 } from "@/lib/runtime/request-context";
-
 import {
   buildInboundDemandCampaign,
   buildInboundReplyDraft,
   scoreInboundLead,
 } from "@/lib/commercial/c144-inbound-demand-engine";
-
 import type {
   InboundDemandInput,
   InboundLead,
 } from "@/lib/commercial/c144-inbound-demand-engine";
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
 function jsonError(
   code: string,
   message: string,
@@ -45,7 +37,6 @@ function jsonError(
     },
   );
 }
-
 function isRecord(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -55,19 +46,16 @@ function isRecord(
     !Array.isArray(value)
   );
 }
-
 export async function GET(
   request: NextRequest,
 ) {
   const startedAt = Date.now();
   const identity = resolveAlphaIdentity(request);
-
   try {
     const result = await runWithUserContext(
       identity.userId,
       async () => buildInboundDemandCampaign(),
     );
-
     return NextResponse.json({
       success: true,
       code: "C144_INBOUND_CAMPAIGN_READY",
@@ -90,15 +78,12 @@ export async function GET(
     );
   }
 }
-
 export async function POST(
   request: NextRequest,
 ) {
   const startedAt = Date.now();
   const identity = resolveAlphaIdentity(request);
-
   let body: unknown;
-
   try {
     body = await request.json();
   } catch {
@@ -108,7 +93,6 @@ export async function POST(
       400,
     );
   }
-
   if (!isRecord(body)) {
     return jsonError(
       "C144_INBOUND_INVALID_BODY",
@@ -116,7 +100,6 @@ export async function POST(
       400,
     );
   }
-
   try {
     const result = await runWithUserContext(
       identity.userId,
@@ -125,69 +108,53 @@ export async function POST(
           typeof body.mode === "string"
             ? body.mode
             : "campaign";
-
         if (mode === "campaign") {
           const input =
             isRecord(body.input)
               ? body.input as Partial<InboundDemandInput>
               : {};
-
           return {
             mode,
             campaign: buildInboundDemandCampaign(input),
           };
         }
-
         if (mode === "score-lead") {
           if (!isRecord(body.lead)) {
             throw new Error(
               "The lead field must be a JSON object.",
             );
           }
-
           const lead =
             body.lead as Partial<InboundLead>;
-
           return {
             mode,
             assessment: scoreInboundLead(lead),
           };
         }
-
         if (mode === "reply-draft") {
-          if (
-            !isRecord(body.lead) ||
-            !isRecord(body.assessment)
-          ) {
+          if (!isRecord(body.lead)) {
             throw new Error(
-              "The lead and assessment fields are required.",
+              "The lead field must be a JSON object.",
             );
           }
-
           const lead =
             body.lead as Partial<InboundLead>;
-
           const assessment =
-            body.assessment as Parameters<
-              typeof buildInboundReplyDraft
-            >[1];
-
+            scoreInboundLead(lead);
           return {
             mode,
-            replyDraft:
-              buildInboundReplyDraft(
-                lead,
-                assessment,
-              ),
+            assessment,
+            replyDraft: buildInboundReplyDraft(
+              lead,
+              assessment,
+            ),
           };
         }
-
         throw new Error(
           "Unsupported mode. Use campaign, score-lead, or reply-draft.",
         );
       },
     );
-
     return NextResponse.json({
       success: true,
       code: "C144_INBOUND_OPERATION_READY",
@@ -203,7 +170,6 @@ export async function POST(
       error instanceof Error
         ? error.message
         : "Inbound operation failed.";
-
     return jsonError(
       "C144_INBOUND_OPERATION_ERROR",
       message,
