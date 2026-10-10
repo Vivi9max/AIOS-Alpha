@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useState,
-  type ReactNode,
 } from "react";
 
 import { useLanguage } from "@/components/i18n/LanguageProvider";
@@ -145,6 +144,7 @@ const copy: Record<
     autonomousDevelopment: string;
     autonomousDevelopmentDetail: string;
     autonomousDevelopmentDescription: string;
+
     inboundGrowth: string;
     inboundGrowthDetail: string;
 
@@ -303,10 +303,11 @@ const copy: Record<
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
+
     inboundGrowth:
       "AIOS Inbound Growth",
     inboundGrowthDetail:
-      "Founder entry for customer discovery, qualification, offers and revenue workflow",
+      "Turn qualified opportunities into outreach, orders and revenue",
 
     enterKey:
       "Founder access required",
@@ -486,9 +487,9 @@ const copy: Record<
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
     inboundGrowth:
-      "AIOS 获客增长",
+      "AIOS Inbound Growth",
     inboundGrowthDetail:
-      "客户发现、筛选、Offer 与收入闭环的 Founder 入口",
+      "将有效商机转化为客户触达、订单与收入",
 
     enterKey:
       "请输入 Founder Access Key",
@@ -668,9 +669,9 @@ const copy: Record<
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
     inboundGrowth:
-      "AIOS インバウンド成長",
+      "AIOS Inbound Growth",
     inboundGrowthDetail:
-      "顧客発見、選別、オファー、収益化ワークフローの Founder 入口",
+      "有望顧客をアプローチ、受注、収益につなげる",
 
     enterKey:
       "Founder Access Key が必要です",
@@ -716,60 +717,6 @@ const copy: Record<
       "Workspace",
   },
 };
-
-function getCategoryEmoji(
-  category: FounderFeedback["category"],
-): string {
-  return {
-    great:
-      "😍",
-    good:
-      "🙂",
-    neutral:
-      "😐",
-    bad:
-      "☹️",
-    bug:
-      "🐛",
-  }[category];
-}
-
-function maskUserId(
-  userId: string,
-): string {
-  if (userId.length <= 18) {
-    return userId;
-  }
-
-  return (
-    userId.slice(0, 10) +
-    "..." +
-    userId.slice(-6)
-  );
-}
-
-function formatTime(
-  value: number,
-  locale: Locale,
-): string {
-  return new Intl.DateTimeFormat(
-    copy[locale].localeDate,
-    {
-      year:
-        "numeric",
-      month:
-        "2-digit",
-      day:
-        "2-digit",
-      hour:
-        "2-digit",
-      minute:
-        "2-digit",
-    },
-  ).format(
-    new Date(value),
-  );
-}
 
 function normalizeError(
   message: string,
@@ -1018,10 +965,6 @@ export default function FounderPage() {
     );
   }
 
-  const feedback =
-    overview?.feedback?.latest ??
-    [];
-
   const version =
     overview?.version ||
     overview?.runtime?.version ||
@@ -1124,118 +1067,6 @@ export default function FounderPage() {
             {t.logout}
           </button>
         </header>
-
-        <section
-          style={{
-            display:
-              "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(145px, 1fr))",
-            gap:
-              12,
-            marginTop:
-              24,
-          }}
-        >
-          <MetricLink
-            href="/founder/feedback"
-            icon="💬"
-            label={
-              t.allFeedback
-            }
-            value={
-              overview?.feedback
-                ?.total ??
-              0
-            }
-            detail={
-              t.allFeedbackDetail
-            }
-          />
-
-          <MetricLink
-            href="/founder/feedback?category=bug"
-            icon="🐛"
-            label={
-              t.bugs
-            }
-            value={
-              overview?.feedback
-                ?.bugs ??
-              0
-            }
-            detail={
-              t.bugsDetail
-            }
-          />
-
-          <MetricLink
-            href="/founder/feedback?rating=1"
-            icon="⚠️"
-            label={
-              t.negative
-            }
-            value={
-              overview?.feedback
-                ?.critical ??
-              0
-            }
-            detail={
-              t.negativeDetail
-            }
-          />
-
-          <MetricLink
-            href="/founder/feedback?rating=5"
-            icon="👍"
-            label={
-              t.positive
-            }
-            value={
-              overview?.feedback
-                ?.positive ??
-              0
-            }
-            detail={
-              t.positiveDetail
-            }
-          />
-
-          <MetricLink
-            href="/founder/feedback"
-            icon="👥"
-            label={
-              t.users
-            }
-            value={
-              overview?.feedback
-                ?.uniqueUsers ??
-              0
-            }
-            detail={
-              t.usersDetail
-            }
-          />
-
-          <MetricLink
-            href="/founder/feedback"
-            icon="⭐"
-            label={
-              t.average
-            }
-            value={
-              overview?.feedback
-                ?.averageRating
-                ?.toFixed(
-                  1,
-                ) ??
-              "0.0"
-            }
-            detail={
-              t.averageDetail
-            }
-          />
-        </section>
 
         <section
           style={{
@@ -1780,294 +1611,6 @@ export default function FounderPage() {
 
         <section
           style={{
-            marginTop:
-              18,
-            padding:
-              20,
-            border:
-              "1px solid #dbe3f0",
-            borderRadius:
-              22,
-            background:
-              "#ffffff",
-          }}
-        >
-          <div
-            style={{
-              display:
-                "flex",
-              alignItems:
-                "flex-start",
-              justifyContent:
-                "space-between",
-              gap:
-                14,
-            }}
-          >
-            <div>
-              <h2
-                style={{
-                  margin:
-                    0,
-                  fontSize:
-                    21,
-                }}
-              >
-                {
-                  t.latestFeedback
-                }
-              </h2>
-
-              <p
-                style={{
-                  margin:
-                    "7px 0 0",
-                  color:
-                    "#64748b",
-                  fontSize:
-                    13,
-                  lineHeight:
-                    1.5,
-                }}
-              >
-                {
-                  t.latestFeedbackDescription
-                }
-              </p>
-            </div>
-
-            <Link
-              href="/founder/feedback"
-              style={
-                secondaryLinkStyle
-              }
-            >
-              {
-                t.viewAll
-              }
-            </Link>
-          </div>
-
-          <div
-            style={{
-              display:
-                "grid",
-              gap:
-                12,
-              marginTop:
-                18,
-            }}
-          >
-            {feedback.length ===
-              0 && (
-              <Link
-                href="/founder/feedback"
-                style={{
-                  display:
-                    "block",
-                  padding:
-                    "30px 18px",
-                  border:
-                    "1px dashed #cbd5e1",
-                  borderRadius:
-                    16,
-                  color:
-                    "#64748b",
-                  textAlign:
-                    "center",
-                  lineHeight:
-                    1.6,
-                  textDecoration:
-                    "none",
-                }}
-              >
-                {
-                  t.noFeedback
-                }
-              </Link>
-            )}
-
-            {feedback
-              .slice(
-                0,
-                5,
-              )
-              .map(
-                (
-                  item,
-                ) => (
-                  <Link
-                    key={
-                      item.id
-                    }
-                    href="/founder/feedback"
-                    style={{
-                      display:
-                        "block",
-                      padding:
-                        16,
-                      border:
-                        item.category ===
-                        "bug"
-                          ? "1px solid #fecaca"
-                          : "1px solid #e2e8f0",
-                      borderRadius:
-                        16,
-                      background:
-                        "#f8fafc",
-                      color:
-                        "inherit",
-                      textDecoration:
-                        "none",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display:
-                          "flex",
-                        alignItems:
-                          "flex-start",
-                        justifyContent:
-                          "space-between",
-                        gap:
-                          12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          alignItems:
-                            "center",
-                          gap:
-                            9,
-                          fontWeight:
-                            900,
-                          minWidth:
-                            0,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize:
-                              22,
-                          }}
-                        >
-                          {
-                            getCategoryEmoji(
-                              item.category,
-                            )
-                          }
-                        </span>
-
-                        <span>
-                          {
-                            t.category[
-                              item.category
-                            ]
-                          }
-                        </span>
-
-                        <span
-                          style={{
-                            color:
-                              "#f59e0b",
-                            fontSize:
-                              13,
-                            letterSpacing:
-                              1,
-                          }}
-                        >
-                          {"★".repeat(
-                            Math.max(
-                              0,
-                              Math.min(
-                                5,
-                                item.rating,
-                              ),
-                            ),
-                          )}
-                        </span>
-                      </div>
-
-                      <time
-                        style={{
-                          color:
-                            "#64748b",
-                          fontSize:
-                            11,
-                          whiteSpace:
-                            "nowrap",
-                        }}
-                      >
-                        {
-                          formatTime(
-                            item.createdAt,
-                            locale,
-                          )
-                        }
-                      </time>
-                    </div>
-
-                    <p
-                      style={{
-                        margin:
-                          "13px 0 0",
-                        color:
-                          item.message
-                            ? "#1e293b"
-                            : "#94a3b8",
-                        lineHeight:
-                          1.65,
-                        whiteSpace:
-                          "pre-wrap",
-                        overflowWrap:
-                          "anywhere",
-                      }}
-                    >
-                      {
-                        item.message ||
-                        t.userNoMessage
-                      }
-                    </p>
-
-                    <div
-                      style={{
-                        display:
-                          "flex",
-                        flexWrap:
-                          "wrap",
-                        gap:
-                          7,
-                        marginTop:
-                          13,
-                      }}
-                    >
-                      <Tag>
-                        {"👤 " +
-                          maskUserId(
-                            item.userId,
-                          )}
-                      </Tag>
-
-                      <Tag>
-                        {"📍 " +
-                          item.page}
-                      </Tag>
-
-                      <Tag>
-                        {"🚀 v" +
-                          item.runtimeVersion}
-                      </Tag>
-                    </div>
-                  </Link>
-                ),
-              )}
-          </div>
-        </section>
-
-        <section
-          style={{
             display:
               "grid",
             gridTemplateColumns:
@@ -2108,17 +1651,6 @@ export default function FounderPage() {
             }
             detail={
               t.memoryCenterDetail
-            }
-          />
-
-          <ActionLink
-            href="/founder/feedback"
-            icon="📮"
-            title={
-              t.feedbackCenter
-            }
-            detail={
-              t.feedbackCenterDetail
             }
           />
 
@@ -2439,121 +1971,6 @@ function FounderLogin({
   );
 }
 
-function MetricLink({
-  href,
-  icon,
-  label,
-  value,
-  detail,
-}: {
-  href: string;
-  icon: string;
-  label: string;
-  value:
-    | string
-    | number;
-  detail: string;
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display:
-          "block",
-        padding:
-          17,
-        border:
-          "1px solid #dbe3f0",
-        borderRadius:
-          18,
-        background:
-          "#ffffff",
-        color:
-          "#0f172a",
-        textDecoration:
-          "none",
-        boxShadow:
-          "0 5px 16px rgba(15, 23, 42, 0.03)",
-      }}
-    >
-      <div
-        style={{
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "space-between",
-          gap:
-            10,
-        }}
-      >
-        <span
-          style={{
-            color:
-              "#64748b",
-            fontSize:
-              13,
-            fontWeight:
-              850,
-          }}
-        >
-          {label}
-        </span>
-
-        <span
-          style={{
-            fontSize:
-              20,
-          }}
-        >
-          {icon}
-        </span>
-      </div>
-
-      <div
-        style={{
-          marginTop:
-            12,
-          fontSize:
-            30,
-          fontWeight:
-            950,
-        }}
-      >
-        {value}
-      </div>
-
-      <div
-        style={{
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "space-between",
-          gap:
-            8,
-          marginTop:
-            5,
-          color:
-            "#94a3b8",
-          fontSize:
-            12,
-        }}
-      >
-        <span>
-          {detail}
-        </span>
-
-        <span>
-          {"->"}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
 function SystemCard({
   icon,
   title,
@@ -2746,37 +2163,6 @@ function ActionLink({
   );
 }
 
-function Tag({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <span
-      style={{
-        padding:
-          "5px 9px",
-        border:
-          "1px solid #dbe3f0",
-        borderRadius:
-          999,
-        background:
-          "#ffffff",
-        color:
-          "#64748b",
-        fontSize:
-          11,
-        fontWeight:
-          750,
-        overflowWrap:
-          "anywhere",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 const buttonStyle = {
   height:
     43,
@@ -2794,37 +2180,6 @@ const buttonStyle = {
     900,
   cursor:
     "pointer",
-} as const;
-
-const secondaryLinkStyle = {
-  minWidth:
-    88,
-  minHeight:
-    42,
-  display:
-    "flex",
-  alignItems:
-    "center",
-  justifyContent:
-    "center",
-  padding:
-    "0 13px",
-  boxSizing:
-    "border-box",
-  border:
-    "1px solid #bfdbfe",
-  borderRadius:
-    13,
-  background:
-    "#eff6ff",
-  color:
-    "#2563eb",
-  fontSize:
-    13,
-  fontWeight:
-    900,
-  textDecoration:
-    "none",
 } as const;
 
 const darkActionStyle = {
