@@ -43,7 +43,7 @@ const checks = [
   {
     name: "Redis reservation increments the usage count atomically",
     source: redis,
-    pattern: /record\.count\s*=\s*Math\.floor\(Math\.max\(0,\s*record\.count\)\)\s*\+\s*1/,
+    pattern: /record\.count\s*=\s*math\.floor\(math\.max\(0,\s*record\.count\)\)\s*\+\s*1/,
   },
   {
     name: "Redis reservation result exposes the reserved flag",
