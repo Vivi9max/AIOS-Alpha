@@ -148,6 +148,9 @@ const copy: Record<
     inboundGrowth: string;
     inboundGrowthDetail: string;
 
+    revenueLedger: string;
+    revenueLedgerDetail: string;
+
     enterKey: string;
     loginDescription: string;
     keyPlaceholder: string;
