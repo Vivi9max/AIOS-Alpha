@@ -309,6 +309,11 @@ const copy: Record<
     inboundGrowthDetail:
       "Turn qualified opportunities into outreach, orders and revenue",
 
+    revenueLedger:
+      "Founder Revenue Ledger",
+    revenueLedgerDetail:
+      "Track offers, orders, delivery and evidence-backed payment records",
+
     enterKey:
       "Founder access required",
     loginDescription:
@@ -491,6 +496,11 @@ const copy: Record<
     inboundGrowthDetail:
       "将有效商机转化为客户触达、订单与收入",
 
+    revenueLedger:
+      "收入与订单账本",
+    revenueLedgerDetail:
+      "管理报价、订单、交付与有证据的收款记录",
+
     enterKey:
       "请输入 Founder Access Key",
     loginDescription:
@@ -672,6 +682,11 @@ const copy: Record<
       "AIOS Inbound Growth",
     inboundGrowthDetail:
       "有望顧客をアプローチ、受注、収益につなげる",
+
+    revenueLedger:
+      "Founder 収益台帳",
+    revenueLedgerDetail:
+      "見積、受注、納品、証拠付き入金記録を管理",
 
     enterKey:
       "Founder Access Key が必要です",
@@ -1706,6 +1721,17 @@ export default function FounderPage() {
             }
             detail={
               t.inboundGrowthDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/revenue"
+            icon="💰"
+            title={
+              t.revenueLedger
+            }
+            detail={
+              t.revenueLedgerDetail
             }
           />
         </section>
