@@ -1,61 +1,47 @@
 import { existsSync, readFileSync } from "node:fs";
-
 const files = {
   route: "app/api/execution/jobs/route.ts",
   usage: "lib/billing/execution-usage.ts",
   jobStore: "lib/execution/job-store.ts",
 };
-
 const failures = [];
-
 for (const file of Object.values(files)) {
   if (!existsSync(file)) {
     failures.push(`Required file is missing: ${file}`);
   }
 }
-
 if (failures.length > 0) {
   console.error("Execution usage verification FAILED.");
   failures.forEach((failure) => console.error(`- ${failure}`));
   process.exit(1);
 }
-
 const route = readFileSync(files.route, "utf8");
 const usage = readFileSync(files.usage, "utf8");
 const jobStore = readFileSync(files.jobStore, "utf8");
-
 function extractFunction(source, signature, nextSignature) {
   const start = source.indexOf(signature);
-
   if (start === -1) {
     return "";
   }
-
   if (!nextSignature) {
     return source.slice(start);
   }
-
   const end = source.indexOf(nextSignature, start + signature.length);
-
   if (end === -1) {
     return source.slice(start);
   }
-
   return source.slice(start, end);
 }
-
 const post = extractFunction(
   route,
   "export async function POST(",
   "export async function PATCH(",
 );
-
 const patch = extractFunction(
   route,
   "export async function PATCH(",
   "",
 );
-
 const checks = [
   {
     name: "Execution POST handler exists",
@@ -79,7 +65,6 @@ const checks = [
         "if (\n      !capability.allowed",
       );
       const createJob = post.indexOf("createExecutionJob(");
-
       return (
         post.includes("canUseCapability(") &&
         capabilityCheck !== -1 &&
@@ -100,7 +85,6 @@ const checks = [
     test: () => {
       const reservation = post.indexOf("reserveExecution(");
       const execution = post.indexOf("executeJob(");
-
       return (
         reservation !== -1 &&
         execution !== -1 &&
@@ -118,13 +102,12 @@ const checks = [
   {
     name: "POST marks a quota-denied created job as failed",
     test: () => {
-      const deniedIndex = post.indexOf(
-        "if (\n      !usage.allowed",
+      const deniedIndex = post.search(
+        /if\s*\(\s*!usage\.allowed\s*\)/,
       );
       const failureIndex = post.indexOf(
         "markExecutionJobFailed(",
       );
-
       return (
         deniedIndex !== -1 &&
         failureIndex !== -1 &&
@@ -147,7 +130,6 @@ const checks = [
       const lookup = patch.indexOf("getExecutionJob(id)");
       const missingCheck = patch.indexOf("if (!existingJob)");
       const reservation = patch.indexOf("reserveExecution(");
-
       return (
         lookup !== -1 &&
         missingCheck !== -1 &&
@@ -164,7 +146,6 @@ const checks = [
         "existingJob.status !==",
       );
       const reservation = patch.indexOf("reserveExecution(");
-
       return (
         statusCheck !== -1 &&
         reservation !== -1 &&
@@ -188,7 +169,6 @@ const checks = [
       const retry = patch.indexOf("retryExecutionJob(");
       const queuedCheck = patch.indexOf("queuedJob.status !==");
       const execution = patch.indexOf("executeJob(");
-
       return (
         retry !== -1 &&
         queuedCheck !== -1 &&
@@ -204,7 +184,7 @@ const checks = [
   {
     name: "PATCH executes the queued job using its stored input",
     test: () =>
-      /executeJob\(\s*queuedJob\.id,\s*queuedJob\.input\s*\)/.test(
+      /executeJob\(\s*queuedJob\.id\s*,\s*queuedJob\.input\s*,?\s*\)/.test(
         patch,
       ),
   },
@@ -221,7 +201,7 @@ const checks = [
       /const updatedCount\s*=\s*usage\.count\s*\+\s*1/.test(
         usage,
       ) &&
-      /await writeUsage\(\s*updated\s*\)/.test(usage),
+      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(usage),
   },
   {
     name: "Retry storage refuses jobs that are not failed",
@@ -238,27 +218,22 @@ const checks = [
       /status:\s*"queued"/.test(jobStore),
   },
 ];
-
 for (const check of checks) {
   let passed = false;
-
   try {
     passed = check.test();
   } catch {
     passed = false;
   }
-
   if (!passed) {
     failures.push(check.name);
   }
 }
-
 if (failures.length > 0) {
   console.error("Execution usage verification FAILED.");
   failures.forEach((failure) => console.error(`- ${failure}`));
   process.exit(1);
 }
-
 console.log("Execution usage static verification PASSED.");
 console.log(`Checks passed: ${checks.length}`);
 console.log("- POST execution quota boundary");
