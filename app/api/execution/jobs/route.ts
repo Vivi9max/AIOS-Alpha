@@ -659,51 +659,97 @@ export async function POST(
       );
     }
 
+    const existingJob =
+      await getExecutionJob(id);
+
+    if (!existingJob) {
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion: API_VERSION,
+          requestId,
+          error: "Execution job not found.",
+          code: "JOB_NOT_FOUND",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    if (existingJob.status !== "failed") {
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion: API_VERSION,
+          requestId,
+          error: "Only failed jobs can be retried.",
+          code: "JOB_NOT_RETRYABLE",
+          job: existingJob,
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
     const usage =
       await reserveExecution(
         planId,
       );
 
-    if (
-      !usage.allowed
-    ) {
-      const failed =
-        await markExecutionJobFailed(
-          job.id,
-          "Daily execution limit reached.",
-        );
-
+    if (!usage.allowed) {
       return NextResponse.json(
         {
           success: false,
-          apiVersion:
-            API_VERSION,
+          apiVersion: API_VERSION,
           requestId,
-          job: failed,
-          session:
-            null,
-          error:
-            "Daily execution limit reached.",
-          code:
-            "EXECUTION_LIMIT_REACHED",
+          error: "Daily execution limit reached.",
+          code: "EXECUTION_LIMIT_REACHED",
           entitlement: {
             planId,
-            capability:
-              "execution",
-            allowed:
-              false,
+            capability: "execution",
+            allowed: false,
           },
           usage,
-          scope: {
-            workspaceId,
-          },
-          client:
-            clientMetadata,
-          timestamp:
-            Date.now(),
+          timestamp: Date.now(),
         },
         {
           status: 429,
+        },
+      );
+    }
+
+    const queuedJob =
+      await retryExecutionJob(id);
+
+    if (!queuedJob) {
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion: API_VERSION,
+          requestId,
+          error: "Execution job not found.",
+          code: "JOB_NOT_FOUND",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    if (queuedJob.status !== "queued") {
+      return NextResponse.json(
+        {
+          success: false,
+          apiVersion: API_VERSION,
+          requestId,
+          error: "Only failed jobs can be retried.",
+          code: "JOB_NOT_RETRYABLE",
+          job: queuedJob,
+        },
+        {
+          status: 409,
         },
       );
     }
