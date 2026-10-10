@@ -3,6 +3,7 @@ const files = {
   route: "app/api/execution/jobs/route.ts",
   usage: "lib/billing/execution-usage.ts",
   jobStore: "lib/execution/job-store.ts",
+  redis: "lib/server-storage/redis.ts",
 };
 const failures = [];
 for (const file of Object.values(files)) {
@@ -18,6 +19,7 @@ if (failures.length > 0) {
 const route = readFileSync(files.route, "utf8");
 const usage = readFileSync(files.usage, "utf8");
 const jobStore = readFileSync(files.jobStore, "utf8");
+const redis = readFileSync(files.redis, "utf8");
 function extractFunction(source, signature, nextSignature) {
   const start = source.indexOf(signature);
   if (start === -1) {
@@ -193,14 +195,13 @@ const checks = [
     test: () =>
       /limit\s*!==\s*null\s*&&\s*usage\.count\s*>=\s*limit/.test(
         usage,
-      ),
+      ) ||
+      /atomic\.reserved/.test(usage),
   },
   {
     name: "Successful usage reservation increments the count",
     test: () =>
-      /const updatedCount\s*=\s*usage\.count\s*\+\s*1/.test(
-        usage,
-      ) &&
+      /count:\s*usage\.count\s*\+\s*1/.test(usage) &&
       /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(usage),
   },
   {
@@ -216,6 +217,34 @@ const checks = [
       /retryCount:\s*job\.retryCount\s*\+\s*1/.test(jobStore) &&
       /error:\s*null/.test(jobStore) &&
       /status:\s*"queued"/.test(jobStore),
+  },
+  {
+    name: "Redis execution quota reservation uses Lua EVAL",
+    test: () =>
+      /RESERVE_EXECUTION_USAGE_SCRIPT/.test(redis) &&
+      /"EVAL"/.test(redis) &&
+      /reserveExecutionUsageAtomic/.test(redis),
+  },
+  {
+    name: "Redis quota reservation checks the limit before incrementing",
+    test: () =>
+      /record\.count >= limit/.test(redis) &&
+      /record\.count = math\.floor\(math\.max\(0, record\.count\)\) \+ 1/.test(
+        redis,
+      ),
+  },
+  {
+    name: "Execution usage selects atomic reservation in Redis mode",
+    test: () =>
+      /storage\.mode\s*===\s*"redis"/.test(usage) &&
+      /reserveExecutionUsageAtomic\(/.test(usage) &&
+      /getNamespacedStorageKey\(/.test(usage),
+  },
+  {
+    name: "Execution usage preserves the Memory Storage path",
+    test: () =>
+      /await\s+readUsage\(\)/.test(usage) &&
+      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(usage),
   },
 ];
 for (const check of checks) {
@@ -242,6 +271,8 @@ console.log("- Quota-denied job failure handling");
 console.log("- PATCH retry action and job-state validation");
 console.log("- Retry quota reservation and execution ordering");
 console.log("- Daily usage limit enforcement");
+console.log("- Redis atomic execution quota reservation");
+console.log("- Memory Storage fallback path");
 console.log("- Retry state reset and retry counter");
 console.log("");
 console.log(
