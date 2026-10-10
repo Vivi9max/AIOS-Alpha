@@ -4,7 +4,6 @@ import type { MarketRegion } from "@/lib/runtime/market/market-types";
 import { AIOS_USER_COOKIE, resolveAlphaIdentity } from "@/lib/auth/identity";
 import { runWithUserContext } from "@/lib/runtime/request-context";
 import {
-  getMarketResearchUsage,
   reserveMarketResearchReport,
   releaseMarketResearchReportReservation,
 } from "@/lib/billing/market-research-usage";
@@ -51,7 +50,9 @@ function jsonError(
   );
 }
 function normalizeMarket(value: unknown): MarketRegion | undefined {
-  if (value === "us" || value === "hk" || value === "cn") return value;
+  if (value === "us" || value === "hk" || value === "cn") {
+    return value;
+  }
   return undefined;
 }
 export async function POST(request: NextRequest) {
@@ -102,15 +103,11 @@ export async function POST(request: NextRequest) {
     );
   }
   const market = normalizeMarket(input.market);
-  let reservation: Awaited<ReturnType<typeof getMarketResearchUsage>>;
+  let reservation: Awaited<ReturnType<typeof reserveMarketResearchReport>>;
   try {
-    reservation = await runWithUserContext(identity.userId, async () => {
-      const current = await getMarketResearchUsage();
-      if (!current.allowed) {
-        return current;
-      }
-      return reserveMarketResearchReport();
-    });
+    reservation = await runWithUserContext(identity.userId, () =>
+      reserveMarketResearchReport(),
+    );
   } catch {
     return jsonError(
       503,
