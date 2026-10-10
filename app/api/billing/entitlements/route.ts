@@ -1,3 +1,4 @@
+
 import {
   NextRequest,
   NextResponse,
@@ -176,11 +177,10 @@ export async function GET(
    * usage remain compatible with the
    * existing API contract.
    *
-   * Market Research usage is different:
-   * it is now resolved from the
-   * server-side user-scoped persistent
-   * meter and is never accepted from
-   * the client.
+   * Market Research usage is resolved
+   * from the server-side user-scoped
+   * persistent meter. Client-provided
+   * research usage counters are ignored.
    */
   const usage =
     getUsageFromRequest(
@@ -202,7 +202,9 @@ export async function GET(
 
   try {
     marketResearchUsage =
-      await getMarketResearchUsage();
+      await getMarketResearchUsage(
+        planId,
+      );
   } catch {
     const response =
       NextResponse.json(
@@ -333,6 +335,9 @@ export async function GET(
           marketResearchUsage.remaining,
 
         allowed:
+          entitlement.capabilities.includes(
+            "market-research",
+          ) &&
           marketResearchUsage.allowed,
       },
 
@@ -514,7 +519,9 @@ export async function POST(
   ) {
     try {
       marketResearchUsage =
-        await getMarketResearchUsage();
+        await getMarketResearchUsage(
+          planId,
+        );
     } catch {
       const response =
         NextResponse.json(
@@ -545,6 +552,15 @@ export async function POST(
     }
   }
 
+  const marketResearchAllowed =
+    capability ===
+      "market-research"
+      ? allowed &&
+        Boolean(
+          marketResearchUsage?.allowed,
+        )
+      : allowed;
+
   const response =
     NextResponse.json({
       success: true,
@@ -559,13 +575,7 @@ export async function POST(
       capability,
 
       allowed:
-        capability ===
-        "market-research"
-          ? allowed &&
-            Boolean(
-              marketResearchUsage?.allowed,
-            )
-          : allowed,
+        marketResearchAllowed,
 
       reason:
         capability ===
