@@ -1,5 +1,3 @@
-文件路径： package.json
-
 {
   "name": "aios-alpha",
   "private": true,
@@ -29,7 +27,3 @@
     "typescript": "^5.8.3"
   }
 }
-
-Commit message：
-
-test(C167.5.57): run market research quota checks during build
