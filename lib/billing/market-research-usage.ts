@@ -1,26 +1,11 @@
-import {
-  storage,
-} from "@/lib/server-storage";
+import { storage, getNamespacedStorageKey } from "@/lib/server-storage";
+import { redisStorage, reserveMarketResearchUsageAtomic, releaseMarketResearchUsageAtomic } from "@/lib/server-storage/redis";
+import { createUserStorageKey } from "@/lib/storage/data-scope";
+import { getEntitlement } from "@/lib/billing/entitlements";
+import { checkMarketResearchUsage, type MarketResearchUsageCheck } from "@/lib/billing/usage";
+import type { AIOSPlanId } from "@/lib/billing/plans";
 
-import {
-  createUserStorageKey,
-} from "@/lib/storage/data-scope";
-
-import {
-  getEntitlement,
-} from "@/lib/billing/entitlements";
-
-import {
-  checkMarketResearchUsage,
-  type MarketResearchUsageCheck,
-} from "@/lib/billing/usage";
-
-import type {
-  AIOSPlanId,
-} from "@/lib/billing/plans";
-
-const USAGE_RESOURCE =
-  "market-research-usage";
+const USAGE_RESOURCE = "market-research-usage";
 
 interface MarketResearchUsageRecord {
   month: string;
@@ -39,287 +24,118 @@ export interface MarketResearchUsageSnapshot {
 }
 
 function getStorageKey(): string {
-  return createUserStorageKey(
-    USAGE_RESOURCE,
-  );
+  return createUserStorageKey(USAGE_RESOURCE);
 }
 
 function getCurrentMonthKey(): string {
-  const now =
-    new Date();
-
-  const year =
-    now.getUTCFullYear();
-
-  const month =
-    String(
-      now.getUTCMonth() + 1,
-    ).padStart(
-      2,
-      "0",
-    );
-
-  return `${year}-${month}`;
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function createEmptyRecord():
-  MarketResearchUsageRecord {
+function createEmptyRecord(): MarketResearchUsageRecord {
   return {
-    month:
-      getCurrentMonthKey(),
-
-    count:
-      0,
-
-    updatedAt:
-      Date.now(),
+    month: getCurrentMonthKey(),
+    count: 0,
+    updatedAt: Date.now(),
   };
 }
 
-function normalizeCount(
-  value: number,
-): number {
-  if (
-    !Number.isFinite(
-      value,
-    )
-  ) {
-    return 0;
-  }
-
-  return Math.max(
-    0,
-    Math.floor(
-      value,
-    ),
-  );
+function normalizeCount(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
 }
 
-async function readUsage():
-  Promise<MarketResearchUsageRecord> {
-  const stored =
-    await storage.get<
-      MarketResearchUsageRecord
-    >(
-      getStorageKey(),
-    );
-
-  if (
-    !stored ||
-    typeof stored !==
-      "object"
-  ) {
-    return createEmptyRecord();
-  }
-
-  if (
-    typeof stored.month !==
-      "string" ||
-    typeof stored.count !==
-      "number"
-  ) {
-    return createEmptyRecord();
-  }
-
-  const currentMonth =
-    getCurrentMonthKey();
-
-  if (
-    stored.month !==
-    currentMonth
-  ) {
-    return createEmptyRecord();
-  }
-
-  return {
-    month:
-      currentMonth,
-
-    count:
-      normalizeCount(
-        stored.count,
-      ),
-
-    updatedAt:
-      typeof stored.updatedAt ===
-      "number"
-        ? stored.updatedAt
-        : Date.now(),
-  };
-}
-
-async function writeUsage(
-  record:
-    MarketResearchUsageRecord,
-): Promise<void> {
-  await storage.set(
-    getStorageKey(),
-    record,
-  );
-}
-
-function resolvePlanId(
-  planId?: string,
-): AIOSPlanId {
-  if (
-    planId ===
-      "alpha" ||
-    planId ===
-      "free" ||
-    planId ===
-      "pro" ||
-    planId ===
-      "business"
-  ) {
+function resolvePlanId(planId?: string): AIOSPlanId {
+  if (planId === "alpha" || planId === "free" || planId === "pro" || planId === "business") {
     return planId;
   }
-
   return "alpha";
 }
 
 function buildSnapshot(
-  planId:
-    AIOSPlanId,
-  usage:
-    MarketResearchUsageRecord,
+  planId: AIOSPlanId,
+  usage: MarketResearchUsageRecord,
 ): MarketResearchUsageSnapshot {
-  const entitlement =
-    getEntitlement(
-      planId,
-    );
-
-  const check =
-    checkMarketResearchUsage(
-      planId,
-      usage.count,
-    );
-
+  const entitlement = getEntitlement(planId);
+  const check = checkMarketResearchUsage(planId, usage.count);
   return {
     planId,
-
-    month:
-      usage.month,
-
-    used:
-      usage.count,
-
-    limit:
-      check.limit,
-
-    remaining:
-      check.remaining,
-
-    allowed:
-      entitlement.capabilities.includes(
-        "market-research",
-      ) &&
-      check.allowed,
-
-    capability:
-      "market-research",
+    month: usage.month,
+    used: usage.count,
+    limit: check.limit,
+    remaining: check.remaining,
+    allowed: entitlement.capabilities.includes("market-research") && check.allowed,
+    capability: "market-research",
   };
 }
 
-export async function getMarketResearchUsage(
-  planId?: string,
-): Promise<MarketResearchUsageSnapshot> {
-  const resolvedPlanId =
-    resolvePlanId(
-      planId,
-    );
-
-  const usage =
-    await readUsage();
-
-  return buildSnapshot(
-    resolvedPlanId,
-    usage,
-  );
+function assertDurableStorage(): void {
+  if (storage.mode !== "redis" || redisStorage.mode !== "redis") {
+    throw new Error("Durable Redis storage is required for market research quota enforcement.");
+  }
 }
 
-export async function reserveMarketResearchReport(
-  planId?: string,
-): Promise<MarketResearchUsageSnapshot> {
-  const resolvedPlanId =
-    resolvePlanId(
-      planId,
-    );
+async function readUsage(): Promise<MarketResearchUsageRecord> {
+  assertDurableStorage();
+  const stored = await storage.get<MarketResearchUsageRecord>(getStorageKey());
+  if (!stored || typeof stored !== "object") return createEmptyRecord();
+  if (typeof stored.month !== "string" || typeof stored.count !== "number") return createEmptyRecord();
 
-  const entitlement =
-    getEntitlement(
-      resolvedPlanId,
-    );
+  const currentMonth = getCurrentMonthKey();
+  if (stored.month !== currentMonth) return createEmptyRecord();
+  return {
+    month: currentMonth,
+    count: normalizeCount(stored.count),
+    updatedAt: typeof stored.updatedAt === "number" ? stored.updatedAt : Date.now(),
+  };
+}
 
-  const usage =
-    await readUsage();
+export async function getMarketResearchUsage(planId?: string): Promise<MarketResearchUsageSnapshot> {
+  const resolvedPlanId = resolvePlanId(planId);
+  const usage = await readUsage();
+  return buildSnapshot(resolvedPlanId, usage);
+}
 
-  if (
-    !entitlement.capabilities.includes(
-      "market-research",
-    )
-  ) {
-    return buildSnapshot(
-      resolvedPlanId,
-      usage,
-    );
+export async function reserveMarketResearchReport(planId?: string): Promise<MarketResearchUsageSnapshot> {
+  assertDurableStorage();
+  const resolvedPlanId = resolvePlanId(planId);
+  const entitlement = getEntitlement(resolvedPlanId);
+  const month = getCurrentMonthKey();
+
+  if (!entitlement.capabilities.includes("market-research")) {
+    return buildSnapshot(resolvedPlanId, await readUsage());
   }
 
-  const limit =
-    entitlement.limits
-      .marketResearchReportsPerMonth;
-
-  if (
-    limit !== null &&
-    usage.count >=
-      limit
-  ) {
-    return buildSnapshot(
-      resolvedPlanId,
-      usage,
-    );
-  }
-
-  const updated:
-    MarketResearchUsageRecord =
-    {
-      month:
-        usage.month,
-
-      count:
-        usage.count + 1,
-
-      updatedAt:
-        Date.now(),
-    };
-
-  await writeUsage(
-    updated,
+  const limit = entitlement.limits.marketResearchReportsPerMonth;
+  const result = await reserveMarketResearchUsageAtomic(
+    getNamespacedStorageKey(getStorageKey()),
+    month,
+    limit,
+    Date.now(),
   );
 
-  return buildSnapshot(
-    resolvedPlanId,
-    updated,
+  return buildSnapshot(resolvedPlanId, {
+    month: result.month,
+    count: result.count,
+    updatedAt: result.updatedAt,
+  });
+}
+
+export async function releaseMarketResearchReportReservation(): Promise<void> {
+  assertDurableStorage();
+  await releaseMarketResearchUsageAtomic(
+    getNamespacedStorageKey(getStorageKey()),
+    getCurrentMonthKey(),
+    Date.now(),
   );
 }
 
-export async function getMarketResearchUsageCheck(
-  planId?: string,
-): Promise<MarketResearchUsageCheck> {
-  const resolvedPlanId =
-    resolvePlanId(
-      planId,
-    );
-
-  const usage =
-    await readUsage();
-
-  return checkMarketResearchUsage(
-    resolvedPlanId,
-    usage.count,
-  );
+export async function getMarketResearchUsageCheck(planId?: string): Promise<MarketResearchUsageCheck> {
+  const resolvedPlanId = resolvePlanId(planId);
+  const usage = await readUsage();
+  return checkMarketResearchUsage(resolvedPlanId, usage.count);
 }
 
-export function getMarketResearchUsageStorageKey():
-  string {
+export function getMarketResearchUsageStorageKey(): string {
   return getStorageKey();
 }
