@@ -427,10 +427,6 @@ export default function Page() {
           "POST",
           {
             mode: "list-leads",
-            status:
-              filterStatus === "all"
-                ? undefined
-                : filterStatus,
             limit: 500,
           },
         );
@@ -454,7 +450,7 @@ export default function Page() {
         setLoading(false);
       }
     },
-    [filterStatus, requestApi],
+    [requestApi],
   );
 
   useEffect(() => {
@@ -467,7 +463,7 @@ export default function Page() {
     if (session) {
       void loadLeads(false);
     }
-  }, [session, filterStatus, loadLeads]);
+  }, [session, loadLeads]);
 
   function toggleChannel(channel: Channel) {
     setChannels((current) =>
@@ -768,7 +764,54 @@ export default function Page() {
     }
   }
 
-  const visibleRecords = records;
+  const newLeadCount = records.filter(
+    (record) => record.status === "new",
+  ).length;
+
+  const followUpCount = records.filter(
+    (record) => record.status === "follow-up",
+  ).length;
+
+  const convertedCount = records.filter(
+    (record) => record.status === "converted",
+  ).length;
+
+  const closedCount = records.filter(
+    (record) => record.status === "closed",
+  ).length;
+
+  const visibleRecords =
+    filterStatus === "all"
+      ? records
+      : records.filter(
+          (record) => record.status === filterStatus,
+        );
+
+  const nextAction =
+    newLeadCount > 0
+      ? {
+          title: "优先处理新线索",
+          detail: "联系新线索，核实真实需求、决策角色、预算和期望时间。",
+        }
+      : followUpCount > 0
+        ? {
+            title: "推进正在跟进的线索",
+            detail: "为每条跟进中的线索明确下一步动作、负责人和跟进时间。",
+          }
+        : convertedCount > 0
+          ? {
+              title: "核实成交与实际回款",
+              detail: "逐条核对成交标记对应的订单和收款记录。本页面暂不代表已验证收款。",
+            }
+          : records.length === 0
+            ? {
+                title: "先获得第一条真实线索",
+                detail: "人工审核并发布一条内容；收到真实咨询后，再把线索信息录入本页。",
+              }
+            : {
+                title: "复盘未转化线索",
+                detail: "检查关闭原因、客户需求和报价反馈，再调整下一轮内容或服务范围。",
+              };
 
   const contentAssets =
     campaign?.contentAssets ?? [];
@@ -895,6 +938,163 @@ export default function Page() {
           >
             本页面使用现有 Founder Session。未授权请求不会读取或修改线索。
           </p>
+        </section>
+
+        <section style={panelStyle()}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: "19px" }}>
+                经营执行概览
+              </h2>
+              <p
+                style={{
+                  margin: "7px 0 0",
+                  color: "#a1a1aa",
+                  fontSize: "12px",
+                  lineHeight: 1.6,
+                }}
+              >
+                基于当前已加载的真实线索记录统计；成交状态为人工标记，不等于已收款。
+              </p>
+            </div>
+            <span
+              style={{
+                border: "1px solid #3f3f46",
+                borderRadius: "999px",
+                padding: "5px 9px",
+                color: "#d4d4d8",
+                fontSize: "11px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              最多显示 500 条
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
+              gap: "10px",
+              marginTop: "16px",
+            }}
+          >
+            {[
+              {
+                label: "已加载线索",
+                value: records.length,
+                color: "#fafafa",
+              },
+              {
+                label: "新线索",
+                value: newLeadCount,
+                color: "#fcd34d",
+              },
+              {
+                label: "跟进中",
+                value: followUpCount,
+                color: "#93c5fd",
+              },
+              {
+                label: "已成交标记",
+                value: convertedCount,
+                color: "#86efac",
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  border: "1px solid #27272a",
+                  borderRadius: "12px",
+                  padding: "14px",
+                  background: "#09090b",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#a1a1aa",
+                    fontSize: "12px",
+                  }}
+                >
+                  {item.label}
+                </div>
+                <div
+                  style={{
+                    marginTop: "8px",
+                    color: item.color,
+                    fontSize: "27px",
+                    lineHeight: 1.1,
+                    fontWeight: 800,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "12px",
+              marginTop: "14px",
+              padding: "14px",
+              border: "1px solid #3f3f46",
+              borderRadius: "12px",
+              background: "#18181b",
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                display: "flex",
+                flex: "0 0 auto",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "34px",
+                height: "34px",
+                borderRadius: "10px",
+                background: "#27272a",
+                fontSize: "17px",
+              }}
+            >
+              {"->"}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 750 }}>
+                今日优先动作：{nextAction.title}
+              </div>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  color: "#d4d4d8",
+                  fontSize: "13px",
+                  lineHeight: 1.65,
+                }}
+              >
+                {nextAction.detail}
+              </p>
+              <div
+                style={{
+                  marginTop: "8px",
+                  color: "#a1a1aa",
+                  fontSize: "11px",
+                }}
+              >
+                已关闭线索：{closedCount} 条。当前模块不采集支付凭证或银行流水。
+              </div>
+            </div>
+          </div>
         </section>
 
         {error && (
