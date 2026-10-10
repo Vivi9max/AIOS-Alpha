@@ -1,24 +1,27 @@
-import { storage } from "@/lib/server-storage";
-import { createUserStorageKey } from "@/lib/storage/data-scope";
-
+import {
+  getNamespacedStorageKey,
+  storage,
+} from "@/lib/server-storage";
+import {
+  reserveExecutionUsageAtomic,
+} from "@/lib/server-storage/redis";
+import {
+  createUserStorageKey,
+} from "@/lib/storage/data-scope";
 import {
   getEntitlement,
   type AIOSCapability,
 } from "@/lib/billing/entitlements";
-
 import type {
   AIOSPlanId,
 } from "@/lib/billing/plans";
-
 const USAGE_RESOURCE =
   "execution-usage";
-
 interface ExecutionUsageRecord {
   date: string;
   count: number;
   updatedAt: number;
 }
-
 export interface ExecutionUsageSnapshot {
   planId: AIOSPlanId;
   date: string;
@@ -28,30 +31,23 @@ export interface ExecutionUsageSnapshot {
   allowed: boolean;
   capability: AIOSCapability;
 }
-
 function getStorageKey(): string {
   return createUserStorageKey(
     USAGE_RESOURCE,
   );
 }
-
 function getTodayKey(): string {
   const now = new Date();
-
   const year =
     now.getUTCFullYear();
-
   const month = String(
     now.getUTCMonth() + 1,
   ).padStart(2, "0");
-
   const day = String(
     now.getUTCDate(),
   ).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
 }
-
 function createEmptyRecord(): ExecutionUsageRecord {
   return {
     date: getTodayKey(),
@@ -59,36 +55,30 @@ function createEmptyRecord(): ExecutionUsageRecord {
     updatedAt: Date.now(),
   };
 }
-
 async function readUsage(): Promise<ExecutionUsageRecord> {
   const stored =
     await storage.get<ExecutionUsageRecord>(
       getStorageKey(),
     );
-
   if (
     !stored ||
     typeof stored !== "object"
   ) {
     return createEmptyRecord();
   }
-
   if (
     typeof stored.date !== "string" ||
     typeof stored.count !== "number"
   ) {
     return createEmptyRecord();
   }
-
   const today =
     getTodayKey();
-
   if (
     stored.date !== today
   ) {
     return createEmptyRecord();
   }
-
   return {
     date: today,
     count: Math.max(
@@ -98,13 +88,11 @@ async function readUsage(): Promise<ExecutionUsageRecord> {
       ),
     ),
     updatedAt:
-      typeof stored.updatedAt ===
-      "number"
+      typeof stored.updatedAt === "number"
         ? stored.updatedAt
         : Date.now(),
   };
 }
-
 async function writeUsage(
   record: ExecutionUsageRecord,
 ): Promise<void> {
@@ -113,7 +101,6 @@ async function writeUsage(
     record,
   );
 }
-
 function resolvePlanId(
   planId?: string,
 ): AIOSPlanId {
@@ -125,70 +112,63 @@ function resolvePlanId(
   ) {
     return planId;
   }
-
   return "alpha";
 }
-
+function createUsageSnapshot(
+  planId: AIOSPlanId,
+  usage: ExecutionUsageRecord,
+  limit: number | null,
+  allowed: boolean,
+): ExecutionUsageSnapshot {
+  return {
+    planId,
+    date: usage.date,
+    used: usage.count,
+    limit,
+    remaining: limit === null
+      ? null
+      : Math.max(0, limit - usage.count),
+    allowed,
+    capability: "execution",
+  };
+}
 export async function getExecutionUsage(
   planId?: string,
 ): Promise<ExecutionUsageSnapshot> {
   const resolvedPlanId =
     resolvePlanId(planId);
-
   const entitlement =
     getEntitlement(
       resolvedPlanId,
     );
-
   const usage =
     await readUsage();
-
   const limit =
-    entitlement.limits
-      .executionsPerDay;
-
-  const remaining =
-    limit === null
-      ? null
-      : Math.max(
-          0,
-          limit - usage.count,
-        );
-
-  return {
-    planId:
-      resolvedPlanId,
-
-    date:
-      usage.date,
-
-    used:
-      usage.count,
-
-    limit,
-
-    remaining,
-
-    allowed:
+    entitlement.limits.executionsPerDay;
+  const allowed =
+    entitlement.capabilities.includes("execution") &&
+    (
       limit === null ||
-      usage.count < limit,
-
-    capability:
-      "execution",
-  };
+      usage.count < limit
+    );
+  return createUsageSnapshot(
+    resolvedPlanId,
+    usage,
+    limit,
+    allowed,
+  );
 }
-
 export async function reserveExecution(
   planId?: string,
 ): Promise<ExecutionUsageSnapshot> {
   const resolvedPlanId =
     resolvePlanId(planId);
-
   const entitlement =
     getEntitlement(
       resolvedPlanId,
     );
-
+  const limit =
+    entitlement.limits.executionsPerDay;
   if (
     !entitlement.capabilities.includes(
       "execution",
@@ -196,118 +176,66 @@ export async function reserveExecution(
   ) {
     const usage =
       await readUsage();
-
-    return {
-      planId:
-        resolvedPlanId,
-
-      date:
-        usage.date,
-
-      used:
-        usage.count,
-
-      limit:
-        entitlement.limits
-          .executionsPerDay,
-
-      remaining:
-        entitlement.limits
-          .executionsPerDay ===
-        null
-          ? null
-          : Math.max(
-              0,
-              entitlement.limits
-                .executionsPerDay -
-                usage.count,
-            ),
-
-      allowed:
-        false,
-
-      capability:
-        "execution",
-    };
+    return createUsageSnapshot(
+      resolvedPlanId,
+      usage,
+      limit,
+      false,
+    );
   }
-
+  if (
+    storage.mode === "redis"
+  ) {
+    const date =
+      getTodayKey();
+    const now =
+      Date.now();
+    const atomic =
+      await reserveExecutionUsageAtomic(
+        getNamespacedStorageKey(
+          getStorageKey(),
+        ),
+        date,
+        limit,
+        now,
+      );
+    const usage: ExecutionUsageRecord = {
+      date: atomic.date,
+      count: atomic.count,
+      updatedAt: atomic.updatedAt,
+    };
+    return createUsageSnapshot(
+      resolvedPlanId,
+      usage,
+      limit,
+      atomic.reserved,
+    );
+  }
   const usage =
     await readUsage();
-
-  const limit =
-    entitlement.limits
-      .executionsPerDay;
-
   if (
     limit !== null &&
     usage.count >= limit
   ) {
-    return {
-      planId:
-        resolvedPlanId,
-
-      date:
-        usage.date,
-
-      used:
-        usage.count,
-
+    return createUsageSnapshot(
+      resolvedPlanId,
+      usage,
       limit,
-
-      remaining: 0,
-
-      allowed:
-        false,
-
-      capability:
-        "execution",
-    };
+      false,
+    );
   }
-
-  const updatedCount =
-    usage.count + 1;
-
-  const updated: ExecutionUsageRecord =
-    {
-      date:
-        usage.date,
-
-      count:
-        updatedCount,
-
-      updatedAt:
-        Date.now(),
-    };
-
+  const updated: ExecutionUsageRecord = {
+    date: usage.date,
+    count: usage.count + 1,
+    updatedAt: Date.now(),
+  };
   await writeUsage(
     updated,
   );
-
-  return {
-    planId:
-      resolvedPlanId,
-
-    date:
-      updated.date,
-
-    used:
-      updated.count,
-
+  return createUsageSnapshot(
+    resolvedPlanId,
+    updated,
     limit,
-
-    remaining:
-      limit === null
-        ? null
-        : Math.max(
-            0,
-            limit -
-              updated.count,
-          ),
-
-    allowed:
-      true,
-
-    capability:
-      "execution",
-  };
+    true,
+  );
 }
