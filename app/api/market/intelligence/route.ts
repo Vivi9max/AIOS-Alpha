@@ -1,3 +1,4 @@
+
 import {
   NextRequest,
   NextResponse,
@@ -15,6 +16,10 @@ import {
   AIOS_USER_COOKIE,
   resolveAlphaIdentity,
 } from "@/lib/auth/identity";
+
+import {
+  runWithUserContext,
+} from "@/lib/runtime/request-context";
 
 import {
   getMarketResearchUsage,
@@ -209,21 +214,18 @@ export async function POST(
     );
 
   /*
-   * C167.5.49
+   * C167.5.51
    *
-   * Market Research access is resolved
-   * server-side from the current
-   * user-scoped usage record.
+   * All user-scoped storage operations
+   * must run inside the resolved user's
+   * AsyncLocalStorage context.
    *
-   * The client is deliberately not
-   * allowed to provide:
+   * The client cannot provide:
    * - planId
    * - reportsThisMonth
    * - usage counters
    *
-   * The current Alpha plan is resolved
-   * by the billing usage layer because
-   * real subscription/payment mapping
+   * Real subscription/payment mapping
    * is not connected yet.
    */
   let usage:
@@ -235,7 +237,11 @@ export async function POST(
 
   try {
     usage =
-      await getMarketResearchUsage();
+      await runWithUserContext(
+        identity.userId,
+        () =>
+          getMarketResearchUsage(),
+      );
   } catch {
     const response =
       NextResponse.json(
@@ -300,44 +306,51 @@ export async function POST(
      * - dispatch Planner
      * - execute trading
      *
-     * The public route reuses the existing
-     * read-only Market Runtime.
+     * Runtime execution and the successful
+     * usage reservation share the same
+     * resolved-user context.
      */
+    const execution =
+      await runWithUserContext(
+        identity.userId,
+        async () => {
+          const result =
+            await analyzeMarketRequest({
+              symbol,
+              market,
+              mode: "full",
+              query:
+                typeof input.query ===
+                "string"
+                  ? input.query
+                  : null,
+            });
+
+          /*
+           * Count a report only after
+           * successful Research Runtime
+           * completion.
+           *
+           * Failed runtime calls do not
+           * consume a monthly report.
+           */
+          const usageAfterSuccess =
+            result.success
+              ? await reserveMarketResearchReport()
+              : usage;
+
+          return {
+            result,
+            usageAfterSuccess,
+          };
+        },
+      );
+
     const result =
-      await analyzeMarketRequest({
-        symbol,
-        market,
-        mode: "full",
-        query:
-          typeof input.query ===
-          "string"
-            ? input.query
-            : null,
-      });
+      execution.result;
 
-    /*
-     * Market Research usage is counted
-     * only after the Research Runtime
-     * returns successfully.
-     *
-     * This prevents malformed requests
-     * and failed runtime calls from
-     * consuming a monthly report.
-     */
-    let usageAfterSuccess:
-      Awaited<
-        ReturnType<
-          typeof reserveMarketResearchReport
-        >
-      >;
-
-    if (result.success) {
-      usageAfterSuccess =
-        await reserveMarketResearchReport();
-    } else {
-      usageAfterSuccess =
-        usage;
-    }
+    const usageAfterSuccess =
+      execution.usageAfterSuccess;
 
     const response =
       NextResponse.json(
@@ -358,10 +371,10 @@ export async function POST(
             Date.now(),
 
           /*
-           * Keep quota information minimal
-           * and product-facing. Internal
-           * identity and storage keys are
-           * never exposed.
+           * Expose only product-facing
+           * quota information.
+           * Never expose internal identity
+           * or storage keys.
            */
           marketResearchUsage:
             result.success
@@ -387,10 +400,10 @@ export async function POST(
       );
 
     /*
-     * The identity cookie is retained for
-     * user-scoped billing/usage features,
-     * but the internal userId is deliberately
-     * NOT returned in the public response.
+     * Retain the identity cookie for
+     * user-scoped billing and usage.
+     * Never return the internal userId
+     * in the public response.
      */
     return applyIdentityCookie(
       response,
