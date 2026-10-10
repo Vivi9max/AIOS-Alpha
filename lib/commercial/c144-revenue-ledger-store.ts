@@ -20,7 +20,7 @@ export interface RevenueOfferRecord {
   name: string;
   description: string;
   currency: string;
-  priceMinor: number;
+  price: number;
   deliverables: string[];
   exclusions: string[];
   deliveryDays: number;
@@ -38,7 +38,7 @@ export interface RevenueOrderRecord {
   title: string;
   scope: string;
   currency: string;
-  amountMinor: number;
+  amount: number;
   status: RevenueOrderStatus;
   agreedAt: number | null;
   dueAt: number | null;
@@ -65,7 +65,7 @@ export interface RevenuePaymentRecord {
   id: string;
   orderId: string;
   currency: string;
-  amountMinor: number;
+  amount: number;
   method: RevenuePaymentMethod;
   status: RevenuePaymentStatus;
   receivedAt: number | null;
@@ -97,9 +97,10 @@ function cleanCurrency(value: unknown): string {
   return /^[A-Z]{3}$/.test(currency) ? currency : "CNY";
 }
 
-function cleanMinorAmount(value: unknown): number {
+function cleanMoneyAmount(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
-  return Math.min(100000000000, Math.max(0, Math.round(value)));
+  const bounded = Math.min(1000000000, Math.max(0, value));
+  return Math.round((bounded + Number.EPSILON) * 100) / 100;
 }
 
 function cleanPositiveInteger(value: unknown, fallback = 1): number {
@@ -126,10 +127,24 @@ function isOneOf<T extends string>(value: unknown, values: readonly T[]): value 
   return typeof value === "string" && values.includes(value as T);
 }
 
+function migrateLegacyMoneyRecord(key: string, value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const item = value as Record<string, unknown>;
+  if (key === OFFERS_KEY && typeof item.priceMinor === "number" && typeof item.price !== "number") {
+    const { priceMinor, ...rest } = item;
+    return { ...rest, price: cleanMoneyAmount(priceMinor / 100) };
+  }
+  if ((key === ORDERS_KEY || key === PAYMENTS_KEY) && typeof item.amountMinor === "number" && typeof item.amount !== "number") {
+    const { amountMinor, ...rest } = item;
+    return { ...rest, amount: cleanMoneyAmount(amountMinor / 100) };
+  }
+  return value;
+}
+
 async function readList<T>(key: string, isValid: (value: unknown) => value is T): Promise<T[]> {
   const value = await storage.get<unknown>(key);
   if (!Array.isArray(value)) return [];
-  return value.filter(isValid).slice(-MAX_RECORDS);
+  return value.map((item) => migrateLegacyMoneyRecord(key, item)).filter(isValid).slice(-MAX_RECORDS);
 }
 
 async function writeList<T>(key: string, records: T[]): Promise<void> {
@@ -141,7 +156,7 @@ function isOffer(value: unknown): value is RevenueOfferRecord {
   const item = value as Partial<RevenueOfferRecord>;
   return typeof item.id === "string" && typeof item.name === "string" &&
     typeof item.description === "string" && typeof item.currency === "string" &&
-    typeof item.priceMinor === "number" && Array.isArray(item.deliverables) &&
+    typeof item.price === "number" && Array.isArray(item.deliverables) &&
     Array.isArray(item.exclusions) && typeof item.deliveryDays === "number" &&
     isOneOf(item.status, ["draft", "active", "paused", "archived"] as const) &&
     typeof item.createdAt === "number" && typeof item.updatedAt === "number";
@@ -152,7 +167,7 @@ function isOrder(value: unknown): value is RevenueOrderRecord {
   const item = value as Partial<RevenueOrderRecord>;
   return typeof item.id === "string" && typeof item.customerLabel === "string" &&
     typeof item.title === "string" && typeof item.currency === "string" &&
-    typeof item.amountMinor === "number" &&
+    typeof item.amount === "number" &&
     isOneOf(item.status, ["quoted", "awaiting-payment", "paid", "in-delivery", "delivered", "cancelled", "refunded"] as const) &&
     typeof item.createdAt === "number" && typeof item.updatedAt === "number";
 }
@@ -171,7 +186,7 @@ function isPayment(value: unknown): value is RevenuePaymentRecord {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<RevenuePaymentRecord>;
   return typeof item.id === "string" && typeof item.orderId === "string" &&
-    typeof item.currency === "string" && typeof item.amountMinor === "number" &&
+    typeof item.currency === "string" && typeof item.amount === "number" &&
     isOneOf(item.method, ["bank-transfer", "platform-order", "cash", "other", "unknown"] as const) &&
     isOneOf(item.status, ["pending", "received", "refunded", "void"] as const) &&
     typeof item.createdAt === "number" && typeof item.updatedAt === "number";
@@ -185,7 +200,7 @@ export async function createRevenueOffer(input: {
   name: string;
   description?: string;
   currency?: string;
-  priceMinor: number;
+  price: number;
   deliverables?: string[];
   exclusions?: string[];
   deliveryDays?: number;
@@ -197,7 +212,7 @@ export async function createRevenueOffer(input: {
     name: cleanText(input.name, 200) || "Untitled offer",
     description: cleanText(input.description),
     currency: cleanCurrency(input.currency),
-    priceMinor: cleanMinorAmount(input.priceMinor),
+    price: cleanMoneyAmount(input.price),
     deliverables: cleanTextList(input.deliverables),
     exclusions: cleanTextList(input.exclusions),
     deliveryDays: cleanPositiveInteger(input.deliveryDays, 7),
@@ -223,7 +238,7 @@ export async function createRevenueOrder(input: {
   title: string;
   scope?: string;
   currency?: string;
-  amountMinor: number;
+  amount: number;
   status?: RevenueOrderStatus;
   agreedAt?: number | null;
   dueAt?: number | null;
@@ -239,7 +254,7 @@ export async function createRevenueOrder(input: {
     title: cleanText(input.title, 200) || "Untitled order",
     scope: cleanText(input.scope),
     currency: cleanCurrency(input.currency),
-    amountMinor: cleanMinorAmount(input.amountMinor),
+    amount: cleanMoneyAmount(input.amount),
     status: isOneOf(input.status, ["quoted", "awaiting-payment", "paid", "in-delivery", "delivered", "cancelled", "refunded"] as const) ? input.status : "quoted",
     agreedAt: cleanTimestamp(input.agreedAt),
     dueAt: cleanTimestamp(input.dueAt),
@@ -255,7 +270,7 @@ export async function createRevenueOrder(input: {
 
 export async function updateRevenueOrder(
   id: string,
-  updates: Partial<Pick<RevenueOrderRecord, "customerLabel" | "customerContactNote" | "title" | "scope" | "amountMinor" | "status" | "agreedAt" | "dueAt" | "note">>,
+  updates: Partial<Pick<RevenueOrderRecord, "customerLabel" | "customerContactNote" | "title" | "scope" | "amount" | "status" | "agreedAt" | "dueAt" | "note">>,
 ): Promise<RevenueOrderRecord | null> {
   const records = await readList(ORDERS_KEY, isOrder);
   const index = records.findIndex((item) => item.id === cleanText(id, 120));
@@ -267,7 +282,7 @@ export async function updateRevenueOrder(
     customerContactNote: updates.customerContactNote === undefined ? current.customerContactNote : cleanText(updates.customerContactNote, 1000),
     title: updates.title === undefined ? current.title : cleanText(updates.title, 200),
     scope: updates.scope === undefined ? current.scope : cleanText(updates.scope),
-    amountMinor: updates.amountMinor === undefined ? current.amountMinor : cleanMinorAmount(updates.amountMinor),
+    amount: updates.amount === undefined ? current.amount : cleanMoneyAmount(updates.amount),
     status: isOneOf(updates.status, ["quoted", "awaiting-payment", "paid", "in-delivery", "delivered", "cancelled", "refunded"] as const) ? updates.status : current.status,
     agreedAt: updates.agreedAt === undefined ? current.agreedAt : cleanTimestamp(updates.agreedAt),
     dueAt: updates.dueAt === undefined ? current.dueAt : cleanTimestamp(updates.dueAt),
@@ -352,7 +367,7 @@ export async function listRevenuePayments(orderId?: string): Promise<RevenuePaym
 export async function createRevenuePayment(input: {
   orderId: string;
   currency?: string;
-  amountMinor: number;
+  amount: number;
   method?: RevenuePaymentMethod;
   status?: RevenuePaymentStatus;
   receivedAt?: number | null;
@@ -375,7 +390,7 @@ export async function createRevenuePayment(input: {
     id: createId("payment"),
     orderId,
     currency: cleanCurrency(input.currency),
-    amountMinor: cleanMinorAmount(input.amountMinor),
+    amount: cleanMoneyAmount(input.amount),
     method: isOneOf(input.method, ["bank-transfer", "platform-order", "cash", "other", "unknown"] as const) ? input.method : "unknown",
     status,
     receivedAt: status === "received" ? receivedAt : null,
@@ -424,7 +439,7 @@ export async function getRevenueLedgerSnapshot(): Promise<{
   orders: RevenueOrderRecord[];
   deliveries: RevenueDeliveryRecord[];
   payments: RevenuePaymentRecord[];
-  recordedReceivedAmountMinor: number;
+  recordedReceivedAmount: number;
   note: string;
 }> {
   const [offers, orders, deliveries, payments] = await Promise.all([
@@ -433,15 +448,17 @@ export async function getRevenueLedgerSnapshot(): Promise<{
     listRevenueDeliveries(),
     listRevenuePayments(),
   ]);
-  const recordedReceivedAmountMinor = payments
-    .filter((item) => item.status === "received")
-    .reduce((sum, item) => sum + item.amountMinor, 0);
+  const recordedReceivedAmount = Math.round(
+    payments
+      .filter((item) => item.status === "received")
+      .reduce((sumCents, item) => sumCents + Math.round(item.amount * 100), 0),
+  ) / 100;
   return {
     offers,
     orders,
     deliveries,
     payments,
-    recordedReceivedAmountMinor,
+    recordedReceivedAmount,
     note: "Recorded receipts are manually entered records, not independently verified bank or payment-provider data.",
   };
 }
