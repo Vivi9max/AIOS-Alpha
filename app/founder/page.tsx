@@ -145,6 +145,8 @@ const copy: Record<
     autonomousDevelopment: string;
     autonomousDevelopmentDetail: string;
     autonomousDevelopmentDescription: string;
+    inboundGrowth: string;
+    inboundGrowthDetail: string;
 
     enterKey: string;
     loginDescription: string;
@@ -300,6 +302,11 @@ const copy: Record<
       "Founder-only AIOS engineering execution entry",
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
+
+    inboundGrowth:
+      "AIOS Inbound Growth",
+    inboundGrowthDetail:
+      "Founder entry for customer discovery, qualification, offers and revenue workflow",
 
     enterKey:
       "Founder access required",
@@ -478,6 +485,11 @@ const copy: Record<
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
+    inboundGrowth:
+      "AIOS 获客增长",
+    inboundGrowthDetail:
+      "客户发现、筛选、Offer 与收入闭环的 Founder 入口",
+
     enterKey:
       "请输入 Founder Access Key",
     loginDescription:
@@ -654,6 +666,11 @@ const copy: Record<
       "Founder 専用 AIOS 自律開発実行エントリー",
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
+
+    inboundGrowth:
+      "AIOS インバウンド成長",
+    inboundGrowthDetail:
+      "顧客発見、選別、オファー、収益化ワークフローの Founder 入口",
 
     enterKey:
       "Founder Access Key が必要です",
@@ -2146,6 +2163,17 @@ export default function FounderPage() {
             }
             detail={
               t.autonomousDevelopmentDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/inbound-growth"
+            icon="🎯"
+            title={
+              t.inboundGrowth
+            }
+            detail={
+              t.inboundGrowthDetail
             }
           />
         </section>
