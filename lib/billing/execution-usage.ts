@@ -15,13 +15,16 @@ import {
 import type {
   AIOSPlanId,
 } from "@/lib/billing/plans";
+
 const USAGE_RESOURCE =
   "execution-usage";
+
 interface ExecutionUsageRecord {
   date: string;
   count: number;
   updatedAt: number;
 }
+
 export interface ExecutionUsageSnapshot {
   planId: AIOSPlanId;
   date: string;
@@ -31,11 +34,13 @@ export interface ExecutionUsageSnapshot {
   allowed: boolean;
   capability: AIOSCapability;
 }
+
 function getStorageKey(): string {
   return createUserStorageKey(
     USAGE_RESOURCE,
   );
 }
+
 function getTodayKey(): string {
   const now = new Date();
   const year =
@@ -46,8 +51,10 @@ function getTodayKey(): string {
   const day = String(
     now.getUTCDate(),
   ).padStart(2, "0");
+
   return `${year}-${month}-${day}`;
 }
+
 function createEmptyRecord(): ExecutionUsageRecord {
   return {
     date: getTodayKey(),
@@ -55,30 +62,36 @@ function createEmptyRecord(): ExecutionUsageRecord {
     updatedAt: Date.now(),
   };
 }
+
 async function readUsage(): Promise<ExecutionUsageRecord> {
   const stored =
     await storage.get<ExecutionUsageRecord>(
       getStorageKey(),
     );
+
   if (
     !stored ||
     typeof stored !== "object"
   ) {
     return createEmptyRecord();
   }
+
   if (
     typeof stored.date !== "string" ||
     typeof stored.count !== "number"
   ) {
     return createEmptyRecord();
   }
+
   const today =
     getTodayKey();
+
   if (
     stored.date !== today
   ) {
     return createEmptyRecord();
   }
+
   return {
     date: today,
     count: Math.max(
@@ -93,6 +106,7 @@ async function readUsage(): Promise<ExecutionUsageRecord> {
         : Date.now(),
   };
 }
+
 async function writeUsage(
   record: ExecutionUsageRecord,
 ): Promise<void> {
@@ -101,6 +115,7 @@ async function writeUsage(
     record,
   );
 }
+
 function resolvePlanId(
   planId?: string,
 ): AIOSPlanId {
@@ -112,8 +127,10 @@ function resolvePlanId(
   ) {
     return planId;
   }
+
   return "alpha";
 }
+
 function createUsageSnapshot(
   planId: AIOSPlanId,
   usage: ExecutionUsageRecord,
@@ -132,25 +149,31 @@ function createUsageSnapshot(
     capability: "execution",
   };
 }
+
 export async function getExecutionUsage(
   planId?: string,
 ): Promise<ExecutionUsageSnapshot> {
   const resolvedPlanId =
     resolvePlanId(planId);
+
   const entitlement =
     getEntitlement(
       resolvedPlanId,
     );
+
   const usage =
     await readUsage();
+
   const limit =
     entitlement.limits.executionsPerDay;
+
   const allowed =
     entitlement.capabilities.includes("execution") &&
     (
       limit === null ||
       usage.count < limit
     );
+
   return createUsageSnapshot(
     resolvedPlanId,
     usage,
@@ -158,17 +181,21 @@ export async function getExecutionUsage(
     allowed,
   );
 }
+
 export async function reserveExecution(
   planId?: string,
 ): Promise<ExecutionUsageSnapshot> {
   const resolvedPlanId =
     resolvePlanId(planId);
+
   const entitlement =
     getEntitlement(
       resolvedPlanId,
     );
+
   const limit =
     entitlement.limits.executionsPerDay;
+
   if (
     !entitlement.capabilities.includes(
       "execution",
@@ -176,6 +203,7 @@ export async function reserveExecution(
   ) {
     const usage =
       await readUsage();
+
     return createUsageSnapshot(
       resolvedPlanId,
       usage,
@@ -183,13 +211,16 @@ export async function reserveExecution(
       false,
     );
   }
+
   if (
     storage.mode === "redis"
   ) {
     const date =
       getTodayKey();
+
     const now =
       Date.now();
+
     const atomic =
       await reserveExecutionUsageAtomic(
         getNamespacedStorageKey(
@@ -199,11 +230,13 @@ export async function reserveExecution(
         limit,
         now,
       );
+
     const usage: ExecutionUsageRecord = {
       date: atomic.date,
       count: atomic.count,
       updatedAt: atomic.updatedAt,
     };
+
     return createUsageSnapshot(
       resolvedPlanId,
       usage,
@@ -211,8 +244,10 @@ export async function reserveExecution(
       atomic.reserved,
     );
   }
+
   const usage =
     await readUsage();
+
   if (
     limit !== null &&
     usage.count >= limit
@@ -224,14 +259,17 @@ export async function reserveExecution(
       false,
     );
   }
+
   const updated: ExecutionUsageRecord = {
     date: usage.date,
     count: usage.count + 1,
     updatedAt: Date.now(),
   };
+
   await writeUsage(
     updated,
   );
+
   return createUsageSnapshot(
     resolvedPlanId,
     updated,
