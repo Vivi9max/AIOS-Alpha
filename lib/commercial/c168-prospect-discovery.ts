@@ -16,7 +16,7 @@ export const C168_PROSPECT_DISCOVERY_ID =
   "C168-PROSPECT-DISCOVERY";
 
 export const C168_PROSPECT_DISCOVERY_VERSION =
-  "C168.3.0";
+  "C168.4.1";
 
 export type C168ProspectIndustry =
   | "home-renovation"
@@ -192,6 +192,29 @@ const GENERIC_NAME_TERMS = [
   "装修公司推荐",
   "装修攻略",
   "装修案例",
+  "新房装修",
+  "目前装修",
+  "大型装修",
+  "全案设计",
+  "预约设计",
+  "高端定制",
+  "资深设计",
+  "新房装饰",
+  "家装设计",
+  "室内设计",
+  "设计公司",
+  "装修设计公司",
+  "家装设计公司",
+  "装修服务",
+  "装修服务商",
+  "装企",
+  "装饰设计",
+  "家装案例",
+  "设计案例",
+  "装修推荐",
+  "装修报价",
+  "免费量房",
+  "免费设计",
 ];
 
 const EXCLUDED_HOST_HINTS = [
