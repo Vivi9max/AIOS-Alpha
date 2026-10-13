@@ -21,6 +21,27 @@ function createJobId(): string {
   ].join("-");
 }
 
+function isOptionalString(
+  value: unknown,
+): value is string | undefined {
+  return (
+    value === undefined ||
+    typeof value === "string"
+  );
+}
+
+function isOptionalFiniteNumber(
+  value: unknown,
+): value is number | undefined {
+  return (
+    value === undefined ||
+    (
+      typeof value === "number" &&
+      Number.isFinite(value)
+    )
+  );
+}
+
 function isExecutionJobVerification(
   value: unknown,
 ): value is ExecutionJobVerification {
@@ -65,27 +86,45 @@ function isExecutionJob(
   return (
     typeof job.id === "string" &&
     job.id.length > 0 &&
+    isOptionalString(
+      job.planId,
+    ) &&
     typeof job.goal === "string" &&
-    typeof job.input === "string" &&
+    isOptionalString(
+      job.taskId,
+    ) &&
     typeof job.status === "string" &&
     ["queued", "running", "completed", "failed"].includes(
       job.status,
+    ) &&
+    typeof job.input === "string" &&
+    isOptionalString(
+      job.result,
+    ) &&
+    isOptionalString(
+      job.error,
     ) &&
     typeof job.retryCount === "number" &&
     Number.isInteger(
       job.retryCount,
     ) &&
     job.retryCount >= 0 &&
+    isExecutionJobVerification(
+      job.verification,
+    ) &&
     typeof job.createdAt === "number" &&
     Number.isFinite(
       job.createdAt,
     ) &&
+    isOptionalFiniteNumber(
+      job.startedAt,
+    ) &&
+    isOptionalFiniteNumber(
+      job.completedAt,
+    ) &&
     typeof job.updatedAt === "number" &&
     Number.isFinite(
       job.updatedAt,
-    ) &&
-    isExecutionJobVerification(
-      job.verification,
     )
   );
 }
