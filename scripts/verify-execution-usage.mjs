@@ -49,6 +49,12 @@ function extractFunction(source, signature, nextSignature) {
   return source.slice(start, end);
 }
 
+const invalidJsonResponse = extractFunction(
+  route,
+  "function getInvalidJsonResponse(",
+  "function getEntitlementFailure(",
+);
+
 const post = extractFunction(
   route,
   "export async function POST(",
@@ -106,6 +112,66 @@ const checks = [
       /const\s+MAX_INPUT_LENGTH\s*=\s*10000\s*;/.test(
         route,
       ),
+  },
+  {
+    name: "Execution route defines a malformed JSON response",
+    test: () =>
+      invalidJsonResponse.length > 0 &&
+      /"INVALID_JSON"/.test(
+        invalidJsonResponse,
+      ) &&
+      /status:\s*400/.test(
+        invalidJsonResponse,
+      ),
+  },
+  {
+    name: "Malformed JSON response preserves API version and request id",
+    test: () =>
+      invalidJsonResponse.length > 0 &&
+      /apiVersion:\s*API_VERSION/.test(
+        invalidJsonResponse,
+      ) &&
+      /\brequestId\b/.test(
+        invalidJsonResponse,
+      ),
+  },
+  {
+    name: "POST rejects malformed JSON before execution validation",
+    test: () => {
+      const requestJson =
+        post.indexOf("await request.json()");
+      const invalidJson =
+        post.indexOf("getInvalidJsonResponse(");
+      const goalValidation =
+        post.indexOf("if (!goal)");
+
+      return (
+        requestJson !== -1 &&
+        invalidJson !== -1 &&
+        goalValidation !== -1 &&
+        requestJson < invalidJson &&
+        invalidJson < goalValidation
+      );
+    },
+  },
+  {
+    name: "PATCH rejects malformed JSON before retry validation",
+    test: () => {
+      const requestJson =
+        patch.indexOf("await request.json()");
+      const invalidJson =
+        patch.indexOf("getInvalidJsonResponse(");
+      const idValidation =
+        patch.indexOf("if (!id)");
+
+      return (
+        requestJson !== -1 &&
+        invalidJson !== -1 &&
+        idValidation !== -1 &&
+        requestJson < invalidJson &&
+        invalidJson < idValidation
+      );
+    },
   },
   {
     name: "POST validates the execution goal before creating a job",
@@ -583,6 +649,14 @@ console.log(
 
 console.log(
   `Checks passed: ${checks.length}`,
+);
+
+console.log(
+  "- Malformed JSON request boundary",
+);
+
+console.log(
+  "- POST and PATCH invalid JSON handling",
 );
 
 console.log(
