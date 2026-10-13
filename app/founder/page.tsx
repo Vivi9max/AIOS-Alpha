@@ -148,6 +148,9 @@ const copy: Record<
     inboundGrowth: string;
     inboundGrowthDetail: string;
 
+    adAcquisition: string;
+    adAcquisitionDetail: string;
+
     revenueLedger: string;
     revenueLedgerDetail: string;
 
@@ -306,11 +309,15 @@ const copy: Record<
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
-
     inboundGrowth:
       "AIOS Inbound Growth",
     inboundGrowthDetail:
       "Turn qualified opportunities into outreach, orders and revenue",
+
+    adAcquisition:
+      "AIOS Ad Acquisition",
+    adAcquisitionDetail:
+      "Discover and validate evidence-backed Shenzhen home-improvement prospects",
 
     revenueLedger:
       "Founder Revenue Ledger",
@@ -499,6 +506,11 @@ const copy: Record<
     inboundGrowthDetail:
       "将有效商机转化为客户触达、订单与收入",
 
+    adAcquisition:
+      "AIOS 广告获客",
+    adAcquisitionDetail:
+      "发现并验证深圳家装、旧房局改、全屋定制真实候选客户",
+
     revenueLedger:
       "收入与订单账本",
     revenueLedgerDetail:
@@ -685,6 +697,11 @@ const copy: Record<
       "AIOS Inbound Growth",
     inboundGrowthDetail:
       "有望顧客をアプローチ、受注、収益につなげる",
+
+    adAcquisition:
+      "AIOS 広告顧客獲得",
+    adAcquisitionDetail:
+      "深圳の住宅リフォーム候補顧客を公開証拠に基づいて発見・検証",
 
     revenueLedger:
       "Founder 収益台帳",
@@ -1717,8 +1734,19 @@ export default function FounderPage() {
           />
 
           <ActionLink
-            href="/founder/inbound-growth"
+            href="/founder/ad-acquisition"
             icon="🎯"
+            title={
+              t.adAcquisition
+            }
+            detail={
+              t.adAcquisitionDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/inbound-growth"
+            icon="📣"
             title={
               t.inboundGrowth
             }
