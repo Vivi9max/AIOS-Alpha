@@ -92,10 +92,15 @@ export default function ProductWorkflowNav() {
               (pathname === "/execution" ||
                 pathname.startsWith("/execution/"));
 
+            const isRepeatedPlannerStep =
+              step.key === "planner" &&
+              step.number === "04";
+
             const active =
-              pathname === step.href ||
-              isPlannerRoute ||
-              isExecutionRoute;
+              !isRepeatedPlannerStep &&
+              (pathname === step.href ||
+                isPlannerRoute ||
+                isExecutionRoute);
 
             const label = labels[step.key];
 
