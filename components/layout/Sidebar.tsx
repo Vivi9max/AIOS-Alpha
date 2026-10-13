@@ -25,20 +25,26 @@ import type {
 
 const globalMenus = [
   {
-    icon: "◉",
+    icon: "⌂",
     label:
-      "nav.chat" as MessageKey,
-    href: "/workspace",
+      "nav.dashboard" as MessageKey,
+    href: "/dashboard",
   },
   {
-    icon: "⌁",
-    label: "Market Research",
-    href: "/market-intelligence",
+    icon: "✓",
+    label:
+      "nav.tasks" as MessageKey,
+    href: "/tasks",
   },
   {
     icon: "◆",
     label: "Planner",
     href: "/planner",
+  },
+  {
+    icon: "◌",
+    label: "Market Research",
+    href: "/market-intelligence",
   },
   {
     icon: "⚙",
