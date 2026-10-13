@@ -13,7 +13,6 @@ import WorkspaceShell from "@/components/layout/WorkspaceShell";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
 import { usePlanner } from "@/components/planner/usePlanner";
 import { APP_VERSION } from "@/lib/config/app";
-import { MODULE_ICONS } from "@/lib/ui/module-icons";
 import type { Task } from "@/lib/task/types";
 
 interface DashboardData {
@@ -79,650 +78,361 @@ interface TasksResponse {
   error?: string;
 }
 
-interface HealthItem {
-  label: string;
-  detail: string;
-  status: "healthy" | "warning" | "offline";
-  href: string;
-}
-
-interface QuickAction {
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-}
+const EMPTY_DASHBOARD: DashboardData = {
+  success: false,
+  runtime: {
+    id: "aios-alpha",
+    version: APP_VERSION,
+    status: "offline",
+  },
+  provider: {
+    configured: "unknown",
+    active: "unknown",
+    requested: "unknown",
+    fallbackUsed: false,
+    success: false,
+    latencyMs: null,
+    error: null,
+    lastRequestAt: null,
+  },
+  storage: {
+    mode: "unknown",
+    persistent: false,
+    healthy: false,
+    error: null,
+  },
+  memory: {
+    count: 0,
+    userMessages: 0,
+    assistantMessages: 0,
+  },
+  profile: {
+    completedFields: 0,
+    totalFields: 0,
+  },
+  tasks: {
+    count: 0,
+    active: 0,
+    completed: 0,
+  },
+  feedback: {
+    count: 0,
+  },
+  timestamp: 0,
+};
 
 const COPY = {
   en: {
+    eyebrow: "AIOS Alpha",
+    title: "Dashboard",
+    description:
+      "See what matters now, what AIOS recommends next, and how execution is progressing.",
     operating: "Operating",
     attention: "Attention",
-    title: "Operating Center",
-    description:
-      "Manage goals, planning, execution and system state from one place.",
-    sync: "Sync status",
-    syncing: "Syncing…",
+    sync: "Sync",
+    syncing: "Syncing...",
+    syncError: "Dashboard sync failed",
+    plannerError: "Planner sync failed",
 
-    dashboardSyncError: "Dashboard sync failed",
-    plannerSyncError: "Planner Learning sync failed",
-
-    mission: "Today's Mission",
-    loadingMission: "Loading current task…",
-    defaultMission: "Create the next AIOS Alpha objective",
-    missionDescription:
-      "Create a task and Planner will use it to establish the next execution path.",
-    currentPriority:
-      "Current highest-priority execution task.",
-    primaryActionLabel: "Primary action",
-    primaryActionHint:
-      "Start here — this is the next step AIOS recommends.",
-
-    progress: "Overall Progress",
-    completed: "completed",
+    mission: "Current Mission",
+    noMission: "Create the next objective",
+    noMissionDescription:
+      "Create a task with a clear result so AIOS can establish the next execution path.",
+    currentTask: "Current execution task",
     continue: "Continue",
     createGoal: "Create goal",
-    executionTrace: "View Execution Trace",
+    openTasks: "Open tasks",
 
-    learningEyebrow: "Planner Learning",
-    learningTitle: "Execution Intelligence",
-    learningDescription:
-      "Learning signals from real task results help identify progress, stagnation and the next optimization direction.",
-    learning: "Learning",
-    healthy: "Healthy",
-    blocked: "Blocked",
-    attentionStatus: "Attention",
+    progress: "Progress",
+    completed: "completed",
+    active: "active",
+    total: "total",
 
-    completion: "Completion",
-    velocity: "Velocity",
-    stale: "Stale",
-    confidence: "Confidence",
-    tasksPerDay: "tasks / day",
-    over24Hours: "over 24 hours",
-    learningQuality: "learning quality",
-    tasksLabel: "tasks",
+    next: "Next Action",
+    plannerNext:
+      "Planner will determine the next action from real task state.",
+    execution: "Execution",
+    openExecution: "Open Execution",
 
-    trend: "Learning Trend",
-    historicalSamples: "historical samples",
-    baseline: "Collecting Baseline",
-    improving: "Improving",
-    stable: "Stable",
-    declining: "Declining",
-    vsPrevious: "vs previous cycle",
-    lowerBetter: "lower is better",
-
-    recommendation: "Next Recommendation",
-    defaultRecommendation:
-      "Create and advance the first real task so Planner can begin learning from execution results.",
-    analyzing: "Analyzing execution data…",
-    waitingInsight: "Waiting for learning insights.",
-    learningUpdated: "Learning updated:",
-
-    runtimeEyebrow: "Adaptive Runtime",
-    runtimeTitle: "Execution Control",
-    runtimeDescription:
-      "Convert Planner learning into the execution policy for the current cycle.",
-    primaryAction: "Primary Action",
-    defaultPrimaryAction:
-      "Create a task with a clear completion criterion and establish the first execution baseline.",
-    waitingRuntime:
-      "Planner is waiting for real task data.",
-    parallelLimit: "Parallel Limit",
-    maximumActive: "maximum active tasks",
-    newTasks: "New Tasks",
-    allowed: "Allowed",
-    paused: "Paused",
-    controlledByRuntime: "controlled by Runtime",
-    runtimeMode: "Runtime Mode",
-    adaptiveExecution: "adaptive execution",
-    executeStrategy: "Execute current strategy",
-    viewEvidence: "View runtime evidence",
-
-    planEyebrow: "AI Planner",
-    planTitle: "Current Plan",
-    planDescription:
-      "Current goal and next action extracted from active tasks.",
+    planner: "Planner",
+    plannerDescription:
+      "Planner converts current task state into the next execution path.",
     currentGoal: "Current Goal",
     nextStep: "Next Step",
     expectedResult: "Expected Result",
     executionState: "Execution State",
-    waitingGoal: "Waiting for goal",
-    completeCurrent:
-      "Complete the current task and update its status",
-    firstTask:
-      "Enter Workspace and create the first task",
-    verifiable:
-      "Produce a verifiable completion result",
-    firstPath: "Establish the first execution path",
-    inProgress: "in progress",
-    waitingExecution: "waiting for execution",
-    plannerReady: "Planner Ready",
-    managePlan: "Manage full plan",
+    managePlanner: "Manage Planner",
 
-    queueEyebrow: "Execution Queue",
-    queueTitle: "Next Actions",
+    learning: "Execution Intelligence",
+    learningDescription:
+      "AIOS learns from real task results instead of simulated progress.",
+    health: "Health",
+    confidence: "Confidence",
+    completionRate: "Completion",
+    velocity: "Velocity",
+    stale: "Stale",
+    tasksPerDay: "tasks / day",
+    noData: "Waiting for real execution data",
+    healthy: "Healthy",
+    attentionState: "Attention",
+    blocked: "Blocked",
+    insufficient: "Building baseline",
+
+    recommendation: "Recommendation",
+    noRecommendation:
+      "Create and complete the first real task to establish a learning baseline.",
+
+    queue: "Execution Queue",
     queueDescription:
-      "Tasks in progress are prioritized, followed by waiting tasks.",
-    loadingQueue: "Loading task queue…",
-    noTasks: "No tasks yet.",
-    viewAllTasks: "View all tasks",
+      "The most relevant unfinished tasks are shown here.",
+    noTasks: "No active tasks.",
     doing: "Doing",
     todo: "Todo",
     done: "Done",
+    viewAll: "View all tasks",
 
-    quickEyebrow: "Quick Actions",
-    quickTitle: "Start Work",
-    quickDescription:
-      "Enter AIOS Alpha's core working modules.",
-    chat: "Chat",
-    chatDescription: "Enter a goal, question or action.",
-    newTask: "New Task",
-    newTaskDescription:
-      "Turn a goal into an executable task.",
-    projects: "Projects",
-    projectsDescription:
-      "Manage active project workspaces.",
-    memory: "Memory",
-    memoryDescription:
-      "Manage long-term context and information.",
+    system: "System State",
     runtime: "Runtime",
-    runtimeQuickDescription:
-      "Inspect execution state and evidence.",
-    settings: "Settings",
-    settingsDescription:
-      "Manage provider and system settings.",
-
-    healthEyebrow: "AI Health",
-    healthTitle: "System Intelligence",
-    healthDescription:
-      "Current Brain, Memory, Runtime, Storage and Planner state.",
-    brain: "Brain",
-    memoryHealth: "Memory",
+    provider: "Model",
     storage: "Storage",
-    provider: "Provider",
-    planner: "Planner",
-    ready: "Ready",
-    awaitingRequest: "Awaiting request",
-    records: "records",
-    persistent: "persistent",
-    temporary: "temporary",
-    activeTasks: "active tasks",
-    readyForGoal: "Ready for goal",
-    fallbackFrom: "Fallback from",
-
-    contextEyebrow: "Memory Snapshot",
-    contextTitle: "Current Context",
-    contextDescription:
-      "Current profile and conversation memory overview.",
-    totalMemory: "Total Memory",
-    userMessages: "User Messages",
-    aiMessages: "AI Messages",
-    inputs: "inputs",
-    responses: "responses",
-    profileReadiness: "Profile Readiness",
-    openMemory: "Open Memory",
-
-    statusEyebrow: "Runtime",
-    statusTitle: "Operating Status",
-    statusDescription:
-      "Current runtime environment and synchronization state.",
+    memory: "Memory",
     online: "Online",
     offline: "Offline",
-    checkRequired: "Check Required",
-    persistentStorageDisabled:
-      "Persistent Storage Disabled",
-    persistentStorageWarning:
-      "The current storage mode is not Redis. Some data may be lost after a service restart.",
-    providerFallback: "Provider Fallback Active",
-    lastSync: "Last sync:",
-    providerLastRequest: "Provider:",
-    privateWorkspace: "Private workspace",
-    isolationEnabled: "Enabled",
-    isolationUnknown: "Unknown",
-    noRecord: "Not recorded",
-    runtimeReady: "Ready",
+    ready: "Ready",
+    fallback: "Fallback",
+    persistent: "Persistent",
+    temporary: "Temporary",
+    records: "records",
+
+    quick: "Quick Actions",
+    chat: "Chat",
+    chatDescription:
+      "Start with a goal, question or operation.",
+    task: "New Task",
+    taskDescription:
+      "Turn an objective into an executable task.",
+    plannerQuick: "Planner",
+    plannerQuickDescription:
+      "Review the current plan and next step.",
+    executionQuick: "Execution",
+    executionQuickDescription:
+      "Run and inspect execution jobs.",
+
+    memorySnapshot: "Memory Snapshot",
+    messages: "messages",
+    profile: "Profile",
+    lastSync: "Last sync",
+    never: "Never",
   },
 
   "zh-CN": {
+    eyebrow: "AIOS Alpha",
+    title: "工作仪表盘",
+    description:
+      "只显示现在真正重要的信息：当前目标、执行进度、下一步行动以及 AIOS 的学习状态。",
     operating: "运行正常",
     attention: "需要关注",
-    title: "运行中心",
-    description:
-      "统一管理目标、规划、执行以及 AIOS 当前系统状态。",
-    sync: "同步状态",
-    syncing: "同步中…",
+    sync: "同步",
+    syncing: "同步中...",
+    syncError: "Dashboard 同步失败",
+    plannerError: "Planner 同步失败",
 
-    dashboardSyncError: "Dashboard 同步失败",
-    plannerSyncError: "Planner Learning 同步失败",
-
-    mission: "今日使命",
-    loadingMission: "正在读取当前任务……",
-    defaultMission: "创建 AIOS Alpha 的下一项目标",
-    missionDescription:
-      "创建任务后，Planner 将根据真实执行情况建立下一条执行路径。",
-    currentPriority: "当前最高优先级执行任务。",
-    primaryActionLabel: "主要操作",
-    primaryActionHint:
-      "从这里开始——这是 AIOS 建议的下一步。",
-
-    progress: "总体进度",
-    completed: "已完成",
+    mission: "当前任务",
+    noMission: "创建下一个目标",
+    noMissionDescription:
+      "创建一项具有明确结果的任务，让 AIOS 建立下一条执行路径。",
+    currentTask: "当前执行任务",
     continue: "继续执行",
     createGoal: "创建目标",
-    executionTrace: "查看 Execution Trace",
+    openTasks: "打开任务",
 
-    learningEyebrow: "Planner Learning",
-    learningTitle: "执行智能",
-    learningDescription:
-      "根据真实任务结果识别进展、停滞以及下一轮优化方向。",
-    learning: "学习中",
-    healthy: "健康",
-    blocked: "受阻",
-    attentionStatus: "需要关注",
+    progress: "执行进度",
+    completed: "已完成",
+    active: "执行中",
+    total: "总任务",
 
-    completion: "完成率",
-    velocity: "执行速度",
-    stale: "停滞任务",
-    confidence: "置信度",
-    tasksPerDay: "任务 / 天",
-    over24Hours: "超过 24 小时",
-    learningQuality: "学习质量",
-    tasksLabel: "任务",
+    next: "下一步行动",
+    plannerNext:
+      "Planner 将根据真实任务状态确定下一步行动。",
+    execution: "执行",
+    openExecution: "进入 Execution",
 
-    trend: "学习趋势",
-    historicalSamples: "历史样本",
-    baseline: "正在建立基线",
-    improving: "改善中",
-    stable: "稳定",
-    declining: "下降",
-
-    vsPrevious: "相较上一周期",
-    lowerBetter: "越低越好",
-
-    recommendation: "下一项建议",
-    defaultRecommendation:
-      "创建并推进第一项真实任务，让 Planner 从实际执行结果开始学习。",
-    analyzing: "正在分析执行数据……",
-    waitingInsight: "等待形成学习洞察。",
-    learningUpdated: "Learning 更新：",
-
-    runtimeEyebrow: "Adaptive Runtime",
-    runtimeTitle: "执行控制",
-    runtimeDescription:
-      "将 Planner 的学习结果转换为当前周期的执行策略。",
-    primaryAction: "主要行动",
-    defaultPrimaryAction:
-      "创建一项具有明确完成标准的任务，建立首个执行基线。",
-    waitingRuntime:
-      "Planner 正在等待真实任务数据。",
-    parallelLimit: "并行上限",
-    maximumActive: "最大同时执行任务数",
-    newTasks: "新增任务",
-    allowed: "允许",
-    paused: "已暂停",
-    controlledByRuntime: "由 Runtime 控制",
-    runtimeMode: "运行模式",
-    adaptiveExecution: "自适应执行",
-    executeStrategy: "执行当前策略",
-    viewEvidence: "查看运行证据",
-
-    planEyebrow: "AI Planner",
-    planTitle: "当前计划",
-    planDescription:
-      "根据当前任务自动提取目标与下一步行动。",
+    planner: "Planner",
+    plannerDescription:
+      "Planner 根据当前真实任务状态生成下一条执行路径。",
     currentGoal: "当前目标",
     nextStep: "下一步",
     expectedResult: "预期结果",
     executionState: "执行状态",
-    waitingGoal: "等待创建目标",
-    completeCurrent:
-      "完成当前任务并更新状态",
-    firstTask:
-      "进入 Workspace 创建第一项任务",
-    verifiable:
-      "形成可验证的完成结果",
-    firstPath: "建立第一条执行路径",
-    inProgress: "项正在执行",
-    waitingExecution: "项等待执行",
-    plannerReady: "Planner 已就绪",
-    managePlan: "管理完整计划",
+    managePlanner: "管理 Planner",
 
-    queueEyebrow: "Execution Queue",
-    queueTitle: "下一步行动",
+    learning: "执行智能",
+    learningDescription:
+      "AIOS 从真实任务结果学习，而不是从模拟进度学习。",
+    health: "健康状态",
+    confidence: "置信度",
+    completionRate: "完成率",
+    velocity: "执行速度",
+    stale: "停滞",
+    tasksPerDay: "任务 / 天",
+    noData: "等待真实执行数据",
+    healthy: "健康",
+    attentionState: "需要关注",
+    blocked: "受阻",
+    insufficient: "正在建立基线",
+
+    recommendation: "下一项建议",
+    noRecommendation:
+      "创建并完成第一项真实任务，建立 Planner Learning 基线。",
+
+    queue: "执行队列",
     queueDescription:
-      "优先显示正在执行的任务，其次显示等待执行的任务。",
-    loadingQueue: "正在读取任务队列……",
-    noTasks: "当前没有任务。",
-    viewAllTasks: "查看全部任务",
+      "这里显示当前最值得继续推进的未完成任务。",
+    noTasks: "当前没有活跃任务。",
     doing: "执行中",
     todo: "待执行",
     done: "已完成",
+    viewAll: "查看全部任务",
 
-    quickEyebrow: "快捷操作",
-    quickTitle: "开始工作",
-    quickDescription:
-      "直接进入 AIOS Alpha 核心工作模块。",
-    chat: "对话",
-    chatDescription: "输入目标、问题或要执行的操作。",
-    newTask: "新建任务",
-    newTaskDescription:
-      "把目标转换成可执行任务。",
-    projects: "项目",
-    projectsDescription:
-      "管理正在推进的项目工作空间。",
-    memory: "记忆",
-    memoryDescription:
-      "管理长期上下文和资料。",
+    system: "系统状态",
     runtime: "Runtime",
-    runtimeQuickDescription:
-      "查看执行状态与运行证据。",
-    settings: "设置",
-    settingsDescription:
-      "管理模型服务和系统设置。",
-
-    healthEyebrow: "AI 健康状态",
-    healthTitle: "系统智能",
-    healthDescription:
-      "查看 Brain、Memory、Runtime、Storage 和 Planner 当前状态。",
-    brain: "Brain",
-    memoryHealth: "Memory",
-    storage: "Storage",
-    provider: "Provider",
-    planner: "Planner",
-    ready: "就绪",
-    awaitingRequest: "等待请求",
-    records: "条记录",
-    persistent: "持久化",
-    temporary: "临时",
-    activeTasks: "项活跃任务",
-    readyForGoal: "等待目标",
-    fallbackFrom: "备用来源",
-
-    contextEyebrow: "Memory Snapshot",
-    contextTitle: "当前上下文",
-    contextDescription:
-      "当前用户资料与对话记忆概览。",
-    totalMemory: "全部记忆",
-    userMessages: "用户消息",
-    aiMessages: "AI 消息",
-    inputs: "输入",
-    responses: "回复",
-    profileReadiness: "Profile 完整度",
-    openMemory: "打开 Memory",
-
-    statusEyebrow: "Runtime",
-    statusTitle: "运行状态",
-    statusDescription:
-      "查看 AIOS 当前运行环境与同步状态。",
+    provider: "模型服务",
+    storage: "存储",
+    memory: "Memory",
     online: "在线",
     offline: "离线",
-    checkRequired: "需要检查",
-    persistentStorageDisabled:
-      "持久化存储未启用",
-    persistentStorageWarning:
-      "当前存储模式不是 Redis，服务重启后部分数据可能丢失。",
-    providerFallback: "Provider 正在使用备用服务",
-    lastSync: "最后同步：",
-    providerLastRequest: "Provider：",
-    privateWorkspace: "私有工作区",
-    isolationEnabled: "已启用",
-    isolationUnknown: "未知",
-    noRecord: "尚未记录",
-    runtimeReady: "就绪",
+    ready: "就绪",
+    fallback: "备用服务",
+    persistent: "持久化",
+    temporary: "临时",
+    records: "条记录",
+
+    quick: "快捷操作",
+    chat: "对话",
+    chatDescription:
+      "从目标、问题或操作开始。",
+    task: "新建任务",
+    taskDescription:
+      "把目标转换成可执行任务。",
+    plannerQuick: "Planner",
+    plannerQuickDescription:
+      "查看当前计划与下一步。",
+    executionQuick: "Execution",
+    executionQuickDescription:
+      "运行并查看执行任务。",
+
+    memorySnapshot: "Memory 快照",
+    messages: "条消息",
+    profile: "Profile",
+    lastSync: "最后同步",
+    never: "暂无",
   },
 
   ja: {
+    eyebrow: "AIOS Alpha",
+    title: "ダッシュボード",
+    description:
+      "現在重要な目標、実行状況、次のアクション、AIOS の学習状態を確認します。",
     operating: "稼働中",
     attention: "要確認",
-    title: "運用センター",
-    description:
-      "目標、計画、実行、AIOS の現在状態を一か所で管理します。",
-    sync: "状態を同期",
-    syncing: "同期中…",
+    sync: "同期",
+    syncing: "同期中...",
+    syncError: "Dashboard の同期に失敗しました",
+    plannerError: "Planner の同期に失敗しました",
 
-    dashboardSyncError: "Dashboard の同期に失敗しました",
-    plannerSyncError:
-      "Planner Learning の同期に失敗しました",
-
-    mission: "今日のミッション",
-    loadingMission: "現在のタスクを読み込み中…",
-    defaultMission:
-      "AIOS Alpha の次の目標を作成",
-    missionDescription:
-      "タスクを作成すると、Planner が実際の実行結果から次の実行経路を作成します。",
-    currentPriority:
-      "現在最も優先度の高い実行タスクです。",
-    primaryActionLabel: "主要アクション",
-    primaryActionHint:
-      "ここから開始 — これは AIOS が推奨する次のステップです。",
-
-    progress: "全体の進捗",
-    completed: "完了",
+    mission: "現在のタスク",
+    noMission: "次の目標を作成",
+    noMissionDescription:
+      "明確な結果を持つタスクを作成すると、AIOS が次の実行経路を構築します。",
+    currentTask: "現在の実行タスク",
     continue: "続行",
     createGoal: "目標を作成",
-    executionTrace: "Execution Trace を表示",
+    openTasks: "タスクを開く",
 
-    learningEyebrow: "Planner Learning",
-    learningTitle: "実行インテリジェンス",
-    learningDescription:
-      "実際のタスク結果から進捗、停滞、次の改善方向を判断します。",
-    learning: "学習中",
-    healthy: "正常",
-    blocked: "停止中",
-    attentionStatus: "要確認",
+    progress: "進捗",
+    completed: "完了",
+    active: "実行中",
+    total: "合計",
 
-    completion: "完了率",
-    velocity: "実行速度",
-    stale: "停滞タスク",
-    confidence: "信頼度",
-    tasksPerDay: "タスク / 日",
-    over24Hours: "24時間以上",
-    learningQuality: "学習品質",
-    tasksLabel: "タスク",
+    next: "次のアクション",
+    plannerNext:
+      "Planner が実際のタスク状態から次のアクションを決定します。",
+    execution: "実行",
+    openExecution: "Execution を開く",
 
-    trend: "学習トレンド",
-    historicalSamples: "過去サンプル",
-    baseline: "ベースライン収集中",
-    improving: "改善中",
-    stable: "安定",
-    declining: "低下",
-
-    vsPrevious: "前サイクル比",
-    lowerBetter: "低いほど良い",
-
-    recommendation: "次の推奨事項",
-    defaultRecommendation:
-      "最初の実タスクを作成して進め、Planner が実行結果から学習できる状態を作ります。",
-    analyzing: "実行データを分析中…",
-    waitingInsight: "学習インサイトを待っています。",
-    learningUpdated: "Learning 更新：",
-
-    runtimeEyebrow: "Adaptive Runtime",
-    runtimeTitle: "実行コントロール",
-    runtimeDescription:
-      "Planner の学習結果を現在の実行ポリシーへ反映します。",
-    primaryAction: "主要アクション",
-    defaultPrimaryAction:
-      "明確な完了条件を持つタスクを作成し、最初の実行ベースラインを確立します。",
-    waitingRuntime:
-      "Planner は実際のタスクデータを待っています。",
-    parallelLimit: "並列上限",
-    maximumActive: "最大アクティブタスク数",
-    newTasks: "新規タスク",
-    allowed: "許可",
-    paused: "一時停止",
-    controlledByRuntime: "Runtime により制御",
-    runtimeMode: "実行モード",
-    adaptiveExecution: "適応型実行",
-    executeStrategy: "現在の戦略を実行",
-    viewEvidence: "実行証拠を表示",
-
-    planEyebrow: "AI Planner",
-    planTitle: "現在の計画",
-    planDescription:
-      "現在のタスクから目標と次のアクションを自動抽出します。",
+    planner: "Planner",
+    plannerDescription:
+      "現在のタスク状態から次の実行経路を生成します。",
     currentGoal: "現在の目標",
     nextStep: "次のステップ",
     expectedResult: "期待する結果",
     executionState: "実行状態",
-    waitingGoal: "目標を待っています",
-    completeCurrent:
-      "現在のタスクを完了して状態を更新",
-    firstTask:
-      "Workspace から最初のタスクを作成",
-    verifiable:
-      "検証可能な完了結果を作成",
-    firstPath: "最初の実行経路を確立",
-    inProgress: "件が実行中",
-    waitingExecution: "件が実行待ち",
-    plannerReady: "Planner 準備完了",
-    managePlan: "計画を管理",
+    managePlanner: "Planner を管理",
 
-    queueEyebrow: "Execution Queue",
-    queueTitle: "次のアクション",
+    learning: "実行インテリジェンス",
+    learningDescription:
+      "AIOS は実際のタスク結果から学習します。",
+    health: "状態",
+    confidence: "信頼度",
+    completionRate: "完了率",
+    velocity: "実行速度",
+    stale: "停滞",
+    tasksPerDay: "タスク / 日",
+    noData: "実際の実行データを待機中",
+    healthy: "正常",
+    attentionState: "要確認",
+    blocked: "停止中",
+    insufficient: "基準を構築中",
+
+    recommendation: "次の推奨",
+    noRecommendation:
+      "最初の実タスクを完了して学習基準を作成してください。",
+
+    queue: "実行キュー",
     queueDescription:
-      "実行中のタスクを優先し、その後に待機中のタスクを表示します。",
-    loadingQueue: "タスクキューを読み込み中…",
-    noTasks: "タスクはまだありません。",
-    viewAllTasks: "すべてのタスクを表示",
+      "現在優先すべき未完了タスクを表示します。",
+    noTasks: "アクティブなタスクはありません。",
     doing: "実行中",
-    todo: "待機中",
+    todo: "未実行",
     done: "完了",
+    viewAll: "すべてのタスク",
 
-    quickEyebrow: "クイックアクション",
-    quickTitle: "作業を開始",
-    quickDescription:
-      "AIOS Alpha の主要ワークモジュールへ移動します。",
-    chat: "チャット",
-    chatDescription:
-      "目標、質問、実行したい操作を入力します。",
-    newTask: "新規タスク",
-    newTaskDescription:
-      "目標を実行可能なタスクへ変換します。",
-    projects: "プロジェクト",
-    projectsDescription:
-      "進行中のプロジェクトワークスペースを管理します。",
-    memory: "メモリー",
-    memoryDescription:
-      "長期コンテキストと情報を管理します。",
+    system: "システム状態",
     runtime: "Runtime",
-    runtimeQuickDescription:
-      "実行状態と証拠を確認します。",
-    settings: "設定",
-    settingsDescription:
-      "Provider とシステム設定を管理します。",
-
-    healthEyebrow: "AI ヘルス",
-    healthTitle: "システムインテリジェンス",
-    healthDescription:
-      "Brain、Memory、Runtime、Storage、Planner の現在状態。",
-    brain: "Brain",
-    memoryHealth: "Memory",
+    provider: "モデル",
     storage: "Storage",
-    provider: "Provider",
-    planner: "Planner",
-    ready: "準備完了",
-    awaitingRequest: "リクエスト待ち",
-    records: "件",
-    persistent: "永続",
-    temporary: "一時",
-    activeTasks: "件のアクティブタスク",
-    readyForGoal: "目標待ち",
-    fallbackFrom: "Fallback 元",
-
-    contextEyebrow: "Memory Snapshot",
-    contextTitle: "現在のコンテキスト",
-    contextDescription:
-      "現在のプロフィールと会話メモリーの概要。",
-    totalMemory: "総メモリー",
-    userMessages: "ユーザーメッセージ",
-    aiMessages: "AI メッセージ",
-    inputs: "入力",
-    responses: "応答",
-    profileReadiness: "プロフィール完成度",
-    openMemory: "Memory を開く",
-
-    statusEyebrow: "Runtime",
-    statusTitle: "稼働状態",
-    statusDescription:
-      "AIOS の現在の実行環境と同期状態。",
+    memory: "Memory",
     online: "オンライン",
     offline: "オフライン",
-    checkRequired: "確認が必要",
-    persistentStorageDisabled:
-      "永続ストレージが無効です",
-    persistentStorageWarning:
-      "現在のストレージモードは Redis ではありません。サービス再起動後に一部データが失われる可能性があります。",
-    providerFallback:
-      "Provider フォールバックが有効です",
-    lastSync: "最終同期：",
-    providerLastRequest: "Provider：",
-    privateWorkspace: "プライベートワークスペース",
-    isolationEnabled: "有効",
-    isolationUnknown: "不明",
-    noRecord: "未記録",
-    runtimeReady: "準備完了",
+    ready: "準備完了",
+    fallback: "Fallback",
+    persistent: "永続",
+    temporary: "一時",
+    records: "件",
+
+    quick: "クイックアクション",
+    chat: "Chat",
+    chatDescription:
+      "目標、質問、操作から開始します。",
+    task: "新しいタスク",
+    taskDescription:
+      "目標を実行可能なタスクに変換します。",
+    plannerQuick: "Planner",
+    plannerQuickDescription:
+      "現在の計画と次のステップを確認します。",
+    executionQuick: "Execution",
+    executionQuickDescription:
+      "実行ジョブを開始・確認します。",
+
+    memorySnapshot: "Memory スナップショット",
+    messages: "件のメッセージ",
+    profile: "Profile",
+    lastSync: "最終同期",
+    never: "なし",
   },
 } as const;
 
-function providerLabel(
-  provider: string
-): string {
-  const labels: Record<string, string> = {
-    deepseek: "DeepSeek",
-    qwen: "Qwen",
-    openai: "OpenAI",
-    mock: "Mock",
-    gemini: "Gemini",
-    claude: "Claude",
-    unknown: "Unknown",
-  };
-
-  return (
-    labels[provider.toLowerCase()] ??
-    provider
-  );
-}
-
-function storageLabel(
-  storage: string
-): string {
-  const labels: Record<string, string> = {
-    redis: "Redis",
-    memory: "Memory",
-    local: "Local",
-    unknown: "Unknown",
-  };
-
-  return (
-    labels[storage.toLowerCase()] ??
-    storage
-  );
-}
-
-function formatTime(
-  timestamp: number | null,
-  locale: "en" | "zh-CN" | "ja",
-  fallback: string
-): string {
-  if (!timestamp) {
-    return fallback;
-  }
-
-  return new Intl.DateTimeFormat(
-    locale === "zh-CN"
-      ? "zh-CN"
-      : locale === "ja"
-        ? "ja-JP"
-        : "en-US",
-    {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }
-  ).format(new Date(timestamp));
-}
+type Locale = keyof typeof COPY;
 
 function calculateProgress(
   completed: number,
@@ -732,13 +442,11 @@ function calculateProgress(
     return 0;
   }
 
-  return Math.min(
-    100,
-    Math.max(
-      0,
-      Math.round(
-        (completed / total) * 100
-      )
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round((completed / total) * 100)
     )
   );
 }
@@ -746,88 +454,243 @@ function calculateProgress(
 function sortTasks(
   tasks: Task[]
 ): Task[] {
-  const order = {
+  const priority: Record<Task["status"], number> = {
     doing: 0,
     todo: 1,
     done: 2,
   };
 
-  return [...tasks].sort(
-    (first, second) => {
-      const difference =
-        order[first.status] -
-        order[second.status];
+  return [...tasks].sort((a, b) => {
+    const statusDelta =
+      priority[a.status] - priority[b.status];
 
-      if (difference !== 0) {
-        return difference;
-      }
-
-      return (
-        second.updatedAt -
-        first.updatedAt
-      );
+    if (statusDelta !== 0) {
+      return statusDelta;
     }
+
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
+function formatTime(
+  timestamp: number,
+  locale: string
+): string {
+  if (!timestamp) {
+    return "";
+  }
+
+  try {
+    return new Date(timestamp).toLocaleString(
+      locale,
+      {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    );
+  } catch {
+    return "";
+  }
+}
+
+function statusColor(
+  status:
+    | "healthy"
+    | "warning"
+    | "offline"
+): string {
+  if (status === "healthy") {
+    return "#15803d";
+  }
+
+  if (status === "warning") {
+    return "#b45309";
+  }
+
+  return "#b91c1c";
+}
+
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "success" | "warning" | "danger" | "neutral";
+}) {
+  const color =
+    tone === "success"
+      ? "#15803d"
+      : tone === "warning"
+        ? "#b45309"
+        : tone === "danger"
+          ? "#b91c1c"
+          : "#475569";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        minHeight: 26,
+        padding: "4px 9px",
+        borderRadius: 999,
+        border: `1px solid ${color}22`,
+        background: `${color}0d`,
+        color,
+        fontSize: 12,
+        fontWeight: 800,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: color,
+        }}
+      />
+      {children}
+    </span>
+  );
+}
+
+function Panel({
+  children,
+  emphasis = false,
+}: {
+  children: ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <section
+      style={{
+        border: emphasis
+          ? "1px solid #cbd5e1"
+          : "1px solid #e2e8f0",
+        borderRadius: 18,
+        background: "#ffffff",
+        padding: 20,
+        boxShadow: emphasis
+          ? "0 8px 30px rgba(15,23,42,0.06)"
+          : "0 3px 16px rgba(15,23,42,0.035)",
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
+function SectionTitle({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <p
+        style={{
+          margin: 0,
+          color: "#64748b",
+          fontSize: 11,
+          fontWeight: 850,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+        }}
+      >
+        {eyebrow}
+      </p>
+
+      <h2
+        style={{
+          margin: "5px 0 0",
+          color: "#0f172a",
+          fontSize: 20,
+          lineHeight: 1.25,
+          letterSpacing: "-0.025em",
+        }}
+      >
+        {title}
+      </h2>
+
+      {description ? (
+        <p
+          style={{
+            margin: "7px 0 0",
+            color: "#64748b",
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          {description}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ProgressBar({
+  value,
+}: {
+  value: number;
+}) {
+  return (
+    <div
+      aria-label={`${value}%`}
+      style={{
+        width: "100%",
+        height: 8,
+        overflow: "hidden",
+        borderRadius: 999,
+        background: "#e2e8f0",
+      }}
+    >
+      <div
+        style={{
+          width: `${value}%`,
+          height: "100%",
+          borderRadius: 999,
+          background: "#0f172a",
+          transition: "width 220ms ease",
+        }}
+      />
+    </div>
   );
 }
 
 export default function DashboardPage() {
   const { locale } = useLanguage();
-  const copy = COPY[locale];
+  const planner = usePlanner();
+
+  const copy =
+    COPY[
+      (locale in COPY
+        ? locale
+        : "en") as Locale
+    ];
 
   const {
+    snapshot,
     learning,
     learningHistory,
     adaptiveStrategy,
     loading: plannerLoading,
     refreshing: plannerRefreshing,
     error: plannerError,
-    generatedAt: plannerGeneratedAt,
     refresh: refreshPlanner,
-  } = usePlanner();
+  } = planner;
 
   const [dashboard, setDashboard] =
-    useState<DashboardData>({
-      success: false,
-      runtime: {
-        id: "aios-alpha",
-        version: APP_VERSION,
-        status: "offline",
-      },
-      provider: {
-        configured: "unknown",
-        active: "unknown",
-        requested: "unknown",
-        fallbackUsed: false,
-        success: false,
-        latencyMs: null,
-        error: null,
-        lastRequestAt: null,
-      },
-      storage: {
-        mode: "unknown",
-        persistent: false,
-        healthy: false,
-        error: null,
-      },
-      memory: {
-        count: 0,
-        userMessages: 0,
-        assistantMessages: 0,
-      },
-      profile: {
-        completedFields: 0,
-        totalFields: 5,
-      },
-      tasks: {
-        count: 0,
-        active: 0,
-        completed: 0,
-      },
-      feedback: {
-        count: 0,
-      },
-      timestamp: 0,
-    });
+    useState<DashboardData>(
+      EMPTY_DASHBOARD
+    );
 
   const [tasks, setTasks] =
     useState<Task[]>([]);
@@ -841,94 +704,100 @@ export default function DashboardPage() {
   const [error, setError] =
     useState("");
 
-  const loadData = useCallback(
-    async (silent = false) => {
-      if (silent) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-
-      setError("");
-
-      try {
-        const [
-          dashboardResponse,
-          tasksResponse,
-        ] = await Promise.all([
-          fetch(
-            "/api/dashboard/status",
-            {
-              cache: "no-store",
-            }
-          ),
-          fetch(
-            "/api/tasks",
-            {
-              cache: "no-store",
-            }
-          ),
-        ]);
-
-        const dashboardResult =
-          (await dashboardResponse.json()) as DashboardData;
-
-        const tasksResult =
-          (await tasksResponse.json()) as TasksResponse;
-
-        if (
-          !dashboardResponse.ok ||
-          !dashboardResult.success
-        ) {
-          throw new Error(
-            dashboardResult.error ??
-              dashboardResult.provider.error ??
-              copy.dashboardSyncError
-          );
+  const loadData =
+    useCallback(
+      async (silent = false) => {
+        if (silent) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
         }
 
-        if (
-          !tasksResponse.ok ||
-          !tasksResult.success
-        ) {
-          throw new Error(
-            tasksResult.error ??
-              copy.dashboardSyncError
+        setError("");
+
+        try {
+          const [
+            dashboardResponse,
+            tasksResponse,
+          ] = await Promise.all([
+            fetch(
+              "/api/dashboard/status",
+              {
+                cache: "no-store",
+              }
+            ),
+            fetch(
+              "/api/tasks",
+              {
+                cache: "no-store",
+              }
+            ),
+          ]);
+
+          const dashboardResult =
+            (await dashboardResponse.json()) as DashboardData;
+
+          const tasksResult =
+            (await tasksResponse.json()) as TasksResponse;
+
+          if (
+            !dashboardResponse.ok ||
+            !dashboardResult.success
+          ) {
+            throw new Error(
+              dashboardResult.error ??
+                dashboardResult.provider?.error ??
+                copy.syncError
+            );
+          }
+
+          if (
+            !tasksResponse.ok ||
+            !tasksResult.success
+          ) {
+            throw new Error(
+              tasksResult.error ??
+                copy.syncError
+            );
+          }
+
+          setDashboard(
+            dashboardResult
           );
+
+          setTasks(
+            Array.isArray(
+              tasksResult.tasks
+            )
+              ? tasksResult.tasks
+              : []
+          );
+        } catch (
+          requestError
+        ) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : copy.syncError
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
         }
-
-        setDashboard(
-          dashboardResult
-        );
-
-        setTasks(
-          Array.isArray(
-            tasksResult.tasks
-          )
-            ? tasksResult.tasks
-            : []
-        );
-      } catch (loadError) {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : copy.dashboardSyncError
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [copy.dashboardSyncError]
-  );
+      },
+      [copy.syncError]
+    );
 
   useEffect(() => {
     void loadData();
 
-    const timer =
-      window.setInterval(() => {
-        void loadData(true);
-      }, 15000);
+    const interval =
+      window.setInterval(
+        () => {
+          void loadData(true);
+        },
+        15000
+      );
 
     const handleFocus = () => {
       void loadData(true);
@@ -940,7 +809,10 @@ export default function DashboardPage() {
     );
 
     return () => {
-      window.clearInterval(timer);
+      window.clearInterval(
+        interval
+      );
+
       window.removeEventListener(
         "focus",
         handleFocus
@@ -948,50 +820,59 @@ export default function DashboardPage() {
     };
   }, [loadData]);
 
-  const orderedTasks = useMemo(
-    () => sortTasks(tasks),
-    [tasks]
-  );
+  const orderedTasks =
+    useMemo(
+      () => sortTasks(tasks),
+      [tasks]
+    );
 
-  const activeTasks = useMemo(
-    () =>
-      orderedTasks.filter(
-        (task) =>
-          task.status !== "done"
-      ),
-    [orderedTasks]
-  );
+  const activeTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status !== "done"
+        ),
+      [orderedTasks]
+    );
 
-  const completedTasks = useMemo(
-    () =>
-      orderedTasks.filter(
-        (task) =>
-          task.status === "done"
-      ),
-    [orderedTasks]
-  );
+  const completedTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status === "done"
+        ),
+      [orderedTasks]
+    );
 
-  const doingTasks = useMemo(
-    () =>
-      orderedTasks.filter(
-        (task) =>
-          task.status === "doing"
-      ),
-    [orderedTasks]
-  );
+  const doingTasks =
+    useMemo(
+      () =>
+        orderedTasks.filter(
+          (task) =>
+            task.status === "doing"
+        ),
+      [orderedTasks]
+    );
 
   const missionTask =
-    doingTasks[0] ??
-    activeTasks[0] ??
-    null;
+    snapshot?.mission?.id
+      ? tasks.find(
+          (task) =>
+            task.id ===
+            snapshot.mission.id
+        ) ?? null
+      : doingTasks[0] ??
+        activeTasks[0] ??
+        null;
 
   const nextTask =
-    doingTasks[1] ??
     activeTasks.find(
       (task) =>
-        task.id !== missionTask?.id
-    ) ??
-    null;
+        task.id !==
+        missionTask?.id
+    ) ?? null;
 
   const taskProgress =
     calculateProgress(
@@ -999,25 +880,8 @@ export default function DashboardPage() {
       tasks.length
     );
 
-  const profileProgress =
-    calculateProgress(
-      dashboard.profile
-        .completedFields,
-      dashboard.profile
-        .totalFields
-    );
-
-  const providerName =
-    providerLabel(
-      dashboard.provider.active
-    );
-
   const learningMetrics =
     learning?.metrics ?? null;
-
-  const plannerBusy =
-    plannerLoading ||
-    plannerRefreshing;
 
   const learningHealth =
     learning?.health ??
@@ -1028,168 +892,61 @@ export default function DashboardPage() {
       ? copy.healthy
       : learningHealth === "blocked"
         ? copy.blocked
-        : learningHealth ===
-            "attention"
-          ? copy.attentionStatus
-          : copy.learning;
-
-  const learningTrend =
-    learningHistory?.trend ??
-    "insufficient-data";
-
-  const learningTrendLabel =
-    learningTrend === "improving"
-      ? copy.improving
-      : learningTrend === "stable"
-        ? copy.stable
-        : learningTrend ===
-            "declining"
-          ? copy.declining
-          : copy.baseline;
+        : learningHealth === "attention"
+          ? copy.attentionState
+          : copy.insufficient;
 
   const strategyMode =
     adaptiveStrategy?.mode ??
     "baseline";
 
-  const strategyModeLabel =
-    strategyMode === "accelerate"
-      ? "Accelerate"
-      : strategyMode === "focus"
-        ? "Focus"
-        : strategyMode === "recover"
-          ? "Recover"
-          : "Baseline";
-
-  const strategyHealthy =
-    strategyMode === "baseline" ||
-    strategyMode === "accelerate";
-
   const systemHealthy =
     dashboard.runtime.status ===
       "online" &&
     dashboard.storage.healthy &&
-    !dashboard.provider
-      .fallbackUsed;
+    dashboard.provider.success &&
+    !dashboard.provider.fallbackUsed;
 
-  const statusSummary = systemHealthy
-    ? copy.operating
-    : copy.attention;
-
-  const activeTaskCount = activeTasks.length;
-
-  const hasMission = Boolean(missionTask);
-
-  const healthItems =
-    useMemo<HealthItem[]>(
-      () => [
-        {
-          label: copy.brain,
-          detail:
-            dashboard.provider
-              .success
-              ? `${providerName} · ${copy.ready}`
-              : copy.awaitingRequest,
-          status:
-            dashboard.provider
-              .fallbackUsed
-              ? "warning"
-              : dashboard.provider
-                  .success
-                ? "healthy"
-                : "warning",
-          href: "/workspace",
-        },
-        {
-          label: copy.memoryHealth,
-          detail: `${dashboard.memory.count} ${copy.records}`,
-          status:
-            dashboard.memory.count > 0
-              ? "healthy"
-              : "warning",
-          href: "/memory",
-        },
-        {
-          label: copy.storage,
-          detail: `${storageLabel(
-            dashboard.storage.mode
-          )} ${
-            dashboard.storage
-              .persistent
-              ? copy.persistent
-              : copy.temporary
-          }`,
-          status:
-            dashboard.storage.healthy
-              ? dashboard.storage
-                  .persistent
-                ? "healthy"
-                : "warning"
-              : "offline",
-          href: "/settings",
-        },
-        {
-          label: copy.runtime,
-          detail: `v${APP_VERSION}`,
-          status:
-            dashboard.runtime.status ===
-            "online"
-              ? "healthy"
-              : "offline",
-          href: "/runtime/trace",
-        },
-        {
-          label: copy.provider,
-          detail:
-            dashboard.provider
-              .fallbackUsed
-              ? `${copy.fallbackFrom} ${providerLabel(
-                  dashboard.provider
-                    .requested
-                )}`
-              : providerName,
-          status:
-            dashboard.provider
-              .fallbackUsed
-              ? "warning"
-              : dashboard.provider
-                  .success
-                ? "healthy"
-                : "warning",
-          href: "/settings",
-        },
-        {
-          label: copy.planner,
-          detail:
-            activeTasks.length > 0
-              ? `${activeTasks.length} ${copy.activeTasks}`
-              : copy.readyForGoal,
-          status:
-            activeTasks.length > 0
-              ? "healthy"
-              : "warning",
-          href: "/tasks",
-        },
-      ],
+  const handleRefresh =
+    useCallback(
+      async () => {
+        await Promise.all([
+          loadData(true),
+          refreshPlanner(
+            "dashboard-manual"
+          ),
+        ]);
+      },
       [
-        activeTasks.length,
-        copy,
-        dashboard,
-        providerName,
+        loadData,
+        refreshPlanner,
       ]
     );
 
-  const handleRefresh =
-    useCallback(async () => {
-      await Promise.all([
-        loadData(true),
-        refreshPlanner(
-          "dashboard-manual"
-        ),
-      ]);
-    }, [
-      loadData,
-      refreshPlanner,
-    ]);
+  const lastSync =
+    dashboard.timestamp
+      ? formatTime(
+          dashboard.timestamp,
+          locale
+        )
+      : "";
+
+  const providerName =
+    dashboard.provider.active &&
+    dashboard.provider.active !==
+      "unknown"
+      ? dashboard.provider.active
+      : dashboard.provider.configured;
+
+  const profileProgress =
+    calculateProgress(
+      dashboard.profile.completedFields,
+      dashboard.profile.totalFields
+    );
+
+  const plannerBusy =
+    plannerLoading ||
+    plannerRefreshing;
 
   return (
     <WorkspaceShell>
@@ -1207,8 +964,7 @@ export default function DashboardPage() {
             flexWrap: "wrap",
             justifyContent:
               "space-between",
-            alignItems:
-              "flex-start",
+            alignItems: "flex-start",
             gap: 18,
             marginBottom: 22,
           }}
@@ -1228,35 +984,33 @@ export default function DashboardPage() {
                   color: "#64748b",
                   fontSize: 12,
                   fontWeight: 850,
-                  letterSpacing:
-                    "0.08em",
-                  textTransform:
-                    "uppercase",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
                 }}
               >
-                AIOS Alpha · v
-                {APP_VERSION}
+                {copy.eyebrow} · v{APP_VERSION}
               </p>
 
-              <StatusBadge
-                healthy={systemHealthy}
-                text={
+              <Badge
+                tone={
                   systemHealthy
-                    ? copy.operating
-                    : copy.attention
+                    ? "success"
+                    : "warning"
                 }
-              />
+              >
+                {systemHealthy
+                  ? copy.operating
+                  : copy.attention}
+              </Badge>
             </div>
 
             <h1
               style={{
-                margin:
-                  "8px 0 0",
+                margin: "8px 0 0",
                 fontSize:
                   "clamp(30px, 6vw, 44px)",
                 lineHeight: 1.08,
-                letterSpacing:
-                  "-0.04em",
+                letterSpacing: "-0.04em",
               }}
             >
               {copy.title}
@@ -1264,9 +1018,8 @@ export default function DashboardPage() {
 
             <p
               style={{
-                maxWidth: 680,
-                margin:
-                  "11px 0 0",
+                maxWidth: 720,
+                margin: "10px 0 0",
                 color: "#64748b",
                 fontSize: 15,
                 lineHeight: 1.7,
@@ -1278,25 +1031,22 @@ export default function DashboardPage() {
 
           <button
             type="button"
+            onClick={() => {
+              void handleRefresh();
+            }}
             disabled={
               loading ||
               refreshing ||
               plannerBusy
             }
-            onClick={() => {
-              void handleRefresh();
-            }}
             style={{
               minHeight: 42,
-              padding:
-                "10px 15px",
-              border:
-                "1px solid #d1d5db",
+              padding: "10px 15px",
+              border: "1px solid #cbd5e1",
               borderRadius: 12,
-              background:
-                "#ffffff",
-              color: "#111827",
-              fontWeight: 750,
+              background: "#ffffff",
+              color: "#0f172a",
+              fontWeight: 800,
               cursor:
                 loading ||
                 refreshing ||
@@ -1307,7 +1057,7 @@ export default function DashboardPage() {
                 loading ||
                 refreshing ||
                 plannerBusy
-                  ? 0.6
+                  ? 0.55
                   : 1,
             }}
           >
@@ -1319,218 +1069,258 @@ export default function DashboardPage() {
           </button>
         </header>
 
-        {error && (
-          <Alert
-            title={
-              copy.dashboardSyncError
-            }
-            message={error}
-            tone="danger"
-          />
-        )}
+        {error ? (
+          <Panel>
+            <Badge tone="danger">
+              {copy.syncError}
+            </Badge>
 
-        {plannerError && (
-          <Alert
-            title={
-              copy.plannerSyncError
-            }
-            message={plannerError}
-            tone="warning"
-          />
-        )}
+            <p
+              style={{
+                margin: "10px 0 0",
+                color: "#64748b",
+                lineHeight: 1.6,
+              }}
+            >
+              {error}
+            </p>
+          </Panel>
+        ) : null}
 
-        <section
+        {plannerError ? (
+          <div
+            style={{
+              marginTop: error ? 12 : 0,
+            }}
+          >
+            <Panel>
+              <Badge tone="warning">
+                {copy.plannerError}
+              </Badge>
+
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                {plannerError}
+              </p>
+            </Panel>
+          </div>
+        ) : null}
+
+        <div
           style={{
-            marginBottom: 18,
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 1.55fr) minmax(260px, 0.75fr)",
+            gap: 18,
+            marginTop:
+              error || plannerError
+                ? 18
+                : 0,
           }}
         >
           <Panel emphasis>
+            <SectionTitle
+              eyebrow={copy.mission}
+              title={
+                loading
+                  ? "..."
+                  : missionTask?.title ??
+                    snapshot?.mission?.title ??
+                    copy.noMission
+              }
+              description={
+                missionTask?.description ??
+                snapshot?.mission?.description ??
+                copy.noMissionDescription
+              }
+            />
+
             <div
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                justifyContent:
-                  "space-between",
-                gap: 18,
+                alignItems: "center",
+                gap: 10,
+                marginTop: 18,
               }}
             >
-              <div
-                style={{
-                  flex:
-                    "1 1 420px",
-                  minWidth: 0,
-                }}
-              >
-                <Eyebrow>
-                  {copy.mission}
-                </Eyebrow>
-
-                <h2
-                  style={{
-                    margin:
-                      "9px 0 0",
-                    fontSize:
-                      "clamp(23px, 5vw, 34px)",
-                    lineHeight: 1.25,
-                    letterSpacing:
-                      "-0.03em",
-                    overflowWrap:
-                      "anywhere",
-                  }}
+              {missionTask ? (
+                <Badge
+                  tone={
+                    missionTask.status ===
+                    "doing"
+                      ? "success"
+                      : "neutral"
+                  }
                 >
-                  {loading
-                    ? copy.loadingMission
-                    : missionTask
-                      ? missionTask.title
-                      : copy.defaultMission}
-                </h2>
+                  {missionTask.status ===
+                  "doing"
+                    ? copy.active
+                    : copy.todo}
+                </Badge>
+              ) : null}
 
-                <p
-                  style={{
-                    maxWidth: 660,
-                    margin:
-                      "10px 0 0",
-                    color: "#64748b",
-                    fontSize: 14,
-                    lineHeight: 1.65,
-                    whiteSpace:
-                      "pre-wrap",
-                  }}
-                >
-                  {missionTask
-                    ?.description ??
-                    (missionTask
-                      ? copy.currentPriority
-                      : copy.missionDescription)}
-                </p>
-              </div>
-
-              <div
-                style={{
-                  flex:
-                    "0 1 220px",
-                  minWidth: 190,
-                  padding: 16,
-                  border:
-                    "1px solid #e2e8f0",
-                  borderRadius: 15,
-                  background:
-                    "#f8fafc",
-                }}
-              >
-                <p
-                  style={{
-                    margin: 0,
-                    color: "#64748b",
-                    fontSize: 12,
-                    fontWeight: 750,
-                  }}
-                >
-                  {copy.progress}
-                </p>
-
-                <strong
-                  style={{
-                    display: "block",
-                    marginTop: 7,
-                    fontSize: 30,
-                  }}
-                >
-                  {taskProgress}%
-                </strong>
-
-                <ProgressBar
-                  value={taskProgress}
-                />
-
-                <p
-                  style={{
-                    margin:
-                      "9px 0 0",
-                    color: "#94a3b8",
-                    fontSize: 12,
-                  }}
-                >
-                  {completedTasks.length}/
-                  {tasks.length}{" "}
-                  {copy.completed}
-                </p>
-              </div>
+              {snapshot?.mission?.priority ? (
+                <Badge>
+                  {snapshot.mission.priority}
+                </Badge>
+              ) : null}
             </div>
 
             <div
               style={{
-                marginTop: 19,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 20,
               }}
             >
-              <p
+              <Link
+                href={
+                  missionTask
+                    ? "/execution"
+                    : "/planner"
+                }
                 style={{
-                  margin: "0 0 8px",
-                  color: "#4f46e5",
-                  fontSize: 11,
-                  fontWeight: 850,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 42,
+                  padding: "9px 15px",
+                  borderRadius: 12,
+                  background: "#0f172a",
+                  color: "#ffffff",
+                  textDecoration: "none",
+                  fontSize: 13,
+                  fontWeight: 800,
                 }}
               >
-                {copy.primaryActionLabel}
-              </p>
+                {missionTask
+                  ? copy.continue
+                  : copy.createGoal}
+              </Link>
 
-              <div
+              <Link
+                href="/tasks"
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 10,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 42,
+                  padding: "9px 15px",
+                  border:
+                    "1px solid #cbd5e1",
+                  borderRadius: 12,
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  textDecoration: "none",
+                  fontSize: 13,
+                  fontWeight: 800,
                 }}
               >
-                <PrimaryLink
-                  href={
-                    missionTask
-                      ? "/tasks"
-                      : "/workspace"
-                  }
-                >
-                  {missionTask
-                    ? copy.continue
-                    : copy.createGoal}
-                </PrimaryLink>
-
-                <SecondaryLink
-                  href="/runtime/trace"
-                >
-                  {copy.executionTrace}
-                </SecondaryLink>
-              </div>
-
-              <p
-                style={{
-                  margin: "9px 0 0",
-                  color: "#64748b",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                }}
-              >
-                {copy.primaryActionHint}
-              </p>
+                {copy.openTasks}
+              </Link>
             </div>
           </Panel>
-        </section>
 
-        <section
+          <Panel>
+            <SectionTitle
+              eyebrow={copy.progress}
+              title={`${taskProgress}%`}
+            />
+
+            <ProgressBar
+              value={taskProgress}
+            />
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(3, minmax(0, 1fr))",
+                gap: 8,
+                marginTop: 18,
+              }}
+            >
+              <Metric
+                value={
+                  completedTasks.length
+                }
+                label={copy.completed}
+              />
+
+              <Metric
+                value={activeTasks.length}
+                label={copy.active}
+              />
+
+              <Metric
+                value={tasks.length}
+                label={copy.total}
+              />
+            </div>
+          </Panel>
+        </div>
+
+        <div
           style={{
-            marginBottom: 18,
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 18,
+            marginTop: 18,
           }}
         >
           <Panel>
-            <SectionHeader
-              eyebrow={
-                copy.learningEyebrow
-              }
+            <SectionTitle
+              eyebrow={copy.next}
               title={
-                copy.learningTitle
+                snapshot?.plan?.nextStep ||
+                nextTask?.title ||
+                copy.plannerNext
               }
               description={
-                copy.learningDescription
+                snapshot?.plan?.expectedResult ||
+                nextTask?.description ||
+                copy.plannerNext
+              }
+            />
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <Link
+                href="/execution"
+                style={secondaryLinkStyle}
+              >
+                {copy.openExecution}
+              </Link>
+
+              <Link
+                href="/planner"
+                style={secondaryLinkStyle}
+              >
+                {copy.managePlanner}
+              </Link>
+            </div>
+          </Panel>
+
+          <Panel>
+            <SectionTitle
+              eyebrow={copy.learning}
+              title={learningHealthLabel}
+              description={
+                learning?.recommendation ??
+                copy.noRecommendation
               }
             />
 
@@ -1538,655 +1328,353 @@ export default function DashboardPage() {
               style={{
                 display: "grid",
                 gridTemplateColumns:
-                  "repeat(auto-fit, minmax(140px, 1fr))",
+                  "repeat(3, minmax(0, 1fr))",
                 gap: 10,
-                marginTop: 18,
               }}
             >
-              <LearningMetric
-                label={copy.completion}
-                value={`${learningMetrics?.completionRate ?? 0}%`}
-                detail={`${learningMetrics?.completed ?? 0}/${learningMetrics?.total ?? 0} ${copy.tasksLabel}`}
-              />
-
-              <LearningMetric
-                label={copy.velocity}
-                value={`${learningMetrics?.executionVelocity ?? 0}`}
-                detail={copy.tasksPerDay}
-              />
-
-              <LearningMetric
-                label={copy.stale}
-                value={`${learningMetrics?.stale ?? 0}`}
-                detail={copy.over24Hours}
-                warning={
-                  (learningMetrics?.stale ??
-                    0) > 0
+              <Metric
+                value={
+                  learning?.confidence ??
+                  0
                 }
-              />
-
-              <LearningMetric
                 label={copy.confidence}
-                value={`${learning?.confidence ?? 0}%`}
-                detail={
-                  copy.learningQuality
+                suffix="%"
+              />
+
+              <Metric
+                value={
+                  learningMetrics?.completionRate ??
+                  0
                 }
+                label={copy.completionRate}
+                suffix="%"
+              />
+
+              <Metric
+                value={
+                  learningMetrics?.executionVelocity ??
+                  0
+                }
+                label={copy.velocity}
               />
             </div>
 
             <div
               style={{
-                marginTop: 14,
-                padding: 15,
-                border:
-                  "1px solid #e2e8f0",
-                borderRadius: 15,
-                background:
-                  "#ffffff",
+                marginTop: 15,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems:
-                    "center",
-                  justifyContent:
-                    "space-between",
-                  gap: 10,
-                }}
-              >
-                <div>
-                  <Eyebrow>
-                    {copy.trend}
-                  </Eyebrow>
+              {learningMetrics ? (
+                <Badge>
+                  {learningMetrics.stale}{" "}
+                  {copy.stale}
+                </Badge>
+              ) : null}
 
-                  <p
-                    style={{
-                      margin:
-                        "6px 0 0",
-                      color:
-                        "#64748b",
-                      fontSize: 12,
-                    }}
-                  >
-                    {learningHistory
-                      ? `${learningHistory.sampleCount} ${copy.historicalSamples}`
-                      : copy.baseline}
-                  </p>
-                </div>
+              {learningHistory?.trend ? (
+                <Badge>
+                  {learningHistory.trend}
+                </Badge>
+              ) : null}
 
-                <StatusBadge
-                  healthy={
-                    learningTrend ===
-                      "improving" ||
-                    learningTrend ===
-                      "stable"
-                  }
-                  text={
-                    learningTrendLabel
-                  }
-                />
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(145px, 1fr))",
-                  gap: 10,
-                  marginTop: 13,
-                }}
-              >
-                <LearningMetric
-                  label="Completion Δ"
-                  value={`${(learningHistory?.completionRateChange ?? 0) > 0 ? "+" : ""}${learningHistory?.completionRateChange ?? 0}%`}
-                  detail={
-                    copy.vsPrevious
-                  }
-                  warning={
-                    (learningHistory?.completionRateChange ??
-                      0) < 0
-                  }
-                />
-
-                <LearningMetric
-                  label="Velocity Δ"
-                  value={`${(learningHistory?.velocityChange ?? 0) > 0 ? "+" : ""}${learningHistory?.velocityChange ?? 0}`}
-                  detail={
-                    copy.tasksPerDay
-                  }
-                  warning={
-                    (learningHistory?.velocityChange ??
-                      0) < 0
-                  }
-                />
-
-                <LearningMetric
-                  label="Stale Δ"
-                  value={`${(learningHistory?.staleChange ?? 0) > 0 ? "+" : ""}${learningHistory?.staleChange ?? 0}`}
-                  detail={
-                    copy.lowerBetter
-                  }
-                  warning={
-                    (learningHistory?.staleChange ??
-                      0) > 0
-                  }
-                />
-              </div>
+              <Badge>
+                {strategyMode}
+              </Badge>
             </div>
+          </Panel>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 1.2fr) minmax(300px, 0.8fr)",
+            gap: 18,
+            marginTop: 18,
+          }}
+        >
+          <Panel>
+            <SectionTitle
+              eyebrow={copy.planner}
+              title={
+                snapshot?.plan?.currentGoal ||
+                copy.noMission
+              }
+              description={
+                snapshot?.plan?.executionState ||
+                copy.plannerDescription
+              }
+            />
 
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(280px, 1fr))",
                 gap: 12,
-                marginTop: 14,
               }}
             >
+              <InfoRow
+                label={copy.currentGoal}
+                value={
+                  snapshot?.plan?.currentGoal ||
+                  copy.noMission
+                }
+              />
+
+              <InfoRow
+                label={copy.nextStep}
+                value={
+                  snapshot?.plan?.nextStep ||
+                  copy.plannerNext
+                }
+              />
+
+              <InfoRow
+                label={copy.expectedResult}
+                value={
+                  snapshot?.plan?.expectedResult ||
+                  copy.plannerNext
+                }
+              />
+
+              <InfoRow
+                label={copy.executionState}
+                value={
+                  snapshot?.plan?.executionState ||
+                  "idle"
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+              }}
+            >
+              <Link
+                href="/planner"
+                style={primaryLinkStyle}
+              >
+                {copy.managePlanner}
+              </Link>
+            </div>
+          </Panel>
+
+          <Panel>
+            <SectionTitle
+              eyebrow={copy.queue}
+              title={`${activeTasks.length} ${copy.active}`}
+              description={copy.queueDescription}
+            />
+
+            {activeTasks.length === 0 ? (
               <div
                 style={{
-                  padding: 15,
-                  border:
-                    "1px solid #c7d2fe",
-                  borderRadius: 15,
-                  background:
-                    "#f8faff",
+                  padding: "18px 0",
+                  color: "#64748b",
+                  fontSize: 14,
                 }}
               >
-                <Eyebrow>
-                  {copy.recommendation}
-                </Eyebrow>
-
-                <strong
-                  style={{
-                    display:
-                      "block",
-                    marginTop: 8,
-                    fontSize: 14,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {learning?.recommendation ??
-                    copy.defaultRecommendation}
-                </strong>
+                {copy.noTasks}
               </div>
-
+            ) : (
               <div
                 style={{
                   display: "grid",
                   gap: 9,
                 }}
               >
-                {plannerBusy ? (
-                  <EmptyState>
-                    {copy.analyzing}
-                  </EmptyState>
-                ) : learning
-                    ?.insights?.length ? (
-                  learning.insights
-                    .slice(0, 2)
-                    .map(
-                      (insight) => (
-                        <LearningInsight
-                          key={
-                            insight.id
-                          }
-                          title={
-                            insight.title
-                          }
-                          action={
-                            insight.action
-                          }
-                          warning={
-                            insight.severity ===
-                              "warning" ||
-                            insight.severity ===
-                              "critical"
-                          }
-                        />
-                      )
-                    )
-                ) : (
-                  <EmptyState>
-                    {copy.waitingInsight}
-                  </EmptyState>
-                )}
-              </div>
-            </div>
+                {activeTasks
+                  .slice(0, 5)
+                  .map((task) => (
+                    <Link
+                      key={task.id}
+                      href="/tasks"
+                      style={{
+                        display: "block",
+                        padding: 12,
+                        border:
+                          "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        background: "#f8fafc",
+                        color: "#0f172a",
+                        textDecoration: "none",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent:
+                            "space-between",
+                          gap: 10,
+                          alignItems:
+                            "flex-start",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            fontSize: 13,
+                            lineHeight: 1.45,
+                            overflowWrap:
+                              "anywhere",
+                          }}
+                        >
+                          {task.title}
+                        </strong>
 
-            <footer
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            color: "#64748b",
+                            fontSize: 11,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {task.status ===
+                          "doing"
+                            ? copy.doing
+                            : copy.todo}
+                        </span>
+                      </div>
+
+                      {task.description ? (
+                        <p
+                          style={{
+                            margin:
+                              "6px 0 0",
+                            color:
+                              "#64748b",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            display:
+                              "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient:
+                              "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {task.description}
+                        </p>
+                      ) : null}
+                    </Link>
+                  ))}
+              </div>
+            )}
+
+            <div
               style={{
                 marginTop: 14,
+              }}
+            >
+              <Link
+                href="/tasks"
+                style={secondaryLinkStyle}
+              >
+                {copy.viewAll}
+              </Link>
+            </div>
+          </Panel>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 18,
+            marginTop: 18,
+          }}
+        >
+          <Panel>
+            <SectionTitle
+              eyebrow={copy.system}
+              title={
+                systemHealthy
+                  ? copy.operating
+                  : copy.attention
+              }
+            />
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <SystemRow
+                label={copy.runtime}
+                value={
+                  dashboard.runtime.status ===
+                  "online"
+                    ? copy.online
+                    : copy.offline
+                }
+                tone={
+                  dashboard.runtime.status ===
+                  "online"
+                    ? "success"
+                    : "danger"
+                }
+              />
+
+              <SystemRow
+                label={copy.provider}
+                value={
+                  dashboard.provider.fallbackUsed
+                    ? `${providerName} · ${copy.fallback}`
+                    : dashboard.provider.success
+                      ? `${providerName} · ${copy.ready}`
+                      : copy.attention
+                }
+                tone={
+                  dashboard.provider.fallbackUsed
+                    ? "warning"
+                    : dashboard.provider.success
+                      ? "success"
+                      : "danger"
+                }
+              />
+
+              <SystemRow
+                label={copy.storage}
+                value={
+                  dashboard.storage.persistent
+                    ? `${dashboard.storage.mode} · ${copy.persistent}`
+                    : `${dashboard.storage.mode} · ${copy.temporary}`
+                }
+                tone={
+                  dashboard.storage.healthy
+                    ? "success"
+                    : "warning"
+                }
+              />
+
+              <SystemRow
+                label={copy.memory}
+                value={`${dashboard.memory.count} ${copy.records}`}
+                tone="neutral"
+              />
+            </div>
+
+            <p
+              style={{
+                margin: "15px 0 0",
                 color: "#94a3b8",
                 fontSize: 11,
               }}
             >
-              {copy.learningUpdated}{" "}
-              {formatTime(
-                plannerGeneratedAt,
-                locale,
-                copy.noRecord
-              )}
-            </footer>
-          </Panel>
-        </section>
-
-        <section
-          style={{
-            marginBottom: 18,
-          }}
-        >
-          <Panel>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent:
-                  "space-between",
-                alignItems:
-                  "flex-start",
-                gap: 14,
-              }}
-            >
-              <SectionHeader
-                eyebrow={
-                  copy.runtimeEyebrow
-                }
-                title={
-                  copy.runtimeTitle
-                }
-                description={
-                  copy.runtimeDescription
-                }
-              />
-
-              <StatusBadge
-                healthy={
-                  strategyHealthy
-                }
-                text={
-                  strategyModeLabel
-                }
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(150px, 1fr))",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              <LearningMetric
-                label={
-                  copy.parallelLimit
-                }
-                value={`${adaptiveStrategy?.maxConcurrentTasks ?? 1}`}
-                detail={
-                  copy.maximumActive
-                }
-              />
-
-              <LearningMetric
-                label={
-                  copy.newTasks
-                }
-                value={
-                  adaptiveStrategy
-                    ?.allowNewTasks
-                    ? copy.allowed
-                    : copy.paused
-                }
-                detail={
-                  copy.controlledByRuntime
-                }
-                warning={
-                  adaptiveStrategy
-                    ? !adaptiveStrategy.allowNewTasks
-                    : false
-                }
-              />
-
-              <LearningMetric
-                label={
-                  copy.runtimeMode
-                }
-                value={
-                  strategyModeLabel
-                }
-                detail={
-                  copy.adaptiveExecution
-                }
-                warning={
-                  strategyMode ===
-                  "recover"
-                }
-              />
-            </div>
-
-            <div
-              style={{
-                marginTop: 14,
-                padding: 16,
-                border:
-                  strategyMode ===
-                  "recover"
-                    ? "1px solid #fecaca"
-                    : "1px solid #c7d2fe",
-                borderRadius: 15,
-                background:
-                  strategyMode ===
-                  "recover"
-                    ? "#fff7f7"
-                    : "#f8faff",
-              }}
-            >
-              <Eyebrow>
-                {copy.primaryAction}
-              </Eyebrow>
-
-              <strong
-                style={{
-                  display:
-                    "block",
-                  marginTop: 8,
-                  fontSize: 15,
-                  lineHeight: 1.6,
-                }}
-              >
-                {adaptiveStrategy
-                  ?.primaryAction ??
-                  copy.defaultPrimaryAction}
-              </strong>
-
-              <p
-                style={{
-                  margin:
-                    "8px 0 0",
-                  color: "#64748b",
-                  fontSize: 12,
-                  lineHeight: 1.55,
-                }}
-              >
-                {adaptiveStrategy
-                  ?.reason ??
-                  copy.waitingRuntime}
-              </p>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 10,
-                marginTop: 15,
-              }}
-            >
-              <PrimaryLink href="/tasks">
-                {copy.executeStrategy}
-              </PrimaryLink>
-
-              <SecondaryLink
-                href="/runtime/trace"
-              >
-                {copy.viewEvidence}
-              </SecondaryLink>
-            </div>
-          </Panel>
-        </section>
-
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(310px, 1fr))",
-            gap: 16,
-            marginBottom: 18,
-          }}
-        >
-          <Panel>
-            <SectionHeader
-              eyebrow={copy.planEyebrow}
-              title={copy.planTitle}
-              description={
-                copy.planDescription
-              }
-            />
-
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                marginTop: 18,
-              }}
-            >
-              <PlannerRow
-                number="01"
-                label={
-                  copy.currentGoal
-                }
-                value={
-                  missionTask?.title ??
-                  copy.waitingGoal
-                }
-              />
-
-              <PlannerRow
-                number="02"
-                label={copy.nextStep}
-                value={
-                  nextTask?.title ??
-                  (missionTask
-                    ? copy.completeCurrent
-                    : copy.firstTask)
-                }
-              />
-
-              <PlannerRow
-                number="03"
-                label={
-                  copy.expectedResult
-                }
-                value={
-                  missionTask
-                    ? copy.verifiable
-                    : copy.firstPath
-                }
-              />
-
-              <PlannerRow
-                number="04"
-                label={
-                  copy.executionState
-                }
-                value={
-                  doingTasks.length >
-                  0
-                    ? `${doingTasks.length} ${copy.inProgress}`
-                    : activeTasks.length >
-                        0
-                      ? `${activeTasks.length} ${copy.waitingExecution}`
-                      : copy.plannerReady
-                }
-              />
-            </div>
-
-            <div
-              style={{
-                marginTop: 16,
-              }}
-            >
-              <SecondaryLink href="/tasks">
-                {copy.managePlan}
-              </SecondaryLink>
-            </div>
+              {copy.lastSync}:{" "}
+              {lastSync || copy.never}
+            </p>
           </Panel>
 
           <Panel>
-            <SectionHeader
-              eyebrow={
-                copy.queueEyebrow
-              }
-              title={copy.queueTitle}
-              description={
-                copy.queueDescription
-              }
-            />
-
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              {loading ? (
-                <EmptyState>
-                  {copy.loadingQueue}
-                </EmptyState>
-              ) : orderedTasks.length ===
-                0 ? (
-                <EmptyState>
-                  {copy.noTasks}
-                </EmptyState>
-              ) : (
-                orderedTasks
-                  .slice(0, 5)
-                  .map(
-                    (
-                      task,
-                      index
-                    ) => (
-                      <QueueItem
-                        key={task.id}
-                        task={task}
-                        index={index}
-                        locale={
-                          locale
-                        }
-                      />
-                    )
-                  )
-              )}
-            </div>
-
-            <div
-              style={{
-                marginTop: 16,
-              }}
-            >
-              <SecondaryLink href="/tasks">
-                {copy.viewAllTasks}
-              </SecondaryLink>
-            </div>
-          </Panel>
-        </section>
-
-        <section
-          style={{
-            marginBottom: 18,
-          }}
-        >
-          <Panel>
-            <SectionHeader
-              eyebrow={
-                copy.quickEyebrow
-              }
-              title={
-                copy.quickTitle
-              }
-              description={
-                copy.quickDescription
-              }
-            />
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(145px, 1fr))",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              {[
-                {
-                  icon: "💬",
-                  title: copy.chat,
-                  description:
-                    copy.chatDescription,
-                  href: "/workspace",
-                },
-                {
-                  icon: "➕",
-                  title: copy.newTask,
-                  description:
-                    copy.newTaskDescription,
-                  href: "/tasks",
-                },
-                {
-                  icon: "📁",
-                  title: copy.projects,
-                  description:
-                    copy.projectsDescription,
-                  href: "/projects",
-                },
-                {
-                  icon:
-                    MODULE_ICONS.memory,
-                  title: copy.memory,
-                  description:
-                    copy.memoryDescription,
-                  href: "/memory",
-                },
-                {
-                  icon: "⚡",
-                  title: copy.runtime,
-                  description:
-                    copy.runtimeQuickDescription,
-                  href: "/runtime/trace",
-                },
-                {
-                  icon: "⚙️",
-                  title: copy.settings,
-                  description:
-                    copy.settingsDescription,
-                  href: "/settings",
-                },
-              ].map((action) => (
-                <QuickActionCard
-                  key={action.href}
-                  action={action}
-                />
-              ))}
-            </div>
-          </Panel>
-        </section>
-
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(310px, 1fr))",
-            gap: 16,
-            marginBottom: 18,
-          }}
-        >
-          <Panel>
-            <SectionHeader
-              eyebrow={
-                copy.healthEyebrow
-              }
-              title={
-                copy.healthTitle
-              }
-              description={
-                copy.healthDescription
-              }
+            <SectionTitle
+              eyebrow={copy.memorySnapshot}
+              title={`${dashboard.memory.count} ${copy.records}`}
             />
 
             <div
@@ -2195,103 +1683,60 @@ export default function DashboardPage() {
                 gridTemplateColumns:
                   "repeat(2, minmax(0, 1fr))",
                 gap: 10,
-                marginTop: 18,
               }}
             >
-              {healthItems.map(
-                (item) => (
-                  <HealthCard
-                    key={item.label}
-                    item={item}
-                  />
-                )
-              )}
-            </div>
-          </Panel>
+              <Metric
+                value={
+                  dashboard.memory.userMessages
+                }
+                label={copy.chat}
+              />
 
-          <Panel>
-            <SectionHeader
-              eyebrow={
-                copy.contextEyebrow
-              }
-              title={
-                copy.contextTitle
-              }
-              description={
-                copy.contextDescription
-              }
-            />
+              <Metric
+                value={
+                  dashboard.memory.assistantMessages
+                }
+                label={copy.execution}
+              />
+            </div>
 
             <div
               style={{
-                display: "grid",
-                gap: 13,
-                marginTop: 19,
+                marginTop: 15,
+                padding: 12,
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius: 12,
+                background: "#f8fafc",
               }}
             >
-              <MetricRow
-                label={
-                  copy.totalMemory
-                }
-                value={
-                  dashboard.memory
-                    .count
-                }
-                detail={
-                  copy.records
-                }
-              />
-
-              <MetricRow
-                label={
-                  copy.userMessages
-                }
-                value={
-                  dashboard.memory
-                    .userMessages
-                }
-                detail={copy.inputs}
-              />
-
-              <MetricRow
-                label={
-                  copy.aiMessages
-                }
-                value={
-                  dashboard.memory
-                    .assistantMessages
-                }
-                detail={
-                  copy.responses
-                }
-              />
-
-              <div>
-                <div
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "space-between",
+                  gap: 10,
+                  fontSize: 12,
+                }}
+              >
+                <span
                   style={{
-                    display:
-                      "flex",
-                    justifyContent:
-                      "space-between",
-                    gap: 12,
-                    marginBottom: 7,
-                    color:
-                      "#475569",
-                    fontSize: 13,
-                    fontWeight: 700,
+                    color: "#64748b",
                   }}
                 >
-                  <span>
-                    {
-                      copy.profileReadiness
-                    }
-                  </span>
+                  {copy.profile}
+                </span>
 
-                  <span>
-                    {profileProgress}%
-                  </span>
-                </div>
+                <strong>
+                  {profileProgress}%
+                </strong>
+              </div>
 
+              <div
+                style={{
+                  marginTop: 8,
+                }}
+              >
                 <ProgressBar
                   value={
                     profileProgress
@@ -2299,1230 +1744,326 @@ export default function DashboardPage() {
                 />
               </div>
             </div>
-
-            <div
-              style={{
-                marginTop: 18,
-              }}
-            >
-              <SecondaryLink href="/memory">
-                {copy.openMemory}
-              </SecondaryLink>
-            </div>
           </Panel>
-        </section>
+        </div>
 
-        <section>
-          <Panel>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent:
-                  "space-between",
-                alignItems:
-                  "flex-start",
-                gap: 16,
-              }}
-            >
-              <SectionHeader
-                eyebrow={
-                  copy.statusEyebrow
-                }
-                title={
-                  copy.statusTitle
-                }
-                description={
-                  copy.statusDescription
-                }
-              />
-
-              <StatusBadge
-                healthy={
-                  systemHealthy
-                }
-                text={
-                  systemHealthy
-                    ? copy.healthy
-                    : copy.checkRequired
-                }
+        <Panel>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              justifyContent:
+                "space-between",
+              gap: 16,
+            }}
+          >
+            <div>
+              <SectionTitle
+                eyebrow={copy.quick}
+                title={copy.quick}
               />
             </div>
+          </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(170px, 1fr))",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              <RuntimeItem
-                label={
-                  copy.runtime
-                }
-                value={
-                  dashboard.runtime
-                    .status ===
-                  "online"
-                    ? copy.online
-                    : copy.offline
-                }
-                detail={`v${APP_VERSION}`}
-                healthy={
-                  dashboard.runtime
-                    .status ===
-                  "online"
-                }
-              />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(4, minmax(0, 1fr))",
+              gap: 10,
+            }}
+          >
+            <QuickLink
+              href="/chat"
+              title={copy.chat}
+              description={
+                copy.chatDescription
+              }
+            />
 
-              <RuntimeItem
-                label={
-                  copy.provider
-                }
-                value={
-                  providerName
-                }
-                detail={
-                  dashboard.provider
-                    .latencyMs !==
-                  null
-                    ? `${dashboard.provider.latencyMs}ms`
-                    : copy.runtimeReady
-                }
-                healthy={
-                  !dashboard.provider
-                    .fallbackUsed
-                }
-              />
+            <QuickLink
+              href="/tasks"
+              title={copy.task}
+              description={
+                copy.taskDescription
+              }
+            />
 
-              <RuntimeItem
-                label={
-                  copy.storage
-                }
-                value={storageLabel(
-                  dashboard.storage
-                    .mode
-                )}
-                detail={
-                  dashboard.storage
-                    .persistent
-                    ? copy.persistent
-                    : copy.temporary
-                }
-                healthy={
-                  dashboard.storage
-                    .healthy
-                }
-              />
+            <QuickLink
+              href="/planner"
+              title={copy.plannerQuick}
+              description={
+                copy.plannerQuickDescription
+              }
+            />
 
-              <RuntimeItem
-                label="Isolation"
-                value={
-                  dashboard.identity
-                    ?.isolated
-                    ? copy.isolationEnabled
-                    : copy.isolationUnknown
-                }
-                detail={
-                  copy.privateWorkspace
-                }
-                healthy={
-                  dashboard.identity
-                    ?.isolated ??
-                  false
-                }
-              />
-            </div>
+            <QuickLink
+              href="/execution"
+              title={copy.executionQuick}
+              description={
+                copy.executionQuickDescription
+              }
+            />
+          </div>
+        </Panel>
 
-            {dashboard.provider
-              .fallbackUsed && (
-              <Alert
-                title={
-                  copy.providerFallback
-                }
-                message={
-                  dashboard.provider
-                    .error ??
-                  copy.providerFallback
-                }
-                tone="warning"
-              />
-            )}
+        <footer
+          style={{
+            padding:
+              "22px 0 32px",
+            color: "#94a3b8",
+            fontSize: 11,
+            textAlign: "center",
+          }}
+        >
+          AIOS Alpha · v{APP_VERSION}
+        </footer>
 
-            {!dashboard.storage
-              .persistent && (
-              <Alert
-                title={
-                  copy.persistentStorageDisabled
-                }
-                message={
-                  copy.persistentStorageWarning
-                }
-                tone="warning"
-              />
-            )}
+        <style jsx>{`
+          @media (max-width: 900px) {
+            main > div {
+              grid-template-columns: 1fr !important;
+            }
 
-            <footer
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent:
-                  "space-between",
-                gap: 10,
-                marginTop: 18,
-                paddingTop: 16,
-                borderTop:
-                  "1px solid #e2e8f0",
-                color: "#94a3b8",
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              <span>
-                {copy.lastSync}{" "}
-                {formatTime(
-                  dashboard.timestamp,
-                  locale,
-                  copy.noRecord
-                )}
-              </span>
+            main > div > section {
+              min-width: 0;
+            }
+          }
 
-              <span>
-                {copy.providerLastRequest}{" "}
-                {formatTime(
-                  dashboard.provider
-                    .lastRequestAt,
-                  locale,
-                  copy.noRecord
-                )}
-              </span>
-            </footer>
-          </Panel>
-        </section>
+          @media (max-width: 640px) {
+            main {
+              padding: 0 14px;
+            }
+          }
+        `}</style>
       </main>
     </WorkspaceShell>
   );
 }
 
-function Panel({
-  children,
-  emphasis = false,
+function Metric({
+  value,
+  label,
+  suffix,
 }: {
-  children: ReactNode;
-  emphasis?: boolean;
+  value: number;
+  label: string;
+  suffix?: string;
 }) {
-  return (
-    <article
-      style={{
-        minWidth: 0,
-        padding:
-          "clamp(18px, 4vw, 24px)",
-        border: emphasis
-          ? "1px solid #c7d2fe"
-          : "1px solid #e2e8f0",
-        borderRadius: 20,
-        background: emphasis
-          ? "linear-gradient(135deg, #ffffff 0%, #f8faff 100%)"
-          : "#ffffff",
-        boxShadow:
-          "0 10px 30px rgba(15, 23, 42, 0.045)",
-      }}
-    >
-      {children}
-    </article>
-  );
-}
-
-function Eyebrow({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <p
-      style={{
-        margin: 0,
-        color: "#4f46e5",
-        fontSize: 11,
-        fontWeight: 850,
-        letterSpacing:
-          "0.1em",
-        textTransform:
-          "uppercase",
-      }}
-    >
-      {children}
-    </p>
-  );
-}
-
-function SectionHeader({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div>
-      <Eyebrow>
-        {eyebrow}
-      </Eyebrow>
-
-      <h2
-        style={{
-          margin:
-            "6px 0 0",
-          fontSize: 21,
-          letterSpacing:
-            "-0.025em",
-        }}
-      >
-        {title}
-      </h2>
-
-      <p
-        style={{
-          margin:
-            "7px 0 0",
-          color: "#64748b",
-          fontSize: 13,
-          lineHeight: 1.6,
-        }}
-      >
-        {description}
-      </p>
-    </div>
-  );
-}
-
-function StatusBadge({
-  healthy,
-  text,
-}: {
-  healthy: boolean;
-  text: string;
-}) {
-  return (
-    <span
-      style={{
-        display:
-          "inline-flex",
-        alignItems:
-          "center",
-        gap: 7,
-        padding:
-          "5px 9px",
-        border:
-          `1px solid ${
-            healthy
-              ? "#bbf7d0"
-              : "#fde68a"
-          }`,
-        borderRadius:
-          999,
-        background:
-          healthy
-            ? "#f0fdf4"
-            : "#fffbeb",
-        color:
-          healthy
-            ? "#15803d"
-            : "#92400e",
-        fontSize: 10,
-        fontWeight: 850,
-      }}
-    >
-      <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius:
-            "50%",
-          background:
-            healthy
-              ? "#22c55e"
-              : "#f59e0b",
-        }}
-      />
-
-      {text}
-    </span>
-  );
-}
-
-function Alert({
-  title,
-  message,
-  tone,
-}: {
-  title: string;
-  message: string;
-  tone: "danger" | "warning";
-}) {
-  const danger =
-    tone === "danger";
-
   return (
     <div
       style={{
-        marginTop: 14,
-        padding: 14,
-        border:
-          `1px solid ${
-            danger
-              ? "#fecaca"
-              : "#fde68a"
-          }`,
-        borderRadius: 14,
-        background:
-          danger
-            ? "#fff7f7"
-            : "#fffbeb",
-        color:
-          danger
-            ? "#b91c1c"
-            : "#92400e",
+        minWidth: 0,
+        padding: 12,
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        background: "#f8fafc",
       }}
     >
       <strong
         style={{
           display: "block",
-          fontSize: 13,
-        }}
-      >
-        {title}
-      </strong>
-
-      <p
-        style={{
-          margin:
-            "5px 0 0",
-          fontSize: 12,
-          lineHeight: 1.5,
-        }}
-      >
-        {message}
-      </p>
-    </div>
-  );
-}
-
-function ProgressBar({
-  value,
-}: {
-  value: number;
-}) {
-  const progress =
-    Math.min(
-      100,
-      Math.max(0, value)
-    );
-
-  return (
-    <div
-      style={{
-        height: 8,
-        overflow: "hidden",
-        borderRadius: 999,
-        background:
-          "#e2e8f0",
-      }}
-    >
-      <div
-        style={{
-          width: `${progress}%`,
-          height: "100%",
-          borderRadius: 999,
-          background:
-            progress >= 80
-              ? "#22c55e"
-              : progress >= 40
-                ? "#4f46e5"
-                : "#f59e0b",
-          transition:
-            "width 220ms ease",
-        }}
-      />
-    </div>
-  );
-}
-
-function LearningMetric({
-  label,
-  value,
-  detail,
-  warning = false,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  warning?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        padding: 14,
-        border:
-          `1px solid ${
-            warning
-              ? "#fde68a"
-              : "#e2e8f0"
-          }`,
-        borderRadius: 14,
-        background:
-          warning
-            ? "#fffbeb"
-            : "#f8fafc",
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          color: "#64748b",
-          fontSize: 11,
-          fontWeight: 750,
-        }}
-      >
-        {label}
-      </p>
-
-      <strong
-        style={{
-          display:
-            "block",
-          marginTop: 6,
-          color:
-            warning
-              ? "#92400e"
-              : "#0f172a",
-          fontSize: 24,
+          color: "#0f172a",
+          fontSize: 20,
+          lineHeight: 1.1,
         }}
       >
         {value}
+        {suffix ?? ""}
       </strong>
 
       <span
         style={{
-          display:
-            "block",
-          marginTop: 3,
-          color: "#94a3b8",
-          fontSize: 10,
+          display: "block",
+          marginTop: 5,
+          color: "#64748b",
+          fontSize: 11,
+          lineHeight: 1.4,
         }}
       >
-        {detail}
+        {label}
       </span>
     </div>
   );
 }
 
-function LearningInsight({
-  title,
-  action,
-  warning,
-}: {
-  title: string;
-  action: string;
-  warning: boolean;
-}) {
-  return (
-    <div
-      style={{
-        padding: 12,
-        border:
-          `1px solid ${
-            warning
-              ? "#fde68a"
-              : "#dbeafe"
-          }`,
-        borderRadius: 13,
-        background:
-          warning
-            ? "#fffbeb"
-            : "#eff6ff",
-      }}
-    >
-      <strong
-        style={{
-          display:
-            "block",
-          color:
-            warning
-              ? "#92400e"
-              : "#1e40af",
-          fontSize: 12,
-          lineHeight: 1.45,
-        }}
-      >
-        {title}
-      </strong>
-
-      <p
-        style={{
-          margin:
-            "5px 0 0",
-          color:
-            warning
-              ? "#78350f"
-              : "#1e3a8a",
-          fontSize: 11,
-          lineHeight: 1.5,
-        }}
-      >
-        {action}
-      </p>
-    </div>
-  );
-}
-
-function PlannerRow({
-  number,
+function InfoRow({
   label,
   value,
 }: {
-  number: string;
   label: string;
   value: string;
 }) {
   return (
     <div
       style={{
-        display: "flex",
+        display: "grid",
+        gridTemplateColumns:
+          "110px minmax(0, 1fr)",
         gap: 12,
-        padding: 13,
-        border:
-          "1px solid #e2e8f0",
-        borderRadius: 14,
-        background:
-          "#f8fafc",
-      }}
-    >
-      <span
-        style={{
-          display:
-            "inline-flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
-          width: 30,
-          height: 30,
-          flexShrink: 0,
-          borderRadius: 9,
-          background:
-            "#e0e7ff",
-          color: "#4338ca",
-          fontSize: 11,
-          fontWeight: 850,
-        }}
-      >
-        {number}
-      </span>
-
-      <div
-        style={{
-          minWidth: 0,
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 11,
-            fontWeight: 750,
-          }}
-        >
-          {label}
-        </p>
-
-        <strong
-          style={{
-            display:
-              "block",
-            marginTop: 4,
-            color: "#0f172a",
-            fontSize: 14,
-            lineHeight: 1.45,
-            overflowWrap:
-              "anywhere",
-          }}
-        >
-          {value}
-        </strong>
-      </div>
-    </div>
-  );
-}
-
-function QueueItem({
-  task,
-  index,
-  locale,
-}: {
-  task: Task;
-  index: number;
-  locale: "en" | "zh-CN" | "ja";
-}) {
-  const labels = {
-    en: {
-      doing: "Doing",
-      todo: "Todo",
-      done: "Done",
-    },
-    "zh-CN": {
-      doing: "执行中",
-      todo: "待执行",
-      done: "已完成",
-    },
-    ja: {
-      doing: "実行中",
-      todo: "待機中",
-      done: "完了",
-    },
-  }[locale];
-
-  const statusConfig = {
-    doing: {
-      label: labels.doing,
-      background: "#eff6ff",
-      color: "#1d4ed8",
-      border: "#bfdbfe",
-    },
-    todo: {
-      label: labels.todo,
-      background: "#fffbeb",
-      color: "#92400e",
-      border: "#fde68a",
-    },
-    done: {
-      label: labels.done,
-      background: "#f0fdf4",
-      color: "#15803d",
-      border: "#bbf7d0",
-    },
-  }[task.status];
-
-  return (
-    <Link
-      href="/tasks"
-      style={{
-        color: "inherit",
-        textDecoration:
-          "none",
-      }}
-    >
-      <article
-        style={{
-          display: "flex",
-          alignItems:
-            "flex-start",
-          gap: 11,
-          padding: 13,
-          border:
-            "1px solid #e2e8f0",
-          borderRadius: 14,
-          background:
-            "#ffffff",
-        }}
-      >
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            width: 27,
-            height: 27,
-            flexShrink: 0,
-            borderRadius: 8,
-            background:
-              "#f1f5f9",
-            color: "#475569",
-            fontSize: 11,
-            fontWeight: 800,
-          }}
-        >
-          {index + 1}
-        </span>
-
-        <div
-          style={{
-            minWidth: 0,
-            flex: 1,
-          }}
-        >
-          <strong
-            style={{
-              display:
-                "block",
-              fontSize: 14,
-              lineHeight: 1.4,
-              overflowWrap:
-                "anywhere",
-              textDecoration:
-                task.status ===
-                "done"
-                  ? "line-through"
-                  : "none",
-            }}
-          >
-            {task.title}
-          </strong>
-
-          {task.description && (
-            <p
-              style={{
-                margin:
-                  "5px 0 0",
-                color: "#64748b",
-                fontSize: 12,
-                lineHeight: 1.45,
-                overflow: "hidden",
-                display:
-                  "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient:
-                  "vertical",
-              }}
-            >
-              {task.description}
-            </p>
-          )}
-        </div>
-
-        <span
-          style={{
-            flexShrink: 0,
-            padding:
-              "4px 7px",
-            border:
-              `1px solid ${statusConfig.border}`,
-            borderRadius: 999,
-            background:
-              statusConfig.background,
-            color:
-              statusConfig.color,
-            fontSize: 9,
-            fontWeight: 850,
-          }}
-        >
-          {statusConfig.label}
-        </span>
-      </article>
-    </Link>
-  );
-}
-
-function QuickActionCard({
-  action,
-}: {
-  action: QuickAction;
-}) {
-  return (
-    <Link
-      href={action.href}
-      style={{
-        color: "inherit",
-        textDecoration:
-          "none",
-      }}
-    >
-      <article
-        style={{
-          height: "100%",
-          boxSizing:
-            "border-box",
-          padding: 14,
-          border:
-            "1px solid #e2e8f0",
-          borderRadius: 14,
-          background:
-            "#f8fafc",
-        }}
-      >
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            width: 34,
-            height: 34,
-            borderRadius: 10,
-            background:
-              "#ffffff",
-            fontSize: 17,
-          }}
-        >
-          {action.icon}
-        </span>
-
-        <strong
-          style={{
-            display:
-              "block",
-            marginTop: 10,
-            fontSize: 14,
-          }}
-        >
-          {action.title}
-        </strong>
-
-        <p
-          style={{
-            margin:
-              "5px 0 0",
-            color: "#64748b",
-            fontSize: 11,
-            lineHeight: 1.45,
-          }}
-        >
-          {action.description}
-        </p>
-      </article>
-    </Link>
-  );
-}
-
-function HealthCard({
-  item,
-}: {
-  item: HealthItem;
-}) {
-  const palette = {
-    healthy: {
-      dot: "#22c55e",
-      background: "#f0fdf4",
-      border: "#bbf7d0",
-    },
-    warning: {
-      dot: "#f59e0b",
-      background: "#fffbeb",
-      border: "#fde68a",
-    },
-    offline: {
-      dot: "#ef4444",
-      background: "#fef2f2",
-      border: "#fecaca",
-    },
-  }[item.status];
-
-  return (
-    <Link
-      href={item.href}
-      style={{
-        color: "inherit",
-        textDecoration:
-          "none",
-      }}
-    >
-      <article
-        style={{
-          height: "100%",
-          boxSizing:
-            "border-box",
-          padding: 13,
-          border:
-            `1px solid ${palette.border}`,
-          borderRadius: 14,
-          background:
-            palette.background,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems:
-              "center",
-            gap: 7,
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              flexShrink: 0,
-              borderRadius:
-                "50%",
-              background:
-                palette.dot,
-            }}
-          />
-
-          <strong
-            style={{
-              fontSize: 13,
-            }}
-          >
-            {item.label}
-          </strong>
-        </div>
-
-        <p
-          style={{
-            margin:
-              "7px 0 0",
-            color: "#64748b",
-            fontSize: 11,
-            lineHeight: 1.45,
-            overflowWrap:
-              "anywhere",
-          }}
-        >
-          {item.detail}
-        </p>
-      </article>
-    </Link>
-  );
-}
-
-function MetricRow({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: number;
-  detail: string;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent:
-          "space-between",
-        alignItems:
-          "center",
-        gap: 14,
-        paddingBottom: 12,
+        paddingBottom: 11,
         borderBottom:
           "1px solid #f1f5f9",
       }}
     >
       <span
         style={{
-          color: "#475569",
-          fontSize: 13,
-          fontWeight: 700,
+          color: "#64748b",
+          fontSize: 12,
+          fontWeight: 750,
         }}
       >
         {label}
       </span>
 
-      <div
-        style={{
-          textAlign:
-            "right",
-        }}
-      >
-        <strong
-          style={{
-            fontSize: 18,
-          }}
-        >
-          {value}
-        </strong>
-
-        <span
-          style={{
-            marginLeft: 5,
-            color: "#94a3b8",
-            fontSize: 10,
-          }}
-        >
-          {detail}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function RuntimeItem({
-  label,
-  value,
-  detail,
-  healthy,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  healthy: boolean;
-}) {
-  return (
-    <div
-      style={{
-        minWidth: 0,
-        padding: 13,
-        border:
-          "1px solid #e2e8f0",
-        borderRadius: 14,
-        background:
-          "#f8fafc",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems:
-            "center",
-          gap: 7,
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius:
-              "50%",
-            background:
-              healthy
-                ? "#22c55e"
-                : "#f59e0b",
-          }}
-        />
-
-        <span
-          style={{
-            color: "#64748b",
-            fontSize: 11,
-            fontWeight: 750,
-          }}
-        >
-          {label}
-        </span>
-      </div>
-
       <strong
         style={{
-          display:
-            "block",
-          marginTop: 8,
-          fontSize: 14,
-          lineHeight: 1.4,
-          overflowWrap:
-            "anywhere",
+          color: "#0f172a",
+          fontSize: 13,
+          lineHeight: 1.5,
+          overflowWrap: "anywhere",
         }}
       >
         {value}
       </strong>
-
-      <p
-        style={{
-          margin:
-            "4px 0 0",
-          color: "#94a3b8",
-          fontSize: 11,
-          overflowWrap:
-            "anywhere",
-        }}
-      >
-        {detail}
-      </p>
     </div>
   );
 }
 
-function EmptyState({
-  children,
+function SystemRow({
+  label,
+  value,
+  tone,
 }: {
-  children: ReactNode;
+  label: string;
+  value: string;
+  tone:
+    | "success"
+    | "warning"
+    | "danger"
+    | "neutral";
 }) {
+  const color =
+    tone === "success"
+      ? "#15803d"
+      : tone === "warning"
+        ? "#b45309"
+        : tone === "danger"
+          ? "#b91c1c"
+          : "#475569";
+
   return (
     <div
       style={{
-        padding: 18,
-        border:
-          "1px dashed #d1d5db",
-        borderRadius: 14,
-        color: "#64748b",
-        textAlign: "center",
-        fontSize: 12,
+        display: "flex",
+        alignItems: "center",
+        justifyContent:
+          "space-between",
+        gap: 12,
+        padding:
+          "10px 0",
+        borderBottom:
+          "1px solid #f1f5f9",
       }}
     >
-      {children}
+      <span
+        style={{
+          color: "#64748b",
+          fontSize: 13,
+        }}
+      >
+        {label}
+      </span>
+
+      <span
+        style={{
+          color,
+          fontSize: 12,
+          fontWeight: 800,
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-function PrimaryLink({
+function QuickLink({
   href,
-  children,
+  title,
+  description,
 }: {
   href: string;
-  children: ReactNode;
+  title: string;
+  description: string;
 }) {
   return (
     <Link
       href={href}
       style={{
-        display:
-          "inline-flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "center",
-        minHeight: 40,
-        padding:
-          "9px 14px",
-        borderRadius: 11,
-        background:
-          "#111827",
-        color:
-          "#ffffff",
-        fontSize: 13,
-        fontWeight: 750,
-        textDecoration:
-          "none",
+        display: "block",
+        minWidth: 0,
+        padding: 14,
+        border:
+          "1px solid #e2e8f0",
+        borderRadius: 14,
+        background: "#ffffff",
+        color: "#0f172a",
+        textDecoration: "none",
       }}
     >
-      {children}
+      <strong
+        style={{
+          display: "block",
+          fontSize: 13,
+          lineHeight: 1.35,
+        }}
+      >
+        {title}
+      </strong>
+
+      <span
+        style={{
+          display: "block",
+          marginTop: 6,
+          color: "#64748b",
+          fontSize: 11,
+          lineHeight: 1.5,
+        }}
+      >
+        {description}
+      </span>
     </Link>
   );
 }
 
-function SecondaryLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display:
-          "inline-flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "center",
-        minHeight: 40,
-        padding:
-          "9px 14px",
-        border:
-          "1px solid #d1d5db",
-        borderRadius: 11,
-        background:
-          "#ffffff",
-        color:
-          "#111827",
-        fontSize: 13,
-        fontWeight: 700,
-        textDecoration:
-          "none",
-      }}
-    >
-      {children}
-    </Link>
-  );
-}
+const primaryLinkStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 40,
+  padding: "8px 13px",
+  borderRadius: 11,
+  background: "#0f172a",
+  color: "#ffffff",
+  textDecoration: "none",
+  fontSize: 12,
+  fontWeight: 800,
+} as const;
+
+const secondaryLinkStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 40,
+  padding: "8px 13px",
+  border: "1px solid #cbd5e1",
+  borderRadius: 11,
+  background: "#ffffff",
+  color: "#0f172a",
+  textDecoration: "none",
+  fontSize: 12,
+  fontWeight: 800,
+} as const;
