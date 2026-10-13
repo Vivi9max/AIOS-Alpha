@@ -97,6 +97,18 @@ const jobGuard = extractFunction(
   "async function readJobs(",
 );
 
+const statusTransitionGuard = extractFunction(
+  jobStore,
+  "function canTransitionExecutionJobStatus(",
+  "async function readJobs(",
+);
+
+const updateJob = extractFunction(
+  jobStore,
+  "export async function updateExecutionJob(",
+  "export async function markExecutionJobRunning(",
+);
+
 const readJobs = extractFunction(
   jobStore,
   "async function readJobs(",
@@ -493,6 +505,63 @@ const checks = [
       ),
   },
   {
+    name: "Execution job lifecycle allows queued to running",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "queued"/.test(statusTransitionGuard) &&
+      /next === "running"/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job lifecycle allows queued to failed",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "queued"/.test(statusTransitionGuard) &&
+      /next === "failed"/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job lifecycle allows running to completed",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "running"/.test(statusTransitionGuard) &&
+      /next === "completed"/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job lifecycle allows running to failed",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "running"/.test(statusTransitionGuard) &&
+      /next === "failed"/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job lifecycle allows failed to queued retry",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "failed"/.test(statusTransitionGuard) &&
+      /return next === "queued";/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job lifecycle keeps completed jobs terminal",
+    test: () =>
+      statusTransitionGuard.length > 0 &&
+      /current === "completed"/.test(statusTransitionGuard) &&
+      /return false;/.test(statusTransitionGuard),
+  },
+  {
+    name: "Execution job update enforces the lifecycle transition guard",
+    test: () =>
+      updateJob.length > 0 &&
+      /updates\.status !== undefined/.test(updateJob) &&
+      /canTransitionExecutionJobStatus\(/.test(updateJob) &&
+      /return current;/.test(updateJob),
+  },
+  {
+    name: "Retry storage remains compatible with failed to queued lifecycle",
+    test: () =>
+      /job\.status !== "failed"/.test(jobStore) &&
+      /status: "queued"/.test(jobStore) &&
+      statusTransitionGuard.includes('return next === "queued";'),
+  },
+  {
     name: "Stored execution jobs are filtered through validation",
     test: () =>
       readJobs.length > 0 &&
@@ -803,6 +872,10 @@ console.log(
 
 console.log(
   "- Retry state reset and retry counter",
+);
+
+console.log(
+  "- Execution job lifecycle transition validation",
 );
 
 console.log("");
