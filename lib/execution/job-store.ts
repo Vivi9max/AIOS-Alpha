@@ -129,6 +129,38 @@ function isExecutionJob(
   );
 }
 
+function canTransitionExecutionJobStatus(
+  current: ExecutionJobStatus,
+  next: ExecutionJobStatus,
+): boolean {
+  if (current === next) {
+    return true;
+  }
+
+  if (current === "queued") {
+    return (
+      next === "running" ||
+      next === "failed"
+    );
+  }
+
+  if (current === "running") {
+    return (
+      next === "completed" ||
+      next === "failed"
+    );
+  }
+
+  if (
+    current === "completed" ||
+    current === "failed"
+  ) {
+    return false;
+  }
+
+  return false;
+}
+
 async function readJobs(): Promise<ExecutionJob[]> {
   const stored =
     await storage.get<ExecutionJob[]>(
@@ -248,6 +280,16 @@ export async function updateExecutionJob(
   }
 
   const current = jobs[index];
+
+  if (
+    updates.status !== undefined &&
+    !canTransitionExecutionJobStatus(
+      current.status,
+      updates.status,
+    )
+  ) {
+    return current;
+  }
 
   const updated: ExecutionJob = {
     ...current,
