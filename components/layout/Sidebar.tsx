@@ -26,14 +26,12 @@ import type {
 const globalMenus = [
   {
     icon: "⌂",
-    label:
-      "nav.dashboard" as MessageKey,
+    label: "nav.dashboard" as MessageKey,
     href: "/dashboard",
   },
   {
     icon: "✓",
-    label:
-      "nav.tasks" as MessageKey,
+    label: "nav.tasks" as MessageKey,
     href: "/tasks",
   },
   {
@@ -48,8 +46,7 @@ const globalMenus = [
   },
   {
     icon: "⚙",
-    label:
-      "nav.settings" as MessageKey,
+    label: "nav.settings" as MessageKey,
     href: "/settings",
   },
 ];
@@ -59,6 +56,11 @@ const cnMenus = [
     icon: "◉",
     label: "AIOS CN",
     href: "/cn",
+  },
+  {
+    icon: "◌",
+    label: "Market Research",
+    href: "/cn/market-research",
   },
 ];
 
@@ -137,9 +139,7 @@ export default function Sidebar() {
 
   const isCN =
     pathname === "/cn" ||
-    pathname.startsWith(
-      "/cn/",
-    );
+    pathname.startsWith("/cn/");
 
   const menus =
     isCN
@@ -307,17 +307,22 @@ export default function Sidebar() {
                       locale
                     ]
                   : item.href ===
-                      "/planner"
-                    ? plannerLabels[
+                      "/cn/market-research"
+                    ? marketResearchLabels[
                         locale
                       ]
-                    : item.label.includes(
-                        ".",
-                      )
-                      ? t(
-                          item.label as MessageKey,
+                    : item.href ===
+                        "/planner"
+                      ? plannerLabels[
+                          locale
+                        ]
+                      : item.label.includes(
+                          ".",
                         )
-                      : item.label;
+                        ? t(
+                            item.label as MessageKey,
+                          )
+                        : item.label;
 
               return (
                 <Link
