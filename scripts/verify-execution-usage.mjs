@@ -70,6 +70,18 @@ const patch = extractFunction(
 const createJobId = extractFunction(
   jobStore,
   "function createJobId()",
+  "function isOptionalString(",
+);
+
+const optionalStringGuard = extractFunction(
+  jobStore,
+  "function isOptionalString(",
+  "function isOptionalFiniteNumber(",
+);
+
+const optionalFiniteNumberGuard = extractFunction(
+  jobStore,
+  "function isOptionalFiniteNumber(",
   "function isExecutionJobVerification(",
 );
 
@@ -338,6 +350,41 @@ const checks = [
       ),
   },
   {
+    name: "Optional persisted string validator allows undefined",
+    test: () =>
+      optionalStringGuard.length > 0 &&
+      /value === undefined/.test(
+        optionalStringGuard,
+      ),
+  },
+  {
+    name: "Optional persisted string validator rejects non-strings",
+    test: () =>
+      optionalStringGuard.length > 0 &&
+      /typeof value === "string"/.test(
+        optionalStringGuard,
+      ),
+  },
+  {
+    name: "Optional persisted number validator allows undefined",
+    test: () =>
+      optionalFiniteNumberGuard.length > 0 &&
+      /value === undefined/.test(
+        optionalFiniteNumberGuard,
+      ),
+  },
+  {
+    name: "Optional persisted number validator requires finite numbers",
+    test: () =>
+      optionalFiniteNumberGuard.length > 0 &&
+      /typeof value === "number"/.test(
+        optionalFiniteNumberGuard,
+      ) &&
+      /Number\.isFinite\(\s*value\s*\)/.test(
+        optionalFiniteNumberGuard,
+      ),
+  },
+  {
     name: "Persisted verification records reject null and non-objects",
     test: () =>
       verificationGuard.length > 0 &&
@@ -379,6 +426,29 @@ const checks = [
       ) &&
       /typeof verification\.message === "string"/.test(
         verificationGuard,
+      ),
+  },
+  {
+    name: "Persisted execution jobs validate optional persisted fields",
+    test: () =>
+      jobGuard.length > 0 &&
+      /isOptionalString\(\s*job\.planId\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /isOptionalString\(\s*job\.taskId\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /isOptionalString\(\s*job\.result\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /isOptionalString\(\s*job\.error\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /isOptionalFiniteNumber\(\s*job\.startedAt\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /isOptionalFiniteNumber\(\s*job\.completedAt\s*,?\s*\)/.test(
+        jobGuard,
       ),
   },
   {
@@ -680,11 +750,19 @@ console.log(
 );
 
 console.log(
+  "- Optional persisted execution job field validators",
+);
+
+console.log(
   "- Persisted execution verification validation",
 );
 
 console.log(
   "- Persisted execution job integrity validation",
+);
+
+console.log(
+  "- Optional persisted execution job field validation",
 );
 
 console.log(
