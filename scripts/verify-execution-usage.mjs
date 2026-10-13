@@ -1,52 +1,78 @@
 import { existsSync, readFileSync } from "node:fs";
+
 const files = {
   route: "app/api/execution/jobs/route.ts",
   usage: "lib/billing/execution-usage.ts",
   jobStore: "lib/execution/job-store.ts",
   redis: "lib/server-storage/redis.ts",
 };
+
 const failures = [];
+
 for (const file of Object.values(files)) {
   if (!existsSync(file)) {
     failures.push(`Required file is missing: ${file}`);
   }
 }
+
 if (failures.length > 0) {
   console.error("Execution usage verification FAILED.");
   failures.forEach((failure) => console.error(`- ${failure}`));
   process.exit(1);
 }
+
 const route = readFileSync(files.route, "utf8");
 const usage = readFileSync(files.usage, "utf8");
 const jobStore = readFileSync(files.jobStore, "utf8");
 const redis = readFileSync(files.redis, "utf8");
+
 function extractFunction(source, signature, nextSignature) {
   const start = source.indexOf(signature);
+
   if (start === -1) {
     return "";
   }
+
   if (!nextSignature) {
     return source.slice(start);
   }
+
   const end = source.indexOf(
     nextSignature,
     start + signature.length,
   );
+
   if (end === -1) {
     return source.slice(start);
   }
+
   return source.slice(start, end);
 }
+
 const post = extractFunction(
   route,
   "export async function POST(",
   "export async function PATCH(",
 );
+
 const patch = extractFunction(
   route,
   "export async function PATCH(",
   "",
 );
+
+const createJobId = extractFunction(
+  jobStore,
+  "function createJobId()",
+  "function isExecutionJob(",
+);
+
+const createJob = extractFunction(
+  jobStore,
+  "export async function createExecutionJob(",
+  "export async function updateExecutionJob(",
+);
+
 const checks = [
   {
     name: "Execution POST handler exists",
@@ -88,15 +114,16 @@ const checks = [
       const inputTooLongCode = post.indexOf(
         "\"INPUT_TOO_LONG\"",
       );
-      const createJob = post.indexOf(
+      const createExecutionJob = post.indexOf(
         "createExecutionJob(",
       );
+
       return (
         inputLengthCheck !== -1 &&
         inputTooLongCode !== -1 &&
-        createJob !== -1 &&
+        createExecutionJob !== -1 &&
         inputLengthCheck < inputTooLongCode &&
-        inputTooLongCode < createJob
+        inputTooLongCode < createExecutionJob
       );
     },
   },
@@ -109,6 +136,7 @@ const checks = [
       const capability = post.indexOf(
         "canUseCapability(",
       );
+
       return (
         inputLengthCheck !== -1 &&
         capability !== -1 &&
@@ -122,14 +150,15 @@ const checks = [
       const capabilityCheck = post.indexOf(
         "if (\n      !capability.allowed",
       );
-      const createJob = post.indexOf(
+      const createExecutionJob = post.indexOf(
         "createExecutionJob(",
       );
+
       return (
         post.includes("canUseCapability(") &&
         capabilityCheck !== -1 &&
-        createJob !== -1 &&
-        capabilityCheck < createJob
+        createExecutionJob !== -1 &&
+        capabilityCheck < createExecutionJob
       );
     },
   },
@@ -149,6 +178,7 @@ const checks = [
       const execution = post.indexOf(
         "executeJob(",
       );
+
       return (
         reservation !== -1 &&
         execution !== -1 &&
@@ -176,6 +206,7 @@ const checks = [
       const failureIndex = post.indexOf(
         "markExecutionJobFailed(",
       );
+
       return (
         deniedIndex !== -1 &&
         failureIndex !== -1 &&
@@ -188,6 +219,39 @@ const checks = [
         )
       );
     },
+  },
+  {
+    name: "Execution jobs use UUID-backed identifiers",
+    test: () =>
+      createJobId.length > 0 &&
+      /crypto\.randomUUID\(\)/.test(
+        createJobId,
+      ),
+  },
+  {
+    name: "Execution job identifiers preserve the job prefix",
+    test: () =>
+      createJobId.length > 0 &&
+      /"job"/.test(createJobId) &&
+      /\.join\("-"\)/.test(
+        createJobId,
+      ),
+  },
+  {
+    name: "Execution job identifiers do not use Math.random",
+    test: () =>
+      createJobId.length > 0 &&
+      !/Math\.random\(/.test(
+        createJobId,
+      ),
+  },
+  {
+    name: "Execution job creation uses the hardened identifier generator",
+    test: () =>
+      createJob.length > 0 &&
+      /id:\s*createJobId\(\)/.test(
+        createJob,
+      ),
   },
   {
     name: "PATCH only accepts the retry action",
@@ -209,6 +273,7 @@ const checks = [
       const reservation = patch.indexOf(
         "reserveExecution(",
       );
+
       return (
         lookup !== -1 &&
         missingCheck !== -1 &&
@@ -227,6 +292,7 @@ const checks = [
       const reservation = patch.indexOf(
         "reserveExecution(",
       );
+
       return (
         statusCheck !== -1 &&
         reservation !== -1 &&
@@ -263,6 +329,7 @@ const checks = [
       const execution = patch.indexOf(
         "executeJob(",
       );
+
       return (
         retry !== -1 &&
         queuedCheck !== -1 &&
@@ -291,7 +358,9 @@ const checks = [
       /limit\s*!==\s*null\s*&&\s*usage\.count\s*>=\s*limit/.test(
         usage,
       ) ||
-      /atomic\.reserved/.test(usage),
+      /atomic\.reserved/.test(
+        usage,
+      ),
   },
   {
     name: "Successful usage reservation increments the count",
@@ -316,8 +385,12 @@ const checks = [
       /retryCount:\s*job\.retryCount\s*\+\s*1/.test(
         jobStore,
       ) &&
-      /error:\s*null/.test(jobStore) &&
-      /status:\s*"queued"/.test(jobStore),
+      /error:\s*null/.test(
+        jobStore,
+      ) &&
+      /status:\s*"queued"/.test(
+        jobStore,
+      ),
   },
   {
     name: "Redis execution quota reservation uses Lua EVAL",
@@ -325,7 +398,9 @@ const checks = [
       /RESERVE_EXECUTION_USAGE_SCRIPT/.test(
         redis,
       ) &&
-      /"EVAL"/.test(redis) &&
+      /"EVAL"/.test(
+        redis,
+      ) &&
       /reserveExecutionUsageAtomic/.test(
         redis,
       ),
@@ -364,66 +439,99 @@ const checks = [
       ),
   },
 ];
+
 for (const check of checks) {
   let passed = false;
+
   try {
     passed = check.test();
   } catch {
     passed = false;
   }
+
   if (!passed) {
     failures.push(check.name);
   }
 }
+
 if (failures.length > 0) {
   console.error(
     "Execution usage verification FAILED.",
   );
+
   failures.forEach((failure) =>
     console.error(`- ${failure}`),
   );
+
   process.exit(1);
 }
+
 console.log(
   "Execution usage static verification PASSED.",
 );
+
 console.log(
   `Checks passed: ${checks.length}`,
 );
+
 console.log(
   "- Execution input size boundary",
 );
+
 console.log(
   "- Input validation before capability and job creation",
 );
+
+console.log(
+  "- UUID-backed execution job identifiers",
+);
+
+console.log(
+  "- Stable execution job identifier prefix",
+);
+
+console.log(
+  "- Math.random identifier regression protection",
+);
+
 console.log(
   "- POST execution quota boundary",
 );
+
 console.log(
   "- Queue-only job creation boundary",
 );
+
 console.log(
   "- Quota-denied job failure handling",
 );
+
 console.log(
   "- PATCH retry action and job-state validation",
 );
+
 console.log(
   "- Retry quota reservation and execution ordering",
 );
+
 console.log(
   "- Daily usage limit enforcement",
 );
+
 console.log(
   "- Redis atomic execution quota reservation",
 );
+
 console.log(
   "- Memory Storage fallback path",
 );
+
 console.log(
   "- Retry state reset and retry counter",
 );
+
 console.log("");
+
 console.log(
   "Note: This is a static source check, not a live quota or concurrency test.",
 );
