@@ -2,9 +2,11 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
 import {
   executeRuntime,
 } from "@/lib/runtime/engine";
+
 import {
   createExecutionJob,
   getExecutionJob,
@@ -14,32 +16,42 @@ import {
   markExecutionJobRunning,
   retryExecutionJob,
 } from "@/lib/execution/job-store";
+
 import {
   createExecutionSessionForJob,
   markExecutionJobSessionCompleted,
   markExecutionJobSessionFailed,
   markExecutionJobSessionRunning,
 } from "@/lib/runtime/execution-job-session-bridge";
+
 import {
   getExecutionSession,
 } from "@/lib/runtime/session";
+
 import {
   canUseCapability,
 } from "@/lib/billing/entitlements";
+
 import {
   getExecutionUsage,
   reserveExecution,
 } from "@/lib/billing/execution-usage";
+
 export const dynamic =
   "force-dynamic";
+
 export const runtime =
   "nodejs";
+
 const API_VERSION =
   "v1";
+
 const MAX_GOAL_LENGTH =
   1000;
+
 const MAX_INPUT_LENGTH =
   10000;
+
 interface CreateJobBody {
   goal?: unknown;
   planId?: unknown;
@@ -50,6 +62,7 @@ interface CreateJobBody {
   client?: unknown;
   platform?: unknown;
 }
+
 interface RetryBody {
   id?: unknown;
   action?: unknown;
@@ -57,6 +70,7 @@ interface RetryBody {
   platform?: unknown;
   planId?: unknown;
 }
+
 function getRequestId(
   request: NextRequest,
 ): string {
@@ -67,6 +81,7 @@ function getRequestId(
     crypto.randomUUID()
   );
 }
+
 function getClientMetadata(
   request: NextRequest,
   body?: {
@@ -82,6 +97,7 @@ function getClientMetadata(
           "x-aios-client",
         ) ??
         "web";
+
   const platform =
     typeof body?.platform ===
     "string"
@@ -90,11 +106,13 @@ function getClientMetadata(
           "x-aios-platform",
         ) ??
         "web";
+
   return {
     client,
     platform,
   };
 }
+
 function resolvePlanId(
   value: unknown,
 ): string {
@@ -106,8 +124,32 @@ function resolvePlanId(
   ) {
     return value;
   }
+
   return "alpha";
 }
+
+function getInvalidJsonResponse(
+  requestId: string,
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      apiVersion:
+        API_VERSION,
+      requestId,
+      error:
+        "Request body must contain valid JSON.",
+      code:
+        "INVALID_JSON",
+      timestamp:
+        Date.now(),
+    },
+    {
+      status: 400,
+    },
+  );
+}
+
 function getEntitlementFailure(
   planId: string,
   requestId: string,
@@ -117,6 +159,7 @@ function getEntitlementFailure(
       planId,
       "execution",
     );
+
   return NextResponse.json(
     {
       success: false,
@@ -144,6 +187,7 @@ function getEntitlementFailure(
     },
   );
 }
+
 async function resolveSessionForJob(
   jobId: string,
 ) {
@@ -151,6 +195,7 @@ async function resolveSessionForJob(
     await createExecutionSessionForJob(
       jobId,
     );
+
   if (
     !bridge.success ||
     !bridge.session
@@ -163,6 +208,7 @@ async function resolveSessionForJob(
         "Unable to create execution session.",
     };
   }
+
   return {
     success: true,
     session:
@@ -170,6 +216,7 @@ async function resolveSessionForJob(
     error: null,
   };
 }
+
 async function executeJob(
   jobId: string,
   input: string,
@@ -178,6 +225,7 @@ async function executeJob(
     await resolveSessionForJob(
       jobId,
     );
+
   if (
     !sessionResult.success ||
     !sessionResult.session
@@ -185,11 +233,13 @@ async function executeJob(
     const message =
       sessionResult.error ??
       "Execution session could not be created.";
+
     const failed =
       await markExecutionJobFailed(
         jobId,
         message,
       );
+
     return {
       success: false,
       job: failed,
@@ -199,10 +249,12 @@ async function executeJob(
       session: null,
     };
   }
+
   const runningJob =
     await markExecutionJobRunning(
       jobId,
     );
+
   if (!runningJob) {
     return {
       success: false,
@@ -215,11 +267,13 @@ async function executeJob(
         sessionResult.session,
     };
   }
+
   const runningBridge =
     await markExecutionJobSessionRunning(
       jobId,
       sessionResult.session,
     );
+
   if (
     !runningBridge.success ||
     !runningBridge.session
@@ -227,11 +281,13 @@ async function executeJob(
     const message =
       runningBridge.error ??
       "Execution session could not be started.";
+
     const failed =
       await markExecutionJobFailed(
         jobId,
         message,
       );
+
     return {
       success: false,
       job: failed,
@@ -243,26 +299,31 @@ async function executeJob(
         sessionResult.session,
     };
   }
+
   try {
     const result =
       await executeRuntime({
         prompt: input,
       });
+
     if (!result.success) {
       const error =
         result.error ??
         "Runtime execution failed.";
+
       const failed =
         await markExecutionJobFailed(
           jobId,
           error,
         );
+
       const failedBridge =
         await markExecutionJobSessionFailed(
           jobId,
           runningBridge.session,
           error,
         );
+
       return {
         success: false,
         job: failed,
@@ -291,17 +352,20 @@ async function executeJob(
           runningBridge.session,
       };
     }
+
     const completed =
       await markExecutionJobCompleted(
         jobId,
         result.content,
       );
+
     const completedBridge =
       await markExecutionJobSessionCompleted(
         jobId,
         runningBridge.session,
         result.content,
       );
+
     return {
       success: true,
       job: completed,
@@ -332,17 +396,20 @@ async function executeJob(
       error instanceof Error
         ? error.message
         : "Execution failed.";
+
     const failed =
       await markExecutionJobFailed(
         jobId,
         message,
       );
+
     const failedBridge =
       await markExecutionJobSessionFailed(
         jobId,
         runningBridge.session,
         message,
       );
+
     return {
       success: false,
       job: failed,
@@ -355,32 +422,39 @@ async function executeJob(
     };
   }
 }
+
 export async function GET(
   request: NextRequest,
 ) {
   const requestId =
     getRequestId(request);
+
   const id =
     request.nextUrl.searchParams.get(
       "id",
     );
+
   const workspaceId =
     request.nextUrl.searchParams.get(
       "workspaceId",
     );
+
   const sessionId =
     request.nextUrl.searchParams.get(
       "sessionId",
     );
+
   const planId =
     resolvePlanId(
       request.nextUrl.searchParams.get(
         "plan",
       ),
     );
+
   if (id) {
     const job =
       await getExecutionJob(id);
+
     if (!job) {
       return NextResponse.json(
         {
@@ -398,14 +472,17 @@ export async function GET(
         },
       );
     }
+
     let session =
       null;
+
     if (sessionId) {
       session =
         await getExecutionSession(
           sessionId,
         );
     }
+
     return NextResponse.json({
       success: true,
       apiVersion:
@@ -422,12 +499,15 @@ export async function GET(
         Date.now(),
     });
   }
+
   const jobs =
     await listExecutionJobs();
+
   const usage =
     await getExecutionUsage(
       planId,
     );
+
   return NextResponse.json({
     success: true,
     apiVersion:
@@ -453,46 +533,64 @@ export async function GET(
       Date.now(),
   });
 }
+
 export async function POST(
   request: NextRequest,
 ) {
   const requestId =
     getRequestId(request);
+
+  let body: CreateJobBody;
+
   try {
-    const body =
+    body =
       (await request.json()) as
         CreateJobBody;
+  } catch {
+    return getInvalidJsonResponse(
+      requestId,
+    );
+  }
+
+  try {
     const goal =
       typeof body.goal ===
       "string"
         ? body.goal.trim()
         : "";
+
     const input =
       typeof body.input ===
       "string"
         ? body.input.trim()
         : goal;
+
     const planId =
       resolvePlanId(
         body.planId,
       );
+
     const taskId =
       typeof body.taskId ===
       "string"
         ? body.taskId
         : undefined;
+
     const workspaceId =
       typeof body.workspaceId ===
       "string"
         ? body.workspaceId.trim()
         : "default";
+
     const execute =
       body.execute !== false;
+
     const clientMetadata =
       getClientMetadata(
         request,
         body,
       );
+
     if (!goal) {
       return NextResponse.json(
         {
@@ -510,6 +608,7 @@ export async function POST(
         },
       );
     }
+
     if (
       goal.length >
       MAX_GOAL_LENGTH
@@ -530,6 +629,7 @@ export async function POST(
         },
       );
     }
+
     if (
       input.length >
       MAX_INPUT_LENGTH
@@ -550,11 +650,13 @@ export async function POST(
         },
       );
     }
+
     const capability =
       canUseCapability(
         planId,
         "execution",
       );
+
     if (
       !capability.allowed
     ) {
@@ -563,6 +665,7 @@ export async function POST(
         requestId,
       );
     }
+
     const job =
       await createExecutionJob({
         goal,
@@ -570,6 +673,7 @@ export async function POST(
         taskId,
         input,
       });
+
     if (!execute) {
       return NextResponse.json(
         {
@@ -608,10 +712,12 @@ export async function POST(
         },
       );
     }
+
     const usage =
       await reserveExecution(
         planId,
       );
+
     if (
       !usage.allowed
     ) {
@@ -620,6 +726,7 @@ export async function POST(
           job.id,
           "Daily execution limit reached.",
         );
+
       return NextResponse.json(
         {
           success: false,
@@ -654,11 +761,13 @@ export async function POST(
         },
       );
     }
+
     const result =
       await executeJob(
         job.id,
         input,
       );
+
     return NextResponse.json(
       {
         ...result,
@@ -693,6 +802,7 @@ export async function POST(
       error instanceof Error
         ? error.message
         : "Invalid execution request.";
+
     return NextResponse.json(
       {
         success: false,
@@ -711,34 +821,49 @@ export async function POST(
     );
   }
 }
+
 export async function PATCH(
   request: NextRequest,
 ) {
   const requestId =
     getRequestId(request);
+
+  let body: RetryBody;
+
   try {
-    const body =
+    body =
       (await request.json()) as
         RetryBody;
+  } catch {
+    return getInvalidJsonResponse(
+      requestId,
+    );
+  }
+
+  try {
     const id =
       typeof body.id ===
       "string"
         ? body.id
         : "";
+
     const action =
       typeof body.action ===
       "string"
         ? body.action
         : "";
+
     const planId =
       resolvePlanId(
         body.planId,
       );
+
     const clientMetadata =
       getClientMetadata(
         request,
         body,
       );
+
     if (!id) {
       return NextResponse.json(
         {
@@ -756,6 +881,7 @@ export async function PATCH(
         },
       );
     }
+
     if (
       action !==
       "retry"
@@ -776,11 +902,13 @@ export async function PATCH(
         },
       );
     }
+
     const capability =
       canUseCapability(
         planId,
         "execution",
       );
+
     if (
       !capability.allowed
     ) {
@@ -789,8 +917,10 @@ export async function PATCH(
         requestId,
       );
     }
+
     const existingJob =
       await getExecutionJob(id);
+
     if (!existingJob) {
       return NextResponse.json(
         {
@@ -808,6 +938,7 @@ export async function PATCH(
         },
       );
     }
+
     if (
       existingJob.status !==
       "failed"
@@ -830,10 +961,12 @@ export async function PATCH(
         },
       );
     }
+
     const usage =
       await reserveExecution(
         planId,
       );
+
     if (
       !usage.allowed
     ) {
@@ -863,10 +996,12 @@ export async function PATCH(
         },
       );
     }
+
     const queuedJob =
       await retryExecutionJob(
         id,
       );
+
     if (!queuedJob) {
       return NextResponse.json(
         {
@@ -884,6 +1019,7 @@ export async function PATCH(
         },
       );
     }
+
     if (
       queuedJob.status !==
       "queued"
@@ -906,11 +1042,13 @@ export async function PATCH(
         },
       );
     }
+
     const result =
       await executeJob(
         queuedJob.id,
         queuedJob.input,
       );
+
     return NextResponse.json(
       {
         ...result,
@@ -944,6 +1082,7 @@ export async function PATCH(
       error instanceof Error
         ? error.message
         : "Execution retry failed.";
+
     return NextResponse.json(
       {
         success: false,
