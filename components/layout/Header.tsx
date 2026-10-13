@@ -143,6 +143,12 @@ export default function Header() {
       locale
     ];
 
+  const isMarketResearch =
+    pathname ===
+      "/market-intelligence" ||
+    pathname ===
+      "/cn/market-research";
+
   const isCN =
     pathname === "/cn" ||
     pathname.startsWith(
@@ -156,11 +162,10 @@ export default function Header() {
   const pageTitle =
     isWorkspace
       ? localTitles.workspace
-      : isCN
-        ? localTitles.cn
-        : pathname ===
-              "/market-intelligence"
-          ? localTitles.market
+      : isMarketResearch
+        ? localTitles.market
+        : isCN
+          ? localTitles.cn
           : t(
               pageTitles[
                 pathname
