@@ -151,10 +151,11 @@ function canTransitionExecutionJobStatus(
     );
   }
 
-  if (
-    current === "completed" ||
-    current === "failed"
-  ) {
+  if (current === "failed") {
+    return next === "queued";
+  }
+
+  if (current === "completed") {
     return false;
   }
 
