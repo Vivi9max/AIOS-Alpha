@@ -28,7 +28,10 @@ function extractFunction(source, signature, nextSignature) {
   if (!nextSignature) {
     return source.slice(start);
   }
-  const end = source.indexOf(nextSignature, start + signature.length);
+  const end = source.indexOf(
+    nextSignature,
+    start + signature.length,
+  );
   if (end === -1) {
     return source.slice(start);
   }
@@ -54,6 +57,13 @@ const checks = [
     test: () => patch.length > 0,
   },
   {
+    name: "Execution route defines a bounded input limit",
+    test: () =>
+      /const\s+MAX_INPUT_LENGTH\s*=\s*10000\s*;/.test(
+        route,
+      ),
+  },
+  {
     name: "POST validates the execution goal before creating a job",
     test: () =>
       /if\s*\(!goal\)/.test(post) &&
@@ -61,12 +71,60 @@ const checks = [
         post.indexOf("createExecutionJob("),
   },
   {
+    name: "POST rejects execution input that exceeds the configured limit",
+    test: () =>
+      /input\.length\s*>\s*MAX_INPUT_LENGTH/.test(
+        post,
+      ) &&
+      /"INPUT_TOO_LONG"/.test(post) &&
+      /status:\s*400/.test(post),
+  },
+  {
+    name: "POST validates execution input length before creating a job",
+    test: () => {
+      const inputLengthCheck = post.indexOf(
+        "input.length >",
+      );
+      const inputTooLongCode = post.indexOf(
+        "\"INPUT_TOO_LONG\"",
+      );
+      const createJob = post.indexOf(
+        "createExecutionJob(",
+      );
+      return (
+        inputLengthCheck !== -1 &&
+        inputTooLongCode !== -1 &&
+        createJob !== -1 &&
+        inputLengthCheck < inputTooLongCode &&
+        inputTooLongCode < createJob
+      );
+    },
+  },
+  {
+    name: "POST checks execution capability after request validation",
+    test: () => {
+      const inputLengthCheck = post.indexOf(
+        "input.length >",
+      );
+      const capability = post.indexOf(
+        "canUseCapability(",
+      );
+      return (
+        inputLengthCheck !== -1 &&
+        capability !== -1 &&
+        inputLengthCheck < capability
+      );
+    },
+  },
+  {
     name: "POST checks execution capability before creating a job",
     test: () => {
       const capabilityCheck = post.indexOf(
         "if (\n      !capability.allowed",
       );
-      const createJob = post.indexOf("createExecutionJob(");
+      const createJob = post.indexOf(
+        "createExecutionJob(",
+      );
       return (
         post.includes("canUseCapability(") &&
         capabilityCheck !== -1 &&
@@ -85,8 +143,12 @@ const checks = [
   {
     name: "POST reserves quota before executing the job",
     test: () => {
-      const reservation = post.indexOf("reserveExecution(");
-      const execution = post.indexOf("executeJob(");
+      const reservation = post.indexOf(
+        "reserveExecution(",
+      );
+      const execution = post.indexOf(
+        "executeJob(",
+      );
       return (
         reservation !== -1 &&
         execution !== -1 &&
@@ -97,8 +159,12 @@ const checks = [
   {
     name: "POST rejects denied reservations with HTTP 429",
     test: () =>
-      /if\s*\(\s*!usage\.allowed\s*\)/.test(post) &&
-      /"EXECUTION_LIMIT_REACHED"/.test(post) &&
+      /if\s*\(\s*!usage\.allowed\s*\)/.test(
+        post,
+      ) &&
+      /"EXECUTION_LIMIT_REACHED"/.test(
+        post,
+      ) &&
       /status:\s*429/.test(post),
   },
   {
@@ -115,7 +181,10 @@ const checks = [
         failureIndex !== -1 &&
         failureIndex > deniedIndex &&
         /job\.id/.test(
-          post.slice(deniedIndex, failureIndex + 200),
+          post.slice(
+            deniedIndex,
+            failureIndex + 200,
+          ),
         )
       );
     },
@@ -123,15 +192,23 @@ const checks = [
   {
     name: "PATCH only accepts the retry action",
     test: () =>
-      /action\s*!==\s*"retry"/.test(patch) &&
+      /action\s*!==\s*"retry"/.test(
+        patch,
+      ) &&
       /"INVALID_ACTION"/.test(patch),
   },
   {
     name: "PATCH verifies that the job exists before reserving quota",
     test: () => {
-      const lookup = patch.indexOf("getExecutionJob(id)");
-      const missingCheck = patch.indexOf("if (!existingJob)");
-      const reservation = patch.indexOf("reserveExecution(");
+      const lookup = patch.indexOf(
+        "getExecutionJob(id)",
+      );
+      const missingCheck = patch.indexOf(
+        "if (!existingJob)",
+      );
+      const reservation = patch.indexOf(
+        "reserveExecution(",
+      );
       return (
         lookup !== -1 &&
         missingCheck !== -1 &&
@@ -147,13 +224,18 @@ const checks = [
       const statusCheck = patch.indexOf(
         "existingJob.status !==",
       );
-      const reservation = patch.indexOf("reserveExecution(");
+      const reservation = patch.indexOf(
+        "reserveExecution(",
+      );
       return (
         statusCheck !== -1 &&
         reservation !== -1 &&
         statusCheck < reservation &&
         /"JOB_NOT_RETRYABLE"/.test(
-          patch.slice(statusCheck, reservation),
+          patch.slice(
+            statusCheck,
+            reservation,
+          ),
         )
       );
     },
@@ -161,16 +243,26 @@ const checks = [
   {
     name: "PATCH rejects denied retry reservations with HTTP 429",
     test: () =>
-      /if\s*\(\s*!usage\.allowed\s*\)/.test(patch) &&
-      /"EXECUTION_LIMIT_REACHED"/.test(patch) &&
+      /if\s*\(\s*!usage\.allowed\s*\)/.test(
+        patch,
+      ) &&
+      /"EXECUTION_LIMIT_REACHED"/.test(
+        patch,
+      ) &&
       /status:\s*429/.test(patch),
   },
   {
     name: "PATCH checks the queued retry result before execution",
     test: () => {
-      const retry = patch.indexOf("retryExecutionJob(");
-      const queuedCheck = patch.indexOf("queuedJob.status !==");
-      const execution = patch.indexOf("executeJob(");
+      const retry = patch.indexOf(
+        "retryExecutionJob(",
+      );
+      const queuedCheck = patch.indexOf(
+        "queuedJob.status !==",
+      );
+      const execution = patch.indexOf(
+        "executeJob(",
+      );
       return (
         retry !== -1 &&
         queuedCheck !== -1 &&
@@ -178,7 +270,10 @@ const checks = [
         retry < queuedCheck &&
         queuedCheck < execution &&
         /"JOB_NOT_RETRYABLE"/.test(
-          patch.slice(queuedCheck, execution),
+          patch.slice(
+            queuedCheck,
+            execution,
+          ),
         )
       );
     },
@@ -201,8 +296,12 @@ const checks = [
   {
     name: "Successful usage reservation increments the count",
     test: () =>
-      /count:\s*usage\.count\s*\+\s*1/.test(usage) &&
-      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(usage),
+      /count:\s*usage\.count\s*\+\s*1/.test(
+        usage,
+      ) &&
+      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(
+        usage,
+      ),
   },
   {
     name: "Retry storage refuses jobs that are not failed",
@@ -214,21 +313,29 @@ const checks = [
   {
     name: "Retry storage increments retry count and clears prior errors",
     test: () =>
-      /retryCount:\s*job\.retryCount\s*\+\s*1/.test(jobStore) &&
+      /retryCount:\s*job\.retryCount\s*\+\s*1/.test(
+        jobStore,
+      ) &&
       /error:\s*null/.test(jobStore) &&
       /status:\s*"queued"/.test(jobStore),
   },
   {
     name: "Redis execution quota reservation uses Lua EVAL",
     test: () =>
-      /RESERVE_EXECUTION_USAGE_SCRIPT/.test(redis) &&
+      /RESERVE_EXECUTION_USAGE_SCRIPT/.test(
+        redis,
+      ) &&
       /"EVAL"/.test(redis) &&
-      /reserveExecutionUsageAtomic/.test(redis),
+      /reserveExecutionUsageAtomic/.test(
+        redis,
+      ),
   },
   {
     name: "Redis quota reservation checks the limit before incrementing",
     test: () =>
-      /record\.count >= limit/.test(redis) &&
+      /record\.count >= limit/.test(
+        redis,
+      ) &&
       /record\.count = math\.floor\(math\.max\(0, record\.count\)\) \+ 1/.test(
         redis,
       ),
@@ -236,15 +343,25 @@ const checks = [
   {
     name: "Execution usage selects atomic reservation in Redis mode",
     test: () =>
-      /storage\.mode\s*===\s*"redis"/.test(usage) &&
-      /reserveExecutionUsageAtomic\(/.test(usage) &&
-      /getNamespacedStorageKey\(/.test(usage),
+      /storage\.mode\s*===\s*"redis"/.test(
+        usage,
+      ) &&
+      /reserveExecutionUsageAtomic\(/.test(
+        usage,
+      ) &&
+      /getNamespacedStorageKey\(/.test(
+        usage,
+      ),
   },
   {
     name: "Execution usage preserves the Memory Storage path",
     test: () =>
-      /await\s+readUsage\(\)/.test(usage) &&
-      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(usage),
+      /await\s+readUsage\(\)/.test(
+        usage,
+      ) &&
+      /await\s+writeUsage\(\s*updated\s*,?\s*\)/.test(
+        usage,
+      ),
   },
 ];
 for (const check of checks) {
@@ -259,21 +376,53 @@ for (const check of checks) {
   }
 }
 if (failures.length > 0) {
-  console.error("Execution usage verification FAILED.");
-  failures.forEach((failure) => console.error(`- ${failure}`));
+  console.error(
+    "Execution usage verification FAILED.",
+  );
+  failures.forEach((failure) =>
+    console.error(`- ${failure}`),
+  );
   process.exit(1);
 }
-console.log("Execution usage static verification PASSED.");
-console.log(`Checks passed: ${checks.length}`);
-console.log("- POST execution quota boundary");
-console.log("- Queue-only job creation boundary");
-console.log("- Quota-denied job failure handling");
-console.log("- PATCH retry action and job-state validation");
-console.log("- Retry quota reservation and execution ordering");
-console.log("- Daily usage limit enforcement");
-console.log("- Redis atomic execution quota reservation");
-console.log("- Memory Storage fallback path");
-console.log("- Retry state reset and retry counter");
+console.log(
+  "Execution usage static verification PASSED.",
+);
+console.log(
+  `Checks passed: ${checks.length}`,
+);
+console.log(
+  "- Execution input size boundary",
+);
+console.log(
+  "- Input validation before capability and job creation",
+);
+console.log(
+  "- POST execution quota boundary",
+);
+console.log(
+  "- Queue-only job creation boundary",
+);
+console.log(
+  "- Quota-denied job failure handling",
+);
+console.log(
+  "- PATCH retry action and job-state validation",
+);
+console.log(
+  "- Retry quota reservation and execution ordering",
+);
+console.log(
+  "- Daily usage limit enforcement",
+);
+console.log(
+  "- Redis atomic execution quota reservation",
+);
+console.log(
+  "- Memory Storage fallback path",
+);
+console.log(
+  "- Retry state reset and retry counter",
+);
 console.log("");
 console.log(
   "Note: This is a static source check, not a live quota or concurrency test.",
