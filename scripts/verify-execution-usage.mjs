@@ -64,7 +64,25 @@ const patch = extractFunction(
 const createJobId = extractFunction(
   jobStore,
   "function createJobId()",
+  "function isExecutionJobVerification(",
+);
+
+const verificationGuard = extractFunction(
+  jobStore,
+  "function isExecutionJobVerification(",
   "function isExecutionJob(",
+);
+
+const jobGuard = extractFunction(
+  jobStore,
+  "function isExecutionJob(",
+  "async function readJobs(",
+);
+
+const readJobs = extractFunction(
+  jobStore,
+  "async function readJobs(",
+  "async function writeJobs(",
 );
 
 const createJob = extractFunction(
@@ -251,6 +269,99 @@ const checks = [
       createJob.length > 0 &&
       /id:\s*createJobId\(\)/.test(
         createJob,
+      ),
+  },
+  {
+    name: "Persisted verification records reject null and non-objects",
+    test: () =>
+      verificationGuard.length > 0 &&
+      /!value/.test(
+        verificationGuard,
+      ) &&
+      /typeof value !== "object"/.test(
+        verificationGuard,
+      ),
+  },
+  {
+    name: "Persisted verification records validate allowed statuses",
+    test: () =>
+      verificationGuard.length > 0 &&
+      /\["pending", "passed", "failed"\]\.includes\(/.test(
+        verificationGuard,
+      ) &&
+      /verification\.status/.test(
+        verificationGuard,
+      ),
+  },
+  {
+    name: "Persisted verification records require a finite checkedAt",
+    test: () =>
+      verificationGuard.length > 0 &&
+      /typeof verification\.checkedAt === "number"/.test(
+        verificationGuard,
+      ) &&
+      /Number\.isFinite\(\s*verification\.checkedAt\s*,?\s*\)/.test(
+        verificationGuard,
+      ),
+  },
+  {
+    name: "Persisted verification messages remain optional strings",
+    test: () =>
+      verificationGuard.length > 0 &&
+      /verification\.message === undefined/.test(
+        verificationGuard,
+      ) &&
+      /typeof verification\.message === "string"/.test(
+        verificationGuard,
+      ),
+  },
+  {
+    name: "Persisted execution jobs require a non-empty identifier",
+    test: () =>
+      jobGuard.length > 0 &&
+      /typeof job\.id === "string"/.test(
+        jobGuard,
+      ) &&
+      /job\.id\.length > 0/.test(
+        jobGuard,
+      ),
+  },
+  {
+    name: "Persisted execution jobs validate retry counts",
+    test: () =>
+      jobGuard.length > 0 &&
+      /Number\.isInteger\(\s*job\.retryCount\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /job\.retryCount >= 0/.test(
+        jobGuard,
+      ),
+  },
+  {
+    name: "Persisted execution jobs validate finite timestamps",
+    test: () =>
+      jobGuard.length > 0 &&
+      /Number\.isFinite\(\s*job\.createdAt\s*,?\s*\)/.test(
+        jobGuard,
+      ) &&
+      /Number\.isFinite\(\s*job\.updatedAt\s*,?\s*\)/.test(
+        jobGuard,
+      ),
+  },
+  {
+    name: "Persisted execution jobs use the verification guard",
+    test: () =>
+      jobGuard.length > 0 &&
+      /isExecutionJobVerification\(\s*job\.verification\s*,?\s*\)/.test(
+        jobGuard,
+      ),
+  },
+  {
+    name: "Stored execution jobs are filtered through validation",
+    test: () =>
+      readJobs.length > 0 &&
+      /\.filter\(isExecutionJob\)/.test(
+        readJobs,
       ),
   },
   {
@@ -492,6 +603,18 @@ console.log(
 
 console.log(
   "- Math.random identifier regression protection",
+);
+
+console.log(
+  "- Persisted execution verification validation",
+);
+
+console.log(
+  "- Persisted execution job integrity validation",
+);
+
+console.log(
+  "- Persisted job filtering boundary",
 );
 
 console.log(
