@@ -36,6 +36,10 @@ import {
 } from "@/lib/commercial/c168-inbound-opportunity";
 
 import {
+  buildC168InboundExecutionPacket,
+} from "@/lib/commercial/c168-inbound-execution";
+
+import {
   createInboundLeadRecord,
   deleteInboundLeadRecord,
   listInboundLeadRecords,
@@ -51,7 +55,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SERVICE_VERSION =
-  "C168.7.3";
+  "C168.8.1";
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -230,9 +234,10 @@ function normalizeLead(
     decisionRole,
     budgetRange,
     urgency,
-    goal: cleanText(
-      value.goal,
-    ),
+    goal:
+      cleanText(
+        value.goal,
+      ),
     currentProblem:
       cleanText(
         value.currentProblem,
@@ -450,6 +455,12 @@ async function buildMarketDrivenCampaign(
       campaign,
     );
 
+  const executionPacket =
+    buildC168InboundExecutionPacket(
+      optimized.campaign,
+      optimized.contentOpportunities,
+    );
+
   return {
     campaign:
       optimized.campaign,
@@ -457,6 +468,8 @@ async function buildMarketDrivenCampaign(
     contentOpportunities:
       optimized
         .contentOpportunities,
+
+    executionPacket,
 
     discovery,
 
@@ -487,7 +500,7 @@ export async function GET(
       code:
         result
           .marketContextApplied
-          ? "C168_INBOUND_MARKET_CAMPAIGN_READY"
+          ? "C168_INBOUND_EXECUTION_READY"
           : "C168_INBOUND_SAFE_FALLBACK_READY",
 
       version:
@@ -495,6 +508,9 @@ export async function GET(
 
       engineVersion:
         result.campaign.version,
+
+      executionVersion:
+        result.executionPacket.version,
 
       status:
         result.campaign.status,
@@ -505,6 +521,9 @@ export async function GET(
       contentOpportunities:
         result
           .contentOpportunities,
+
+      executionPacket:
+        result.executionPacket,
 
       marketIntelligence:
         buildDiscoverySummary(
@@ -532,10 +551,8 @@ export async function GET(
         false,
 
       nextStep:
-        result
-          .marketContextApplied
-          ? "Review the primary inbound content opportunity and backup opportunity, then publish the primary asset manually through the approved platform interface."
-          : "No reliable C168 inbound opportunity was available. Review the safe fallback drafts before any manual publication.",
+        result.executionPacket
+          .nextAction,
     });
   } catch (error) {
     return jsonError(
@@ -607,11 +624,14 @@ export async function POST(
         code:
           result
             .marketContextApplied
-            ? "C168_INBOUND_MARKET_CAMPAIGN_GENERATED"
+            ? "C168_INBOUND_EXECUTION_GENERATED"
             : "C168_INBOUND_SAFE_FALLBACK_GENERATED",
 
         version:
           SERVICE_VERSION,
+
+        executionVersion:
+          result.executionPacket.version,
 
         result: {
           mode,
@@ -622,6 +642,9 @@ export async function POST(
           contentOpportunities:
             result
               .contentOpportunities,
+
+          executionPacket:
+            result.executionPacket,
 
           marketIntelligence:
             buildDiscoverySummary(
