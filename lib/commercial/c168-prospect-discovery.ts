@@ -16,7 +16,7 @@ export const C168_PROSPECT_DISCOVERY_ID =
   "C168-PROSPECT-DISCOVERY";
 
 export const C168_PROSPECT_DISCOVERY_VERSION =
-  "C168.4.1";
+  "C168.5.1";
 
 export type C168ProspectIndustry =
   | "home-renovation"
@@ -27,6 +27,12 @@ export type C168ProspectQualification =
   | "qualified"
   | "needs-manual-validation";
 
+export type C168CommercialAction =
+  | "selective-outbound"
+  | "inbound-opportunity"
+  | "monitor"
+  | "reject";
+
 export interface C168ProspectEvidence {
   url: string;
   hostname: string;
@@ -35,6 +41,16 @@ export interface C168ProspectEvidence {
   credibilityTier: string;
   verificationLabel: string;
   verificationScore: number;
+}
+
+export interface C168CommercialDecision {
+  action: C168CommercialAction;
+  actionScore: number;
+  evidenceConfidence: number;
+  buyingSignalScore: number;
+  acquisitionReadinessScore: number;
+  reasons: string[];
+  founderReviewRequired: boolean;
 }
 
 export interface C168ProspectCandidate {
@@ -48,9 +64,12 @@ export interface C168ProspectCandidate {
   evidenceScore: number;
   verifiedFacts: string[];
   acquisitionSignals: string[];
+  buyingSignals: string[];
   diagnosticHypotheses: string[];
   unknowns: string[];
   evidence: C168ProspectEvidence[];
+  commercialDecision:
+    C168CommercialDecision;
   recommendedAction: string;
 }
 
@@ -65,10 +84,15 @@ export interface C168ProspectDiscoveryResult {
   candidates: C168ProspectCandidate[];
   sourceCount: number;
   independentHosts: number;
+  selectiveOutboundCount: number;
+  inboundOpportunityCount: number;
+  monitorCount: number;
+  rejectedCount: number;
   conclusion: string;
   nextStep: string;
   integrity: {
     fabricatedProspect: false;
+    fabricatedBuyingSignal: false;
     fabricatedAdvertisingPerformance: false;
     fabricatedContact: false;
     fabricatedCustomer: false;
@@ -93,6 +117,9 @@ const DISCOVERY_PROMPTS = [
   "搜索 深圳 家装公司 线上获客 营销 推广",
   "搜索 深圳 装修公司 小红书 抖音 获客",
   "搜索 深圳 装修公司 客户 咨询 预约 设计",
+  "搜索 深圳 装修公司 新店 开业 新业务 旧房改造",
+  "搜索 深圳 装修公司 招聘 营销 销售 市场",
+  "搜索 深圳 装修公司 活动 套餐 优惠 免费量房",
 ];
 
 const SHENZHEN_TERMS = [
@@ -175,6 +202,106 @@ const ACQUISITION_SIGNAL_TERMS = [
   "advertising",
 ];
 
+const BUYING_SIGNAL_GROUPS: Array<{
+  label: string;
+  terms: string[];
+  weight: number;
+}> = [
+  {
+    label:
+      "近期业务扩张或新业务信号",
+    terms: [
+      "新店",
+      "开业",
+      "新店开业",
+      "新增门店",
+      "新业务",
+      "业务升级",
+      "品牌升级",
+      "全新升级",
+    ],
+    weight: 0.18,
+  },
+  {
+    label:
+      "旧房改造或局改业务强化信号",
+    terms: [
+      "旧房翻新",
+      "旧房改造",
+      "二手房改造",
+      "局部改造",
+      "局改",
+      "焕新",
+    ],
+    weight: 0.18,
+  },
+  {
+    label:
+      "近期Offer或促销信号",
+    terms: [
+      "套餐",
+      "优惠",
+      "活动",
+      "限时",
+      "特惠",
+      "补贴",
+      "免费量房",
+      "免费设计",
+      "免费报价",
+      "一口价",
+    ],
+    weight: 0.14,
+  },
+  {
+    label:
+      "主动获客或内容增长信号",
+    terms: [
+      "获客",
+      "推广",
+      "营销",
+      "抖音",
+      "小红书",
+      "视频号",
+      "直播",
+      "短视频",
+      "信息流",
+      "百度推广",
+    ],
+    weight: 0.16,
+  },
+  {
+    label:
+      "营销或销售招聘信号",
+    terms: [
+      "招聘",
+      "市场专员",
+      "营销专员",
+      "销售顾问",
+      "客户经理",
+      "网络推广",
+      "新媒体运营",
+      "短视频运营",
+    ],
+    weight: 0.16,
+  },
+  {
+    label:
+      "明确咨询或留资入口信号",
+    terms: [
+      "立即咨询",
+      "在线咨询",
+      "预约设计",
+      "预约量房",
+      "免费咨询",
+      "获取报价",
+      "免费报价",
+      "联系电话",
+      "联系我们",
+    ],
+    weight: 0.12,
+  },
+];
+
 const GENERIC_NAME_TERMS = [
   "深圳装修公司",
   "深圳家装公司",
@@ -255,6 +382,20 @@ function uniqueStrings(
   );
 }
 
+function clampScore(
+  value: number,
+): number {
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      Number(
+        value.toFixed(3),
+      ),
+    ),
+  );
+}
+
 function normalizeHost(
   hostname: string,
 ): string {
@@ -288,6 +429,18 @@ function sourceText(
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function combinedSourceText(
+  sources: DiscoverySource[],
+): string {
+  return sources
+    .map((source) =>
+      sourceText(
+        source.evidence,
+      ),
+    )
+    .join(" ");
 }
 
 function isExcludedHost(
@@ -430,13 +583,9 @@ function extractAcquisitionSignals(
   sources: DiscoverySource[],
 ): string[] {
   const text =
-    sources
-      .map((source) =>
-        sourceText(
-          source.evidence,
-        ),
-      )
-      .join(" ");
+    combinedSourceText(
+      sources,
+    );
 
   return uniqueStrings(
     ACQUISITION_SIGNAL_TERMS
@@ -451,6 +600,64 @@ function extractAcquisitionSignals(
   ).slice(0, 8);
 }
 
+function extractBuyingSignals(
+  sources: DiscoverySource[],
+): string[] {
+  const text =
+    combinedSourceText(
+      sources,
+    );
+
+  const signals =
+    BUYING_SIGNAL_GROUPS
+      .filter((group) =>
+        containsAny(
+          text,
+          group.terms,
+        ),
+      )
+      .map((group) =>
+        `公开信息出现Buying Signal: ${group.label}`,
+      );
+
+  return uniqueStrings(
+    signals,
+  );
+}
+
+function calculateBuyingSignalScore(
+  sources: DiscoverySource[],
+): number {
+  const text =
+    combinedSourceText(
+      sources,
+    );
+
+  const score =
+    BUYING_SIGNAL_GROUPS.reduce(
+      (sum, group) => {
+        if (
+          !containsAny(
+            text,
+            group.terms,
+          )
+        ) {
+          return sum;
+        }
+
+        return (
+          sum +
+          group.weight
+        );
+      },
+      0,
+    );
+
+  return clampScore(
+    score,
+  );
+}
+
 function buildVerifiedFacts(
   name: string,
   industry: C168ProspectIndustry,
@@ -462,18 +669,14 @@ function buildVerifiedFacts(
     `公开证据中存在商业主体或品牌名称: ${name}`,
   );
 
-  const combinedText =
-    sources
-      .map((source) =>
-        sourceText(
-          source.evidence,
-        ),
-      )
-      .join(" ");
+  const text =
+    combinedSourceText(
+      sources,
+    );
 
   if (
     containsAny(
-      combinedText,
+      text,
       SHENZHEN_TERMS,
     )
   ) {
@@ -502,11 +705,15 @@ function buildVerifiedFacts(
     );
   }
 
-  return uniqueStrings(facts);
+  return uniqueStrings(
+    facts,
+  );
 }
 
 function buildDiagnosticHypotheses(
+  industry: C168ProspectIndustry,
   acquisitionSignals: string[],
+  buyingSignals: string[],
 ): string[] {
   const hypotheses: string[] = [];
 
@@ -514,19 +721,38 @@ function buildDiagnosticHypotheses(
     acquisitionSignals.length > 0
   ) {
     hypotheses.push(
-      "该商家存在公开可观察的获客入口，可进一步诊断Offer、素材和咨询路径是否清晰。",
+      "该商家存在公开可观察的获客入口，可进一步检查目标客户、Offer、内容入口和咨询路径是否一致。",
+    );
+  }
+
+  if (
+    buyingSignals.length > 0
+  ) {
+    hypotheses.push(
+      "公开信息存在商业行动信号，但这只代表值得进一步研究，不代表该商家已经存在广告效果问题。",
+    );
+  }
+
+  if (
+    industry ===
+    "old-home-renovation"
+  ) {
+    hypotheses.push(
+      "可检查旧房翻新或局改客户是否拥有独立、明确的价值表达和咨询入口，而不是与泛家装需求混合。",
+    );
+  } else {
+    hypotheses.push(
+      "可检查不同装修需求是否得到清晰客户分层，避免多个服务方向共享过于宽泛的获客表达。",
     );
   }
 
   hypotheses.push(
-    "需要人工检查其广告或内容入口是否能快速说明目标客户、核心价值和下一步行动。",
+    "可检查从公开内容或广告入口到咨询、预约、量房或报价之间是否存在可观察的转化摩擦。",
   );
 
-  hypotheses.push(
-    "需要人工检查从广告或内容到咨询、预约、量房或报价之间是否存在明显转化摩擦。",
-  );
-
-  return hypotheses;
+  return uniqueStrings(
+    hypotheses,
+  ).slice(0, 4);
 }
 
 function buildUnknowns(): string[] {
@@ -537,11 +763,12 @@ function buildUnknowns(): string[] {
     "无法仅凭公开网页确认线索质量。",
     "无法仅凭公开网页确认咨询到成交的转化率。",
     "无法仅凭公开网页确认广告ROI。",
-    "需要Founder人工确认真实联系人与有效联系渠道。",
+    "公开Buying Signal不等于已经确认的购买意愿。",
+    "真实联系人与有效联系渠道在主动触达前仍需Founder确认。",
   ];
 }
 
-function calculateCandidateScore(
+function calculateEvidenceScore(
   sources: DiscoverySource[],
   acquisitionSignals: string[],
 ): number {
@@ -568,24 +795,247 @@ function calculateCandidateScore(
   let score =
     averageVerification * 0.55;
 
-  if (hosts >= 2) {
-    score += 0.2;
+  if (hosts >= 3) {
+    score += 0.22;
+  } else if (hosts >= 2) {
+    score += 0.18;
   } else if (hosts === 1) {
-    score += 0.08;
+    score += 0.07;
   }
 
   score += Math.min(
-    0.25,
+    0.23,
     acquisitionSignals.length *
-      0.04,
+      0.035,
   );
 
-  return Math.min(
-    1,
-    Number(
-      score.toFixed(3),
-    ),
+  return clampScore(
+    score,
   );
+}
+
+function calculateAcquisitionReadinessScore(
+  industry: C168ProspectIndustry,
+  acquisitionSignals: string[],
+  sources: DiscoverySource[],
+): number {
+  const text =
+    combinedSourceText(
+      sources,
+    );
+
+  let score = 0;
+
+  if (
+    acquisitionSignals.length >= 5
+  ) {
+    score += 0.35;
+  } else if (
+    acquisitionSignals.length >= 3
+  ) {
+    score += 0.25;
+  } else if (
+    acquisitionSignals.length > 0
+  ) {
+    score += 0.12;
+  }
+
+  if (
+    containsAny(
+      text,
+      [
+        "立即咨询",
+        "在线咨询",
+        "免费咨询",
+        "预约设计",
+        "预约量房",
+        "免费量房",
+        "免费报价",
+        "获取报价",
+      ],
+    )
+  ) {
+    score += 0.3;
+  }
+
+  if (
+    containsAny(
+      text,
+      [
+        "案例",
+        "装修案例",
+        "设计案例",
+        "抖音",
+        "小红书",
+        "公众号",
+        "视频号",
+      ],
+    )
+  ) {
+    score += 0.18;
+  }
+
+  if (
+    industry ===
+      "old-home-renovation" ||
+    industry ===
+      "whole-house-customization"
+  ) {
+    score += 0.12;
+  }
+
+  return clampScore(
+    score,
+  );
+}
+
+function buildCommercialDecision(
+  evidenceScore: number,
+  buyingSignalScore: number,
+  acquisitionReadinessScore: number,
+  independentHosts: number,
+  buyingSignals: string[],
+): C168CommercialDecision {
+  const evidenceConfidence =
+    clampScore(
+      evidenceScore,
+    );
+
+  const actionScore =
+    clampScore(
+      evidenceConfidence *
+        0.4 +
+        buyingSignalScore *
+          0.35 +
+        acquisitionReadinessScore *
+          0.25,
+    );
+
+  const reasons: string[] = [];
+
+  if (
+    evidenceConfidence >= 0.65
+  ) {
+    reasons.push(
+      "企业与业务证据置信度较高。",
+    );
+  }
+
+  if (
+    independentHosts >= 2
+  ) {
+    reasons.push(
+      "存在至少两个独立公开来源支持当前商业主体研究。",
+    );
+  }
+
+  if (
+    buyingSignalScore >= 0.35
+  ) {
+    reasons.push(
+      "存在多个公开Buying Signal，具备进一步商业研究价值。",
+    );
+  }
+
+  if (
+    acquisitionReadinessScore >=
+    0.55
+  ) {
+    reasons.push(
+      "存在较明确的公开获客入口或咨询路径，可形成具体诊断切入点。",
+    );
+  }
+
+  let action:
+    C168CommercialAction;
+
+  if (
+    evidenceConfidence >= 0.68 &&
+    buyingSignalScore >= 0.42 &&
+    acquisitionReadinessScore >=
+      0.5 &&
+    independentHosts >= 2 &&
+    buyingSignals.length >= 2 &&
+    actionScore >= 0.58
+  ) {
+    action =
+      "selective-outbound";
+
+    reasons.push(
+      "达到选择性主动触达研究阈值，但真实发送仍必须由Founder批准。",
+    );
+  } else if (
+    evidenceConfidence >= 0.58 &&
+    acquisitionReadinessScore >=
+      0.4 &&
+    actionScore >= 0.45
+  ) {
+    action =
+      "inbound-opportunity";
+
+    reasons.push(
+      "更适合用于提炼Inbound内容、诊断主题或Offer，而不是立即人工联系。",
+    );
+  } else if (
+    evidenceConfidence >= 0.45 &&
+    independentHosts >= 1
+  ) {
+    action =
+      "monitor";
+
+    reasons.push(
+      "当前商业行动证据不足，保留观察而不占用Founder人工审核时间。",
+    );
+  } else {
+    action =
+      "reject";
+
+    reasons.push(
+      "当前证据不足以支持商业行动，自动淘汰。",
+    );
+  }
+
+  return {
+    action,
+    actionScore,
+    evidenceConfidence,
+    buyingSignalScore,
+    acquisitionReadinessScore,
+    reasons:
+      uniqueStrings(
+        reasons,
+      ),
+    founderReviewRequired:
+      action ===
+      "selective-outbound",
+  };
+}
+
+function buildRecommendedAction(
+  decision: C168CommercialDecision,
+): string {
+  if (
+    decision.action ===
+    "selective-outbound"
+  ) {
+    return "进入Founder最终审批队列。AIOS应先生成一份基于公开证据的微型预诊断和联系理由；Founder确认真实联系渠道与内容后才可发送。";
+  }
+
+  if (
+    decision.action ===
+    "inbound-opportunity"
+  ) {
+    return "不要求Founder逐家联系。将该对象反映出的公开需求、Offer模式和获客入口问题沉淀为Inbound内容主题、诊断入口或服务表达。";
+  }
+
+  if (
+    decision.action ===
+    "monitor"
+  ) {
+    return "暂不占用Founder时间。保留为市场观察对象，等待新的业务扩张、营销、招聘、Offer或获客信号后重新评分。";
+  }
+
+  return "自动淘汰，不进入Founder审核或客户触达流程。";
 }
 
 function toEvidence(
@@ -620,7 +1070,9 @@ function buildCandidate(
   allSources: DiscoverySource[],
 ): C168ProspectCandidate | null {
   const key =
-    normalizeBusinessKey(name);
+    normalizeBusinessKey(
+      name,
+    );
 
   const sources =
     allSources.filter(
@@ -636,23 +1088,23 @@ function buildCandidate(
           ) ||
           normalizeBusinessKey(
             text,
-          ).includes(key)
+          ).includes(
+            key,
+          )
         );
       },
     );
 
-  if (sources.length === 0) {
+  if (
+    sources.length === 0
+  ) {
     return null;
   }
 
   const combinedText =
-    sources
-      .map((source) =>
-        sourceText(
-          source.evidence,
-        ),
-      )
-      .join(" ");
+    combinedSourceText(
+      sources,
+    );
 
   if (
     !containsAny(
@@ -686,10 +1138,27 @@ function buildCandidate(
       sources,
     );
 
+  const buyingSignals =
+    extractBuyingSignals(
+      sources,
+    );
+
   const evidenceScore =
-    calculateCandidateScore(
+    calculateEvidenceScore(
       sources,
       acquisitionSignals,
+    );
+
+  const buyingSignalScore =
+    calculateBuyingSignalScore(
+      sources,
+    );
+
+  const acquisitionReadinessScore =
+    calculateAcquisitionReadinessScore(
+      industry,
+      acquisitionSignals,
+      sources,
     );
 
   const independentHosts =
@@ -701,11 +1170,21 @@ function buildCandidate(
       ),
     ).size;
 
+  const commercialDecision =
+    buildCommercialDecision(
+      evidenceScore,
+      buyingSignalScore,
+      acquisitionReadinessScore,
+      independentHosts,
+      buyingSignals,
+    );
+
   const qualification:
     C168ProspectQualification =
-    evidenceScore >= 0.55 &&
-    independentHosts >= 2 &&
-    acquisitionSignals.length > 0
+    commercialDecision.action ===
+      "selective-outbound" ||
+    commercialDecision.action ===
+      "inbound-opportunity"
       ? "qualified"
       : "needs-manual-validation";
 
@@ -715,7 +1194,8 @@ function buildCandidate(
     rank: 0,
     name,
     industry,
-    location: "深圳",
+    location:
+      "深圳",
     qualification,
     evidenceScore,
     verifiedFacts:
@@ -725,14 +1205,17 @@ function buildCandidate(
         sources,
       ),
     acquisitionSignals,
+    buyingSignals,
     diagnosticHypotheses:
       buildDiagnosticHypotheses(
+        industry,
         acquisitionSignals,
+        buyingSignals,
       ),
     unknowns:
       buildUnknowns(),
     evidence:
-      sources
+      [...sources]
         .sort(
           (a, b) =>
             b.evidence
@@ -741,12 +1224,14 @@ function buildCandidate(
               .verificationScore,
         )
         .slice(0, 5)
-        .map(toEvidence),
+        .map(
+          toEvidence,
+        ),
+    commercialDecision,
     recommendedAction:
-      qualification ===
-      "qualified"
-        ? "Founder人工核验该商家的官网、公开获客入口、广告或内容素材，并判断是否适合进入48小时广告获客诊断触达名单。"
-        : "暂不联系。先补充企业真实性、深圳业务和公开获客行为证据。",
+      buildRecommendedAction(
+        commercialDecision,
+      ),
   };
 }
 
@@ -782,13 +1267,20 @@ function dedupeSources(
 
     if (
       !key ||
-      seen.has(key)
+      seen.has(
+        key,
+      )
     ) {
       continue;
     }
 
-    seen.add(key);
-    result.push(source);
+    seen.add(
+      key,
+    );
+
+    result.push(
+      source,
+    );
   }
 
   return result;
@@ -859,17 +1351,23 @@ function discoverBusinessNames(
       }
 
       const existing =
-        names.get(key);
+        names.get(
+          key,
+        );
 
       if (existing) {
         existing.count += 1;
         continue;
       }
 
-      names.set(key, {
-        name: seed.name,
-        count: 1,
-      });
+      names.set(
+        key,
+        {
+          name:
+            seed.name,
+          count: 1,
+        },
+      );
     }
   }
 
@@ -878,38 +1376,88 @@ function discoverBusinessNames(
   )
     .sort(
       (a, b) =>
-        b.count - a.count,
+        b.count -
+        a.count,
     )
-    .map((item) =>
-      item.name,
+    .map(
+      (item) =>
+        item.name,
     );
+}
+
+function actionPriority(
+  action: C168CommercialAction,
+): number {
+  if (
+    action ===
+    "selective-outbound"
+  ) {
+    return 4;
+  }
+
+  if (
+    action ===
+    "inbound-opportunity"
+  ) {
+    return 3;
+  }
+
+  if (
+    action ===
+    "monitor"
+  ) {
+    return 2;
+  }
+
+  return 1;
 }
 
 function rankCandidates(
   candidates: C168ProspectCandidate[],
 ): C168ProspectCandidate[] {
   return candidates
-    .sort((a, b) => {
-      if (
-        a.qualification !==
-        b.qualification
-      ) {
-        return a.qualification ===
-          "qualified"
-          ? -1
-          : 1;
-      }
+    .sort(
+      (a, b) => {
+        const actionDifference =
+          actionPriority(
+            b.commercialDecision
+              .action,
+          ) -
+          actionPriority(
+            a.commercialDecision
+              .action,
+          );
 
-      return (
-        b.evidenceScore -
-        a.evidenceScore
-      );
-    })
+        if (
+          actionDifference !== 0
+        ) {
+          return actionDifference;
+        }
+
+        const scoreDifference =
+          b.commercialDecision
+            .actionScore -
+          a.commercialDecision
+            .actionScore;
+
+        if (
+          scoreDifference !== 0
+        ) {
+          return scoreDifference;
+        }
+
+        return (
+          b.evidenceScore -
+          a.evidenceScore
+        );
+      },
+    )
     .slice(0, 10)
     .map(
       (candidate, index) => ({
         ...candidate,
-        rank: index + 1,
+        rank:
+          index + 1,
       }),
     );
 }
@@ -928,7 +1476,9 @@ export async function discoverC168Prospects(): Promise<C168ProspectDiscoveryResu
         ),
       ).size;
 
-    if (sources.length === 0) {
+    if (
+      sources.length === 0
+    ) {
       return {
         success: false,
         status:
@@ -940,18 +1490,28 @@ export async function discoverC168Prospects(): Promise<C168ProspectDiscoveryResu
         candidates: [],
         sourceCount: 0,
         independentHosts: 0,
+        selectiveOutboundCount: 0,
+        inboundOpportunityCount: 0,
+        monitorCount: 0,
+        rejectedCount: 0,
         conclusion:
-          "Web Intelligence未返回足够的深圳家装获客公开证据。",
+          "Web Intelligence未返回足够的深圳家装市场公开证据。",
         nextStep:
-          "保持目标行业不变，稍后重新执行发现，不生成虚假候选客户。",
+          "保持目标行业不变，稍后重新执行市场机会发现，不生成虚假候选客户或Buying Signal。",
         integrity: {
-          fabricatedProspect: false,
+          fabricatedProspect:
+            false,
+          fabricatedBuyingSignal:
+            false,
           fabricatedAdvertisingPerformance:
             false,
-          fabricatedContact: false,
-          fabricatedCustomer: false,
+          fabricatedContact:
+            false,
+          fabricatedCustomer:
+            false,
         },
-        timestamp: Date.now(),
+        timestamp:
+          Date.now(),
       };
     }
 
@@ -960,28 +1520,66 @@ export async function discoverC168Prospects(): Promise<C168ProspectDiscoveryResu
         sources,
       );
 
+    const allCandidates =
+      names
+        .map((name) =>
+          buildCandidate(
+            name,
+            sources,
+          ),
+        )
+        .filter(
+          (
+            candidate,
+          ): candidate is C168ProspectCandidate =>
+            candidate !== null,
+        );
+
+    const rejectedCount =
+      allCandidates.filter(
+        (candidate) =>
+          candidate
+            .commercialDecision
+            .action ===
+          "reject",
+      ).length;
+
     const candidates =
       rankCandidates(
-        names
-          .map((name) =>
-            buildCandidate(
-              name,
-              sources,
-            ),
-          )
-          .filter(
-            (
-              candidate,
-            ): candidate is C168ProspectCandidate =>
-              candidate !== null,
-          ),
+        allCandidates.filter(
+          (candidate) =>
+            candidate
+              .commercialDecision
+              .action !==
+            "reject",
+        ),
       );
 
-    const qualifiedCount =
+    const selectiveOutboundCount =
       candidates.filter(
         (candidate) =>
-          candidate.qualification ===
-          "qualified",
+          candidate
+            .commercialDecision
+            .action ===
+          "selective-outbound",
+      ).length;
+
+    const inboundOpportunityCount =
+      candidates.filter(
+        (candidate) =>
+          candidate
+            .commercialDecision
+            .action ===
+          "inbound-opportunity",
+      ).length;
+
+    const monitorCount =
+      candidates.filter(
+        (candidate) =>
+          candidate
+            .commercialDecision
+            .action ===
+          "monitor",
       ).length;
 
     return {
@@ -999,27 +1597,40 @@ export async function discoverC168Prospects(): Promise<C168ProspectDiscoveryResu
       sourceCount:
         sources.length,
       independentHosts,
+      selectiveOutboundCount,
+      inboundOpportunityCount,
+      monitorCount,
+      rejectedCount,
       conclusion:
         candidates.length > 0
-          ? `发现${candidates.length}个有公开证据支持的深圳家装候选对象，其中${qualifiedCount}个达到当前初步筛选标准。候选排序代表研究优先级，不代表其广告效果差。`
-          : "当前公开证据不足以形成可信的深圳家装候选客户名单。",
+          ? `AIOS从公开市场证据中保留${candidates.length}个商业研究对象：${selectiveOutboundCount}个达到选择性主动触达研究阈值，${inboundOpportunityCount}个更适合作为Inbound获客机会，${monitorCount}个进入自动观察；另有${rejectedCount}个低价值对象已自动淘汰。商业评分代表行动优先级，不代表广告效果或真实购买意愿。`
+          : "当前没有足够证据形成值得商业行动的深圳家装机会。",
       nextStep:
-        qualifiedCount > 0
-          ? "Founder先人工核验排名最高的候选商家，检查官网、公开广告或内容入口、Offer和咨询路径，再决定是否进入诊断与联系阶段。"
-          : "继续补充深圳家装企业身份和公开获客行为证据，不进行客户联系。",
+        selectiveOutboundCount > 0
+          ? "Founder只需审核达到Selective Outbound阈值的少量对象；其余机会由AIOS用于Inbound资产或持续观察。"
+          : inboundOpportunityCount > 0
+            ? "当前不需要批量主动联系。优先把高频市场问题和公开获客模式转化为Inbound内容、诊断入口和Offer。"
+            : "当前没有值得Founder主动介入的商业对象。AIOS继续观察市场Buying Signal。",
       integrity: {
-        fabricatedProspect: false,
+        fabricatedProspect:
+          false,
+        fabricatedBuyingSignal:
+          false,
         fabricatedAdvertisingPerformance:
           false,
-        fabricatedContact: false,
-        fabricatedCustomer: false,
+        fabricatedContact:
+          false,
+        fabricatedCustomer:
+          false,
       },
-      timestamp: Date.now(),
+      timestamp:
+        Date.now(),
     };
   } catch {
     return {
       success: false,
-      status: "failed",
+      status:
+        "failed",
       targetMarket:
         C168_TARGET_PROFILE.market,
       geography:
@@ -1027,18 +1638,28 @@ export async function discoverC168Prospects(): Promise<C168ProspectDiscoveryResu
       candidates: [],
       sourceCount: 0,
       independentHosts: 0,
+      selectiveOutboundCount: 0,
+      inboundOpportunityCount: 0,
+      monitorCount: 0,
+      rejectedCount: 0,
       conclusion:
-        "C168客户发现执行失败，未生成未经验证的候选客户。",
+        "C168市场机会发现执行失败，未生成未经验证的候选客户、Buying Signal或商业行动。",
       nextStep:
         "检查Web Intelligence运行状态后重新执行。",
       integrity: {
-        fabricatedProspect: false,
+        fabricatedProspect:
+          false,
+        fabricatedBuyingSignal:
+          false,
         fabricatedAdvertisingPerformance:
           false,
-        fabricatedContact: false,
-        fabricatedCustomer: false,
+        fabricatedContact:
+          false,
+        fabricatedCustomer:
+          false,
       },
-      timestamp: Date.now(),
+      timestamp:
+        Date.now(),
     };
   }
 }
