@@ -344,8 +344,7 @@ export default function Page() {
   const visibleRecords = useMemo(() => filterStatus === "all" ? records : records.filter(item => item.status === filterStatus), [filterStatus, records]);
   const counts = useMemo(() => ({ new: records.filter(item => item.status === "new").length, followUp: records.filter(item => item.status === "follow-up").length, converted: records.filter(item => item.status === "converted").length, closed: records.filter(item => item.status === "closed").length }), [records]);
   const primaryOpportunity = executionPacket?.opportunity ?? opportunities.find(item => item.priority === "primary") ?? opportunities[0] ?? null;
-  const primaryAsset = executionPacket?.asset ?? (primaryOpportunity ? campaign?.contentAssets.find(item => item.channel === primaryOpportunity?.channel || item.channel === primaryOpportunity?.recommendedChannel) ?? null : null);
-
+  
   if (!session) {
     return <main style={{ minHeight: "100vh", background: "#09090b", color: "#fafafa", padding: "32px" }}><div style={{ maxWidth: 960, margin: "0 auto" }}><section style={panelStyle()}><h1 style={{ marginTop: 0 }}>Founder Inbound Growth</h1><p style={mutedStyle()}>需要 Founder Session。请先进入 Founder Console 完成授权。</p></section></div></main>;
   }
