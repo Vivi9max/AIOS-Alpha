@@ -51,7 +51,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SERVICE_VERSION =
-  "C168.7.0";
+  "C168.7.1";
 
 function jsonResponse(
   body: Record<string, unknown>,
