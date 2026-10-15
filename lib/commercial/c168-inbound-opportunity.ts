@@ -4,7 +4,7 @@ import type {
 } from "@/lib/commercial/c144-inbound-demand-engine";
 
 export const C168_INBOUND_OPPORTUNITY_VERSION =
-  "C168.7.2";
+  "C168.7.4";
 
 export type C168InboundOpportunityPriority =
   | "primary"
@@ -283,7 +283,7 @@ function buildRationale(
     priority === "primary"
   ) {
     return (
-      "Highest-value market theme available from the current verified context. " +
+      "Highest-value market theme available from the current evidence context. " +
       "Use one primary content angle before expanding the publishing queue. " +
       `Evidence source: ${source}.`
     );
@@ -293,8 +293,9 @@ function buildRationale(
     priority === "backup"
   ) {
     return (
-      "Second-best verified market theme. Keep it as the backup asset and " +
-      "publish only if the primary angle does not produce useful real inbound signal. " +
+      "Second-best market theme from the current evidence context. " +
+      "Keep it as the backup opportunity and publish only after reviewing " +
+      "the result of the primary angle. " +
       `Evidence source: ${source}.`
     );
   }
@@ -406,57 +407,43 @@ export function selectC168InboundContentOpportunities(
 function selectContentAssets(
   campaign:
     InboundDemandCampaign,
+  primaryChannel:
+    InboundChannel,
 ): InboundDemandCampaign["contentAssets"] {
-  const xiaohongshuAssets =
+  const primaryAssets =
     campaign.contentAssets.filter(
       (asset) =>
         asset.channel ===
-        "xiaohongshu",
+        primaryChannel,
     );
 
-  const xianyuAssets =
+  const secondaryAssets =
     campaign.contentAssets.filter(
       (asset) =>
-        asset.channel ===
-        "xianyu",
+        asset.channel !==
+        primaryChannel,
     );
 
-  const selectedXiaohongshu =
-    xiaohongshuAssets.slice(
+  const selectedPrimaryAssets =
+    primaryAssets.slice(
       0,
       2,
     );
 
-  const selectedFormats =
-    new Set(
-      selectedXiaohongshu.map(
-        (asset) =>
-          asset.format,
-      ),
-    );
-
-  if (
-    selectedXiaohongshu.length >
-    0
-  ) {
-    return campaign.contentAssets.filter(
-      (asset) =>
-        asset.channel ===
-          "xianyu" ||
-        selectedFormats.has(
-          asset.format,
-        ),
-    );
-  }
-
-  if (
-    xianyuAssets.length >
-    0
-  ) {
-    return xianyuAssets.slice(
+  const selectedSecondaryAssets =
+    secondaryAssets.slice(
       0,
-      2,
+      1,
     );
+
+  if (
+    selectedPrimaryAssets.length >
+    0
+  ) {
+    return [
+      ...selectedPrimaryAssets,
+      ...selectedSecondaryAssets,
+    ];
   }
 
   return campaign.contentAssets.slice(
@@ -479,6 +466,56 @@ function selectTopicsForPlan(
       (item) =>
         item.topic,
     );
+}
+
+function alignSevenDayPlan(
+  campaign:
+    InboundDemandCampaign,
+  opportunities:
+    C168InboundContentOpportunity[],
+  primaryChannel:
+    InboundChannel,
+): InboundDemandCampaign["sevenDayPlan"] {
+  const selectedTopics =
+    selectTopicsForPlan(
+      opportunities,
+    );
+
+  const primaryTopic =
+    selectedTopics[0];
+
+  const backupTopic =
+    selectedTopics[1] ??
+    primaryTopic;
+
+  return campaign.sevenDayPlan.map(
+    (item, index) => {
+      if (
+        index === 0 &&
+        primaryTopic
+      ) {
+        return {
+          ...item,
+          channel:
+            primaryChannel,
+          topic:
+            primaryTopic,
+        };
+      }
+
+      const topic =
+        index % 2 === 0
+          ? primaryTopic
+          : backupTopic;
+
+      return {
+        ...item,
+        topic:
+          topic ??
+          item.topic,
+      };
+    },
+  );
 }
 
 export function optimizeC168InboundCampaign(
@@ -511,31 +548,30 @@ export function optimizeC168InboundCampaign(
     };
   }
 
+  const primaryOpportunity =
+    opportunities.find(
+      (item) =>
+        item.priority ===
+        "primary",
+    ) ??
+    opportunities[0];
+
+  const primaryChannel =
+    primaryOpportunity
+      ?.recommendedChannel ??
+    recommendedChannel;
+
   const contentAssets =
     selectContentAssets(
       campaign,
-    );
-
-  const selectedTopics =
-    selectTopicsForPlan(
-      opportunities,
+      primaryChannel,
     );
 
   const sevenDayPlan =
-    campaign.sevenDayPlan.map(
-      (item, index) => ({
-        ...item,
-
-        topic:
-          selectedTopics[
-            index %
-              Math.max(
-                selectedTopics.length,
-                1,
-              )
-          ] ??
-          item.topic,
-      }),
+    alignSevenDayPlan(
+      campaign,
+      opportunities,
+      primaryChannel,
     );
 
   return {
@@ -556,10 +592,10 @@ export function optimizeC168InboundCampaign(
           "evidence-driven",
 
         primaryObjective:
-          "Select one primary and one backup market content opportunity from verified evidence, then learn from real inbound inquiries before expanding the publishing queue.",
+          "Select one primary market content opportunity, align its recommended channel with the first publishable content asset, and learn from real inbound inquiries before expanding the publishing queue.",
 
         learningObjective:
-          "Measure real inquiries generated by the primary angle before increasing content volume, changing the offer, or adding more channels.",
+          "Measure real inquiries generated by the primary topic and channel before increasing content volume, changing the offer, or adding more channels.",
 
         evidenceBoundary:
           campaign
