@@ -51,7 +51,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SERVICE_VERSION =
-  "C168.7.1";
+  "C168.7.3";
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -265,19 +265,6 @@ function inboundCandidates(
   );
 }
 
-function buildVerifiedProblems(
-  candidates:
-    C168ProspectCandidate[],
-): string[] {
-  return uniqueStrings(
-    candidates.flatMap(
-      (candidate) =>
-        candidate
-          .diagnosticHypotheses,
-    ),
-  );
-}
-
 function buildBuyingSignals(
   candidates:
     C168ProspectCandidate[],
@@ -343,10 +330,7 @@ function buildMarketContext(
     geography:
       discovery.geography,
 
-    verifiedProblems:
-      buildVerifiedProblems(
-        candidates,
-      ),
+    verifiedProblems: [],
 
     buyingSignals:
       buildBuyingSignals(
