@@ -32,6 +32,10 @@ import type {
 } from "@/lib/commercial/c168-prospect-discovery";
 
 import {
+  optimizeC168InboundCampaign,
+} from "@/lib/commercial/c168-inbound-opportunity";
+
+import {
   createInboundLeadRecord,
   deleteInboundLeadRecord,
   listInboundLeadRecords,
@@ -47,7 +51,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SERVICE_VERSION =
-  "C168.6.0";
+  "C168.7.0";
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -59,7 +63,8 @@ function jsonResponse(
       status,
       headers: {
         "Cache-Control": "no-store",
-        "Content-Type": "application/json; charset=utf-8",
+        "Content-Type":
+          "application/json; charset=utf-8",
       },
     },
   );
@@ -75,7 +80,8 @@ function jsonError(
       success: false,
       code,
       message,
-      externalSideEffectExecuted: false,
+      externalSideEffectExecuted:
+        false,
     },
     status,
   );
@@ -183,15 +189,20 @@ function normalizeLead(
       : "unknown";
 
   const decisionRole =
-    value.decisionRole === "decision-maker" ||
-    value.decisionRole === "influencer"
+    value.decisionRole ===
+      "decision-maker" ||
+    value.decisionRole ===
+      "influencer"
       ? value.decisionRole
       : "unknown";
 
   const budgetRange =
-    value.budgetRange === "under-500" ||
-    value.budgetRange === "500-2000" ||
-    value.budgetRange === "2000-plus"
+    value.budgetRange ===
+      "under-500" ||
+    value.budgetRange ===
+      "500-2000" ||
+    value.budgetRange ===
+      "2000-plus"
       ? value.budgetRange
       : "unknown";
 
@@ -203,15 +214,17 @@ function normalizeLead(
       : "unknown";
 
   const sourceChannel =
-    value.sourceChannel === "xianyu"
+    value.sourceChannel ===
+    "xianyu"
       ? "xianyu"
       : "xiaohongshu";
 
   return {
-    businessType: cleanText(
-      value.businessType,
-      200,
-    ),
+    businessType:
+      cleanText(
+        value.businessType,
+        200,
+      ),
     currentAds,
     hasAdData,
     decisionRole,
@@ -220,9 +233,10 @@ function normalizeLead(
     goal: cleanText(
       value.goal,
     ),
-    currentProblem: cleanText(
-      value.currentProblem,
-    ),
+    currentProblem:
+      cleanText(
+        value.currentProblem,
+      ),
     sourceChannel,
   };
 }
@@ -239,28 +253,34 @@ function isLeadStatus(
 }
 
 function inboundCandidates(
-  discovery: C168ProspectDiscoveryResult,
+  discovery:
+    C168ProspectDiscoveryResult,
 ): C168ProspectCandidate[] {
   return discovery.candidates.filter(
     (candidate) =>
-      candidate.commercialDecision.action ===
+      candidate
+        .commercialDecision
+        .action ===
       "inbound-opportunity",
   );
 }
 
 function buildVerifiedProblems(
-  candidates: C168ProspectCandidate[],
+  candidates:
+    C168ProspectCandidate[],
 ): string[] {
   return uniqueStrings(
     candidates.flatMap(
       (candidate) =>
-        candidate.diagnosticHypotheses,
+        candidate
+          .diagnosticHypotheses,
     ),
   );
 }
 
 function buildBuyingSignals(
-  candidates: C168ProspectCandidate[],
+  candidates:
+    C168ProspectCandidate[],
 ): string[] {
   return uniqueStrings(
     candidates.flatMap(
@@ -271,30 +291,37 @@ function buildBuyingSignals(
 }
 
 function buildAcquisitionSignals(
-  candidates: C168ProspectCandidate[],
+  candidates:
+    C168ProspectCandidate[],
 ): string[] {
   return uniqueStrings(
     candidates.flatMap(
       (candidate) =>
-        candidate.acquisitionSignals,
+        candidate
+          .acquisitionSignals,
     ),
   );
 }
 
 function buildDiagnosticHypotheses(
-  candidates: C168ProspectCandidate[],
+  candidates:
+    C168ProspectCandidate[],
 ): string[] {
   return uniqueStrings(
     candidates.flatMap(
       (candidate) =>
-        candidate.diagnosticHypotheses,
+        candidate
+          .diagnosticHypotheses,
     ),
   );
 }
 
 function buildMarketContext(
-  discovery: C168ProspectDiscoveryResult,
-): InboundMarketContext | undefined {
+  discovery:
+    C168ProspectDiscoveryResult,
+):
+  | InboundMarketContext
+  | undefined {
   const candidates =
     inboundCandidates(
       discovery,
@@ -342,7 +369,8 @@ function buildMarketContext(
 }
 
 function mergeMarketContext(
-  input: Partial<InboundDemandInput>,
+  input:
+    Partial<InboundDemandInput>,
   generatedContext:
     | InboundMarketContext
     | undefined,
@@ -359,7 +387,8 @@ function mergeMarketContext(
 }
 
 function buildDiscoverySummary(
-  discovery: C168ProspectDiscoveryResult,
+  discovery:
+    C168ProspectDiscoveryResult,
 ) {
   const candidates =
     inboundCandidates(
@@ -392,7 +421,8 @@ function buildDiscoverySummary(
       candidates.length,
 
     selectiveOutboundCount:
-      discovery.selectiveOutboundCount,
+      discovery
+        .selectiveOutboundCount,
 
     monitorCount:
       discovery.monitorCount,
@@ -412,7 +442,8 @@ function buildDiscoverySummary(
 }
 
 async function buildMarketDrivenCampaign(
-  input: Partial<InboundDemandInput> = {},
+  input:
+    Partial<InboundDemandInput> = {},
 ) {
   const discovery =
     await discoverC168Prospects();
@@ -430,9 +461,21 @@ async function buildMarketDrivenCampaign(
       ),
     );
 
+  const optimized =
+    optimizeC168InboundCampaign(
+      campaign,
+    );
+
   return {
-    campaign,
+    campaign:
+      optimized.campaign,
+
+    contentOpportunities:
+      optimized
+        .contentOpportunities,
+
     discovery,
+
     marketContextApplied:
       Boolean(
         marketContext,
@@ -456,34 +499,58 @@ export async function GET(
 
     return jsonResponse({
       success: true,
+
       code:
-        result.marketContextApplied
+        result
+          .marketContextApplied
           ? "C168_INBOUND_MARKET_CAMPAIGN_READY"
           : "C168_INBOUND_SAFE_FALLBACK_READY",
+
       version:
         SERVICE_VERSION,
+
       engineVersion:
         result.campaign.version,
+
       status:
         result.campaign.status,
+
       campaign:
         result.campaign,
+
+      contentOpportunities:
+        result
+          .contentOpportunities,
+
       marketIntelligence:
         buildDiscoverySummary(
           result.discovery,
         ),
+
       marketContextApplied:
-        result.marketContextApplied,
+        result
+          .marketContextApplied,
+
       contentMode:
-        result.campaign
-          .contentStrategy?.mode ??
+        result
+          .campaign
+          .contentStrategy
+          ?.mode ??
         "general-safe-fallback",
-      persistenceEnabled: true,
-      externalSideEffectExecuted: false,
-      externalPublishingExecuted: false,
+
+      persistenceEnabled:
+        true,
+
+      externalSideEffectExecuted:
+        false,
+
+      externalPublishingExecuted:
+        false,
+
       nextStep:
-        result.marketContextApplied
-          ? "Review the evidence-driven Xiaohongshu and Xianyu drafts, then publish manually through the approved platform interface."
+        result
+          .marketContextApplied
+          ? "Review the primary inbound content opportunity and backup opportunity, then publish the primary asset manually through the approved platform interface."
           : "No reliable C168 inbound opportunity was available. Review the safe fallback drafts before any manual publication.",
     });
   } catch (error) {
@@ -530,14 +597,19 @@ export async function POST(
 
   try {
     const mode =
-      typeof body.mode === "string"
+      typeof body.mode ===
+      "string"
         ? body.mode
         : "campaign";
 
-    if (mode === "campaign") {
+    if (
+      mode === "campaign"
+    ) {
       const input =
-        isRecord(body.input)
-          ? body.input as Partial<InboundDemandInput>
+        isRecord(
+          body.input,
+        )
+          ? (body.input as Partial<InboundDemandInput>)
           : {};
 
       const result =
@@ -547,30 +619,51 @@ export async function POST(
 
       return jsonResponse({
         success: true,
+
         code:
-          result.marketContextApplied
+          result
+            .marketContextApplied
             ? "C168_INBOUND_MARKET_CAMPAIGN_GENERATED"
             : "C168_INBOUND_SAFE_FALLBACK_GENERATED",
+
         version:
           SERVICE_VERSION,
+
         result: {
           mode,
+
           campaign:
             result.campaign,
+
+          contentOpportunities:
+            result
+              .contentOpportunities,
+
           marketIntelligence:
             buildDiscoverySummary(
               result.discovery,
             ),
+
           marketContextApplied:
-            result.marketContextApplied,
+            result
+              .marketContextApplied,
+
           contentMode:
-            result.campaign
-              .contentStrategy?.mode ??
+            result
+              .campaign
+              .contentStrategy
+              ?.mode ??
             "general-safe-fallback",
         },
-        persistenceEnabled: true,
-        externalSideEffectExecuted: false,
-        externalPublishingExecuted: false,
+
+        persistenceEnabled:
+          true,
+
+        externalSideEffectExecuted:
+          false,
+
+        externalPublishingExecuted:
+          false,
       });
     }
 
@@ -579,7 +672,11 @@ export async function POST(
       mode === "reply-draft" ||
       mode === "save-lead"
     ) {
-      if (!isRecord(body.lead)) {
+      if (
+        !isRecord(
+          body.lead,
+        )
+      ) {
         return jsonError(
           "C144_INBOUND_LEAD_REQUIRED",
           "The lead field must be a JSON object.",
@@ -604,70 +701,96 @@ export async function POST(
         );
 
       if (
-        mode === "score-lead"
+        mode ===
+        "score-lead"
       ) {
         return jsonResponse({
           success: true,
+
           code:
             "C144_INBOUND_LEAD_SCORED",
+
           version:
             SERVICE_VERSION,
+
           result: {
             mode,
             assessment,
           },
-          persistenceEnabled: true,
-          externalSideEffectExecuted: false,
+
+          persistenceEnabled:
+            true,
+
+          externalSideEffectExecuted:
+            false,
         });
       }
 
       if (
-        mode === "reply-draft"
+        mode ===
+        "reply-draft"
       ) {
         return jsonResponse({
           success: true,
+
           code:
             "C144_INBOUND_REPLY_DRAFT_READY",
+
           version:
             SERVICE_VERSION,
+
           result: {
             mode,
             assessment,
             replyDraft,
           },
-          persistenceEnabled: true,
-          externalSideEffectExecuted: false,
+
+          persistenceEnabled:
+            true,
+
+          externalSideEffectExecuted:
+            false,
         });
       }
 
       const record =
-        await createInboundLeadRecord({
-          lead,
-          assessment,
-          replyDraft,
-          note:
-            cleanText(
-              body.note,
-            ),
-        });
+        await createInboundLeadRecord(
+          {
+            lead,
+            assessment,
+            replyDraft,
+            note:
+              cleanText(
+                body.note,
+              ),
+          },
+        );
 
       return jsonResponse({
         success: true,
+
         code:
           "C144_INBOUND_LEAD_SAVED",
+
         version:
           SERVICE_VERSION,
+
         result: {
           mode,
           record,
         },
-        persistenceEnabled: true,
-        externalSideEffectExecuted: false,
+
+        persistenceEnabled:
+          true,
+
+        externalSideEffectExecuted:
+          false,
       });
     }
 
     if (
-      mode === "list-leads"
+      mode ===
+      "list-leads"
     ) {
       const status =
         isLeadStatus(
@@ -677,36 +800,47 @@ export async function POST(
           : undefined;
 
       const requestedLimit =
-        typeof body.limit === "number"
+        typeof body.limit ===
+        "number"
           ? body.limit
           : 100;
 
       const records =
-        await listInboundLeadRecords({
-          status,
-          limit:
-            requestedLimit,
-        });
+        await listInboundLeadRecords(
+          {
+            status,
+            limit:
+              requestedLimit,
+          },
+        );
 
       return jsonResponse({
         success: true,
+
         code:
           "C144_INBOUND_LEADS_LISTED",
+
         version:
           SERVICE_VERSION,
+
         result: {
           mode,
           records,
           count:
             records.length,
         },
-        persistenceEnabled: true,
-        externalSideEffectExecuted: false,
+
+        persistenceEnabled:
+          true,
+
+        externalSideEffectExecuted:
+          false,
       });
     }
 
     if (
-      mode === "update-lead"
+      mode ===
+      "update-lead"
     ) {
       const id =
         cleanText(
@@ -730,15 +864,18 @@ export async function POST(
           : undefined;
 
       const note =
-        typeof body.note === "string"
+        typeof body.note ===
+        "string"
           ? cleanText(
               body.note,
             )
           : undefined;
 
       if (
-        status === undefined &&
-        note === undefined
+        status ===
+          undefined &&
+        note ===
+          undefined
       ) {
         return jsonError(
           "C144_INBOUND_NO_UPDATES",
@@ -766,21 +903,29 @@ export async function POST(
 
       return jsonResponse({
         success: true,
+
         code:
           "C144_INBOUND_LEAD_UPDATED",
+
         version:
           SERVICE_VERSION,
+
         result: {
           mode,
           record,
         },
-        persistenceEnabled: true,
-        externalSideEffectExecuted: false,
+
+        persistenceEnabled:
+          true,
+
+        externalSideEffectExecuted:
+          false,
       });
     }
 
     if (
-      mode === "delete-lead"
+      mode ===
+      "delete-lead"
     ) {
       const id =
         cleanText(
@@ -811,16 +956,23 @@ export async function POST(
 
       return jsonResponse({
         success: true,
+
         code:
           "C144_INBOUND_LEAD_DELETED",
+
         version:
           SERVICE_VERSION,
+
         result: {
           mode,
           id,
         },
-        persistenceEnabled: true,
-        externalSideEffectExecuted: false,
+
+        persistenceEnabled:
+          true,
+
+        externalSideEffectExecuted:
+          false,
       });
     }
 
