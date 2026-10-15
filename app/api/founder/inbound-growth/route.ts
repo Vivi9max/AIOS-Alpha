@@ -1,4 +1,3 @@
-
 import "server-only";
 
 import {
@@ -20,7 +19,17 @@ import {
 import type {
   InboundDemandInput,
   InboundLead,
+  InboundMarketContext,
 } from "@/lib/commercial/c144-inbound-demand-engine";
+
+import {
+  discoverC168Prospects,
+} from "@/lib/commercial/c168-prospect-discovery";
+
+import type {
+  C168ProspectCandidate,
+  C168ProspectDiscoveryResult,
+} from "@/lib/commercial/c168-prospect-discovery";
 
 import {
   createInboundLeadRecord,
@@ -35,6 +44,10 @@ import type {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const SERVICE_VERSION =
+  "C168.6.0";
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -113,6 +126,47 @@ function cleanText(
     .slice(0, maxLength);
 }
 
+function uniqueStrings(
+  values: string[],
+  limit = 12,
+): string[] {
+  const seen =
+    new Set<string>();
+
+  const result: string[] = [];
+
+  for (const value of values) {
+    const text =
+      cleanText(
+        value,
+        500,
+      );
+
+    if (!text) {
+      continue;
+    }
+
+    const key =
+      text.toLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(text);
+
+    if (
+      result.length >=
+      limit
+    ) {
+      break;
+    }
+  }
+
+  return result;
+}
+
 function normalizeLead(
   value: Record<string, unknown>,
 ): InboundLead {
@@ -163,7 +217,9 @@ function normalizeLead(
     decisionRole,
     budgetRange,
     urgency,
-    goal: cleanText(value.goal),
+    goal: cleanText(
+      value.goal,
+    ),
     currentProblem: cleanText(
       value.currentProblem,
     ),
@@ -182,36 +238,260 @@ function isLeadStatus(
   );
 }
 
+function inboundCandidates(
+  discovery: C168ProspectDiscoveryResult,
+): C168ProspectCandidate[] {
+  return discovery.candidates.filter(
+    (candidate) =>
+      candidate.commercialDecision.action ===
+      "inbound-opportunity",
+  );
+}
+
+function buildVerifiedProblems(
+  candidates: C168ProspectCandidate[],
+): string[] {
+  return uniqueStrings(
+    candidates.flatMap(
+      (candidate) =>
+        candidate.diagnosticHypotheses,
+    ),
+  );
+}
+
+function buildBuyingSignals(
+  candidates: C168ProspectCandidate[],
+): string[] {
+  return uniqueStrings(
+    candidates.flatMap(
+      (candidate) =>
+        candidate.buyingSignals,
+    ),
+  );
+}
+
+function buildAcquisitionSignals(
+  candidates: C168ProspectCandidate[],
+): string[] {
+  return uniqueStrings(
+    candidates.flatMap(
+      (candidate) =>
+        candidate.acquisitionSignals,
+    ),
+  );
+}
+
+function buildDiagnosticHypotheses(
+  candidates: C168ProspectCandidate[],
+): string[] {
+  return uniqueStrings(
+    candidates.flatMap(
+      (candidate) =>
+        candidate.diagnosticHypotheses,
+    ),
+  );
+}
+
+function buildMarketContext(
+  discovery: C168ProspectDiscoveryResult,
+): InboundMarketContext | undefined {
+  const candidates =
+    inboundCandidates(
+      discovery,
+    );
+
+  if (
+    candidates.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    source:
+      "c168-market-intelligence",
+
+    market:
+      discovery.targetMarket,
+
+    geography:
+      discovery.geography,
+
+    verifiedProblems:
+      buildVerifiedProblems(
+        candidates,
+      ),
+
+    buyingSignals:
+      buildBuyingSignals(
+        candidates,
+      ),
+
+    acquisitionSignals:
+      buildAcquisitionSignals(
+        candidates,
+      ),
+
+    diagnosticHypotheses:
+      buildDiagnosticHypotheses(
+        candidates,
+      ),
+
+    evidenceBoundary:
+      "This market context is derived only from public evidence attached to C168 inbound-opportunity candidates. It can support market-level content hypotheses, but it does not prove that any specific business has poor advertising performance, high lead cost, low conversion, negative ROI, budget, or purchase intent.",
+  };
+}
+
+function mergeMarketContext(
+  input: Partial<InboundDemandInput>,
+  generatedContext:
+    | InboundMarketContext
+    | undefined,
+): Partial<InboundDemandInput> {
+  if (!generatedContext) {
+    return input;
+  }
+
+  return {
+    ...input,
+    marketContext:
+      generatedContext,
+  };
+}
+
+function buildDiscoverySummary(
+  discovery: C168ProspectDiscoveryResult,
+) {
+  const candidates =
+    inboundCandidates(
+      discovery,
+    );
+
+  return {
+    success:
+      discovery.success,
+
+    status:
+      discovery.status,
+
+    targetMarket:
+      discovery.targetMarket,
+
+    geography:
+      discovery.geography,
+
+    sourceCount:
+      discovery.sourceCount,
+
+    independentHosts:
+      discovery.independentHosts,
+
+    candidateCount:
+      discovery.candidates.length,
+
+    inboundOpportunityCount:
+      candidates.length,
+
+    selectiveOutboundCount:
+      discovery.selectiveOutboundCount,
+
+    monitorCount:
+      discovery.monitorCount,
+
+    rejectedCount:
+      discovery.rejectedCount,
+
+    conclusion:
+      discovery.conclusion,
+
+    nextStep:
+      discovery.nextStep,
+
+    integrity:
+      discovery.integrity,
+  };
+}
+
+async function buildMarketDrivenCampaign(
+  input: Partial<InboundDemandInput> = {},
+) {
+  const discovery =
+    await discoverC168Prospects();
+
+  const marketContext =
+    buildMarketContext(
+      discovery,
+    );
+
+  const campaign =
+    buildInboundDemandCampaign(
+      mergeMarketContext(
+        input,
+        marketContext,
+      ),
+    );
+
+  return {
+    campaign,
+    discovery,
+    marketContextApplied:
+      Boolean(
+        marketContext,
+      ),
+  };
+}
+
 export async function GET(
   request: NextRequest,
 ) {
-  const authError = authorize(request);
+  const authError =
+    authorize(request);
 
   if (authError) {
     return authError;
   }
 
   try {
-    const campaign =
-      buildInboundDemandCampaign();
+    const result =
+      await buildMarketDrivenCampaign();
 
     return jsonResponse({
       success: true,
-      code: "C144_INBOUND_CAMPAIGN_READY",
-      version: campaign.version,
-      status: campaign.status,
-      campaign,
+      code:
+        result.marketContextApplied
+          ? "C168_INBOUND_MARKET_CAMPAIGN_READY"
+          : "C168_INBOUND_SAFE_FALLBACK_READY",
+      version:
+        SERVICE_VERSION,
+      engineVersion:
+        result.campaign.version,
+      status:
+        result.campaign.status,
+      campaign:
+        result.campaign,
+      marketIntelligence:
+        buildDiscoverySummary(
+          result.discovery,
+        ),
+      marketContextApplied:
+        result.marketContextApplied,
+      contentMode:
+        result.campaign
+          .contentStrategy?.mode ??
+        "general-safe-fallback",
       persistenceEnabled: true,
       externalSideEffectExecuted: false,
+      externalPublishingExecuted: false,
       nextStep:
-        "Review the draft and publish manually through the approved platform interface.",
+        result.marketContextApplied
+          ? "Review the evidence-driven Xiaohongshu and Xianyu drafts, then publish manually through the approved platform interface."
+          : "No reliable C168 inbound opportunity was available. Review the safe fallback drafts before any manual publication.",
     });
   } catch (error) {
     return jsonError(
-      "C144_INBOUND_CAMPAIGN_ERROR",
+      "C168_INBOUND_CAMPAIGN_ERROR",
       error instanceof Error
         ? error.message
-        : "Inbound campaign generation failed.",
+        : "Market-driven inbound campaign generation failed.",
       500,
     );
   }
@@ -220,7 +500,8 @@ export async function GET(
 export async function POST(
   request: NextRequest,
 ) {
-  const authError = authorize(request);
+  const authError =
+    authorize(request);
 
   if (authError) {
     return authError;
@@ -229,7 +510,8 @@ export async function POST(
   let body: unknown;
 
   try {
-    body = await request.json();
+    body =
+      await request.json();
   } catch {
     return jsonError(
       "C144_INBOUND_INVALID_JSON",
@@ -258,18 +540,37 @@ export async function POST(
           ? body.input as Partial<InboundDemandInput>
           : {};
 
-      const campaign =
-        buildInboundDemandCampaign(input);
+      const result =
+        await buildMarketDrivenCampaign(
+          input,
+        );
 
       return jsonResponse({
         success: true,
-        code: "C144_INBOUND_CAMPAIGN_GENERATED",
+        code:
+          result.marketContextApplied
+            ? "C168_INBOUND_MARKET_CAMPAIGN_GENERATED"
+            : "C168_INBOUND_SAFE_FALLBACK_GENERATED",
+        version:
+          SERVICE_VERSION,
         result: {
           mode,
-          campaign,
+          campaign:
+            result.campaign,
+          marketIntelligence:
+            buildDiscoverySummary(
+              result.discovery,
+            ),
+          marketContextApplied:
+            result.marketContextApplied,
+          contentMode:
+            result.campaign
+              .contentStrategy?.mode ??
+            "general-safe-fallback",
         },
         persistenceEnabled: true,
         externalSideEffectExecuted: false,
+        externalPublishingExecuted: false,
       });
     }
 
@@ -286,17 +587,31 @@ export async function POST(
         );
       }
 
-      const lead = normalizeLead(body.lead);
-      const assessment = scoreInboundLead(lead);
-      const replyDraft = buildInboundReplyDraft(
-        lead,
-        assessment,
-      );
+      const lead =
+        normalizeLead(
+          body.lead,
+        );
 
-      if (mode === "score-lead") {
+      const assessment =
+        scoreInboundLead(
+          lead,
+        );
+
+      const replyDraft =
+        buildInboundReplyDraft(
+          lead,
+          assessment,
+        );
+
+      if (
+        mode === "score-lead"
+      ) {
         return jsonResponse({
           success: true,
-          code: "C144_INBOUND_LEAD_SCORED",
+          code:
+            "C144_INBOUND_LEAD_SCORED",
+          version:
+            SERVICE_VERSION,
           result: {
             mode,
             assessment,
@@ -306,10 +621,15 @@ export async function POST(
         });
       }
 
-      if (mode === "reply-draft") {
+      if (
+        mode === "reply-draft"
+      ) {
         return jsonResponse({
           success: true,
-          code: "C144_INBOUND_REPLY_DRAFT_READY",
+          code:
+            "C144_INBOUND_REPLY_DRAFT_READY",
+          version:
+            SERVICE_VERSION,
           result: {
             mode,
             assessment,
@@ -325,12 +645,18 @@ export async function POST(
           lead,
           assessment,
           replyDraft,
-          note: cleanText(body.note),
+          note:
+            cleanText(
+              body.note,
+            ),
         });
 
       return jsonResponse({
         success: true,
-        code: "C144_INBOUND_LEAD_SAVED",
+        code:
+          "C144_INBOUND_LEAD_SAVED",
+        version:
+          SERVICE_VERSION,
         result: {
           mode,
           record,
@@ -340,10 +666,15 @@ export async function POST(
       });
     }
 
-    if (mode === "list-leads") {
-      const status = isLeadStatus(body.status)
-        ? body.status
-        : undefined;
+    if (
+      mode === "list-leads"
+    ) {
+      const status =
+        isLeadStatus(
+          body.status,
+        )
+          ? body.status
+          : undefined;
 
       const requestedLimit =
         typeof body.limit === "number"
@@ -353,24 +684,35 @@ export async function POST(
       const records =
         await listInboundLeadRecords({
           status,
-          limit: requestedLimit,
+          limit:
+            requestedLimit,
         });
 
       return jsonResponse({
         success: true,
-        code: "C144_INBOUND_LEADS_LISTED",
+        code:
+          "C144_INBOUND_LEADS_LISTED",
+        version:
+          SERVICE_VERSION,
         result: {
           mode,
           records,
-          count: records.length,
+          count:
+            records.length,
         },
         persistenceEnabled: true,
         externalSideEffectExecuted: false,
       });
     }
 
-    if (mode === "update-lead") {
-      const id = cleanText(body.id, 120);
+    if (
+      mode === "update-lead"
+    ) {
+      const id =
+        cleanText(
+          body.id,
+          120,
+        );
 
       if (!id) {
         return jsonError(
@@ -380,13 +722,18 @@ export async function POST(
         );
       }
 
-      const status = isLeadStatus(body.status)
-        ? body.status
-        : undefined;
+      const status =
+        isLeadStatus(
+          body.status,
+        )
+          ? body.status
+          : undefined;
 
       const note =
         typeof body.note === "string"
-          ? cleanText(body.note)
+          ? cleanText(
+              body.note,
+            )
           : undefined;
 
       if (
@@ -419,7 +766,10 @@ export async function POST(
 
       return jsonResponse({
         success: true,
-        code: "C144_INBOUND_LEAD_UPDATED",
+        code:
+          "C144_INBOUND_LEAD_UPDATED",
+        version:
+          SERVICE_VERSION,
         result: {
           mode,
           record,
@@ -429,8 +779,14 @@ export async function POST(
       });
     }
 
-    if (mode === "delete-lead") {
-      const id = cleanText(body.id, 120);
+    if (
+      mode === "delete-lead"
+    ) {
+      const id =
+        cleanText(
+          body.id,
+          120,
+        );
 
       if (!id) {
         return jsonError(
@@ -441,7 +797,9 @@ export async function POST(
       }
 
       const deleted =
-        await deleteInboundLeadRecord(id);
+        await deleteInboundLeadRecord(
+          id,
+        );
 
       if (!deleted) {
         return jsonError(
@@ -453,7 +811,10 @@ export async function POST(
 
       return jsonResponse({
         success: true,
-        code: "C144_INBOUND_LEAD_DELETED",
+        code:
+          "C144_INBOUND_LEAD_DELETED",
+        version:
+          SERVICE_VERSION,
         result: {
           mode,
           id,
