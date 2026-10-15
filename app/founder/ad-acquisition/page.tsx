@@ -10,9 +10,16 @@ import {
 const STORAGE_KEY =
   "aios-founder-access-key";
 
-type ProspectQualification =
-  | "qualified"
-  | "needs-manual-validation";
+type CommercialAction =
+  | "selective-outbound"
+  | "inbound-opportunity"
+  | "monitor"
+  | "reject";
+
+type ProspectIndustry =
+  | "home-renovation"
+  | "old-home-renovation"
+  | "whole-house-customization";
 
 interface ProspectEvidence {
   url: string;
@@ -24,23 +31,33 @@ interface ProspectEvidence {
   verificationScore: number;
 }
 
+interface CommercialDecision {
+  action: CommercialAction;
+  actionScore: number;
+  evidenceConfidence: number;
+  buyingSignalScore: number;
+  acquisitionReadinessScore: number;
+  reasons: string[];
+  founderReviewRequired: boolean;
+}
+
 interface ProspectCandidate {
   id: string;
   rank: number;
   name: string;
-  industry:
-    | "home-renovation"
-    | "old-home-renovation"
-    | "whole-house-customization";
+  industry: ProspectIndustry;
   location: string;
   qualification:
-    ProspectQualification;
+    | "qualified"
+    | "needs-manual-validation";
   evidenceScore: number;
   verifiedFacts: string[];
   acquisitionSignals: string[];
+  buyingSignals: string[];
   diagnosticHypotheses: string[];
   unknowns: string[];
   evidence: ProspectEvidence[];
+  commercialDecision: CommercialDecision;
   recommendedAction: string;
 }
 
@@ -50,6 +67,7 @@ interface C168Response {
   version?: string;
   code?: string;
   status?: string;
+  mode?: string;
 
   commercialLoop?: {
     success?: boolean;
@@ -70,6 +88,10 @@ interface C168Response {
     sourceCount?: number;
     independentHosts?: number;
     candidateCount?: number;
+    selectiveOutboundCount?: number;
+    inboundOpportunityCount?: number;
+    monitorCount?: number;
+    rejectedCount?: number;
     qualifiedCount?: number;
     manualValidationCount?: number;
     conclusion?: string;
@@ -78,9 +100,14 @@ interface C168Response {
 
   candidates?: ProspectCandidate[];
 
-  qualifiedCandidates?: ProspectCandidate[];
+  selectiveOutboundCandidates?:
+    ProspectCandidate[];
 
-  manualValidationCandidates?: ProspectCandidate[];
+  inboundOpportunityCandidates?:
+    ProspectCandidate[];
+
+  monitorCandidates?:
+    ProspectCandidate[];
 
   commercialOffer?: {
     primary?: {
@@ -93,8 +120,19 @@ interface C168Response {
     };
   };
 
+  founderWorkload?: {
+    reviewAllCandidates?: boolean;
+    reviewSelectiveOutboundOnly?: boolean;
+    selectiveOutboundReviewCount?: number;
+    inboundOpportunityCount?: number;
+    automaticallyMonitoredCount?: number;
+    automaticallyRejectedCount?: number;
+    objective?: string;
+  };
+
   integrity?: {
     fabricatedProspect?: boolean;
+    fabricatedBuyingSignal?: boolean;
     fabricatedAdvertisingPerformance?: boolean;
     fabricatedContact?: boolean;
     contactWasSent?: boolean;
@@ -111,8 +149,23 @@ interface C168Response {
   timestamp?: number;
 }
 
+function percentage(
+  value: number | undefined,
+): string {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value)
+  ) {
+    return "-";
+  }
+
+  return `${Math.round(
+    value * 100,
+  )}%`;
+}
+
 function industryLabel(
-  industry: ProspectCandidate["industry"],
+  industry: ProspectIndustry,
 ): string {
   if (
     industry ===
@@ -131,21 +184,101 @@ function industryLabel(
   return "家装 / 装修";
 }
 
-function qualificationLabel(
-  qualification: ProspectQualification,
+function actionLabel(
+  action: CommercialAction,
 ): string {
-  return qualification ===
-    "qualified"
-    ? "优先研究"
-    : "需要人工核验";
+  if (
+    action ===
+    "selective-outbound"
+  ) {
+    return "建议审核触达";
+  }
+
+  if (
+    action ===
+    "inbound-opportunity"
+  ) {
+    return "Inbound 机会";
+  }
+
+  if (
+    action ===
+    "monitor"
+  ) {
+    return "自动观察";
+  }
+
+  return "自动淘汰";
 }
 
-function percentage(
-  value: number,
+function actionDescription(
+  action: CommercialAction,
 ): string {
-  return `${Math.round(
-    value * 100,
-  )}%`;
+  if (
+    action ===
+    "selective-outbound"
+  ) {
+    return "AIOS认为该对象值得进入Founder最终审核。只有Founder批准后才可真实联系。";
+  }
+
+  if (
+    action ===
+    "inbound-opportunity"
+  ) {
+    return "不建议逐家主动联系。AIOS应把这里出现的真实市场问题转化为内容、诊断入口或Offer，让潜在客户主动进入。";
+  }
+
+  if (
+    action ===
+    "monitor"
+  ) {
+    return "当前没有必要占用Founder时间。等待新的业务、营销、招聘或获客信号后重新评分。";
+  }
+
+  return "当前商业价值或证据不足，不进入Founder工作流。";
+}
+
+function actionStyle(
+  action: CommercialAction,
+) {
+  if (
+    action ===
+    "selective-outbound"
+  ) {
+    return {
+      background: "#dcfce7",
+      color: "#166534",
+      border: "#86efac",
+    };
+  }
+
+  if (
+    action ===
+    "inbound-opportunity"
+  ) {
+    return {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "#bfdbfe",
+    };
+  }
+
+  if (
+    action ===
+    "monitor"
+  ) {
+    return {
+      background: "#f8fafc",
+      color: "#475569",
+      border: "#cbd5e1",
+    };
+  }
+
+  return {
+    background: "#fff1f2",
+    color: "#be123c",
+    border: "#fecdd3",
+  };
 }
 
 export default function FounderAdAcquisitionPage() {
@@ -183,7 +316,7 @@ export default function FounderAdAcquisitionPage() {
     );
   }, []);
 
-  async function runDiscovery() {
+  async function runDecisionEngine() {
     const key =
       accessKey.trim();
 
@@ -226,7 +359,7 @@ export default function FounderAdAcquisitionPage() {
       ) {
         setError(
           data.error ||
-            `C168 discovery failed (HTTP ${response.status}).`,
+            `C168 decision engine failed (HTTP ${response.status}).`,
         );
       }
     } catch (
@@ -236,39 +369,55 @@ export default function FounderAdAcquisitionPage() {
         requestError instanceof
           Error
           ? requestError.message
-          : "C168 prospect discovery request failed.",
+          : "C168 decision engine request failed.",
       );
     } finally {
       setLoading(false);
     }
   }
 
-  const candidates =
+  const selectiveOutbound =
     useMemo(
       () =>
-        result?.candidates ??
+        result
+          ?.selectiveOutboundCandidates ??
         [],
       [
-        result?.candidates,
+        result
+          ?.selectiveOutboundCandidates,
       ],
     );
 
-  const qualified =
+  const inboundOpportunities =
     useMemo(
       () =>
-        candidates.filter(
-          (candidate) =>
-            candidate.qualification ===
-            "qualified",
-        ),
-      [candidates],
+        result
+          ?.inboundOpportunityCandidates ??
+        [],
+      [
+        result
+          ?.inboundOpportunityCandidates,
+      ],
     );
+
+  const monitors =
+    useMemo(
+      () =>
+        result
+          ?.monitorCandidates ??
+        [],
+      [
+        result?.monitorCandidates,
+      ],
+    );
+
+  const founderActionCount =
+    selectiveOutbound.length;
 
   return (
     <main
       style={{
-        minHeight:
-          "100vh",
+        minHeight: "100vh",
         padding:
           "24px 16px 70px",
         boxSizing:
@@ -281,10 +430,8 @@ export default function FounderAdAcquisitionPage() {
     >
       <div
         style={{
-          width:
-            "100%",
-          maxWidth:
-            980,
+          width: "100%",
+          maxWidth: 980,
           margin:
             "0 auto",
         }}
@@ -296,10 +443,8 @@ export default function FounderAdAcquisitionPage() {
               "inline-block",
             color:
               "#475569",
-            fontSize:
-              13,
-            fontWeight:
-              800,
+            fontSize: 13,
+            fontWeight: 800,
             textDecoration:
               "none",
           }}
@@ -309,18 +454,15 @@ export default function FounderAdAcquisitionPage() {
 
         <header
           style={{
-            marginTop:
-              20,
+            marginTop: 20,
           }}
         >
           <div
             style={{
               color:
                 "#2563eb",
-              fontSize:
-                12,
-              fontWeight:
-                950,
+              fontSize: 12,
+              fontWeight: 950,
               letterSpacing:
                 "0.14em",
             }}
@@ -332,13 +474,11 @@ export default function FounderAdAcquisitionPage() {
             style={{
               margin:
                 "8px 0 0",
-              fontSize:
-                30,
-              lineHeight:
-                1.15,
+              fontSize: 30,
+              lineHeight: 1.15,
             }}
           >
-            AIOS 广告获客
+            AIOS 广告获客决策台
           </h1>
 
           <p
@@ -347,35 +487,31 @@ export default function FounderAdAcquisitionPage() {
                 "9px 0 0",
               color:
                 "#64748b",
-              lineHeight:
-                1.65,
+              lineHeight: 1.65,
             }}
           >
-            深圳家装 / 旧房局改 /
-            全屋定制客户发现与研究优先级
+            AIOS
+            自动发现、验证、评分和分流市场机会。
+            Founder
+            不再逐家审核候选客户，只处理真正需要人工决策的商业行动。
           </p>
         </header>
 
         <section
           style={{
-            marginTop:
-              22,
-            padding:
-              20,
+            marginTop: 22,
+            padding: 20,
             border:
               "1px solid #dbe3f0",
-            borderRadius:
-              22,
+            borderRadius: 22,
             background:
               "#ffffff",
           }}
         >
           <div
             style={{
-              fontSize:
-                18,
-              fontWeight:
-                950,
+              fontSize: 18,
+              fontWeight: 950,
             }}
           >
             第一现金流目标
@@ -383,16 +519,25 @@ export default function FounderAdAcquisitionPage() {
 
           <div
             style={{
-              display:
-                "grid",
+              display: "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(180px, 1fr))",
-              gap:
-                10,
-              marginTop:
-                16,
+                "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 10,
+              marginTop: 16,
             }}
           >
+            <Metric
+              label="主要路径"
+              value="Inbound"
+              detail="让真实需求主动进入"
+            />
+
+            <Metric
+              label="辅助路径"
+              value="Selective"
+              detail="只触达高价值机会"
+            />
+
             <Metric
               label="首个 Offer"
               value="¥399"
@@ -400,53 +545,34 @@ export default function FounderAdAcquisitionPage() {
             />
 
             <Metric
-              label="升级 Offer"
-              value="¥699"
-              detail="7天广告获客验证"
-            />
-
-            <Metric
-              label="目标客户"
+              label="现金流目标"
               value="1"
               detail="真实付费客户"
-            />
-
-            <Metric
-              label="当前市场"
-              value="深圳"
-              detail="先验证，再扩行业"
             />
           </div>
 
           <button
             type="button"
             onClick={() =>
-              void runDiscovery()
+              void runDecisionEngine()
             }
             disabled={
               loading
             }
             style={{
-              width:
-                "100%",
-              minHeight:
-                54,
-              marginTop:
-                18,
-              border:
-                0,
-              borderRadius:
-                15,
+              width: "100%",
+              minHeight: 54,
+              marginTop: 18,
+              border: 0,
+              borderRadius: 15,
               background:
                 loading
                   ? "#94a3b8"
                   : "#0f172a",
               color:
                 "#ffffff",
-              fontSize:
-                16,
-              fontWeight:
-                950,
+              fontSize: 16,
+              fontWeight: 950,
               cursor:
                 loading
                   ? "wait"
@@ -454,8 +580,8 @@ export default function FounderAdAcquisitionPage() {
             }}
           >
             {loading
-              ? "AIOS 正在搜索并验证深圳候选客户..."
-              : "▶ 发现今天最值得研究的客户"}
+              ? "AIOS 正在分析市场并形成商业决策..."
+              : "运行今日获客决策"}
           </button>
 
           <p
@@ -464,35 +590,30 @@ export default function FounderAdAcquisitionPage() {
                 "12px 0 0",
               color:
                 "#64748b",
-              fontSize:
-                12,
-              lineHeight:
-                1.6,
+              fontSize: 12,
+              lineHeight: 1.6,
             }}
           >
             AIOS
-            只使用公开证据进行候选客户发现。
-            此操作不会联系客户、不会操作广告账户，
-            也不会自动记录收入。
+            会自动过滤低价值候选、识别
+            Buying Signal
+            并判断更适合
+            Inbound、Selective Outbound
+            还是继续观察。系统不会自动联系客户。
           </p>
 
           {error && (
             <div
               style={{
-                marginTop:
-                  14,
-                padding:
-                  14,
-                borderRadius:
-                  14,
+                marginTop: 14,
+                padding: 14,
+                borderRadius: 14,
                 background:
                   "#fff1f2",
                 color:
                   "#be123c",
-                fontSize:
-                  13,
-                lineHeight:
-                  1.6,
+                fontSize: 13,
+                lineHeight: 1.6,
               }}
             >
               {error}
@@ -504,54 +625,45 @@ export default function FounderAdAcquisitionPage() {
           <>
             <section
               style={{
-                marginTop:
-                  18,
-                padding:
-                  20,
+                marginTop: 18,
+                padding: 20,
                 border:
                   "1px solid #dbe3f0",
-                borderRadius:
-                  22,
+                borderRadius: 22,
                 background:
                   "#ffffff",
               }}
             >
               <div
                 style={{
-                  display:
-                    "flex",
+                  display: "flex",
                   justifyContent:
                     "space-between",
                   alignItems:
                     "flex-start",
-                  gap:
-                    16,
-                  flexWrap:
-                    "wrap",
+                  gap: 16,
+                  flexWrap: "wrap",
                 }}
               >
                 <div>
                   <div
                     style={{
-                      fontSize:
-                        12,
-                      fontWeight:
-                        900,
                       color:
                         "#64748b",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing:
+                        "0.08em",
                     }}
                   >
-                    DISCOVERY STATUS
+                    TODAY
                   </div>
 
                   <div
                     style={{
-                      marginTop:
-                        5,
-                      fontSize:
-                        22,
-                      fontWeight:
-                        950,
+                      marginTop: 5,
+                      fontSize: 24,
+                      fontWeight: 950,
                     }}
                   >
                     {result.status ??
@@ -562,75 +674,112 @@ export default function FounderAdAcquisitionPage() {
                 <div
                   style={{
                     padding:
-                      "7px 11px",
-                    borderRadius:
-                      999,
+                      "8px 12px",
+                    borderRadius: 999,
                     background:
-                      qualified.length >
+                      founderActionCount >
                       0
                         ? "#dcfce7"
-                        : "#fef3c7",
+                        : "#eff6ff",
                     color:
-                      qualified.length >
+                      founderActionCount >
                       0
                         ? "#166534"
-                        : "#92400e",
-                    fontSize:
-                      12,
-                    fontWeight:
-                      900,
+                        : "#1d4ed8",
+                    fontSize: 12,
+                    fontWeight: 950,
                   }}
                 >
-                  {qualified.length >
+                  {founderActionCount >
                   0
-                    ? `${qualified.length} 个优先研究客户`
-                    : "需要继续验证"}
+                    ? `Founder 只需处理 ${founderActionCount} 个行动`
+                    : "当前无需人工逐家审核"}
                 </div>
               </div>
 
               <div
                 style={{
-                  display:
-                    "grid",
+                  display: "grid",
                   gridTemplateColumns:
-                    "repeat(auto-fit, minmax(150px, 1fr))",
-                  gap:
-                    10,
-                  marginTop:
-                    18,
+                    "repeat(auto-fit, minmax(145px, 1fr))",
+                  gap: 10,
+                  marginTop: 18,
                 }}
               >
                 <Metric
-                  label="候选客户"
+                  label="需 Founder 决策"
+                  value={String(
+                    result
+                      .discovery
+                      ?.selectiveOutboundCount ??
+                      founderActionCount,
+                  )}
+                  detail="Selective Outbound"
+                />
+
+                <Metric
+                  label="Inbound 机会"
+                  value={String(
+                    result
+                      .discovery
+                      ?.inboundOpportunityCount ??
+                      inboundOpportunities.length,
+                  )}
+                  detail="转化为获客资产"
+                />
+
+                <Metric
+                  label="自动观察"
+                  value={String(
+                    result
+                      .discovery
+                      ?.monitorCount ??
+                      monitors.length,
+                  )}
+                  detail="无需 Founder 介入"
+                />
+
+                <Metric
+                  label="自动淘汰"
+                  value={String(
+                    result
+                      .discovery
+                      ?.rejectedCount ??
+                      0,
+                  )}
+                  detail="不进入人工流程"
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(145px, 1fr))",
+                  gap: 10,
+                  marginTop: 10,
+                }}
+              >
+                <Metric
+                  label="市场对象"
                   value={String(
                     result
                       .discovery
                       ?.candidateCount ??
-                      candidates.length,
+                      0,
                   )}
-                  detail="有公开证据"
+                  detail="AIOS 保留"
                 />
 
                 <Metric
-                  label="优先研究"
-                  value={String(
-                    result
-                      .discovery
-                      ?.qualifiedCount ??
-                      qualified.length,
-                  )}
-                  detail="达到当前筛选标准"
-                />
-
-                <Metric
-                  label="Evidence"
+                  label="公开证据"
                   value={String(
                     result
                       .discovery
                       ?.sourceCount ??
                       0,
                   )}
-                  detail="公开证据"
+                  detail="Evidence"
                 />
 
                 <Metric
@@ -641,14 +790,23 @@ export default function FounderAdAcquisitionPage() {
                       ?.independentHosts ??
                       0,
                   )}
-                  detail="独立 Host"
+                  detail="Independent hosts"
+                />
+
+                <Metric
+                  label="Runtime"
+                  value={
+                    result.version ??
+                    "C168"
+                  }
+                  detail="Decision Engine"
                 />
               </div>
 
               {result.discovery
                 ?.conclusion && (
                 <InfoBlock
-                  title="AIOS 判断"
+                  title="AIOS 市场判断"
                   text={
                     result.discovery
                       .conclusion
@@ -658,7 +816,7 @@ export default function FounderAdAcquisitionPage() {
 
               {result.nextAction && (
                 <InfoBlock
-                  title="Founder 下一步"
+                  title="你现在真正需要做什么"
                   text={
                     result.nextAction
                   }
@@ -666,40 +824,194 @@ export default function FounderAdAcquisitionPage() {
               )}
             </section>
 
-            {candidates.length >
+            {selectiveOutbound.length >
               0 && (
               <section
                 style={{
-                  marginTop:
-                    18,
+                  marginTop: 18,
+                }}
+              >
+                <SectionHeading
+                  eyebrow="FOUNDER ACTION"
+                  title="需要你决定的机会"
+                  description="这里只出现达到 Selective Outbound 阈值的对象。AIOS 已完成前置筛选，但不会替你真实发送消息。"
+                />
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 14,
+                    marginTop: 12,
+                  }}
+                >
+                  {selectiveOutbound.map(
+                    (
+                      candidate,
+                    ) => (
+                      <DecisionCard
+                        key={
+                          candidate.id
+                        }
+                        candidate={
+                          candidate
+                        }
+                        showEvidence
+                      />
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
+
+            {selectiveOutbound.length ===
+              0 && (
+              <section
+                style={{
+                  marginTop: 18,
+                  padding: 20,
+                  border:
+                    "1px solid #bfdbfe",
+                  borderRadius: 22,
+                  background:
+                    "#eff6ff",
                 }}
               >
                 <div
                   style={{
-                    marginBottom:
-                      12,
-                    fontSize:
-                      19,
-                    fontWeight:
-                      950,
+                    color:
+                      "#1d4ed8",
+                    fontSize: 12,
+                    fontWeight: 950,
+                    letterSpacing:
+                      "0.08em",
                   }}
                 >
-                  今天值得研究的客户
+                  FOUNDER WORKLOAD
                 </div>
 
                 <div
                   style={{
-                    display:
-                      "grid",
-                    gap:
-                      14,
+                    marginTop: 6,
+                    color:
+                      "#1e3a8a",
+                    fontSize: 19,
+                    fontWeight: 950,
                   }}
                 >
-                  {candidates.map(
+                  当前没有必须人工审核的客户
+                </div>
+
+                <p
+                  style={{
+                    margin:
+                      "8px 0 0",
+                    color:
+                      "#1e40af",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  这是有效决策，不是系统失败。
+                  AIOS
+                  不会为了让列表看起来有内容而强迫你联系低价值候选。
+                </p>
+              </section>
+            )}
+
+            {inboundOpportunities.length >
+              0 && (
+              <section
+                style={{
+                  marginTop: 18,
+                }}
+              >
+                <SectionHeading
+                  eyebrow="INBOUND"
+                  title="值得转化成获客资产的市场机会"
+                  description="这些对象不是要求你逐家联系，而是用于理解真实市场正在表达什么需求，并形成内容、诊断入口和 Offer。"
+                />
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    marginTop: 12,
+                  }}
+                >
+                  {inboundOpportunities.map(
                     (
                       candidate,
                     ) => (
-                      <CandidateCard
+                      <DecisionCard
+                        key={
+                          candidate.id
+                        }
+                        candidate={
+                          candidate
+                        }
+                        showEvidence={
+                          false
+                        }
+                      />
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
+
+            {monitors.length >
+              0 && (
+              <details
+                style={{
+                  marginTop: 18,
+                  padding: 18,
+                  border:
+                    "1px solid #dbe3f0",
+                  borderRadius: 20,
+                  background:
+                    "#ffffff",
+                }}
+              >
+                <summary
+                  style={{
+                    cursor:
+                      "pointer",
+                    fontWeight: 950,
+                  }}
+                >
+                  自动观察池 ·{" "}
+                  {monitors.length}
+                </summary>
+
+                <p
+                  style={{
+                    margin:
+                      "8px 0 0",
+                    color:
+                      "#64748b",
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  这些对象暂时不需要
+                  Founder
+                  操作。只有出现新的
+                  Buying Signal
+                  并重新达到商业行动阈值后，才应该进入你的工作区。
+                </p>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                    marginTop: 12,
+                  }}
+                >
+                  {monitors.map(
+                    (
+                      candidate,
+                    ) => (
+                      <CompactCandidate
                         key={
                           candidate.id
                         }
@@ -710,73 +1022,23 @@ export default function FounderAdAcquisitionPage() {
                     ),
                   )}
                 </div>
-              </section>
-            )}
-
-            {candidates.length ===
-              0 && (
-              <section
-                style={{
-                  marginTop:
-                    18,
-                  padding:
-                    20,
-                  border:
-                    "1px solid #fde68a",
-                  borderRadius:
-                    22,
-                  background:
-                    "#fffbeb",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight:
-                      950,
-                    color:
-                      "#92400e",
-                  }}
-                >
-                  暂无可信候选客户
-                </div>
-
-                <p
-                  style={{
-                    margin:
-                      "8px 0 0",
-                    color:
-                      "#92400e",
-                    fontSize:
-                      13,
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  AIOS
-                  没有为了填满列表而生成虚假客户。
-                  当前应该继续补充公开证据，而不是直接触达。
-                </p>
-              </section>
+              </details>
             )}
 
             <section
               style={{
-                marginTop:
-                  18,
-                padding:
-                  20,
+                marginTop: 18,
+                padding: 20,
                 border:
                   "1px solid #dbe3f0",
-                borderRadius:
-                  22,
+                borderRadius: 22,
                 background:
                   "#ffffff",
               }}
             >
               <div
                 style={{
-                  fontWeight:
-                    950,
+                  fontWeight: 950,
                 }}
               >
                 商业执行链
@@ -784,14 +1046,21 @@ export default function FounderAdAcquisitionPage() {
 
               <div
                 style={{
-                  marginTop:
-                    12,
-                  display:
-                    "grid",
-                  gap:
-                    8,
+                  display: "grid",
+                  gap: 8,
+                  marginTop: 12,
                 }}
               >
+                <ResultRow
+                  label="Primary Channel"
+                  value="Inbound"
+                />
+
+                <ResultRow
+                  label="Secondary Channel"
+                  value="Selective Outbound"
+                />
+
                 <ResultRow
                   label="Commercial Objective"
                   value={
@@ -821,25 +1090,14 @@ export default function FounderAdAcquisitionPage() {
                     "-"
                   }
                 />
-
-                <ResultRow
-                  label="Runtime"
-                  value={
-                    result.version ??
-                    "C168"
-                  }
-                />
               </div>
             </section>
 
             <section
               style={{
-                marginTop:
-                  18,
-                padding:
-                  18,
-                borderRadius:
-                  20,
+                marginTop: 18,
+                padding: 18,
+                borderRadius: 20,
                 background:
                   "#0f172a",
                 color:
@@ -848,17 +1106,15 @@ export default function FounderAdAcquisitionPage() {
             >
               <div
                 style={{
-                  fontSize:
-                    12,
-                  fontWeight:
-                    900,
                   color:
                     "#94a3b8",
+                  fontSize: 11,
+                  fontWeight: 900,
                   letterSpacing:
                     "0.08em",
                 }}
               >
-                INTEGRITY BOUNDARY
+                DECISION BOUNDARY
               </div>
 
               <p
@@ -867,17 +1123,32 @@ export default function FounderAdAcquisitionPage() {
                     "9px 0 0",
                   color:
                     "#cbd5e1",
-                  fontSize:
-                    13,
-                  lineHeight:
-                    1.65,
+                  fontSize: 13,
+                  lineHeight: 1.65,
                 }}
               >
-                候选客户排名只代表研究优先级。
+                Commercial Action Score
+                只代表 AIOS
+                的行动优先级。
+                Buying Signal
+                不是购买意愿证明，公开获客入口也不能证明广告效果差、
+                线索成本高、转化率低或 ROI
+                为负。
+              </p>
+
+              <p
+                style={{
+                  margin:
+                    "9px 0 0",
+                  color:
+                    "#94a3b8",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
                 AIOS
-                不会因为发现广告、营销、咨询或预约入口，
-                就声称该商家的广告效果差、线索成本高、
-                转化率低或 ROI 为负。
+                可以自动发现、验证、评分、诊断和推荐行动，
+                但当前不会自动联系客户、操作广告账户或记录不存在的收入。
               </p>
             </section>
           </>
@@ -887,59 +1158,58 @@ export default function FounderAdAcquisitionPage() {
   );
 }
 
-function CandidateCard({
+function DecisionCard({
   candidate,
+  showEvidence,
 }: {
   candidate: ProspectCandidate;
+  showEvidence: boolean;
 }) {
-  const qualified =
-    candidate.qualification ===
-    "qualified";
+  const decision =
+    candidate.commercialDecision;
+
+  const style =
+    actionStyle(
+      decision.action,
+    );
 
   return (
     <article
       style={{
-        padding:
-          20,
+        padding: 20,
         border:
-          qualified
-            ? "1px solid #86efac"
-            : "1px solid #dbe3f0",
-        borderRadius:
-          22,
+          `1px solid ${style.border}`,
+        borderRadius: 22,
         background:
           "#ffffff",
       }}
     >
       <div
         style={{
-          display:
-            "flex",
+          display: "flex",
           alignItems:
             "flex-start",
           justifyContent:
             "space-between",
-          gap:
-            14,
+          gap: 14,
+          flexWrap: "wrap",
         }}
       >
         <div
           style={{
-            minWidth:
-              0,
+            minWidth: 0,
           }}
         >
           <div
             style={{
               color:
                 "#64748b",
-              fontSize:
-                12,
-              fontWeight:
-                900,
+              fontSize: 11,
+              fontWeight: 900,
             }}
           >
-            #{candidate.rank} ·{" "}
+            #{candidate.rank}
+            {" · "}
             {industryLabel(
               candidate.industry,
             )}
@@ -949,10 +1219,8 @@ function CandidateCard({
             style={{
               margin:
                 "5px 0 0",
-              fontSize:
-                20,
-              lineHeight:
-                1.3,
+              fontSize: 20,
+              lineHeight: 1.3,
               overflowWrap:
                 "anywhere",
             }}
@@ -962,12 +1230,10 @@ function CandidateCard({
 
           <div
             style={{
-              marginTop:
-                5,
+              marginTop: 5,
               color:
                 "#64748b",
-              fontSize:
-                12,
+              fontSize: 12,
             }}
           >
             {candidate.location}
@@ -976,72 +1242,93 @@ function CandidateCard({
 
         <div
           style={{
-            flex:
-              "0 0 auto",
             padding:
-              "6px 9px",
-            borderRadius:
-              999,
+              "7px 10px",
+            borderRadius: 999,
             background:
-              qualified
-                ? "#dcfce7"
-                : "#fef3c7",
+              style.background,
             color:
-              qualified
-                ? "#166534"
-                : "#92400e",
-            fontSize:
-              11,
-            fontWeight:
-              900,
+              style.color,
+            fontSize: 11,
+            fontWeight: 950,
           }}
         >
-          {qualificationLabel(
-            candidate.qualification,
+          {actionLabel(
+            decision.action,
           )}
         </div>
       </div>
 
       <div
         style={{
-          marginTop:
-            14,
-          padding:
-            13,
-          borderRadius:
-            14,
-          background:
-            "#f8fafc",
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(125px, 1fr))",
+          gap: 8,
+          marginTop: 15,
         }}
       >
-        <div
-          style={{
-            color:
-              "#64748b",
-            fontSize:
-              11,
-            fontWeight:
-              900,
-          }}
-        >
-          EVIDENCE SCORE
-        </div>
-
-        <div
-          style={{
-            marginTop:
-              4,
-            fontSize:
-              20,
-            fontWeight:
-              950,
-          }}
-        >
-          {percentage(
-            candidate.evidenceScore,
+        <Score
+          label="Action"
+          value={percentage(
+            decision.actionScore,
           )}
-        </div>
+        />
+
+        <Score
+          label="Evidence"
+          value={percentage(
+            decision.evidenceConfidence,
+          )}
+        />
+
+        <Score
+          label="Buying Signal"
+          value={percentage(
+            decision.buyingSignalScore,
+          )}
+        />
+
+        <Score
+          label="Acquisition"
+          value={percentage(
+            decision.acquisitionReadinessScore,
+          )}
+        />
       </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          borderRadius: 14,
+          background:
+            style.background,
+          color:
+            style.color,
+          fontSize: 13,
+          lineHeight: 1.65,
+          fontWeight: 800,
+        }}
+      >
+        {actionDescription(
+          decision.action,
+        )}
+      </div>
+
+      <ListBlock
+        title="为什么 AIOS 这样判断"
+        items={
+          decision.reasons
+        }
+      />
+
+      <ListBlock
+        title="Buying Signals"
+        items={
+          candidate.buyingSignals
+        }
+      />
 
       <ListBlock
         title="已验证事实"
@@ -1051,158 +1338,226 @@ function CandidateCard({
       />
 
       <ListBlock
-        title="公开获客信号"
-        items={
-          candidate.acquisitionSignals
-        }
-      />
-
-      <ListBlock
-        title="值得检查的问题"
+        title="可验证商业假设"
         items={
           candidate
             .diagnosticHypotheses
         }
       />
 
-      <ListBlock
-        title="目前不知道"
-        items={
-          candidate.unknowns
-        }
-      />
-
-      {candidate.evidence.length >
-        0 && (
+      <div
+        style={{
+          marginTop: 16,
+          padding: 14,
+          borderRadius: 14,
+          background:
+            "#f8fafc",
+          color:
+            "#334155",
+          fontSize: 13,
+          fontWeight: 800,
+          lineHeight: 1.65,
+        }}
+      >
         <div
           style={{
-            marginTop:
-              16,
+            color:
+              "#64748b",
+            fontSize: 11,
+            fontWeight: 950,
           }}
         >
-          <div
+          RECOMMENDED ACTION
+        </div>
+
+        <div
+          style={{
+            marginTop: 5,
+          }}
+        >
+          {candidate.recommendedAction}
+        </div>
+      </div>
+
+      {showEvidence &&
+        candidate.evidence.length >
+          0 && (
+          <details
             style={{
-              fontSize:
-                12,
-              fontWeight:
-                950,
-              color:
-                "#475569",
+              marginTop: 14,
             }}
           >
-            EVIDENCE
-          </div>
+            <summary
+              style={{
+                cursor:
+                  "pointer",
+                color:
+                  "#475569",
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              查看原始证据 ·{" "}
+              {candidate.evidence.length}
+            </summary>
 
-          <div
-            style={{
-              display:
-                "grid",
-              gap:
-                8,
-              marginTop:
-                8,
-            }}
-          >
-            {candidate.evidence.map(
-              (
-                evidence,
-                index,
-              ) => (
-                <a
-                  key={`${evidence.url}-${index}`}
-                  href={
-                    evidence.url
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display:
-                      "block",
-                    padding:
-                      12,
-                    border:
-                      "1px solid #e2e8f0",
-                    borderRadius:
-                      13,
-                    color:
-                      "#0f172a",
-                    textDecoration:
-                      "none",
-                    overflowWrap:
-                      "anywhere",
-                  }}
-                >
-                  <div
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                marginTop: 10,
+              }}
+            >
+              {candidate.evidence.map(
+                (
+                  evidence,
+                  index,
+                ) => (
+                  <a
+                    key={`${evidence.url}-${index}`}
+                    href={
+                      evidence.url
+                    }
+                    target="_blank"
+                    rel="noreferrer"
                     style={{
-                      fontSize:
-                        13,
-                      fontWeight:
-                        900,
-                    }}
-                  >
-                    {evidence.title}
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop:
-                        4,
+                      display:
+                        "block",
+                      padding: 12,
+                      border:
+                        "1px solid #e2e8f0",
+                      borderRadius: 13,
                       color:
-                        "#64748b",
-                      fontSize:
-                        11,
+                        "#0f172a",
+                      textDecoration:
+                        "none",
+                      overflowWrap:
+                        "anywhere",
                     }}
                   >
-                    {
-                      evidence.hostname
-                    }
-                    {" · "}
-                    {
-                      evidence.verificationLabel
-                    }
-                    {" · "}
-                    {percentage(
-                      evidence.verificationScore,
-                    )}
-                  </div>
-                </a>
-              ),
-            )}
-          </div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 900,
+                      }}
+                    >
+                      {evidence.title}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color:
+                          "#64748b",
+                        fontSize: 11,
+                      }}
+                    >
+                      {evidence.hostname}
+                      {" · "}
+                      {
+                        evidence.verificationLabel
+                      }
+                      {" · "}
+                      {percentage(
+                        evidence.verificationScore,
+                      )}
+                    </div>
+                  </a>
+                ),
+              )}
+            </div>
+          </details>
+        )}
+
+      {decision.founderReviewRequired && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            border:
+              "1px solid #86efac",
+            borderRadius: 14,
+            background:
+              "#f0fdf4",
+            color:
+              "#166534",
+            fontSize: 13,
+            lineHeight: 1.65,
+            fontWeight: 850,
+          }}
+        >
+          Founder
+          决策点：确认真实联系渠道、检查微型预诊断，
+          再决定是否批准一次一对一触达。
+          当前页面不会自动发送任何消息。
         </div>
       )}
+    </article>
+  );
+}
+
+function CompactCandidate({
+  candidate,
+}: {
+  candidate: ProspectCandidate;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 13,
+        background:
+          "#f8fafc",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent:
+            "space-between",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 900,
+          }}
+        >
+          {candidate.name}
+        </div>
+
+        <div
+          style={{
+            color:
+              "#64748b",
+            fontSize: 12,
+            fontWeight: 900,
+          }}
+        >
+          {percentage(
+            candidate
+              .commercialDecision
+              .actionScore,
+          )}
+        </div>
+      </div>
 
       <div
         style={{
-          marginTop:
-            16,
-          padding:
-            14,
-          borderRadius:
-            14,
-          background:
-            qualified
-              ? "#f0fdf4"
-              : "#fffbeb",
+          marginTop: 4,
           color:
-            qualified
-              ? "#166534"
-              : "#92400e",
-          fontSize:
-            13,
-          fontWeight:
-            800,
-          lineHeight:
-            1.6,
+            "#64748b",
+          fontSize: 11,
         }}
       >
-        下一步：
-        {" "}
-        {
-          candidate.recommendedAction
-        }
+        {industryLabel(
+          candidate.industry,
+        )}
+        {" · "}
+        自动观察
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -1218,10 +1573,8 @@ function Metric({
   return (
     <div
       style={{
-        padding:
-          14,
-        borderRadius:
-          15,
+        padding: 14,
+        borderRadius: 15,
         background:
           "#f8fafc",
       }}
@@ -1230,10 +1583,8 @@ function Metric({
         style={{
           color:
             "#64748b",
-          fontSize:
-            11,
-          fontWeight:
-            900,
+          fontSize: 11,
+          fontWeight: 900,
         }}
       >
         {label}
@@ -1241,12 +1592,9 @@ function Metric({
 
       <div
         style={{
-          marginTop:
-            5,
-          fontSize:
-            20,
-          fontWeight:
-            950,
+          marginTop: 5,
+          fontSize: 20,
+          fontWeight: 950,
           overflowWrap:
             "anywhere",
         }}
@@ -1256,16 +1604,104 @@ function Metric({
 
       <div
         style={{
-          marginTop:
-            4,
+          marginTop: 4,
           color:
             "#64748b",
-          fontSize:
-            11,
+          fontSize: 11,
         }}
       >
         {detail}
       </div>
+    </div>
+  );
+}
+
+function Score({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: 11,
+        borderRadius: 12,
+        background:
+          "#f8fafc",
+      }}
+    >
+      <div
+        style={{
+          color:
+            "#64748b",
+          fontSize: 10,
+          fontWeight: 900,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 17,
+          fontWeight: 950,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          color:
+            "#2563eb",
+          fontSize: 11,
+          fontWeight: 950,
+          letterSpacing:
+            "0.08em",
+        }}
+      >
+        {eyebrow}
+      </div>
+
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 19,
+          fontWeight: 950,
+        }}
+      >
+        {title}
+      </div>
+
+      <p
+        style={{
+          margin:
+            "6px 0 0",
+          color:
+            "#64748b",
+          fontSize: 12,
+          lineHeight: 1.6,
+        }}
+      >
+        {description}
+      </p>
     </div>
   );
 }
@@ -1280,12 +1716,9 @@ function InfoBlock({
   return (
     <div
       style={{
-        marginTop:
-          14,
-        padding:
-          14,
-        borderRadius:
-          14,
+        marginTop: 14,
+        padding: 14,
+        borderRadius: 14,
         background:
           "#f8fafc",
       }}
@@ -1294,10 +1727,8 @@ function InfoBlock({
         style={{
           color:
             "#475569",
-          fontSize:
-            11,
-          fontWeight:
-            950,
+          fontSize: 11,
+          fontWeight: 950,
         }}
       >
         {title}
@@ -1305,14 +1736,11 @@ function InfoBlock({
 
       <div
         style={{
-          marginTop:
-            6,
+          marginTop: 6,
           color:
             "#334155",
-          fontSize:
-            13,
-          lineHeight:
-            1.65,
+          fontSize: 13,
+          lineHeight: 1.65,
         }}
       >
         {text}
@@ -1337,18 +1765,15 @@ function ListBlock({
   return (
     <div
       style={{
-        marginTop:
-          16,
+        marginTop: 16,
       }}
     >
       <div
         style={{
           color:
             "#475569",
-          fontSize:
-            12,
-          fontWeight:
-            950,
+          fontSize: 12,
+          fontWeight: 950,
         }}
       >
         {title}
@@ -1356,12 +1781,9 @@ function ListBlock({
 
       <div
         style={{
-          display:
-            "grid",
-          gap:
-            6,
-          marginTop:
-            8,
+          display: "grid",
+          gap: 6,
+          marginTop: 8,
         }}
       >
         {items.map(
@@ -1374,16 +1796,13 @@ function ListBlock({
               style={{
                 padding:
                   "9px 11px",
-                borderRadius:
-                  11,
+                borderRadius: 11,
                 background:
                   "#f8fafc",
                 color:
                   "#475569",
-                fontSize:
-                  12,
-                lineHeight:
-                  1.55,
+                fontSize: 12,
+                lineHeight: 1.55,
               }}
             >
               {item}
@@ -1405,18 +1824,15 @@ function ResultRow({
   return (
     <div
       style={{
-        display:
-          "flex",
+        display: "flex",
         alignItems:
           "center",
         justifyContent:
           "space-between",
-        gap:
-          14,
+        gap: 14,
         padding:
           "11px 13px",
-        borderRadius:
-          12,
+        borderRadius: 12,
         background:
           "#f8fafc",
       }}
@@ -1425,10 +1841,8 @@ function ResultRow({
         style={{
           color:
             "#64748b",
-          fontSize:
-            12,
-          fontWeight:
-            800,
+          fontSize: 12,
+          fontWeight: 800,
         }}
       >
         {label}
@@ -1438,10 +1852,8 @@ function ResultRow({
         style={{
           color:
             "#0f172a",
-          fontSize:
-            12,
-          fontWeight:
-            900,
+          fontSize: 12,
+          fontWeight: 900,
           textAlign:
             "right",
           overflowWrap:
