@@ -34,6 +34,12 @@ export const runtime =
 
 export const maxDuration = 60;
 
+const SERVICE_NAME =
+  "AIOS C168 Advertising Lead Decision Engine";
+
+const SERVICE_VERSION =
+  "C168.5.2";
+
 function json(
   body: Record<string, unknown>,
   status = 200,
@@ -58,25 +64,37 @@ export async function GET() {
   return json({
     success: true,
     service:
-      "AIOS C168 Advertising Prospect Discovery",
+      SERVICE_NAME,
     version:
-      "C168.4.0",
+      SERVICE_VERSION,
     status:
       "online",
     mode:
-      "founder-manual-execution",
+      "inbound-first-selective-outbound",
     endpoint:
       "/api/founder/c168-prospects",
+
     execution: {
-      method: "POST",
-      founderOnly: true,
+      method:
+        "POST",
+      founderOnly:
+        true,
+      automaticMarketDiscovery:
+        true,
+      automaticCommercialRouting:
+        true,
+      automaticBuyingSignalAnalysis:
+        true,
       externalContactAutomaticallySent:
         false,
+      founderApprovalRequiredForOutbound:
+        true,
       advertisingAccountAccess:
         false,
       revenueAutomaticallyRecorded:
         false,
     },
+
     target: {
       geography:
         "深圳",
@@ -86,8 +104,25 @@ export async function GET() {
         "全屋定制",
       ],
     },
+
+    strategy: {
+      primaryChannel:
+        "inbound",
+      secondaryChannel:
+        "selective-outbound",
+      objective:
+        "Automatically reduce broad market evidence into a small set of commercial actions without requiring Founder to manually review every prospect.",
+    },
+
+    routing: [
+      "selective-outbound",
+      "inbound-opportunity",
+      "monitor",
+      "reject",
+    ],
+
     purpose:
-      "Discover and rank evidence-backed Shenzhen home-improvement businesses for Founder manual advertising-acquisition research.",
+      "Discover, verify, score and route evidence-backed Shenzhen home-improvement opportunities into inbound, selective outbound, monitoring or automatic rejection.",
   });
 }
 
@@ -102,9 +137,9 @@ export async function POST(
       {
         success: false,
         service:
-          "AIOS C168 Advertising Prospect Discovery",
+          SERVICE_NAME,
         version:
-          "C168.4.0",
+          SERVICE_VERSION,
         status:
           "not-configured",
         error:
@@ -119,9 +154,9 @@ export async function POST(
       {
         success: false,
         service:
-          "AIOS C168 Advertising Prospect Discovery",
+          SERVICE_NAME,
         version:
-          "C168.4.0",
+          SERVICE_VERSION,
         status:
           "unauthorized",
         error:
@@ -147,6 +182,33 @@ export async function POST(
           const discovery =
             await discoverC168Prospects();
 
+          const selectiveOutboundCandidates =
+            discovery.candidates.filter(
+              (candidate) =>
+                candidate
+                  .commercialDecision
+                  .action ===
+                "selective-outbound",
+            );
+
+          const inboundOpportunityCandidates =
+            discovery.candidates.filter(
+              (candidate) =>
+                candidate
+                  .commercialDecision
+                  .action ===
+                "inbound-opportunity",
+            );
+
+          const monitorCandidates =
+            discovery.candidates.filter(
+              (candidate) =>
+                candidate
+                  .commercialDecision
+                  .action ===
+                "monitor",
+            );
+
           const qualifiedCandidates =
             discovery.candidates.filter(
               (candidate) =>
@@ -164,42 +226,69 @@ export async function POST(
           return {
             loop,
             discovery,
+            selectiveOutboundCandidates,
+            inboundOpportunityCandidates,
+            monitorCandidates,
             qualifiedCandidates,
             manualValidationCandidates,
           };
         },
       );
 
-    const ready =
+    const hasCommercialOpportunity =
       result.discovery.success &&
       result.discovery.status ===
         "ready" &&
-      result.qualifiedCandidates.length >
+      (
+        result
+          .selectiveOutboundCandidates
+          .length > 0 ||
+        result
+          .inboundOpportunityCandidates
+          .length > 0
+      );
+
+    const hasMarketEvidence =
+      result.discovery.success &&
+      result.discovery.status ===
+        "ready" &&
+      result.discovery.candidates.length >
         0;
+
+    const responseStatus =
+      hasCommercialOpportunity
+        ? "ACTION_READY"
+        : hasMarketEvidence
+          ? "MONITORING"
+          : "NO_ACTIONABLE_OPPORTUNITY";
+
+    const responseCode =
+      hasCommercialOpportunity
+        ? "C168_COMMERCIAL_ACTION_READY"
+        : hasMarketEvidence
+          ? "C168_MARKET_MONITORING"
+          : "C168_NO_ACTIONABLE_OPPORTUNITY";
 
     return json(
       {
         success:
-          ready,
+          hasMarketEvidence,
         service:
-          "AIOS C168 Advertising Prospect Discovery",
+          SERVICE_NAME,
         version:
-          "C168.4.0",
+          SERVICE_VERSION,
         code:
-          ready
-            ? "C168_PROSPECTS_READY"
-            : "C168_PROSPECTS_VALIDATION_REQUIRED",
+          responseCode,
         status:
-          ready
-            ? "READY"
-            : "VALIDATION_REQUIRED",
+          responseStatus,
         mode:
-          "founder-manual-execution",
+          "inbound-first-selective-outbound",
 
         identity: {
           userId:
             identity.userId,
-          isolated: true,
+          isolated:
+            true,
         },
 
         commercialLoop: {
@@ -236,14 +325,32 @@ export async function POST(
             result.discovery.independentHosts,
           candidateCount:
             result.discovery.candidates.length,
+
+          selectiveOutboundCount:
+            result.discovery
+              .selectiveOutboundCount,
+
+          inboundOpportunityCount:
+            result.discovery
+              .inboundOpportunityCount,
+
+          monitorCount:
+            result.discovery.monitorCount,
+
+          rejectedCount:
+            result.discovery.rejectedCount,
+
           qualifiedCount:
             result.qualifiedCandidates.length,
+
           manualValidationCount:
             result
               .manualValidationCandidates
               .length,
+
           conclusion:
             result.discovery.conclusion,
+
           nextStep:
             result.discovery.nextStep,
         },
@@ -251,31 +358,95 @@ export async function POST(
         candidates:
           result.discovery.candidates,
 
+        selectiveOutboundCandidates:
+          result.selectiveOutboundCandidates,
+
+        inboundOpportunityCandidates:
+          result.inboundOpportunityCandidates,
+
+        monitorCandidates:
+          result.monitorCandidates,
+
         qualifiedCandidates:
           result.qualifiedCandidates,
 
         manualValidationCandidates:
           result.manualValidationCandidates,
 
+        decisionPolicy: {
+          primaryChannel:
+            "inbound",
+
+          secondaryChannel:
+            "selective-outbound",
+
+          commercialActions: [
+            "selective-outbound",
+            "inbound-opportunity",
+            "monitor",
+            "reject",
+          ],
+
+          evidenceScoreIsNotPurchaseIntent:
+            true,
+
+          buyingSignalIsNotConfirmedDemand:
+            true,
+
+          advertisingPerformanceIsNotInferred:
+            true,
+
+          lowValueCandidatesAutomaticallyRejected:
+            true,
+
+          monitorCandidatesRequireFounderReview:
+            false,
+
+          inboundOpportunitiesRequireFounderProspectReview:
+            false,
+
+          selectiveOutboundRequiresFounderApproval:
+            true,
+
+          externalContactAutomaticallySent:
+            false,
+        },
+
         qualificationPolicy: {
           geography:
             "深圳",
+
           allowedIndustries: [
             "家装",
             "旧房局改",
             "全屋定制",
           ],
+
           businessIdentityRequired:
             true,
+
           localBusinessSignalRequired:
             true,
-          acquisitionSignalRequired:
+
+          commercialActionScoreRequired:
             true,
-          minimumIndependentHostsForQualified:
-            2,
+
+          buyingSignalAnalysisEnabled:
+            true,
+
+          evidenceConfidenceRequired:
+            true,
+
+          acquisitionReadinessAnalysisEnabled:
+            true,
+
           internalAdvertisingPerformanceRequired:
             false,
-          founderManualValidationRequired:
+
+          founderManualValidationForEveryCandidate:
+            false,
+
+          founderApprovalForSelectiveOutbound:
             true,
         },
 
@@ -286,6 +457,7 @@ export async function POST(
             priceCny:
               399,
           },
+
           upgrade: {
             name:
               "7天广告获客验证",
@@ -294,37 +466,84 @@ export async function POST(
           },
         },
 
+        founderWorkload: {
+          reviewAllCandidates:
+            false,
+
+          reviewSelectiveOutboundOnly:
+            true,
+
+          selectiveOutboundReviewCount:
+            result
+              .selectiveOutboundCandidates
+              .length,
+
+          inboundOpportunityCount:
+            result
+              .inboundOpportunityCandidates
+              .length,
+
+          automaticallyMonitoredCount:
+            result.monitorCandidates.length,
+
+          automaticallyRejectedCount:
+            result.discovery.rejectedCount,
+
+          objective:
+            "Founder should review only the small number of high-value selective outbound decisions while AIOS routes the rest automatically.",
+        },
+
         integrity: {
           fabricatedProspect:
             false,
+
+          fabricatedBuyingSignal:
+            false,
+
           fabricatedAdvertisingPerformance:
             false,
+
           fabricatedContact:
             false,
+
           contactWasSent:
             false,
+
           fabricatedCustomer:
             false,
+
           fabricatedPayment:
             false,
+
           fabricatedRevenue:
             false,
+
           advertisingAccountAccessed:
             false,
+
           note:
-            "Candidate ranking represents research priority only. It does not prove that a business has poor advertising performance, high lead cost, low conversion, or negative ROI.",
+            "Commercial Action Score represents AIOS action priority only. Buying Signals are public research signals, not proof of purchase intent. AIOS does not infer poor advertising performance, high lead cost, low conversion or negative ROI from public evidence.",
         },
 
         nextAction:
-          ready
-            ? "Founder人工检查排名最高的候选客户，验证官网、公开广告或内容入口、Offer、咨询路径和真实联系渠道。验证完成前不得把候选对象标记为客户。"
-            : "当前没有足够证据支持直接进入客户触达。继续补充公开证据并人工核验候选对象。",
+          result
+            .selectiveOutboundCandidates
+            .length > 0
+            ? `AIOS已自动筛选出${result.selectiveOutboundCandidates.length}个Selective Outbound对象。Founder只需审核这些高优先级对象并决定是否批准触达；其余候选不需要逐家人工审核。`
+            : result
+                  .inboundOpportunityCandidates
+                  .length > 0
+              ? `当前没有达到Selective Outbound阈值的对象。AIOS已识别${result.inboundOpportunityCandidates.length}个Inbound Opportunity，应优先把重复出现的市场问题转化为获客内容、诊断入口和Offer，而不是批量主动联系。`
+              : result.monitorCandidates.length >
+                    0
+                ? "当前没有值得Founder主动介入的商业机会。AIOS保留市场观察对象，等待新的Buying Signal后重新评分。"
+                : "当前没有足够证据支持商业行动。AIOS不生成虚假客户或虚假购买意愿。",
 
         durationMs:
           Date.now() -
           startedAt,
       },
-      ready
+      hasMarketEvidence
         ? 200
         : 422,
     );
@@ -333,19 +552,22 @@ export async function POST(
       {
         success: false,
         service:
-          "AIOS C168 Advertising Prospect Discovery",
+          SERVICE_NAME,
         version:
-          "C168.4.0",
+          SERVICE_VERSION,
         code:
-          "C168_PROSPECTS_ERROR",
+          "C168_LEAD_DECISION_ERROR",
         status:
           "ERROR",
         error:
           error instanceof Error
             ? error.message
-            : "C168 prospect discovery failed.",
+            : "C168 advertising lead decision execution failed.",
+
         integrity: {
           fabricatedProspect:
+            false,
+          fabricatedBuyingSignal:
             false,
           fabricatedAdvertisingPerformance:
             false,
@@ -356,6 +578,7 @@ export async function POST(
           fabricatedRevenue:
             false,
         },
+
         durationMs:
           Date.now() -
           startedAt,
