@@ -2,12 +2,15 @@ import type {
   InboundDemandCampaign,
   InboundMarketContext,
 } from "@/lib/commercial/c144-inbound-demand-engine";
+
 export const C168_INBOUND_OPPORTUNITY_VERSION =
-  "C168.7.1";
+  "C168.7.2";
+
 export type C168InboundOpportunityPriority =
   | "primary"
   | "backup"
   | "defer";
+
 export interface C168InboundContentOpportunity {
   id: string;
   priority: C168InboundOpportunityPriority;
@@ -20,19 +23,23 @@ export interface C168InboundContentOpportunity {
     | "xianyu";
   publishNow: boolean;
 }
+
 type InboundChannel =
   | "xiaohongshu"
   | "xianyu";
+
 type OpportunitySource =
   | "verified-problem"
   | "diagnostic-hypothesis"
   | "acquisition-signal"
   | "buying-signal";
+
 interface RankedTopic {
   topic: string;
   source: OpportunitySource;
   score: number;
 }
+
 function cleanText(
   value: unknown,
   maxLength = 300,
@@ -40,33 +47,48 @@ function cleanText(
   if (typeof value !== "string") {
     return "";
   }
+
   return value
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
 }
+
 function uniqueStrings(
   values: unknown,
 ): string[] {
   if (!Array.isArray(values)) {
     return [];
   }
-  const seen = new Set<string>();
-  const result: string[] = [];
+
+  const seen =
+    new Set<string>();
+
+  const result: string[] =
+    [];
+
   for (const value of values) {
-    const text = cleanText(value);
+    const text =
+      cleanText(value);
+
     if (!text) {
       continue;
     }
-    const key = text.toLowerCase();
+
+    const key =
+      text.toLowerCase();
+
     if (seen.has(key)) {
       continue;
     }
+
     seen.add(key);
     result.push(text);
   }
+
   return result;
 }
+
 function normalizeTopicKey(
   value: string,
 ): string {
@@ -77,12 +99,14 @@ function normalizeTopicKey(
       "",
     );
 }
+
 function scoreTopic(
   topic: string,
   source: OpportunitySource,
 ): number {
   const normalized =
     topic.toLowerCase();
+
   let score =
     source === "verified-problem"
       ? 0.7
@@ -93,6 +117,7 @@ function scoreTopic(
             "acquisition-signal"
           ? 0.52
           : 0.45;
+
   const highValueTerms = [
     "获客",
     "咨询",
@@ -108,6 +133,7 @@ function scoreTopic(
     "quote",
     "conversion",
   ];
+
   const matched =
     highValueTerms.filter(
       (term) =>
@@ -115,15 +141,20 @@ function scoreTopic(
           term.toLowerCase(),
         ),
     ).length;
+
   score += Math.min(
     matched * 0.06,
     0.18,
   );
+
   return Math.min(
-    Number(score.toFixed(3)),
+    Number(
+      score.toFixed(3),
+    ),
     0.99,
   );
 }
+
 function buildRankedTopics(
   context:
     | InboundMarketContext
@@ -132,52 +163,69 @@ function buildRankedTopics(
   if (!context) {
     return [];
   }
+
   const candidates: Array<{
     topic: string;
     source: OpportunitySource;
   }> = [];
-  for (const topic of uniqueStrings(
-    context.verifiedProblems,
-  )) {
+
+  for (
+    const topic of uniqueStrings(
+      context.verifiedProblems,
+    )
+  ) {
     candidates.push({
       topic,
-      source: "verified-problem",
+      source:
+        "verified-problem",
     });
   }
-  for (const topic of uniqueStrings(
-    context.diagnosticHypotheses,
-  )) {
+
+  for (
+    const topic of uniqueStrings(
+      context.diagnosticHypotheses,
+    )
+  ) {
     candidates.push({
       topic,
       source:
         "diagnostic-hypothesis",
     });
   }
-  for (const topic of uniqueStrings(
-    context.acquisitionSignals,
-  )) {
+
+  for (
+    const topic of uniqueStrings(
+      context.acquisitionSignals,
+    )
+  ) {
     candidates.push({
       topic,
       source:
         "acquisition-signal",
     });
   }
-  for (const topic of uniqueStrings(
-    context.buyingSignals,
-  )) {
+
+  for (
+    const topic of uniqueStrings(
+      context.buyingSignals,
+    )
+  ) {
     candidates.push({
       topic,
-      source: "buying-signal",
+      source:
+        "buying-signal",
     });
   }
+
   return candidates
     .map(
       (candidate) => ({
         ...candidate,
-        score: scoreTopic(
-          candidate.topic,
-          candidate.source,
-        ),
+        score:
+          scoreTopic(
+            candidate.topic,
+            candidate.source,
+          ),
       }),
     )
     .sort(
@@ -185,9 +233,10 @@ function buildRankedTopics(
         b.score - a.score,
     );
 }
+
 function selectRecommendedChannel(
-  campaign: InboundDemandCampaign,
-  priority: C168InboundOpportunityPriority,
+  campaign:
+    InboundDemandCampaign,
 ): InboundChannel {
   const availableChannels =
     uniqueStrings(
@@ -201,8 +250,10 @@ function selectRecommendedChannel(
       ): channel is InboundChannel =>
         channel ===
           "xiaohongshu" ||
-        channel === "xianyu",
+        channel ===
+          "xianyu",
     );
+
   if (
     availableChannels.includes(
       "xiaohongshu",
@@ -210,6 +261,7 @@ function selectRecommendedChannel(
   ) {
     return "xiaohongshu";
   }
+
   if (
     availableChannels.includes(
       "xianyu",
@@ -217,16 +269,15 @@ function selectRecommendedChannel(
   ) {
     return "xianyu";
   }
-  if (
-    priority === "primary"
-  ) {
-    return "xiaohongshu";
-  }
-  return "xianyu";
+
+  return "xiaohongshu";
 }
+
 function buildRationale(
-  priority: C168InboundOpportunityPriority,
-  source: OpportunitySource,
+  priority:
+    C168InboundOpportunityPriority,
+  source:
+    OpportunitySource,
 ): string {
   if (
     priority === "primary"
@@ -237,6 +288,7 @@ function buildRationale(
       `Evidence source: ${source}.`
     );
   }
+
   if (
     priority === "backup"
   ) {
@@ -246,37 +298,48 @@ function buildRationale(
       `Evidence source: ${source}.`
     );
   }
+
   return (
     "Lower-priority market theme retained for later testing instead of " +
     "creating additional daily posts. " +
     `Evidence source: ${source}.`
   );
 }
+
 export function selectC168InboundContentOpportunities(
   context:
     | InboundMarketContext
     | undefined,
   recommendedChannel:
-    InboundChannel = "xiaohongshu",
+    InboundChannel =
+      "xiaohongshu",
 ): C168InboundContentOpportunity[] {
   const ranked =
     buildRankedTopics(
       context,
     );
+
   if (
     ranked.length === 0
   ) {
     return [];
   }
-  const selected: C168InboundContentOpportunity[] =
+
+  const selected:
+    C168InboundContentOpportunity[] =
     [];
+
   const selectedKeys =
     new Set<string>();
-  for (const candidate of ranked) {
+
+  for (
+    const candidate of ranked
+  ) {
     const topicKey =
       normalizeTopicKey(
         candidate.topic,
       );
+
     if (
       !topicKey ||
       selectedKeys.has(
@@ -285,52 +348,64 @@ export function selectC168InboundContentOpportunities(
     ) {
       continue;
     }
+
     selectedKeys.add(
       topicKey,
     );
-    const priority: C168InboundOpportunityPriority =
-      selected.length ===
-      0
+
+    const priority:
+      C168InboundOpportunityPriority =
+      selected.length === 0
         ? "primary"
-        : selected.length ===
-            1
+        : selected.length === 1
           ? "backup"
           : "defer";
+
     selected.push({
       id:
-        `C168.7-${priority}-${selected.length + 1}`,
+        `${C168_INBOUND_OPPORTUNITY_VERSION}-${priority}-${selected.length + 1}`,
+
       priority,
+
       score:
         candidate.score,
+
       topic:
         candidate.topic,
+
       rationale:
         buildRationale(
           priority,
           candidate.source,
         ),
+
       evidenceBasis: [
         candidate.source,
         context
           ?.evidenceBoundary ??
           "Public evidence only.",
       ],
+
       recommendedChannel,
+
       publishNow:
         priority ===
         "primary",
     });
+
     if (
-      selected.length >=
-      3
+      selected.length >= 3
     ) {
       break;
     }
   }
+
   return selected;
 }
+
 function selectContentAssets(
-  campaign: InboundDemandCampaign,
+  campaign:
+    InboundDemandCampaign,
 ): InboundDemandCampaign["contentAssets"] {
   const xiaohongshuAssets =
     campaign.contentAssets.filter(
@@ -338,17 +413,20 @@ function selectContentAssets(
         asset.channel ===
         "xiaohongshu",
     );
+
   const xianyuAssets =
     campaign.contentAssets.filter(
       (asset) =>
         asset.channel ===
         "xianyu",
     );
+
   const selectedXiaohongshu =
     xiaohongshuAssets.slice(
       0,
       2,
     );
+
   const selectedFormats =
     new Set(
       selectedXiaohongshu.map(
@@ -356,9 +434,10 @@ function selectContentAssets(
           asset.format,
       ),
     );
+
   if (
     selectedXiaohongshu.length >
-      0
+    0
   ) {
     return campaign.contentAssets.filter(
       (asset) =>
@@ -369,6 +448,7 @@ function selectContentAssets(
         ),
     );
   }
+
   if (
     xianyuAssets.length >
     0
@@ -378,11 +458,13 @@ function selectContentAssets(
       2,
     );
   }
+
   return campaign.contentAssets.slice(
     0,
     2,
   );
 }
+
 function selectTopicsForPlan(
   opportunities:
     C168InboundContentOpportunity[],
@@ -398,45 +480,29 @@ function selectTopicsForPlan(
         item.topic,
     );
 }
+
 export function optimizeC168InboundCampaign(
-  campaign: InboundDemandCampaign,
+  campaign:
+    InboundDemandCampaign,
 ): {
-  campaign: InboundDemandCampaign;
+  campaign:
+    InboundDemandCampaign;
   contentOpportunities:
     C168InboundContentOpportunity[];
 } {
-  const availableChannels =
-    uniqueStrings(
-      campaign.contentAssets.map(
-        (asset) =>
-          asset.channel,
-      ),
-    ).filter(
-      (
-        channel,
-      ): channel is InboundChannel =>
-        channel ===
-          "xiaohongshu" ||
-        channel === "xianyu",
-    );
   const recommendedChannel =
-    availableChannels.includes(
-      "xiaohongshu",
-    )
-      ? "xiaohongshu"
-      : availableChannels.includes(
-          "xianyu",
-        )
-        ? "xianyu"
-        : "xiaohongshu";
+    selectRecommendedChannel(
+      campaign,
+    );
+
   const opportunities =
     selectC168InboundContentOpportunities(
       campaign.marketContext,
       recommendedChannel,
     );
+
   if (
-    opportunities.length ===
-    0
+    opportunities.length === 0
   ) {
     return {
       campaign,
@@ -444,18 +510,22 @@ export function optimizeC168InboundCampaign(
         [],
     };
   }
+
   const contentAssets =
     selectContentAssets(
       campaign,
     );
+
   const selectedTopics =
     selectTopicsForPlan(
       opportunities,
     );
+
   const sevenDayPlan =
     campaign.sevenDayPlan.map(
       (item, index) => ({
         ...item,
+
         topic:
           selectedTopics[
             index %
@@ -467,27 +537,38 @@ export function optimizeC168InboundCampaign(
           item.topic,
       }),
     );
+
   return {
     campaign: {
       ...campaign,
+
       contentAssets,
+
       sevenDayPlan,
+
       contentStrategy: {
         ...campaign.contentStrategy,
+
         mode:
-          campaign.contentStrategy
+          campaign
+            .contentStrategy
             ?.mode ??
           "evidence-driven",
+
         primaryObjective:
           "Select one primary and one backup market content opportunity from verified evidence, then learn from real inbound inquiries before expanding the publishing queue.",
+
         learningObjective:
           "Measure real inquiries generated by the primary angle before increasing content volume, changing the offer, or adding more channels.",
+
         evidenceBoundary:
-          campaign.contentStrategy
+          campaign
+            .contentStrategy
             ?.evidenceBoundary ??
           "Public evidence supports market-level content hypotheses only; it does not prove any specific business performance or purchase intent.",
       },
     },
+
     contentOpportunities:
       opportunities,
   };
