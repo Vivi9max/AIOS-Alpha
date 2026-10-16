@@ -549,7 +549,7 @@ export default function Page() {
     window.sessionStorage.setItem(
       "aios-c168-revenue-handoff",
       JSON.stringify({
-        version: "C168.9",
+        version: "C168.10",
         leadId: record.id,
         businessType: record.lead.businessType,
         sourceChannel: record.lead.sourceChannel,
@@ -624,7 +624,7 @@ export default function Page() {
             }}
           >
             <div>
-              <div style={{ ...mutedStyle(), fontSize: 11 }}>C168.9 · Founder</div>
+              <div style={{ ...mutedStyle(), fontSize: 11 }}>C168.10 · Founder</div>
               <h1 style={{ margin: "5px 0 7px", fontSize: 28 }}>Inbound Growth</h1>
               <p style={{ ...mutedStyle(), margin: 0 }}>
                 客户发现 → 客户筛选 → Offer → 联系 → 订单 → 交付 → 收款记录
@@ -670,7 +670,7 @@ export default function Page() {
             <div>
               <h2 style={{ margin: 0, fontSize: 18 }}>今日执行</h2>
               <p style={{ ...mutedStyle(), margin: "6px 0 0" }}>
-                C168.9 executionPacket：只给 Founder 可执行的下一步，不自动发布、不自动私信。
+                C168.10 executionPacket：只给 Founder 可执行的下一步，不自动发布、不自动私信。
               </p>
             </div>
             <span
@@ -1406,14 +1406,14 @@ export default function Page() {
         </section>
 
         <section style={panelStyle()}>
-          <h2 style={{ marginTop: 0, fontSize: 18 }}>C168.9 → Revenue 交接边界</h2>
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>C168.10 → Revenue 交接边界</h2>
           <div style={{ ...mutedStyle(), lineHeight: 1.9 }}>
             <div>- 只有 Founder 明确标记为“已成交”的真实询盘才显示订单账本入口。</div>
             <div>- 进入 Revenue 不等于创建订单，也不等于确认收入。</div>
             <div>- Revenue 订单仍由 Founder 人工填写客户、金额、范围和订单状态。</div>
             <div>- 交付记录仍与真实订单绑定。</div>
             <div>- 收款只有在真实 payment record 被标记为 received，并记录人工收款证据后，才进入已记录收入。</div>
-            <div>- C168.9 不自动创建订单、不自动生成付款、不自动修改 Revenue Ledger。</div>
+            <div>- C168.10 不自动创建订单、不自动生成付款、不自动修改 Revenue Ledger。</div>
           </div>
           <button
             type="button"
@@ -1512,7 +1512,7 @@ export default function Page() {
         </section>
 
         <footer style={{ color: "#52525b", fontSize: 11, lineHeight: 1.7 }}>
-          AIOS Alpha · C168.9 Inbound Revenue Handoff · Founder only
+          AIOS Alpha · C168.10 Inbound Revenue Handoff · Founder only
         </footer>
       </div>
     </main>
