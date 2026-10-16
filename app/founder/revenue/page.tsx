@@ -108,6 +108,13 @@ interface CollectionAction {
   action: "优先收款" | "跟进付款" | "确认交付后收款";
   priority: number;
 }
+interface SettlementClosure {
+  order: OrderRecord;
+  receivedCents: number;
+  orderCents: number;
+  excessCents: number;
+  pendingCount: number;
+}
 
 const ORDER_STATUSES: OrderStatus[] = ["quoted", "awaiting-payment", "paid", "in-delivery", "delivered", "cancelled", "refunded"];
 const DELIVERY_STATUSES: DeliveryStatus[] = ["not-started", "in-progress", "delivered", "revision-requested"];
@@ -379,6 +386,51 @@ export default function FounderRevenuePage() {
       .sort((a, b) => a.priority - b.priority || b.outstandingCents - a.outstandingCents || b.order.updatedAt - a.order.updatedAt);
   }, [orders, snapshot?.payments]);
 
+  const settlementClosures = useMemo<SettlementClosure[]>(() => {
+    const orderById = new Map(orders.map((order) => [order.id, order]));
+    const receivedByOrder = new Map<string, number>();
+    const pendingByOrder = new Map<string, number>();
+
+    for (const payment of snapshot?.payments ?? []) {
+      const order = orderById.get(payment.orderId);
+      if (!order || order.currency !== payment.currency) continue;
+      const cents = Math.round(payment.amount * 100);
+      if (payment.status === "received") {
+        receivedByOrder.set(payment.orderId, (receivedByOrder.get(payment.orderId) ?? 0) + cents);
+      } else if (payment.status === "pending") {
+        pendingByOrder.set(payment.orderId, (pendingByOrder.get(payment.orderId) ?? 0) + 1);
+      }
+    }
+
+    return orders
+      .map((order) => {
+        if (order.status === "cancelled" || order.status === "refunded") return null;
+        const orderCents = Math.round(order.amount * 100);
+        const receivedCents = receivedByOrder.get(order.id) ?? 0;
+        if (receivedCents < orderCents) return null;
+        return {
+          order,
+          receivedCents,
+          orderCents,
+          excessCents: Math.max(0, receivedCents - orderCents),
+          pendingCount: pendingByOrder.get(order.id) ?? 0,
+        };
+      })
+      .filter((item): item is SettlementClosure => item !== null)
+      .sort((a, b) => b.excessCents - a.excessCents || b.order.updatedAt - a.order.updatedAt);
+  }, [orders, snapshot?.payments]);
+
+  function focusSettlementClosure(item: SettlementClosure) {
+    setSelectedOrderId(item.order.id);
+    setPaymentCurrency(item.order.currency);
+    setPaymentAmount("0.00");
+    setPaymentStatus("pending");
+    setNotice(item.excessCents > 0
+      ? `C168.14: Found over-collected amount for ${item.order.title}. Please manually review the payment records.`
+      : `C168.14: ${item.order.title} is fully recorded in the original currency. Please manually review the order and payment records.`);
+    window.requestAnimationFrame(() => document.getElementById("revenue-payment-section")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
   function focusCollectionAction(item: CollectionAction) {
     setSelectedOrderId(item.order.id);
     setPaymentCurrency(item.order.currency);
@@ -406,7 +458,7 @@ export default function FounderRevenuePage() {
   return <main style={{ minHeight: "100vh", boxSizing: "border-box", padding: "22px 14px 52px", background: "#09090b", color: "#fafafa" }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
-        <div><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>C168.13 · FOUNDER ONLY</div><h1 style={{ margin: "8px 0 6px", fontSize: 29, lineHeight: 1.15 }}>收入与订单账本</h1><p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>报价 → 订单 → 交付 → 收款记录 → 收款闭环 → 收款行动 → Follow-up Closure。只有有证据的实际收款才计入已记录收入。</p></div>
+        <div><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>C168.14 · FOUNDER ONLY</div><h1 style={{ margin: "8px 0 6px", fontSize: 29, lineHeight: 1.15 }}>收入与订单账本</h1><p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>报价 → 订单 → 交付 → 收款记录 → 收款闭环 → 收款行动 → Follow-up Closure。只有有证据的实际收款才计入已记录收入。</p></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button type="button" onClick={() => void refresh(true)} disabled={loading} style={buttonStyle(loading)}>{loading ? "处理中..." : "刷新账本"}</button><button type="button" onClick={() => { window.sessionStorage.removeItem(STORAGE_KEY); setAuthenticated(false); setSnapshot(null); setAccessKey(""); setError(""); }} style={buttonStyle()}>退出</button></div>
       </header>
 
@@ -443,6 +495,12 @@ export default function FounderRevenuePage() {
         <p style={{ margin: "12px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>行动优先级：已交付未收款 → 优先收款；已报价/待付款 → 跟进付款；交付中 → 确认交付后收款。已收清、已取消、已退款订单不进入队列。多币种仍按订单原币种独立计算。</p>
       </section>
 
+      <section style={panelStyle()}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}><div><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>00.3 · C168.14 Settlement Closure</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>识别已经按原币种收清的订单，并把超收或仍有待确认记录的异常显式交给 Founder 复核。系统不会自动改订单状态，也不会自动退款或冲销。</p></div><div style={{ minWidth: 150, border: "1px solid #3f3f46", borderRadius: 10, padding: 12 }}><div style={{ color: "#a1a1aa", fontSize: 11 }}>已收清订单</div><strong style={{ display: "block", marginTop: 5, fontSize: 22 }}>{settlementClosures.length}</strong></div></div>
+        <div style={{ display: "grid", gap: 8, marginTop: 14 }}>{settlementClosures.length ? settlementClosures.map((item) => <article key={item.order.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}><div><strong>{item.order.title}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{item.order.customerLabel} · {ORDER_LABELS[item.order.status]}</div><div style={{ color: item.excessCents > 0 ? "#fca5a5" : "#a1a1aa", fontSize: 11, marginTop: 5 }}>{item.excessCents > 0 ? `超收 ${money(item.excessCents / 100, item.order.currency)}，需要人工核对` : "已按订单金额收清"}{item.pendingCount > 0 ? ` · ${item.pendingCount} 笔待确认收款` : ""}</div></div><strong>{money(item.receivedCents / 100, item.order.currency)}</strong></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}><span style={{ color: "#a1a1aa", fontSize: 11 }}>订单 {money(item.orderCents / 100, item.order.currency)} · 已收 {money(item.receivedCents / 100, item.order.currency)}</span><button type="button" disabled={loading} onClick={() => focusSettlementClosure(item)} style={buttonStyle(loading, item.excessCents > 0)}>人工复核收款</button></div></article>) : <div style={{ border: "1px dashed #3f3f46", borderRadius: 10, padding: 14, color: "#71717a", fontSize: 12 }}>当前没有已收清订单。</div>}</div>
+        <p style={{ margin: "12px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>收清判断只比较同一订单、同一币种的“已记录收款”与订单金额。超收不会被隐藏；待确认收款不会计入收清金额。订单状态保持人工控制，避免把“已交付”和“已收款”两个业务事实互相覆盖。</p>
+      </section>
+
       <section style={panelStyle()}><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>01 · 创建报价方案</h2><p style={{ margin: "0 0 16px", color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>报价金额直接使用标准货币单位，不输入分。例如输入 99.00 即为 ¥99.00。</p><form onSubmit={(event) => { event.preventDefault(); const price = currencyInput(offerPrice); if (!offerName.trim() || price === null) { setError("请填写报价名称和有效金额（最多两位小数）。"); return; } void runAction({ mode: "create-offer", name: offerName.trim(), description: offerDescription, currency: offerCurrency, price, deliveryDays: Number(offerDays) || 7, status: "draft" }, "报价方案已保存。").then(() => { setOfferName(""); setOfferDescription(""); }); }} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}><label><span style={labelStyle()}>方案名称 *</span><input value={offerName} onChange={(event) => setOfferName(event.target.value)} style={fieldStyle()} required maxLength={200} /></label><label><span style={labelStyle()}>金额 *</span><input value={offerPrice} onChange={(event) => setOfferPrice(event.target.value)} style={fieldStyle()} inputMode="decimal" required /></label><label><span style={labelStyle()}>币种</span><select value={offerCurrency} onChange={(event) => setOfferCurrency(event.target.value)} style={fieldStyle()}><option value="CNY">CNY - 人民币</option><option value="JPY">JPY - 日元</option><option value="USD">USD - 美元</option><option value="HKD">HKD - 港币</option></select></label><label><span style={labelStyle()}>交付周期（天）</span><input value={offerDays} onChange={(event) => setOfferDays(event.target.value)} style={fieldStyle()} type="number" min="1" max="3650" /></label><label style={{ gridColumn: "1 / -1" }}><span style={labelStyle()}>说明</span><textarea value={offerDescription} onChange={(event) => setOfferDescription(event.target.value)} style={{ ...fieldStyle(), minHeight: 76, resize: "vertical" }} maxLength={4000} /></label><div><button type="submit" disabled={loading} style={buttonStyle(loading, true)}>保存报价方案</button></div></form><div style={{ marginTop: 14, display: "grid", gap: 8 }}>{(snapshot?.offers ?? []).map((offer) => <article key={offer.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}><div><strong>{offer.name}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{offer.description || "无补充说明"} · {offer.deliveryDays} 天 · {offer.status}</div></div><strong>{money(offer.price, offer.currency)}</strong></article>)}</div></section>
 
       <section style={panelStyle()}><h2 style={{ margin: "0 0 14px", fontSize: 18 }}>02 · 记录订单</h2><form onSubmit={(event) => { event.preventDefault(); const amount = currencyInput(orderAmount); if (!customerLabel.trim() || !orderTitle.trim() || amount === null) { setError("请填写客户、订单名称和真实有效金额。"); return; } const leadId = handoff?.leadId ?? null; void runAction({ mode: "create-order", leadId, customerLabel: customerLabel.trim(), title: orderTitle.trim(), amount, currency: orderCurrency, scope: orderScope, status: "quoted", note: handoff ? `C168.10 inbound handoff · ${CHANNEL_LABELS[handoff.sourceChannel]}${handoff.note ? ` · ${handoff.note}` : ""}` : "" }, "订单已创建。").then(() => { if (handoff) window.sessionStorage.removeItem(C168_HANDOFF_KEY); setHandoff(null); setCustomerLabel(""); setOrderTitle(""); setOrderAmount(""); setOrderScope(""); }); }} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}><label><span style={labelStyle()}>客户名称或代号 *</span><input value={customerLabel} onChange={(event) => setCustomerLabel(event.target.value)} style={fieldStyle()} required maxLength={200} /></label><label><span style={labelStyle()}>订单名称 *</span><input value={orderTitle} onChange={(event) => setOrderTitle(event.target.value)} style={fieldStyle()} required maxLength={200} /></label><label><span style={labelStyle()}>订单金额 *</span><input value={orderAmount} onChange={(event) => setOrderAmount(event.target.value)} style={fieldStyle()} inputMode="decimal" required placeholder={handoff ? "请填写真实成交金额" : "例如 99.00"} /></label><label><span style={labelStyle()}>币种</span><select value={orderCurrency} onChange={(event) => setOrderCurrency(event.target.value)} style={fieldStyle()}><option value="CNY">CNY - 人民币</option><option value="JPY">JPY - 日元</option><option value="USD">USD - 美元</option><option value="HKD">HKD - 港币</option></select></label><label style={{ gridColumn: "1 / -1" }}><span style={labelStyle()}>订单范围 / 约定</span><textarea value={orderScope} onChange={(event) => setOrderScope(event.target.value)} style={{ ...fieldStyle(), minHeight: 66, resize: "vertical" }} maxLength={4000} /></label><div><button type="submit" disabled={loading} style={buttonStyle(loading, true)}>创建订单</button></div></form><div style={{ display: "grid", gap: 9, marginTop: 16 }}>{orders.length ? orders.map((order) => <article key={order.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 13 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}><div><strong>{order.title}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{order.customerLabel} · {ORDER_LABELS[order.status]}</div><div style={{ color: "#71717a", fontSize: 10, marginTop: 5 }}>ID: {order.id}{order.leadId ? ` · Lead: ${order.leadId}` : ""}</div></div><strong>{money(order.amount, order.currency)}</strong></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}><select aria-label="订单状态" value={order.status} disabled={loading} onChange={(event) => void runAction({ mode: "update-order", id: order.id, status: event.target.value }, "订单状态已更新。")} style={{ ...fieldStyle(), width: "auto", minWidth: 150 }}>{ORDER_STATUSES.map((status) => <option key={status} value={status}>{ORDER_LABELS[status]}</option>)}</select><button type="button" disabled={loading} onClick={() => setSelectedOrderId(order.id)} style={buttonStyle(false, activeOrderId === order.id)}>{activeOrderId === order.id ? "当前选中" : "用于交付/收款"}</button></div></article>) : <p style={{ color: "#a1a1aa", fontSize: 13 }}>尚无订单。先创建一笔报价或订单。</p>}</div></section>
@@ -451,7 +509,7 @@ export default function FounderRevenuePage() {
 
       <section id="revenue-payment-section" style={panelStyle()}><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>04 · 收款记录</h2><p style={{ margin: "0 0 14px", color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>只有确实收到款项后，才选择“已记录收款”，并填写收款时间与人工核验备注。系统不会连接银行或支付平台验证交易。</p><form onSubmit={(event) => { event.preventDefault(); const amount = currencyInput(paymentAmount); if (!activeOrderId || amount === null) { setError("请先选择订单，并填写有效收款金额。"); return; } if (paymentStatus === "received" && !paymentEvidence.trim()) { setError("记录实际收款必须填写人工收款证据备注。"); return; } void runAction({ mode: "create-payment", orderId: activeOrderId, currency: paymentCurrency, amount, method: paymentMethod, status: paymentStatus, ...(paymentStatus === "received" ? { receivedAt: Date.now(), evidenceNote: paymentEvidence.trim() } : { evidenceNote: paymentEvidence.trim() }), externalReference: paymentReference.trim() }, "收款记录已保存。").then(() => { setPaymentEvidence(""); setPaymentReference(""); }); }} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}><label><span style={labelStyle()}>关联订单</span><select value={activeOrderId} onChange={(event) => setSelectedOrderId(event.target.value)} style={fieldStyle()} disabled={!orders.length}><option value="">请选择订单</option>{orders.map((order) => <option key={order.id} value={order.id}>{order.customerLabel} - {order.title}</option>)}</select></label><label><span style={labelStyle()}>收款金额 *</span><input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} style={fieldStyle()} inputMode="decimal" required /></label><label><span style={labelStyle()}>币种</span><select value={paymentCurrency} onChange={(event) => setPaymentCurrency(event.target.value)} style={fieldStyle()}><option value="CNY">CNY - 人民币</option><option value="JPY">JPY - 日元</option><option value="USD">USD - 美元</option><option value="HKD">HKD - 港币</option></select></label><label><span style={labelStyle()}>收款方式</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} style={fieldStyle()}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{METHOD_LABELS[method]}</option>)}</select></label><label><span style={labelStyle()}>收款状态</span><select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value as PaymentStatus)} style={fieldStyle()}>{PAYMENT_STATUSES.map((status) => <option key={status} value={status}>{PAYMENT_LABELS[status]}</option>)}</select></label><label><span style={labelStyle()}>外部订单号 / 参考号</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} style={fieldStyle()} maxLength={300} /></label><label style={{ gridColumn: "1 / -1" }}><span style={labelStyle()}>人工收款证据备注{paymentStatus === "received" ? " *" : ""}</span><textarea value={paymentEvidence} onChange={(event) => setPaymentEvidence(event.target.value)} style={{ ...fieldStyle(), minHeight: 66, resize: "vertical" }} maxLength={2000} placeholder="例如：已核对平台订单状态和到账记录。不要填写密码或完整支付凭证。" /></label><div><button type="submit" disabled={loading || !orders.length} style={buttonStyle(loading || !orders.length, true)}>保存收款记录</button></div></form><div style={{ display: "grid", gap: 8, marginTop: 14 }}>{(snapshot?.payments ?? []).map((payment) => { const order = orders.find((candidate) => candidate.id === payment.orderId); return <article key={payment.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}><div><strong>{money(payment.amount, payment.currency)}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{order ? `${order.customerLabel} · ${order.title}` : payment.orderId}</div><div style={{ color: "#71717a", fontSize: 11, marginTop: 4 }}>{METHOD_LABELS[payment.method]} · {timeLabel(payment.receivedAt)}</div></div><select aria-label="收款状态" value={payment.status} disabled={loading} onChange={(event) => { const status = event.target.value as PaymentStatus; if (status === "received" && (!payment.receivedAt || !payment.evidenceNote.trim())) { setError("该笔记录缺少收款时间或人工证据备注，不能直接改为已收款。请新建完整收款记录。"); return; } void runAction({ mode: "update-payment", id: payment.id, status }, "收款状态已更新。"); }} style={{ ...fieldStyle(), width: "auto", minWidth: 140 }}>{PAYMENT_STATUSES.map((status) => <option key={status} value={status}>{PAYMENT_LABELS[status]}</option>)}</select></div>{payment.evidenceNote && <p style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.7, marginBottom: 0 }}>备注：{payment.evidenceNote}</p>}</article>; })}</div></section>
 
-      <section style={{ ...panelStyle(), background: "#0c0c0f" }}><h2 style={{ margin: "0 0 8px", fontSize: 15 }}>记录边界</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.9 }}>{snapshot?.note || "收入数据仅表示手动登记记录。"}</p><p style={{ margin: "8px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>C168.13 在 C168.12 基础上把待收订单转成按优先级排序的 Founder 跟进行动，并快捷定位到现有收款表单，不改变收入账本数据结构。所有金额最多两位小数，多币种分别显示，不直接相加为单一总额。C168.10 交接只携带真实询盘上下文和 leadId，不自动创建订单、不自动确认金额、不自动生成付款。此页面不自动联系客户、不发起付款、不执行外部平台操作。</p></section>
+      <section style={{ ...panelStyle(), background: "#0c0c0f" }}><h2 style={{ margin: "0 0 8px", fontSize: 15 }}>记录边界</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.9 }}>{snapshot?.note || "收入数据仅表示手动登记记录。"}</p><p style={{ margin: "8px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>C168.14 在 C168.13 基础上增加收清订单复核：按同一订单、同一币种识别已收清与超收情况，并快捷定位到现有收款表单；不改变收入账本数据结构，不自动改订单状态，不自动退款或冲销。所有金额最多两位小数，多币种分别显示，不直接相加为单一总额。C168.10 交接只携带真实询盘上下文和 leadId，不自动创建订单、不自动确认金额、不自动生成付款。此页面不自动联系客户、不发起付款、不执行外部平台操作。</p></section>
     </div>
   </main>;
 }
