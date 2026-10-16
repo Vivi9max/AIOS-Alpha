@@ -13,16 +13,7 @@ type DeliveryStatus = "not-started" | "in-progress" | "delivered" | "revision-re
 type PaymentStatus = "pending" | "received" | "refunded" | "void";
 type PaymentMethod = "bank-transfer" | "platform-order" | "cash" | "other" | "unknown";
 
-interface C168RevenueHandoff {
-  version: string;
-  leadId: string;
-  businessType: string;
-  sourceChannel: "xiaohongshu" | "xianyu";
-  currentProblem: string;
-  goal: string;
-  note: string;
-  handedOffAt: number;
-}
+interface C168RevenueHandoff { version: string; leadId: string; businessType: string; sourceChannel: "xiaohongshu" | "xianyu"; currentProblem: string; goal: string; note: string; handedOffAt: number; }
 interface OfferRecord { id: string; name: string; description: string; currency: string; price: number; deliverables: string[]; exclusions: string[]; deliveryDays: number; status: OfferStatus; createdAt: number; updatedAt: number; }
 interface OrderRecord { id: string; leadId: string | null; offerId: string | null; customerLabel: string; customerContactNote: string; title: string; scope: string; currency: string; amount: number; status: OrderStatus; agreedAt: number | null; dueAt: number | null; note: string; createdAt: number; updatedAt: number; }
 interface DeliveryRecord { id: string; orderId: string; title: string; description: string; status: DeliveryStatus; dueAt: number | null; deliveredAt: number | null; acceptanceNote: string; revisionCount: number; createdAt: number; updatedAt: number; }
@@ -48,115 +39,47 @@ function money(value: number, currency = "CNY"): string { const amount = Number.
 function timeLabel(value: number | null): string { return value && Number.isFinite(value) ? new Date(value).toLocaleString() : "-"; }
 function currencyInput(value: string): number | null { if (!value.trim()) return null; const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0 || Math.abs(parsed * 100 - Math.round(parsed * 100)) > 0.000001) return null; return Math.round((parsed + Number.EPSILON) * 100) / 100; }
 function readC168Handoff(): C168RevenueHandoff | null {
-  try {
-    const raw = window.sessionStorage.getItem(C168_HANDOFF_KEY);
-    if (!raw) return null;
-    const value = JSON.parse(raw) as Partial<C168RevenueHandoff>;
-    if (!value.leadId || typeof value.leadId !== "string") return null;
-    if (value.sourceChannel !== "xiaohongshu" && value.sourceChannel !== "xianyu") return null;
-    return { version: typeof value.version === "string" ? value.version : "C168.10", leadId: value.leadId, businessType: typeof value.businessType === "string" ? value.businessType : "", sourceChannel: value.sourceChannel, currentProblem: typeof value.currentProblem === "string" ? value.currentProblem : "", goal: typeof value.goal === "string" ? value.goal : "", note: typeof value.note === "string" ? value.note : "", handedOffAt: typeof value.handedOffAt === "number" ? value.handedOffAt : Date.now() };
-  } catch { return null; }
+  try { const raw = window.sessionStorage.getItem(C168_HANDOFF_KEY); if (!raw) return null; const value = JSON.parse(raw) as Partial<C168RevenueHandoff>; if (!value.leadId || typeof value.leadId !== "string") return null; if (value.sourceChannel !== "xiaohongshu" && value.sourceChannel !== "xianyu") return null; return { version: typeof value.version === "string" ? value.version : "C168.10", leadId: value.leadId, businessType: typeof value.businessType === "string" ? value.businessType : "", sourceChannel: value.sourceChannel, currentProblem: typeof value.currentProblem === "string" ? value.currentProblem : "", goal: typeof value.goal === "string" ? value.goal : "", note: typeof value.note === "string" ? value.note : "", handedOffAt: typeof value.handedOffAt === "number" ? value.handedOffAt : Date.now() }; } catch { return null; }
 }
 
 export default function FounderRevenuePage() {
-  const [accessKey, setAccessKey] = useState("");
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [handoff, setHandoff] = useState<C168RevenueHandoff | null>(null);
-  const [offerName, setOfferName] = useState("");
-  const [offerDescription, setOfferDescription] = useState("");
-  const [offerPrice, setOfferPrice] = useState("99.00");
-  const [offerDays, setOfferDays] = useState("7");
-  const [offerCurrency, setOfferCurrency] = useState("CNY");
-  const [customerLabel, setCustomerLabel] = useState("");
-  const [orderTitle, setOrderTitle] = useState("");
-  const [orderAmount, setOrderAmount] = useState("");
-  const [orderCurrency, setOrderCurrency] = useState("CNY");
-  const [orderScope, setOrderScope] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [deliveryTitle, setDeliveryTitle] = useState("");
-  const [deliveryDescription, setDeliveryDescription] = useState("");
-  const [paymentAmount, setPaymentAmount] = useState("99.00");
-  const [paymentCurrency, setPaymentCurrency] = useState("CNY");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank-transfer");
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("pending");
-  const [paymentEvidence, setPaymentEvidence] = useState("");
-  const [paymentReference, setPaymentReference] = useState("");
+  const [accessKey, setAccessKey] = useState(""); const [authenticated, setAuthenticated] = useState(false); const [loading, setLoading] = useState(false); const [snapshot, setSnapshot] = useState<Snapshot | null>(null); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [handoff, setHandoff] = useState<C168RevenueHandoff | null>(null);
+  const [offerName, setOfferName] = useState(""); const [offerDescription, setOfferDescription] = useState(""); const [offerPrice, setOfferPrice] = useState("99.00"); const [offerDays, setOfferDays] = useState("7"); const [offerCurrency, setOfferCurrency] = useState("CNY");
+  const [customerLabel, setCustomerLabel] = useState(""); const [orderTitle, setOrderTitle] = useState(""); const [orderAmount, setOrderAmount] = useState(""); const [orderCurrency, setOrderCurrency] = useState("CNY"); const [orderScope, setOrderScope] = useState(""); const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [deliveryTitle, setDeliveryTitle] = useState(""); const [deliveryDescription, setDeliveryDescription] = useState(""); const [paymentAmount, setPaymentAmount] = useState("99.00"); const [paymentCurrency, setPaymentCurrency] = useState("CNY"); const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank-transfer"); const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("pending"); const [paymentEvidence, setPaymentEvidence] = useState(""); const [paymentReference, setPaymentReference] = useState("");
 
-  const request = useCallback(async (body?: Record<string, unknown>) => {
-    const key = accessKey.trim() || (typeof window !== "undefined" ? window.sessionStorage.getItem(STORAGE_KEY) || "" : "");
-    const response = await fetch(ENDPOINT, { method: body ? "POST" : "GET", cache: "no-store", headers: { Accept: "application/json", Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const data = (await response.json()) as ApiResponse;
-    if (!response.ok || !data.success) throw new Error(data.message || data.code || "收入账本请求失败。");
-    return data;
-  }, [accessKey]);
-
-  const refresh = useCallback(async (showNotice = false) => {
-    setLoading(true); setError("");
-    try {
-      const data = await request();
-      if (!data.result || !("offers" in data.result)) throw new Error("收入账本返回数据格式不正确。");
-      setSnapshot(data.result as Snapshot); setAuthenticated(true);
-      if (showNotice) setNotice("收入账本已刷新。");
-    } catch (e) { setAuthenticated(false); setSnapshot(null); setError(e instanceof Error ? e.message : "无法读取收入账本。"); }
-    finally { setLoading(false); }
-  }, [request]);
-
-  useEffect(() => {
-    const stored = window.sessionStorage.getItem(STORAGE_KEY);
-    if (stored) setAccessKey(stored);
-    const inboundHandoff = readC168Handoff();
-    if (inboundHandoff) {
-      setHandoff(inboundHandoff);
-      setCustomerLabel(inboundHandoff.businessType);
-      setOrderTitle(inboundHandoff.goal || "Inbound 成交订单");
-      setOrderScope(inboundHandoff.currentProblem);
-      setOrderAmount("");
-      setNotice("已接收 C168.10 成交询盘。请人工确认客户、订单名称和真实成交金额后再创建订单。");
-    }
-  }, []);
+  const request = useCallback(async (body?: Record<string, unknown>) => { const key = accessKey.trim() || (typeof window !== "undefined" ? window.sessionStorage.getItem(STORAGE_KEY) || "" : ""); const response = await fetch(ENDPOINT, { method: body ? "POST" : "GET", cache: "no-store", headers: { Accept: "application/json", Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); const data = (await response.json()) as ApiResponse; if (!response.ok || !data.success) throw new Error(data.message || data.code || "收入账本请求失败。"); return data; }, [accessKey]);
+  const refresh = useCallback(async (showNotice = false) => { setLoading(true); setError(""); try { const data = await request(); if (!data.result || !("offers" in data.result)) throw new Error("收入账本返回数据格式不正确。"); setSnapshot(data.result as Snapshot); setAuthenticated(true); if (showNotice) setNotice("收入账本已刷新。"); } catch (e) { setAuthenticated(false); setSnapshot(null); setError(e instanceof Error ? e.message : "无法读取收入账本。"); } finally { setLoading(false); } }, [request]);
+  useEffect(() => { const stored = window.sessionStorage.getItem(STORAGE_KEY); if (stored) setAccessKey(stored); const inboundHandoff = readC168Handoff(); if (inboundHandoff) { setHandoff(inboundHandoff); setCustomerLabel(inboundHandoff.businessType); setOrderTitle(inboundHandoff.goal || "Inbound 成交订单"); setOrderScope(inboundHandoff.currentProblem); setOrderAmount(""); setNotice("已接收 C168.10 成交询盘。请人工确认客户、订单名称和真实成交金额后再创建订单。"); } }, []);
   useEffect(() => { if (accessKey.trim()) void refresh(); }, [accessKey, refresh]);
-
-  async function submitLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!accessKey.trim()) { setError("请输入 Founder Access Key。"); return; }
-    window.sessionStorage.setItem(STORAGE_KEY, accessKey.trim());
-    await refresh();
-  }
-
-  async function runAction(body: Record<string, unknown>, successMessage: string) {
-    setLoading(true); setError(""); setNotice("");
-    try {
-      await request(body);
-      const data = await request();
-      if (!data.result || !("offers" in data.result)) throw new Error("收入账本刷新失败。");
-      setSnapshot(data.result as Snapshot); setAuthenticated(true); setNotice(successMessage);
-    } catch (e) { setError(e instanceof Error ? e.message : "操作失败。"); }
-    finally { setLoading(false); }
-  }
+  async function submitLogin(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!accessKey.trim()) { setError("请输入 Founder Access Key。"); return; } window.sessionStorage.setItem(STORAGE_KEY, accessKey.trim()); await refresh(); }
+  async function runAction(body: Record<string, unknown>, successMessage: string) { setLoading(true); setError(""); setNotice(""); try { await request(body); const data = await request(); if (!data.result || !("offers" in data.result)) throw new Error("收入账本刷新失败。"); setSnapshot(data.result as Snapshot); setAuthenticated(true); setNotice(successMessage); } catch (e) { setError(e instanceof Error ? e.message : "操作失败。"); } finally { setLoading(false); } }
 
   const orders = snapshot?.orders ?? [];
   const activeOrderId = useMemo(() => selectedOrderId && orders.some((order) => order.id === selectedOrderId) ? selectedOrderId : orders[0]?.id ?? "", [orders, selectedOrderId]);
   const receivedPayments = snapshot?.payments.filter((payment) => payment.status === "received") ?? [];
-  const currencyTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const payment of receivedPayments) { const cents = Math.round(payment.amount * 100); totals.set(payment.currency, (totals.get(payment.currency) ?? 0) + cents); }
-    return Array.from(totals.entries()).map(([currency, cents]) => ({ currency, amount: cents / 100 }));
-  }, [receivedPayments]);
+  const currencyTotals = useMemo(() => { const totals = new Map<string, number>(); for (const payment of receivedPayments) { const cents = Math.round(payment.amount * 100); totals.set(payment.currency, (totals.get(payment.currency) ?? 0) + cents); } return Array.from(totals.entries()).map(([currency, cents]) => ({ currency, amount: cents / 100 })); }, [receivedPayments]);
+  const collectionSummary = useMemo(() => {
+    const orderById = new Map(orders.map((order) => [order.id, order])); const orderByCurrency = new Map<string, number>(); const receivedByCurrency = new Map<string, number>(); const receivedByOrder = new Map<string, number>(); let pendingPayments = 0;
+    for (const order of orders) { const cents = Math.round(order.amount * 100); orderByCurrency.set(order.currency, (orderByCurrency.get(order.currency) ?? 0) + cents); }
+    for (const payment of snapshot?.payments ?? []) { if (payment.status === "pending") pendingPayments += 1; if (payment.status !== "received") continue; const cents = Math.round(payment.amount * 100); receivedByCurrency.set(payment.currency, (receivedByCurrency.get(payment.currency) ?? 0) + cents); const order = orderById.get(payment.orderId); if (order && order.currency === payment.currency) receivedByOrder.set(payment.orderId, (receivedByOrder.get(payment.orderId) ?? 0) + cents); }
+    const outstandingByCurrency = new Map<string, number>(); for (const order of orders) { const orderCents = Math.round(order.amount * 100); const receivedCents = receivedByOrder.get(order.id) ?? 0; outstandingByCurrency.set(order.currency, (outstandingByCurrency.get(order.currency) ?? 0) + Math.max(0, orderCents - receivedCents)); }
+    const currencies = Array.from(new Set([...orderByCurrency.keys(), ...receivedByCurrency.keys(), ...outstandingByCurrency.keys()])).sort();
+    return { orderByCurrency, receivedByCurrency, outstandingByCurrency, pendingPayments, currencies };
+  }, [orders, snapshot?.payments]);
 
-  if (!authenticated) {
-    return <main style={{ minHeight: "100vh", boxSizing: "border-box", padding: "28px 16px", background: "#09090b", color: "#fafafa" }}><div style={{ maxWidth: 480, margin: "8vh auto 0", ...panelStyle() }}><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>PRIVATE FOUNDER ACCESS</div><h1 style={{ margin: "10px 0 8px", fontSize: 27 }}>收入与订单账本</h1><p style={{ color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>记录报价、订单、交付和实际收款。金额统一使用标准货币单位，例如 CNY 99.00 = ¥99.00。</p><form onSubmit={(event) => void submitLogin(event)}><label style={{ display: "block", margin: "18px 0 12px" }}><span style={labelStyle()}>Founder Access Key</span><input value={accessKey} onChange={(event) => setAccessKey(event.target.value)} type="password" autoComplete="current-password" style={fieldStyle()} placeholder="输入 Founder Access Key" /></label><button type="submit" disabled={loading} style={buttonStyle(loading, true)}>{loading ? "验证中..." : "进入收入账本"}</button></form>{error && <p role="alert" style={{ color: "#fca5a5", fontSize: 13 }}>{error}</p>}</div></main>;
-  }
+  if (!authenticated) return <main style={{ minHeight: "100vh", boxSizing: "border-box", padding: "28px 16px", background: "#09090b", color: "#fafafa" }}><div style={{ maxWidth: 480, margin: "8vh auto 0", ...panelStyle() }}><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>PRIVATE FOUNDER ACCESS</div><h1 style={{ margin: "10px 0 8px", fontSize: 27 }}>收入与订单账本</h1><p style={{ color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>记录报价、订单、交付和实际收款。金额统一使用标准货币单位，例如 CNY 99.00 = ¥99.00。</p><form onSubmit={(event) => void submitLogin(event)}><label style={{ display: "block", margin: "18px 0 12px" }}><span style={labelStyle()}>Founder Access Key</span><input value={accessKey} onChange={(event) => setAccessKey(event.target.value)} type="password" autoComplete="current-password" style={fieldStyle()} placeholder="输入 Founder Access Key" /></label><button type="submit" disabled={loading} style={buttonStyle(loading, true)}>{loading ? "验证中..." : "进入收入账本"}</button></form>{error && <p role="alert" style={{ color: "#fca5a5", fontSize: 13 }}>{error}</p>}</div></main>;
 
   return <main style={{ minHeight: "100vh", boxSizing: "border-box", padding: "22px 14px 52px", background: "#09090b", color: "#fafafa" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}>
-    <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 20 }}><div><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>C168.10 · FOUNDER ONLY</div><h1 style={{ margin: "8px 0 6px", fontSize: 29, lineHeight: 1.15 }}>收入与订单账本</h1><p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>报价 → 订单 → 交付 → 收款记录。只有有证据的实际收款才计入已记录收入。</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button type="button" onClick={() => void refresh(true)} disabled={loading} style={buttonStyle(loading)}>{loading ? "处理中..." : "刷新账本"}</button><button type="button" onClick={() => { window.sessionStorage.removeItem(STORAGE_KEY); setAuthenticated(false); setSnapshot(null); setAccessKey(""); setError(""); }} style={buttonStyle()}>退出</button></div></header>
-    {error && <div role="alert" style={{ ...panelStyle(), borderColor: "#7f1d1d", color: "#fecaca" }}>{error}</div>}
-    {notice && <div role="status" style={{ ...panelStyle(), borderColor: "#365314", color: "#d9f99d" }}>{notice}</div>}
+    <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 20 }}><div><div style={{ color: "#a1a1aa", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>C168.11 · FOUNDER ONLY</div><h1 style={{ margin: "8px 0 6px", fontSize: 29, lineHeight: 1.15 }}>收入与订单账本</h1><p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.7 }}>报价 → 订单 → 交付 → 收款记录 → 收款闭环。只有有证据的实际收款才计入已记录收入。</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button type="button" onClick={() => void refresh(true)} disabled={loading} style={buttonStyle(loading)}>{loading ? "处理中..." : "刷新账本"}</button><button type="button" onClick={() => { window.sessionStorage.removeItem(STORAGE_KEY); setAuthenticated(false); setSnapshot(null); setAccessKey(""); setError(""); }} style={buttonStyle()}>退出</button></div></header>
+    {error && <div role="alert" style={{ ...panelStyle(), borderColor: "#7f1d1d", color: "#fecaca" }}>{error}</div>}{notice && <div role="status" style={{ ...panelStyle(), borderColor: "#365314", color: "#d9f99d" }}>{notice}</div>}
     {handoff && <section style={{ ...panelStyle(), borderColor: "#52525b" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><div><div style={{ color: "#a1a1aa", fontSize: 11 }}>C168.10 INBOUND → REVENUE</div><h2 style={{ margin: "6px 0", fontSize: 18 }}>已载入成交询盘上下文</h2></div><button type="button" onClick={() => { window.sessionStorage.removeItem(C168_HANDOFF_KEY); setHandoff(null); setCustomerLabel(""); setOrderTitle(""); setOrderScope(""); setOrderAmount(""); setNotice("C168.10 交接上下文已清除，未创建任何订单。"); }} style={buttonStyle()}>清除交接</button></div><div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.8 }}>Lead ID: {handoff.leadId}<br />来源：{CHANNEL_LABELS[handoff.sourceChannel]}<br />业务：{handoff.businessType || "未填写"}<br />目标：{handoff.goal || "未填写"}<br />问题：{handoff.currentProblem || "未填写"}</div><p style={{ margin: "10px 0 0", color: "#d4d4d8", fontSize: 12, lineHeight: 1.8 }}>这里只预填真实询盘上下文。成交金额保持空白，必须由 Founder 根据真实约定人工填写。只有点击“创建订单”后才写入 Revenue Ledger。</p></section>}
     <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 16 }}><div style={panelStyle()}><div style={{ color: "#a1a1aa", fontSize: 12 }}>报价方案</div><div style={{ fontSize: 27, fontWeight: 750, marginTop: 8 }}>{snapshot?.offers.length ?? 0}</div></div><div style={panelStyle()}><div style={{ color: "#a1a1aa", fontSize: 12 }}>订单总数</div><div style={{ fontSize: 27, fontWeight: 750, marginTop: 8 }}>{orders.length}</div></div><div style={panelStyle()}><div style={{ color: "#a1a1aa", fontSize: 12 }}>交付事项</div><div style={{ fontSize: 27, fontWeight: 750, marginTop: 8 }}>{snapshot?.deliveries.length ?? 0}</div></div><div style={panelStyle()}><div style={{ color: "#a1a1aa", fontSize: 12 }}>已记录收款（按币种）</div><div style={{ marginTop: 8, display: "grid", gap: 4 }}>{currencyTotals.length ? currencyTotals.map((item) => <strong key={item.currency} style={{ fontSize: 20 }}>{money(item.amount, item.currency)}</strong>) : <strong style={{ fontSize: 22 }}>-</strong>}</div></div></section>
+
+    <section style={panelStyle()}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}><div><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>00 · C168.11 收款闭环</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>订单金额、已记录收款和待收金额仅按同一订单、同一币种计算，不进行跨币种换算。待确认收款不会计入已记录收入。</p></div><div style={{ minWidth: 150, border: "1px solid #3f3f46", borderRadius: 10, padding: 12 }}><div style={{ color: "#a1a1aa", fontSize: 11 }}>待确认收款记录</div><strong style={{ display: "block", marginTop: 5, fontSize: 22 }}>{collectionSummary.pendingPayments}</strong></div></div>
+      <div style={{ display: "grid", gap: 8, marginTop: 14 }}>{collectionSummary.currencies.length ? collectionSummary.currencies.map((currency) => { const orderCents = collectionSummary.orderByCurrency.get(currency) ?? 0; const receivedCents = collectionSummary.receivedByCurrency.get(currency) ?? 0; const outstandingCents = collectionSummary.outstandingByCurrency.get(currency) ?? 0; return <div key={currency} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}><div><div style={{ color: "#a1a1aa", fontSize: 11 }}>币种</div><strong>{currency}</strong></div><div><div style={{ color: "#a1a1aa", fontSize: 11 }}>订单金额</div><strong>{money(orderCents / 100, currency)}</strong></div><div><div style={{ color: "#a1a1aa", fontSize: 11 }}>已记录收入</div><strong>{money(receivedCents / 100, currency)}</strong></div><div><div style={{ color: "#a1a1aa", fontSize: 11 }}>待收金额</div><strong>{money(outstandingCents / 100, currency)}</strong></div></div>; }) : <div style={{ border: "1px dashed #3f3f46", borderRadius: 10, padding: 14, color: "#71717a", fontSize: 12 }}>尚无订单或收款数据。</div>}</div>
+      {collectionSummary.pendingPayments > 0 && <p style={{ margin: "12px 0 0", color: "#fbbf24", fontSize: 12, lineHeight: 1.7 }}>当前存在待确认收款记录。它们不会计入已记录收入，需 Founder 根据真实到账情况人工确认。</p>}
+    </section>
 
     <section style={panelStyle()}><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>01 · 创建报价方案</h2><p style={{ margin: "0 0 16px", color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>报价金额直接使用标准货币单位，不输入分。例如输入 99.00 即为 ¥99.00。</p><form onSubmit={(event) => { event.preventDefault(); const price = currencyInput(offerPrice); if (!offerName.trim() || price === null) { setError("请填写报价名称和有效金额（最多两位小数）。"); return; } void runAction({ mode: "create-offer", name: offerName.trim(), description: offerDescription, currency: offerCurrency, price, deliveryDays: Number(offerDays) || 7, status: "draft" }, "报价方案已保存。").then(() => { setOfferName(""); setOfferDescription(""); }); }} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}><label><span style={labelStyle()}>方案名称 *</span><input value={offerName} onChange={(event) => setOfferName(event.target.value)} style={fieldStyle()} required maxLength={200} /></label><label><span style={labelStyle()}>金额 *</span><input value={offerPrice} onChange={(event) => setOfferPrice(event.target.value)} style={fieldStyle()} inputMode="decimal" required /></label><label><span style={labelStyle()}>币种</span><select value={offerCurrency} onChange={(event) => setOfferCurrency(event.target.value)} style={fieldStyle()}><option value="CNY">CNY - 人民币</option><option value="JPY">JPY - 日元</option><option value="USD">USD - 美元</option><option value="HKD">HKD - 港币</option></select></label><label><span style={labelStyle()}>交付周期（天）</span><input value={offerDays} onChange={(event) => setOfferDays(event.target.value)} style={fieldStyle()} type="number" min="1" max="3650" /></label><label style={{ gridColumn: "1 / -1" }}><span style={labelStyle()}>说明</span><textarea value={offerDescription} onChange={(event) => setOfferDescription(event.target.value)} style={{ ...fieldStyle(), minHeight: 76, resize: "vertical" }} maxLength={4000} /></label><div><button type="submit" disabled={loading} style={buttonStyle(loading, true)}>保存报价方案</button></div></form><div style={{ marginTop: 14, display: "grid", gap: 8 }}>{(snapshot?.offers ?? []).map((offer) => <article key={offer.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}><div><strong>{offer.name}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{offer.description || "无补充说明"} · {offer.deliveryDays} 天 · {offer.status}</div></div><strong>{money(offer.price, offer.currency)}</strong></article>)}</div></section>
 
@@ -166,6 +89,6 @@ export default function FounderRevenuePage() {
 
     <section style={panelStyle()}><h2 style={{ margin: "0 0 6px", fontSize: 18 }}>04 · 收款记录</h2><p style={{ margin: "0 0 14px", color: "#a1a1aa", fontSize: 12, lineHeight: 1.7 }}>只有确实收到款项后，才选择“已记录收款”，并填写收款时间与人工核验备注。系统不会连接银行或支付平台验证交易。</p><form onSubmit={(event) => { event.preventDefault(); const amount = currencyInput(paymentAmount); if (!activeOrderId || amount === null) { setError("请先选择订单，并填写有效收款金额。"); return; } if (paymentStatus === "received" && !paymentEvidence.trim()) { setError("记录实际收款必须填写人工收款证据备注。"); return; } void runAction({ mode: "create-payment", orderId: activeOrderId, currency: paymentCurrency, amount, method: paymentMethod, status: paymentStatus, ...(paymentStatus === "received" ? { receivedAt: Date.now(), evidenceNote: paymentEvidence.trim() } : { evidenceNote: paymentEvidence.trim() }), externalReference: paymentReference.trim() }, "收款记录已保存。").then(() => { setPaymentEvidence(""); setPaymentReference(""); }); }} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}><label><span style={labelStyle()}>关联订单</span><select value={activeOrderId} onChange={(event) => setSelectedOrderId(event.target.value)} style={fieldStyle()} disabled={!orders.length}><option value="">请选择订单</option>{orders.map((order) => <option key={order.id} value={order.id}>{order.customerLabel} - {order.title}</option>)}</select></label><label><span style={labelStyle()}>收款金额 *</span><input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} style={fieldStyle()} inputMode="decimal" required /></label><label><span style={labelStyle()}>币种</span><select value={paymentCurrency} onChange={(event) => setPaymentCurrency(event.target.value)} style={fieldStyle()}><option value="CNY">CNY - 人民币</option><option value="JPY">JPY - 日元</option><option value="USD">USD - 美元</option><option value="HKD">HKD - 港币</option></select></label><label><span style={labelStyle()}>收款方式</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} style={fieldStyle()}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{METHOD_LABELS[method]}</option>)}</select></label><label><span style={labelStyle()}>收款状态</span><select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value as PaymentStatus)} style={fieldStyle()}>{PAYMENT_STATUSES.map((status) => <option key={status} value={status}>{PAYMENT_LABELS[status]}</option>)}</select></label><label><span style={labelStyle()}>外部订单号 / 参考号</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} style={fieldStyle()} maxLength={300} /></label><label style={{ gridColumn: "1 / -1" }}><span style={labelStyle()}>人工收款证据备注{paymentStatus === "received" ? " *" : ""}</span><textarea value={paymentEvidence} onChange={(event) => setPaymentEvidence(event.target.value)} style={{ ...fieldStyle(), minHeight: 66, resize: "vertical" }} maxLength={2000} placeholder="例如：已核对平台订单状态和到账记录。不要填写密码或完整支付凭证。" /></label><div><button type="submit" disabled={loading || !orders.length} style={buttonStyle(loading || !orders.length, true)}>保存收款记录</button></div></form><div style={{ display: "grid", gap: 8, marginTop: 14 }}>{(snapshot?.payments ?? []).map((payment) => { const order = orders.find((candidate) => candidate.id === payment.orderId); return <article key={payment.id} style={{ border: "1px solid #3f3f46", borderRadius: 10, padding: 12 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}><div><strong>{money(payment.amount, payment.currency)}</strong><div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 5 }}>{order ? `${order.customerLabel} · ${order.title}` : payment.orderId}</div><div style={{ color: "#71717a", fontSize: 11, marginTop: 4 }}>{METHOD_LABELS[payment.method]} · {timeLabel(payment.receivedAt)}</div></div><select aria-label="收款状态" value={payment.status} disabled={loading} onChange={(event) => { const status = event.target.value as PaymentStatus; if (status === "received" && (!payment.receivedAt || !payment.evidenceNote.trim())) { setError("该笔记录缺少收款时间或人工证据备注，不能直接改为已收款。请新建完整收款记录。"); return; } void runAction({ mode: "update-payment", id: payment.id, status }, "收款状态已更新。"); }} style={{ ...fieldStyle(), width: "auto", minWidth: 140 }}>{PAYMENT_STATUSES.map((status) => <option key={status} value={status}>{PAYMENT_LABELS[status]}</option>)}</select></div>{payment.evidenceNote && <p style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.7, marginBottom: 0 }}>备注：{payment.evidenceNote}</p>}</article>; })}</div></section>
 
-    <section style={{ ...panelStyle(), background: "#0c0c0f" }}><h2 style={{ margin: "0 0 8px", fontSize: 15 }}>记录边界</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.9 }}>{snapshot?.note || "收入数据仅表示手动登记记录。"}</p><p style={{ margin: "8px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>所有金额字段使用标准货币单位，最多两位小数。多币种收入分别显示，不直接相加为单一总额。C168.10 交接只携带真实询盘上下文和 leadId，不自动创建订单、不自动确认金额、不自动生成付款。此页面不自动联系客户、不发起付款、不执行外部平台操作。</p></section>
+    <section style={{ ...panelStyle(), background: "#0c0c0f" }}><h2 style={{ margin: "0 0 8px", fontSize: 15 }}>记录边界</h2><p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.9 }}>{snapshot?.note || "收入数据仅表示手动登记记录。"}</p><p style={{ margin: "8px 0 0", color: "#71717a", fontSize: 11, lineHeight: 1.8 }}>C168.11 仅增加订单金额、已记录收入、待收金额和待确认收款的派生视图。所有金额最多两位小数，多币种分别显示，不直接相加为单一总额。C168.10 交接只携带真实询盘上下文和 leadId，不自动创建订单、不自动确认金额、不自动生成付款。此页面不自动联系客户、不发起付款、不执行外部平台操作。</p></section>
   </div></main>;
 }
