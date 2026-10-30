@@ -1286,68 +1286,6 @@ function validateFinalSource(
       continue;
     }
 
-    if (
-      current === "/" &&
-      next === "/"
-    ) {
-      lineComment =
-        true;
-
-      index += 1;
-      continue;
-    }
-
-    if (
-      current === "/" &&
-      next === "*"
-    ) {
-      blockComment =
-        true;
-
-      index += 1;
-      continue;
-    }
-
-    if (
-      current === "/" &&
-      isRegexLiteralStart(
-        normalized,
-        index,
-      )
-    ) {
-      const regexEnd =
-        scanRegexLiteral(
-          normalized,
-          index,
-        );
-
-      if (
-        regexEnd > index
-      ) {
-        index =
-          regexEnd - 1;
-
-        continue;
-      }
-    }
-
-    if (
-      current === "'" ||
-      current === "\"" ||
-      current === "`"
-    ) {
-      quote =
-        current as
-          | "'"
-          | "\""
-          | "`";
-
-      escaped =
-        false;
-
-      continue;
-    }
-
     if (quote) {
       if (escaped) {
         escaped =
@@ -1373,6 +1311,68 @@ function validateFinalSource(
       }
 
       continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "/"
+    ) {
+      lineComment =
+        true;
+
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "*"
+    ) {
+      blockComment =
+        true;
+
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "'" ||
+      current === "\"" ||
+      current === "`"
+    ) {
+      quote =
+        current as
+          | "'"
+          | "\""
+          | "`";
+
+      escaped =
+        false;
+
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      isRegexLiteralStart(
+        normalized,
+        index,
+      )
+    ) {
+      const regexEnd =
+        scanRegexLiteral(
+          normalized,
+          index,
+        );
+
+      if (
+        regexEnd > index
+      ) {
+        index =
+          regexEnd - 1;
+
+        continue;
+      }
     }
 
     if (
