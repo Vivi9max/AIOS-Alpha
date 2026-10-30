@@ -145,6 +145,9 @@ const copy: Record<
     autonomousDevelopmentDetail: string;
     autonomousDevelopmentDescription: string;
 
+    commercialOperatingCenter: string;
+    commercialOperatingCenterDetail: string;
+
     inboundGrowth: string;
     inboundGrowthDetail: string;
 
@@ -308,6 +311,11 @@ const copy: Record<
       "Founder-only AIOS engineering execution entry",
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
+
+    commercialOperatingCenter:
+      "Commercial Operating Center",
+    commercialOperatingCenterDetail:
+      "Run acquisition, qualification, revenue execution and closure from one Founder entry",
 
     inboundGrowth:
       "AIOS Inbound Growth",
@@ -501,6 +509,11 @@ const copy: Record<
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
 
+    commercialOperatingCenter:
+      "商业操作中心",
+    commercialOperatingCenterDetail:
+      "统一进入获客、询盘筛选、成交交接、订单交付、收款与闭环复核",
+
     inboundGrowth:
       "AIOS Inbound Growth",
     inboundGrowthDetail:
@@ -692,6 +705,11 @@ const copy: Record<
       "Founder 専用 AIOS 自律開発実行エントリー",
     autonomousDevelopmentDescription:
       "Planner -> Development Intent -> GitHub -> Commit -> Readback",
+
+    commercialOperatingCenter:
+      "Commercial Operating Center",
+    commercialOperatingCenterDetail:
+      "顧客獲得、見込み客選別、受注引継ぎ、納品、入金、収益クローズを一つの導線で管理",
 
     inboundGrowth:
       "AIOS Inbound Growth",
@@ -1741,6 +1759,17 @@ export default function FounderPage() {
             }
             detail={
               t.adAcquisitionDetail
+            }
+          />
+
+          <ActionLink
+            href="/founder/commercial"
+            icon="🧭"
+            title={
+              t.commercialOperatingCenter
+            }
+            detail={
+              t.commercialOperatingCenterDetail
             }
           />
 
