@@ -37,6 +37,108 @@ function normalizeObjective(value: string) {
     .slice(0, MAX_OBJECTIVE_LENGTH);
 }
 
+function isNegatedExplicitPath(
+  objective: string,
+  matchStart: number,
+) {
+  const contextStart =
+    Math.max(0, matchStart - 180);
+
+  const context =
+    objective.slice(
+      contextStart,
+      matchStart,
+    );
+
+  const normalized =
+    context
+      .toLowerCase()
+      .replace(
+        /[`"'“”‘’]/g,
+        " ",
+      )
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  const boundaryIndex =
+    Math.max(
+      normalized.lastIndexOf("."),
+      normalized.lastIndexOf(":"),
+      normalized.lastIndexOf(";"),
+      normalized.lastIndexOf("\n"),
+    );
+
+  const recent =
+    normalized.slice(
+      boundaryIndex + 1,
+    );
+
+  const negativePattern =
+    /\b(?:do not|don't|never|must not|mustn't|not allowed|forbidden|exclude|excluded|excluding|outside|without|avoid|leave out|do not modify|don't modify|do not change|don't change|do not touch|don't touch)\b/i;
+
+  return negativePattern.test(
+    recent,
+  );
+}
+
+function extractRepositoryPathMatches(
+  objective: string,
+) {
+  const normalizedObjective =
+    objective
+      .slice(0, MAX_OBJECTIVE_LENGTH)
+      .replace(
+        /[`"'“”‘’]/g,
+        " ",
+      );
+
+  const pattern =
+    /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+\/-]+\.[A-Za-z0-9]+/g;
+
+  const matches: string[] = [];
+
+  let match:
+    | RegExpExecArray
+    | null = null;
+
+  while (
+    (match =
+      pattern.exec(
+        normalizedObjective,
+      )) !== null
+  ) {
+    const rawValue =
+      match[0] || "";
+
+    if (
+      isNegatedExplicitPath(
+        normalizedObjective,
+        match.index,
+      )
+    ) {
+      continue;
+    }
+
+    const normalizedValue =
+      rawValue.replace(
+        /[.,;:!?)}\]]+$/g,
+        "",
+      );
+
+    if (normalizedValue) {
+      matches.push(
+        normalizedValue,
+      );
+    }
+  }
+
+  return matches;
+}
+
 function buildIntentRules() {
   return [
     "AIOS must treat the Founder Objective as an intent, not merely as a file-edit instruction.",
@@ -154,25 +256,9 @@ function buildTargetResolutionRules(
 export function extractExplicitRepositoryPaths(
   objective: string,
 ) {
-  const normalizedObjective =
-    objective
-      .slice(0, MAX_OBJECTIVE_LENGTH)
-      .replace(
-        /[`"'“”‘’]/g,
-        " ",
-      );
-
-  const matches =
-    normalizedObjective.match(
-      /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+\/-]+\.[A-Za-z0-9]+/g,
-    ) ?? [];
-
   return uniquePaths(
-    matches.map((value) =>
-      value.replace(
-        /[.,;:!?)}\]]+$/g,
-        "",
-      ),
+    extractRepositoryPathMatches(
+      objective,
     ),
   );
 }
