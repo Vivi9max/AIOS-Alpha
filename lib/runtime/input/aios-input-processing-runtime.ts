@@ -45,6 +45,152 @@ const IMAGE_MIME_PREFIX =
 const PDF_MIME_TYPE =
   "application/pdf";
 
+const DOCX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+const XLSX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+const DOC_MIME_TYPE =
+  "application/msword";
+
+const XLS_MIME_TYPE =
+  "application/vnd.ms-excel";
+
+const DOCX_EXTENSIONS =
+  new Set<string>([
+    "docx",
+  ]);
+
+const XLSX_EXTENSIONS =
+  new Set<string>([
+    "xlsx",
+  ]);
+
+const DOC_EXTENSIONS =
+  new Set<string>([
+    "doc",
+  ]);
+
+const XLS_EXTENSIONS =
+  new Set<string>([
+    "xls",
+  ]);
+
+const PDF_EXTENSIONS =
+  new Set<string>([
+    "pdf",
+  ]);
+
+const TXT_EXTENSIONS =
+  new Set<string>([
+    "txt",
+    "csv",
+    "json",
+  ]);
+
+function getFileExtension(
+  fileName: string,
+): string {
+  const lower =
+    fileName.toLowerCase();
+
+  const dotIndex =
+    lower.lastIndexOf(".");
+
+  if (dotIndex < 0) {
+    return "";
+  }
+
+  return lower.slice(
+    dotIndex + 1,
+  );
+}
+
+function resolveDocumentKind(
+  mimeType: string,
+  fileName: string,
+): "text" | "pdf" | "docx" | "xlsx" | "image" | "doc" | "xls" | "unknown" {
+  const normalizedMime =
+    mimeType.toLowerCase();
+
+  const extension =
+    getFileExtension(
+      fileName,
+    );
+
+  if (
+    normalizedMime ===
+    PDF_MIME_TYPE ||
+    PDF_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "pdf";
+  }
+
+  if (
+    normalizedMime ===
+    DOCX_MIME_TYPE ||
+    DOCX_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "docx";
+  }
+
+  if (
+    normalizedMime ===
+    XLSX_MIME_TYPE ||
+    XLSX_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "xlsx";
+  }
+
+  if (
+    normalizedMime ===
+    DOC_MIME_TYPE ||
+    DOC_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "doc";
+  }
+
+  if (
+    normalizedMime ===
+    XLS_MIME_TYPE ||
+    XLS_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "xls";
+  }
+
+  if (
+    normalizedMime.startsWith(
+      IMAGE_MIME_PREFIX,
+    )
+  ) {
+    return "image";
+  }
+
+  if (
+    isTextMimeType(
+      normalizedMime,
+    ) ||
+    TXT_EXTENSIONS.has(
+      extension,
+    )
+  ) {
+    return "text";
+  }
+
+  return "unknown";
+}
+
 function cloneInput(
   input: AIOSInputItem,
 ): AIOSInputItem {
@@ -145,6 +291,199 @@ function applyReadyState(
   };
 }
 
+async function extractPdfText(
+  file: File,
+): Promise<string> {
+  const pdfParseModule =
+    await import(
+      "pdf-parse"
+    );
+
+  const pdfParse =
+    (pdfParseModule as {
+      default?: (
+        data: Buffer,
+      ) => Promise<{
+        text?: string;
+      }>;
+    }).default ??
+    (pdfParseModule as unknown as (
+      data: Buffer,
+    ) => Promise<{
+      text?: string;
+    }>);
+
+  if (
+    typeof pdfParse !==
+    "function"
+  ) {
+    throw new Error(
+      "PDF parser is unavailable.",
+    );
+  }
+
+  const buffer =
+    Buffer.from(
+      await file.arrayBuffer(),
+    );
+
+  const parsed =
+    await pdfParse(
+      buffer,
+    );
+
+  const text =
+    typeof parsed?.text ===
+    "string"
+      ? parsed.text
+      : "";
+
+  return text;
+}
+
+async function extractDocxText(
+  file: File,
+): Promise<string> {
+  const mammothModule =
+    await import(
+      "mammoth"
+    );
+
+  const mammoth =
+    (mammothModule as {
+      default?: {
+        extractRawText: (
+          options: {
+            buffer: Buffer;
+          },
+        ) => Promise<{
+          value: string;
+        }>;
+      };
+      extractRawText?: (
+        options: {
+          buffer: Buffer;
+        },
+      ) => Promise<{
+        value: string;
+      }>;
+    });
+
+  const extractor =
+    mammoth.default
+      ?.extractRawText ??
+    mammoth.extractRawText;
+
+  if (
+    typeof extractor !==
+    "function"
+  ) {
+    throw new Error(
+      "DOCX parser is unavailable.",
+    );
+  }
+
+  const buffer =
+    Buffer.from(
+      await file.arrayBuffer(),
+    );
+
+  const result =
+    await extractor({
+      buffer,
+    });
+
+  return typeof result?.value ===
+    "string"
+    ? result.value
+    : "";
+}
+
+async function extractXlsxText(
+  file: File,
+): Promise<string> {
+  const xlsxModule =
+    await import(
+      "xlsx"
+    );
+
+  const xlsx =
+    (xlsxModule as {
+      default?: typeof import("xlsx");
+    }).default ??
+    (xlsxModule as unknown as typeof import("xlsx"));
+
+  const buffer =
+    Buffer.from(
+      await file.arrayBuffer(),
+    );
+
+  const workbook =
+    xlsx.read(
+      buffer,
+      {
+        type: "buffer",
+      },
+    );
+
+  const lines: string[] =
+    [];
+
+  for (
+    const sheetName of
+    workbook.SheetNames
+  ) {
+    const sheet =
+      workbook.Sheets[
+        sheetName
+      ];
+
+    if (!sheet) {
+      continue;
+    }
+
+    lines.push(
+      `# Sheet: ${sheetName}`,
+    );
+
+    const rows =
+      xlsx.utils.sheet_to_json<
+        unknown[]
+      >(
+        sheet,
+        {
+          header: 1,
+          raw: true,
+          defval: "",
+          blankrows: false,
+        },
+      );
+
+    for (
+      const row of rows
+    ) {
+      const cells =
+        Array.isArray(row)
+          ? row.map(
+              (cell) =>
+                cell === null ||
+                cell === undefined
+                  ? ""
+                  : String(cell),
+            )
+          : [];
+
+      lines.push(
+        cells.join("\t"),
+      );
+    }
+
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 async function processSingleFile(
   input: AIOSInputItem,
   file: File,
@@ -154,16 +493,34 @@ async function processSingleFile(
     file.type ||
     "application/octet-stream";
 
-  if (
-    isTextMimeType(
+  const fileName =
+    input.metadata.fileName ||
+    file.name ||
+    "";
+
+  const kind =
+    resolveDocumentKind(
       mimeType,
-    )
-  ) {
+      fileName,
+    );
+
+  if (kind === "text") {
     try {
       const text =
         await decodeTextFile(
           file,
         );
+
+      if (
+        typeof text !==
+          "string" ||
+        text.trim().length === 0
+      ) {
+        return applyFailedState(
+          input,
+          "Text file produced empty extraction.",
+        );
+      }
 
       return applyReadyState(
         input,
@@ -177,30 +534,120 @@ async function processSingleFile(
     }
   }
 
-  if (
-    mimeType ===
-    PDF_MIME_TYPE
-  ) {
+  if (kind === "pdf") {
+    try {
+      const text =
+        await extractPdfText(
+          file,
+        );
+
+      if (
+        typeof text !==
+          "string" ||
+        text.trim().length === 0
+      ) {
+        return applyFailedState(
+          input,
+          "PDF produced no machine-readable text.",
+        );
+      }
+
+      return applyReadyState(
+        input,
+        text,
+      );
+    } catch {
+      return applyFailedState(
+        input,
+        "PDF could not be parsed.",
+      );
+    }
+  }
+
+  if (kind === "docx") {
+    try {
+      const text =
+        await extractDocxText(
+          file,
+        );
+
+      if (
+        typeof text !==
+          "string" ||
+        text.trim().length === 0
+      ) {
+        return applyFailedState(
+          input,
+          "DOCX produced no extractable text.",
+        );
+      }
+
+      return applyReadyState(
+        input,
+        text,
+      );
+    } catch {
+      return applyFailedState(
+        input,
+        "DOCX could not be parsed.",
+      );
+    }
+  }
+
+  if (kind === "xlsx") {
+    try {
+      const text =
+        await extractXlsxText(
+          file,
+        );
+
+      if (
+        typeof text !==
+          "string" ||
+        text.trim().length === 0
+      ) {
+        return applyFailedState(
+          input,
+          "XLSX produced no extractable content.",
+        );
+      }
+
+      return applyReadyState(
+        input,
+        text,
+      );
+    } catch {
+      return applyFailedState(
+        input,
+        "XLSX could not be parsed.",
+      );
+    }
+  }
+
+  if (kind === "image") {
     return applyPendingState(
       input,
-      "PDF parsing is not enabled in C164.6 yet.",
+      "Image inputs are handled by the existing Vision runtime.",
     );
   }
 
-  if (
-    mimeType.startsWith(
-      IMAGE_MIME_PREFIX,
-    )
-  ) {
+  if (kind === "doc") {
     return applyPendingState(
       input,
-      "Vision and OCR processing are not enabled in C164.6 yet.",
+      "Legacy DOC files are not supported by the document intelligence runtime.",
+    );
+  }
+
+  if (kind === "xls") {
+    return applyPendingState(
+      input,
+      "Legacy XLS files are not supported by the document intelligence runtime.",
     );
   }
 
   return applyPendingState(
     input,
-    "This file type is accepted by the Input Foundation but has no parser in C164.6 yet.",
+    "This file type is accepted by the Input Foundation but has no parser in C169.2 yet.",
   );
 }
 
@@ -359,10 +806,12 @@ export async function processAIOSUploadedFiles(
 
   const limitations: string[] =
     [
-      "C164.6 performs server-side processing only for plain text, CSV, and JSON files.",
-      "PDF parsing is not enabled yet.",
-      "Image Vision and OCR are not enabled yet.",
-      "DOC, DOCX, XLS, and XLSX parsing are not enabled yet.",
+      "C169.2 performs server-side extraction for TXT, CSV, JSON, PDF, DOCX, and XLSX files.",
+      "PDF extraction is limited to machine-readable text; scanned or image-only PDFs are not OCR-processed.",
+      "DOCX extraction returns plain text content only; layout and styling are not preserved.",
+      "XLSX extraction returns deterministic sheet, row, and cell content in tab-separated form.",
+      "Image inputs remain in the existing Vision runtime and are not OCR-processed here.",
+      "Legacy DOC and XLS formats remain explicitly unsupported unless genuinely implemented.",
       "Processed file content is transient and is not persisted by this runtime.",
       "No model execution is performed by this processor.",
       "Planner dispatch and trading execution remain disabled.",
