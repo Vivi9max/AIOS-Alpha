@@ -2386,10 +2386,11 @@ export async function executeAutonomousDevelopmentAgent(
 
       runSafetyGateOrThrow(
         [
-          objective,
-          "",
-          "Repair the Vercel build failure.",
-          repairContext,
+          "autonomous Vercel build repair",
+          `repairRounds: ${repairRounds}`,
+          `repairTarget: ${repairTarget}`,
+          "fix only the current build failure",
+          "preserve existing safety boundaries",
         ].join("\n"),
         [repairTarget],
         repairOriginalContents,
