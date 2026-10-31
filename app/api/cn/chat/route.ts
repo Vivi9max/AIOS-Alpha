@@ -1,3 +1,4 @@
+
 import {
   NextRequest,
   NextResponse,
@@ -224,6 +225,8 @@ function rebuildInputs(
         localReference:
           null,
         extractedText:
+          null,
+        extractedData:
           null,
         processingStatus:
           "pending",
