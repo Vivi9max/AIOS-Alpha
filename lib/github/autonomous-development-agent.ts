@@ -2450,10 +2450,16 @@ export async function executeAutonomousDevelopmentAgent(
           "No build logs returned.",
       ].join("\n");
 
+      const repairSafetyObjective = [
+        "autonomous Vercel build repair",
+        "fix only the current build failure",
+        "preserve existing safety boundaries",
+      ].join("\n");
+
       const patchGeneration =
         await generatePatch(
           [
-            objective,
+            repairSafetyObjective,
             "",
             "Repair the Vercel build failure.",
             repairContext,
@@ -2515,12 +2521,6 @@ export async function executeAutonomousDevelopmentAgent(
             `AIOS is running the Autonomous Development Safety Gate for repair round ${repairRounds} before any GitHub write.`,
         },
       );
-
-      const repairSafetyObjective = [
-        "autonomous Vercel build repair",
-        "fix only the current build failure",
-        "preserve existing safety boundaries",
-      ].join("\n");
 
       runSafetyGateOrThrow(
         repairSafetyObjective,
