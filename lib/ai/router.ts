@@ -1,6 +1,5 @@
 import type {
   AIProvider,
-  AIProviderAdapter,
   AIChatOptions,
   ChatResponse,
 } from "./types";
@@ -8,90 +7,77 @@ import type {
 import { AI_CONFIG } from "./config";
 import { providers } from "./registry";
 
+function uniqueProviders(values: AIProvider[]): AIProvider[] {
+  return values.filter(
+    (provider, index, list) => list.indexOf(provider) === index
+  );
+}
+
+export function getProviderChain(): AIProvider[] {
+  return uniqueProviders([
+    AI_CONFIG.defaultProvider,
+    ...AI_CONFIG.providerChain,
+  ]).filter(
+    (provider) =>
+      provider !== "mock" && providers[provider]?.enabled
+  );
+}
+
 export function getActiveProvider(): AIProvider {
-  const defaultProvider =
-    providers[AI_CONFIG.defaultProvider];
+  return getProviderChain()[0] ?? AI_CONFIG.fallbackProvider;
+}
 
-  if (defaultProvider?.enabled) {
-    return AI_CONFIG.defaultProvider;
-  }
-
-  return AI_CONFIG.fallbackProvider;
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export async function chat(
   prompt: string,
   options?: AIChatOptions
 ): Promise<ChatResponse> {
-  const activeProvider =
-    getActiveProvider();
+  const chain = getProviderChain();
+  const requestedProvider = chain[0] ?? AI_CONFIG.defaultProvider;
+  const failures: string[] = [];
 
-  const provider =
-    providers[activeProvider];
+  for (let index = 0; index < chain.length; index += 1) {
+    const providerId = chain[index];
+    const provider = providers[providerId];
 
-  try {
-    const result =
-      await provider.chat(
-        prompt,
-        options
-      );
+    try {
+      const result = await provider.chat(prompt, options);
 
-    return {
-      ...result,
-      requestedProvider:
-        activeProvider,
-      fallbackUsed: false,
-    };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : "未知 Provider 错误";
-
-    console.error(
-      `[AIOS Provider Error: ${activeProvider}]`,
-      error
-    );
-
-    const fallbackProvider =
-      AI_CONFIG.fallbackProvider;
-
-    if (
-      activeProvider !==
-      fallbackProvider
-    ) {
-      const fallback =
-        providers[
-          fallbackProvider
-        ];
-
-      const fallbackResult =
-        await fallback.chat(
-          prompt,
-          options
+      if (!result.success) {
+        failures.push(
+          `${providerId}: ${result.error ?? result.content}`
         );
+        continue;
+      }
 
       return {
-        ...fallbackResult,
-        requestedProvider:
-          activeProvider,
-        fallbackUsed: true,
-        error: errorMessage,
+        ...result,
+        requestedProvider,
+        fallbackUsed: index > 0,
+        error:
+          failures.length > 0 ? failures.join(" | ") : undefined,
       };
+    } catch (error) {
+      const message = getErrorMessage(error);
+      failures.push(`${providerId}: ${message}`);
+      console.error(`[AIOS Provider Error: ${providerId}]`, error);
     }
-
-    return {
-      success: false,
-      provider:
-        fallbackProvider,
-      requestedProvider:
-        activeProvider,
-      fallbackUsed: false,
-      error: errorMessage,
-      content:
-        "AIOS Provider 暂时不可用。",
-    };
   }
+
+  return {
+    success: false,
+    provider: AI_CONFIG.fallbackProvider,
+    requestedProvider,
+    fallbackUsed: chain.length > 0,
+    error:
+      failures.length > 0
+        ? failures.join(" | ")
+        : "No configured intelligence provider is available.",
+    content: "AIOS intelligence providers are temporarily unavailable.",
+  };
 }
 
 export function getProvider(): AIProvider {
