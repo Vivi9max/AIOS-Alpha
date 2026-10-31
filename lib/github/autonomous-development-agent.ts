@@ -86,66 +86,99 @@ const PLANNER_SYSTEM_PROMPT = [
   "targetPaths 必须使用真实仓库中的精确路径。",
 ].join("\n");
 
-const PATCH_SYSTEM_PROMPT = [
-  "AIOS Autonomous Development Patch Agent",
-  "",
-  "你不是完整文件生成器。",
-  "你只负责针对现有真实源码生成精确 SEARCH/REPLACE patch。",
-  "",
-  "禁止返回完整文件。",
-  "禁止返回 diff。",
-  "禁止返回 Markdown code fence。",
-  "禁止返回解释。",
-  "禁止使用 TODO。",
-  "禁止使用 placeholder。",
-  "禁止使用省略号。",
-  "",
-  "SEARCH 必须来自当前真实文件并且完全匹配。",
-  "SEARCH 必须足够独特，不能产生多个匹配。",
-  "REPLACE 是最终希望写入的源码。",
-  "如果只需要修改一个小区域，只返回一个 patch。",
-  "最多返回 8 个 patch。",
-  "每个 patch 必须严格使用：",
-  "",
-  "AIOS_PATCH_BEGIN",
-  "PATH: app/example/page.tsx",
-  "OPERATION: replace",
-  "SEARCH_BEGIN",
-  "exact existing source",
-  "SEARCH_END",
-  "REPLACE_BEGIN",
-  "replacement source",
-  "REPLACE_END",
-  "AIOS_PATCH_END",
-  "",
-  "优先修改最小必要范围。",
-  "保持现有 API、数据接口、类型和其他模块不变。",
-].join("\n");
+type PatchDelimiters = {
+  searchBegin: string;
+  searchEnd: string;
+  replaceBegin: string;
+  replaceEnd: string;
+};
 
-const REPAIR_SYSTEM_PROMPT = [
-  "AIOS Autonomous Build Repair Patch Agent",
-  "",
-  "根据 Vercel Build Error 修复当前真实源码。",
-  "只生成 SEARCH/REPLACE patch。",
-  "不要生成完整文件。",
-  "不要生成 diff。",
-  "不要输出解释。",
-  "SEARCH 必须精确来自当前真实源码。",
-  "REPLACE 必须是完整可编译源码片段。",
-  "最多 8 个 patch。",
-  "",
-  "格式：",
-  "AIOS_PATCH_BEGIN",
-  "PATH: exact/repository/path.tsx",
-  "OPERATION: replace",
-  "SEARCH_BEGIN",
-  "exact existing source",
-  "SEARCH_END",
-  "REPLACE_BEGIN",
-  "replacement source",
-  "REPLACE_END",
-  "AIOS_PATCH_END",
-].join("\n");
+function createPatchDelimiters(): PatchDelimiters {
+  const token =
+    Math.random()
+      .toString(36)
+      .slice(2, 10)
+      .toUpperCase();
+
+  return {
+    searchBegin: `AIOS_SB_${token}`,
+    searchEnd: `AIOS_SE_${token}`,
+    replaceBegin: `AIOS_RB_${token}`,
+    replaceEnd: `AIOS_RE_${token}`,
+  };
+}
+
+function buildPatchSystemPrompt(
+  delimiters: PatchDelimiters,
+) {
+  return [
+    "AIOS Autonomous Development Patch Agent",
+    "",
+    "你不是完整文件生成器。",
+    "你只负责针对现有真实源码生成精确 SEARCH/REPLACE patch。",
+    "",
+    "禁止返回完整文件。",
+    "禁止返回 diff。",
+    "禁止返回 Markdown code fence。",
+    "禁止返回解释。",
+    "禁止使用 TODO。",
+    "禁止使用 placeholder。",
+    "禁止使用省略号。",
+    "",
+    "SEARCH 必须来自当前真实文件并且完全匹配。",
+    "SEARCH 必须足够独特，不能产生多个匹配。",
+    "REPLACE 是最终希望写入的源码。",
+    "如果只需要修改一个小区域，只返回一个 patch。",
+    "最多返回 8 个 patch。",
+    "每个 patch 必须严格使用以下本次生成专属的定界符：",
+    "",
+    "AIOS_PATCH_BEGIN",
+    "PATH: app/example/page.tsx",
+    "OPERATION: replace",
+    delimiters.searchBegin,
+    "exact existing source",
+    delimiters.searchEnd,
+    delimiters.replaceBegin,
+    "replacement source",
+    delimiters.replaceEnd,
+    "AIOS_PATCH_END",
+    "",
+    "必须逐字使用上述定界符，不得改写或省略。",
+    "优先修改最小必要范围。",
+    "保持现有 API、数据接口、类型和其他模块不变。",
+  ].join("\n");
+}
+
+function buildRepairSystemPrompt(
+  delimiters: PatchDelimiters,
+) {
+  return [
+    "AIOS Autonomous Build Repair Patch Agent",
+    "",
+    "根据 Vercel Build Error 修复当前真实源码。",
+    "只生成 SEARCH/REPLACE patch。",
+    "不要生成完整文件。",
+    "不要生成 diff。",
+    "不要输出解释。",
+    "SEARCH 必须精确来自当前真实源码。",
+    "REPLACE 必须是完整可编译源码片段。",
+    "最多 8 个 patch。",
+    "",
+    "格式：",
+    "AIOS_PATCH_BEGIN",
+    "PATH: exact/repository/path.tsx",
+    "OPERATION: replace",
+    delimiters.searchBegin,
+    "exact existing source",
+    delimiters.searchEnd,
+    delimiters.replaceBegin,
+    "replacement source",
+    delimiters.replaceEnd,
+    "AIOS_PATCH_END",
+    "",
+    "必须逐字使用上述定界符，不得改写或省略。",
+  ].join("\n");
+}
 
 type PatchOperation = {
   path: string;
@@ -774,6 +807,7 @@ function buildPatchPrompt(
 function parsePatchBlocks(
   content: string,
   expectedPath: string,
+  delimiters: PatchDelimiters,
 ) {
   if (
     content.length >
@@ -789,6 +823,30 @@ function parsePatchBlocks(
 
   const pattern =
     /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
+
+  const escapeRegExp =
+    (value: string) =>
+      value.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+
+  const searchPattern =
+    new RegExp(
+      `${escapeRegExp(delimiters.searchBegin)}\\s*\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(delimiters.searchEnd)}`,
+      "i",
+    );
+
+  const replacePattern =
+    new RegExp(
+      `${escapeRegExp(delimiters.replaceBegin)}\\s*\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(delimiters.replaceEnd)}`,
+      "i",
+    );
+
+  const residualProtocolPattern =
+    new RegExp(
+      `(?:^|\\r?\\n)[ \\t]*(?:${escapeRegExp(delimiters.searchBegin)}|${escapeRegExp(delimiters.searchEnd)}|${escapeRegExp(delimiters.replaceBegin)}|${escapeRegExp(delimiters.replaceEnd)})[ \\t]*(?=\\r?\\n|$)`,
+    );
 
   let match:
     | RegExpExecArray
@@ -815,12 +873,12 @@ function parsePatchBlocks(
 
     const searchMatch =
       block.match(
-        /SEARCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nSEARCH_END/i,
+        searchPattern,
       );
 
     const replaceMatch =
       block.match(
-        /REPLACE_BEGIN\s*\r?\n([\s\S]*?)\r?\nREPLACE_END/i,
+        replacePattern,
       );
 
     if (
@@ -835,16 +893,12 @@ function parsePatchBlocks(
     }
 
     /*
-     * The SEARCH_START / SEARCH_END / REPLACE_START / REPLACE_END
-     * style delimiters are internal patch protocol syntax only.
-     * Any occurrence of them outside of the recognized protocol
-     * structure indicates that the model leaked protocol markers
-     * into the intended repository source and the patch must be
-     * rejected before it can reach final source validation.
+     * The per-generation delimiters are internal patch protocol
+     * syntax only. Any occurrence of them outside of the recognized
+     * protocol structure indicates that the model leaked protocol
+     * markers into the intended repository source and the patch must
+     * be rejected before it can reach final source validation.
      */
-    const residualProtocolPattern =
-      /(?:^|\r?\n)[ \t]*(?:SEARCH_START|SEARCH_END|REPLACE_START|REPLACE_END)[ \t]*(?=\r?\n|$)/;
-
     if (
       residualProtocolPattern.test(
         searchMatch[1] || "",
@@ -1207,8 +1261,19 @@ function scanRegexLiteral(
 
 function containsLeakedPatchDelimiter(
   content: string,
+  delimiters: PatchDelimiters,
 ) {
-  return /(?:^|\r?\n)[ \t]*SEARCH_(?:BEGIN|END)[ \t]*(?=\r?\n|$)/m.test(
+  const escapeRegExp =
+    (value: string) =>
+      value.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+
+  return new RegExp(
+    `(?:^|\\r?\\n)[ \\t]*(?:${escapeRegExp(delimiters.searchBegin)}|${escapeRegExp(delimiters.searchEnd)}|${escapeRegExp(delimiters.replaceBegin)}|${escapeRegExp(delimiters.replaceEnd)})[ \\t]*(?=\\r?\\n|$)`,
+    "m",
+  ).test(
     content,
   );
 }
@@ -1216,6 +1281,7 @@ function containsLeakedPatchDelimiter(
 function validateFinalSource(
   path: string,
   content: string,
+  delimiters: PatchDelimiters,
 ) {
   const normalized =
     content.replace(
@@ -1234,6 +1300,7 @@ function validateFinalSource(
   if (
     containsLeakedPatchDelimiter(
       normalized,
+      delimiters,
     )
   ) {
     throw new Error(
@@ -1484,6 +1551,9 @@ async function generatePatch(
     MAX_PATCH_ATTEMPTS;
     attempt += 1
   ) {
+    const delimiters =
+      createPatchDelimiters();
+
     const prompt =
       [
         buildPatchPrompt(
@@ -1492,6 +1562,16 @@ async function generatePatch(
           currentContent,
           developmentPrompt,
         ),
+        [
+          "",
+          "PATCH DELIMITERS FOR THIS ATTEMPT:",
+          delimiters.searchBegin,
+          delimiters.searchEnd,
+          delimiters.replaceBegin,
+          delimiters.replaceEnd,
+          "",
+          "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
+        ].join("\n"),
         repairContext
           ? [
               "",
@@ -1522,8 +1602,12 @@ async function generatePatch(
       await runBrain(
         prompt,
         repairContext
-          ? REPAIR_SYSTEM_PROMPT
-          : PATCH_SYSTEM_PROMPT,
+          ? buildRepairSystemPrompt(
+              delimiters,
+            )
+          : buildPatchSystemPrompt(
+              delimiters,
+            ),
       );
 
     if (
@@ -1541,6 +1625,7 @@ async function generatePatch(
         parsePatchBlocks(
           response.content,
           targetPath,
+          delimiters,
         );
 
       validatePatchSearches(
@@ -1548,7 +1633,10 @@ async function generatePatch(
         operations,
       );
 
-      return operations;
+      return {
+        operations,
+        delimiters,
+      };
     } catch (error) {
       lastError =
         error instanceof Error
@@ -2146,7 +2234,7 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
-      const patches =
+      const patchGeneration =
         await generatePatch(
           objective,
           targetPath,
@@ -2157,13 +2245,14 @@ export async function executeAutonomousDevelopmentAgent(
       const patchedContent =
         applyPatchOperations(
           currentContent,
-          patches,
+          patchGeneration.operations,
         );
 
       const finalContent =
         validateFinalSource(
           targetPath,
           patchedContent,
+          patchGeneration.delimiters,
         );
 
       if (
@@ -2361,7 +2450,7 @@ export async function executeAutonomousDevelopmentAgent(
           "No build logs returned.",
       ].join("\n");
 
-      const patches =
+      const patchGeneration =
         await generatePatch(
           [
             objective,
@@ -2378,13 +2467,14 @@ export async function executeAutonomousDevelopmentAgent(
       const patchedContent =
         applyPatchOperations(
           current.content,
-          patches,
+          patchGeneration.operations,
         );
 
       const finalContent =
         validateFinalSource(
           repairTarget,
           patchedContent,
+          patchGeneration.delimiters,
         );
 
       if (
