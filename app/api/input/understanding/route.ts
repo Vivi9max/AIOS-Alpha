@@ -240,6 +240,9 @@ function rebuildInputsFromFiles(
         extractedText:
           null,
 
+        extractedData:
+          null,
+
         processingStatus:
           "pending",
 
