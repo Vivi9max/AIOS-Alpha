@@ -294,26 +294,12 @@ function applyReadyState(
 async function extractPdfText(
   file: File,
 ): Promise<string> {
-  const pdfParseModule =
-    await import(
-      "pdf-parse"
-    );
+  void file;
 
-  const pdfParseCandidate =
-    (pdfParseModule as {
-      default?: unknown;
-    }).default ??
-    (pdfParseModule as unknown);
-
-  const pdfParse =
-    typeof pdfParseCandidate ===
-    "function"
-      ? (pdfParseCandidate as (
-          data: Buffer,
-        ) => Promise<{
-          text?: string;
-        }>)
-      : undefined;
+  throw new Error(
+    "PDF parser is unavailable.",
+  );
+SEARCH_END
 SEARCH_END
 
   if (
@@ -347,145 +333,24 @@ SEARCH_END
 async function extractDocxText(
   file: File,
 ): Promise<string> {
-  const mammothModule =
-    await import(
-      "mammoth"
-    );
+  void file;
 
-  const mammoth =
-    (mammothModule as {
-      default?: {
-        extractRawText: (
-          options: {
-            buffer: Buffer;
-          },
-        ) => Promise<{
-          value: string;
-        }>;
-      };
-      extractRawText?: (
-        options: {
-          buffer: Buffer;
-        },
-      ) => Promise<{
-        value: string;
-      }>;
-    });
-
-  const extractor =
-    mammoth.default
-      ?.extractRawText ??
-    mammoth.extractRawText;
-
-  if (
-    typeof extractor !==
-    "function"
-  ) {
-    throw new Error(
-      "DOCX parser is unavailable.",
-    );
-  }
-
-  const buffer =
-    Buffer.from(
-      await file.arrayBuffer(),
-    );
-
-  const result =
-    await extractor({
-      buffer,
-    });
-
-  return typeof result?.value ===
-    "string"
-    ? result.value
-    : "";
+  throw new Error(
+    "DOCX parser is unavailable.",
+  );
 }
+SEARCH_END
 
 async function extractXlsxText(
   file: File,
 ): Promise<string> {
-  const xlsxModule =
-    await import(
-      "xlsx"
-    );
+  void file;
 
-  const xlsx =
-    (xlsxModule as {
-      default?: typeof import("xlsx");
-    }).default ??
-    (xlsxModule as unknown as typeof import("xlsx"));
-
-  const buffer =
-    Buffer.from(
-      await file.arrayBuffer(),
-    );
-
-  const workbook =
-    xlsx.read(
-      buffer,
-      {
-        type: "buffer",
-      },
-    );
-
-  const lines: string[] =
-    [];
-
-  for (
-    const sheetName of
-    workbook.SheetNames
-  ) {
-    const sheet =
-      workbook.Sheets[
-        sheetName
-      ];
-
-    if (!sheet) {
-      continue;
-    }
-
-    lines.push(
-      `# Sheet: ${sheetName}`,
-    );
-
-    const rows =
-      xlsx.utils.sheet_to_json<
-        unknown[]
-      >(
-        sheet,
-        {
-          header: 1,
-          raw: true,
-          defval: "",
-          blankrows: false,
-        },
-      );
-
-    for (
-      const row of rows
-    ) {
-      const cells =
-        Array.isArray(row)
-          ? row.map(
-              (cell) =>
-                cell === null ||
-                cell === undefined
-                  ? ""
-                  : String(cell),
-            )
-          : [];
-
-      lines.push(
-        cells.join("\t"),
-      );
-    }
-
-    lines.push("");
-  }
-
-  return lines.join("\n");
+  throw new Error(
+    "XLSX parser is unavailable.",
+  );
 }
+SEARCH_END
 
 async function processSingleFile(
   input: AIOSInputItem,
@@ -538,94 +403,26 @@ async function processSingleFile(
   }
 
   if (kind === "pdf") {
-    try {
-      const text =
-        await extractPdfText(
-          file,
-        );
-
-      if (
-        typeof text !==
-          "string" ||
-        text.trim().length === 0
-      ) {
-        return applyFailedState(
-          input,
-          "PDF produced no machine-readable text.",
-        );
-      }
-
-      return applyReadyState(
-        input,
-        text,
-      );
-    } catch {
-      return applyFailedState(
-        input,
-        "PDF could not be parsed.",
-      );
-    }
+    return applyPendingState(
+      input,
+      "PDF parsing is not available in this build.",
+    );
   }
 
   if (kind === "docx") {
-    try {
-      const text =
-        await extractDocxText(
-          file,
-        );
-
-      if (
-        typeof text !==
-          "string" ||
-        text.trim().length === 0
-      ) {
-        return applyFailedState(
-          input,
-          "DOCX produced no extractable text.",
-        );
-      }
-
-      return applyReadyState(
-        input,
-        text,
-      );
-    } catch {
-      return applyFailedState(
-        input,
-        "DOCX could not be parsed.",
-      );
-    }
+    return applyPendingState(
+      input,
+      "DOCX parsing is not available in this build.",
+    );
   }
 
   if (kind === "xlsx") {
-    try {
-      const text =
-        await extractXlsxText(
-          file,
-        );
-
-      if (
-        typeof text !==
-          "string" ||
-        text.trim().length === 0
-      ) {
-        return applyFailedState(
-          input,
-          "XLSX produced no extractable content.",
-        );
-      }
-
-      return applyReadyState(
-        input,
-        text,
-      );
-    } catch {
-      return applyFailedState(
-        input,
-        "XLSX could not be parsed.",
-      );
-    }
+    return applyPendingState(
+      input,
+      "XLSX parsing is not available in this build.",
+    );
   }
+SEARCH_END
 
   if (kind === "image") {
     return applyPendingState(
@@ -809,10 +606,9 @@ export async function processAIOSUploadedFiles(
 
   const limitations: string[] =
     [
-      "C169.2 performs server-side extraction for TXT, CSV, JSON, PDF, DOCX, and XLSX files.",
-      "PDF extraction is limited to machine-readable text; scanned or image-only PDFs are not OCR-processed.",
-      "DOCX extraction returns plain text content only; layout and styling are not preserved.",
-      "XLSX extraction returns deterministic sheet, row, and cell content in tab-separated form.",
+      "C169.2 performs server-side extraction for TXT, CSV, and JSON files.",
+      "PDF, DOCX, and XLSX parsing is not available in this build and remains pending.",
+SEARCH_END
       "Image inputs remain in the existing Vision runtime and are not OCR-processed here.",
       "Legacy DOC and XLS formats remain explicitly unsupported unless genuinely implemented.",
       "Processed file content is transient and is not persisted by this runtime.",
