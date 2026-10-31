@@ -1197,6 +1197,8 @@ export async function POST(
                 null,
               extractedText:
                 null,
+              extractedData:
+                null,
               processingStatus:
                 "pending",
               processingError:
