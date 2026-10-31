@@ -1,12 +1,10 @@
 import "server-only";
-
 type SafetyGateInput = {
   objective: string;
   targetPaths: string[];
   originalContents: Record<string, string>;
   patchedContents: Record<string, string>;
 };
-
 type SafetyGateChecks = {
   paths: boolean;
   sourceIntegrity: boolean;
@@ -14,7 +12,6 @@ type SafetyGateChecks = {
   i18nContracts: boolean;
   dangerousMarkers: boolean;
 };
-
 export type AutonomousDevelopmentSafetyGateResult = {
   passed: boolean;
   code:
@@ -24,11 +21,9 @@ export type AutonomousDevelopmentSafetyGateResult = {
   checks: SafetyGateChecks;
   errors: string[];
 };
-
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = 200000;
 const MAX_OBJECTIVE_LENGTH = 4000;
-
 const ALLOWED_PREFIXES = [
   "app/",
   "components/",
@@ -40,7 +35,6 @@ const ALLOWED_PREFIXES = [
   "public/",
   "styles/",
 ];
-
 const FORBIDDEN_PATHS = [
   "package.json",
   "package-lock.json",
@@ -48,21 +42,17 @@ const FORBIDDEN_PATHS = [
   "yarn.lock",
   "vercel.json",
 ];
-
 function normalizePath(value: string): string {
   return value
     .trim()
     .replace(/^\/+/, "")
     .replace(/\\+/g, "/");
 }
-
 function isSafePath(path: string): boolean {
   const normalized = normalizePath(path);
-
   if (!normalized) {
     return false;
   }
-
   if (
     normalized.includes("..") ||
     normalized.includes("\0") ||
@@ -72,25 +62,20 @@ function isSafePath(path: string): boolean {
   ) {
     return false;
   }
-
   if (FORBIDDEN_PATHS.includes(normalized)) {
     return false;
   }
-
   return ALLOWED_PREFIXES.some((prefix) =>
     normalized.startsWith(prefix),
   );
 }
-
 function isRegexLiteralStart(
   source: string,
   start: number,
 ): boolean {
   let index = start - 1;
-
   while (index >= 0) {
     const value = source[index];
-
     if (
       value === " " ||
       value === "\t" ||
@@ -100,16 +85,12 @@ function isRegexLiteralStart(
       index -= 1;
       continue;
     }
-
     break;
   }
-
   if (index < 0) {
     return true;
   }
-
   const previous = source[index];
-
   if (
     previous === "=" ||
     previous === "(" ||
@@ -133,9 +114,7 @@ function isRegexLiteralStart(
   ) {
     return true;
   }
-
   let wordEnd = index;
-
   while (
     wordEnd >= 0 &&
     /[A-Za-z0-9_$]/.test(
@@ -144,13 +123,11 @@ function isRegexLiteralStart(
   ) {
     wordEnd -= 1;
   }
-
   const previousWord =
     source.slice(
       wordEnd + 1,
       index + 1,
     );
-
   return (
     previousWord === "return" ||
     previousWord === "throw" ||
@@ -166,22 +143,18 @@ function isRegexLiteralStart(
     previousWord === "await"
   );
 }
-
 function scanRegexLiteral(
   source: string,
   start: number,
 ): number {
   let index = start + 1;
   let inCharacterClass = false;
-
   while (index < source.length) {
     const current = source[index];
-
     if (current === "\\") {
       index += 2;
       continue;
     }
-
     if (
       current === "[" &&
       !inCharacterClass
@@ -190,7 +163,6 @@ function scanRegexLiteral(
       index += 1;
       continue;
     }
-
     if (
       current === "]" &&
       inCharacterClass
@@ -199,13 +171,11 @@ function scanRegexLiteral(
       index += 1;
       continue;
     }
-
     if (
       current === "/" &&
       !inCharacterClass
     ) {
       index += 1;
-
       while (
         index < source.length &&
         /[A-Za-z]/.test(
@@ -214,23 +184,18 @@ function scanRegexLiteral(
       ) {
         index += 1;
       }
-
       return index;
     }
-
     if (
       current === "\n" ||
       current === "\r"
     ) {
       return -1;
     }
-
     index += 1;
   }
-
   return -1;
 }
-
 function hasDangerousMarkers(content: string): boolean {
   const markers = [
     "SEARCH_END_REPLACE",
@@ -243,23 +208,19 @@ function hasDangerousMarkers(content: string): boolean {
     "AIOS_PATCH_" + "BEGIN",
     "AIOS_PATCH_" + "END",
   ];
-
   function containsMarkerInCode(
     source: string,
     marker: string,
   ): boolean {
     let index = 0;
-
     while (index < source.length) {
       const current = source[index];
       const next = source[index + 1];
-
       if (
         current === "/" &&
         next === "/"
       ) {
         index += 2;
-
         while (
           index < source.length &&
           source[index] !== "\n" &&
@@ -267,16 +228,13 @@ function hasDangerousMarkers(content: string): boolean {
         ) {
           index += 1;
         }
-
         continue;
       }
-
       if (
         current === "/" &&
         next === "*"
       ) {
         index += 2;
-
         while (index < source.length) {
           if (
             source[index] === "*" &&
@@ -285,13 +243,10 @@ function hasDangerousMarkers(content: string): boolean {
             index += 2;
             break;
           }
-
           index += 1;
         }
-
         continue;
       }
-
       if (
         current === "/" &&
         isRegexLiteralStart(
@@ -303,57 +258,45 @@ function hasDangerousMarkers(content: string): boolean {
           source,
           index,
         );
-
         if (regexEnd > index) {
           index = regexEnd;
           continue;
         }
       }
-
       if (
         current === "'" ||
         current === "\""
       ) {
         const quote = current;
         index += 1;
-
         while (index < source.length) {
           if (source[index] === "\\") {
             index += 2;
             continue;
           }
-
           if (source[index] === quote) {
             index += 1;
             break;
           }
-
           index += 1;
         }
-
         continue;
       }
-
       if (current === "`") {
         index += 1;
-
         while (index < source.length) {
           if (source[index] === "\\") {
             index += 2;
             continue;
           }
-
           if (source[index] === "`") {
             index += 1;
             break;
           }
-
           index += 1;
         }
-
         continue;
       }
-
       if (
         source.startsWith(
           marker,
@@ -362,13 +305,10 @@ function hasDangerousMarkers(content: string): boolean {
       ) {
         return true;
       }
-
       index += 1;
     }
-
     return false;
   }
-
   return markers.some((marker) =>
     containsMarkerInCode(
       content,
@@ -376,10 +316,8 @@ function hasDangerousMarkers(content: string): boolean {
     ),
   );
 }
-
 function hasBalancedSource(content: string): boolean {
   type Delimiter = "{" | "(" | "[";
-
   function isOpeningDelimiter(
     value: string,
   ): value is Delimiter {
@@ -389,57 +327,45 @@ function hasBalancedSource(content: string): boolean {
       value === "["
     );
   }
-
   function expectedOpeningDelimiter(
     value: string,
   ): Delimiter {
     if (value === "}") {
       return "{";
     }
-
     if (value === ")") {
       return "(";
     }
-
     return "[";
   }
-
   function scanQuotedString(
     start: number,
     quote: "'" | "\"",
   ): number {
     let index = start + 1;
-
     while (index < content.length) {
       const current = content[index];
-
       if (current === "\\") {
         index += 2;
         continue;
       }
-
       if (current === quote) {
         return index + 1;
       }
-
       if (
         current === "\n" ||
         current === "\r"
       ) {
         return -1;
       }
-
       index += 1;
     }
-
     return -1;
   }
-
   function scanBlockComment(
     start: number,
   ): number {
     let index = start + 2;
-
     while (index < content.length) {
       if (
         content[index] === "*" &&
@@ -447,18 +373,14 @@ function hasBalancedSource(content: string): boolean {
       ) {
         return index + 2;
       }
-
       index += 1;
     }
-
     return -1;
   }
-
   function scanLineComment(
     start: number,
   ): number {
     let index = start + 2;
-
     while (index < content.length) {
       if (
         content[index] === "\n" ||
@@ -466,61 +388,47 @@ function hasBalancedSource(content: string): boolean {
       ) {
         return index;
       }
-
       index += 1;
     }
-
     return content.length;
   }
-
   function scanTemplate(
     start: number,
   ): number {
     let index = start + 1;
-
     while (index < content.length) {
       const current = content[index];
-
       if (current === "\\") {
         index += 2;
         continue;
       }
-
       if (current === "`") {
         return index + 1;
       }
-
       if (
         current === "$" &&
         content[index + 1] === "{"
       ) {
         const expressionEnd =
           scanTemplateExpression(index + 2);
-
         if (expressionEnd < 0) {
           return -1;
         }
-
         index = expressionEnd;
         continue;
       }
-
       index += 1;
     }
-
     return -1;
   }
-
   function scanTemplateExpression(
     start: number,
   ): number {
     const stack: Delimiter[] = ["{"];
     let index = start;
-
     while (index < content.length) {
       const current = content[index];
       const next = content[index + 1];
-
       if (
         current === "/" &&
         next === "/"
@@ -528,20 +436,16 @@ function hasBalancedSource(content: string): boolean {
         index = scanLineComment(index);
         continue;
       }
-
       if (
         current === "/" &&
         next === "*"
       ) {
         index = scanBlockComment(index);
-
         if (index < 0) {
           return -1;
         }
-
         continue;
       }
-
       if (
         current === "'" ||
         current === "\""
@@ -550,30 +454,40 @@ function hasBalancedSource(content: string): boolean {
           index,
           current,
         );
-
         if (index < 0) {
           return -1;
         }
-
         continue;
       }
-
       if (current === "`") {
         index = scanTemplate(index);
-
         if (index < 0) {
           return -1;
         }
-
         continue;
       }
-
+      if (
+        current === "/" &&
+        isRegexLiteralStart(
+          content,
+          index,
+        )
+      ) {
+        const regexEnd =
+          scanRegexLiteral(
+            content,
+            index,
+          );
+        if (regexEnd > index) {
+          index = regexEnd;
+          continue;
+        }
+      }
       if (isOpeningDelimiter(current)) {
         stack.push(current);
         index += 1;
         continue;
       }
-
       if (
         current === "}" ||
         current === ")" ||
@@ -583,37 +497,28 @@ function hasBalancedSource(content: string): boolean {
           expectedOpeningDelimiter(
             current,
           );
-
         if (
           stack[stack.length - 1] !==
           expected
         ) {
           return -1;
         }
-
         stack.pop();
         index += 1;
-
         if (stack.length === 0) {
           return index;
         }
-
         continue;
       }
-
       index += 1;
     }
-
     return -1;
   }
-
   const stack: Delimiter[] = [];
   let index = 0;
-
   while (index < content.length) {
     const current = content[index];
     const next = content[index + 1];
-
     if (
       current === "/" &&
       next === "/"
@@ -621,20 +526,16 @@ function hasBalancedSource(content: string): boolean {
       index = scanLineComment(index);
       continue;
     }
-
     if (
       current === "/" &&
       next === "*"
     ) {
       index = scanBlockComment(index);
-
       if (index < 0) {
         return false;
       }
-
       continue;
     }
-
     if (
       current === "'" ||
       current === "\""
@@ -643,30 +544,40 @@ function hasBalancedSource(content: string): boolean {
         index,
         current,
       );
-
       if (index < 0) {
         return false;
       }
-
       continue;
     }
-
     if (current === "`") {
       index = scanTemplate(index);
-
       if (index < 0) {
         return false;
       }
-
       continue;
     }
-
+    if (
+      current === "/" &&
+      isRegexLiteralStart(
+        content,
+        index,
+      )
+    ) {
+      const regexEnd =
+        scanRegexLiteral(
+          content,
+          index,
+        );
+      if (regexEnd > index) {
+        index = regexEnd;
+        continue;
+      }
+    }
     if (isOpeningDelimiter(current)) {
       stack.push(current);
       index += 1;
       continue;
     }
-
     if (
       current === "}" ||
       current === ")" ||
@@ -676,75 +587,59 @@ function hasBalancedSource(content: string): boolean {
         expectedOpeningDelimiter(
           current,
         );
-
       if (
         stack[stack.length - 1] !==
         expected
       ) {
         return false;
       }
-
       stack.pop();
       index += 1;
       continue;
     }
-
     index += 1;
   }
-
   return stack.length === 0;
 }
-
 function extractTranslationKeys(
   content: string,
 ): string[] {
   const keys = new Set<string>();
-
   const patterns = [
     /\bt\s*$begin:math:text$\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
     /\bt\s*$begin:math:text$\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
     /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
     /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
   ];
-
   for (const pattern of patterns) {
     let match: RegExpExecArray | null = null;
-
     while (
       (match = pattern.exec(content)) !== null
     ) {
       const key = match[1]?.trim();
-
       if (key) {
         keys.add(key);
       }
     }
   }
-
   return Array.from(keys);
 }
-
 function extractDeclaredTranslationKeys(
   content: string,
 ): Set<string> {
   const keys = new Set<string>();
-
   const doubleQuotePattern =
     /"([^"]+)"\s*:/g;
-
   const singleQuotePattern =
     /'([^']+)'\s*:/g;
-
   const collect = (
     pattern: RegExp,
   ) => {
     let match: RegExpExecArray | null = null;
-
     while (
       (match = pattern.exec(content)) !== null
     ) {
       const key = match[1]?.trim();
-
       if (
         key &&
         key.includes(".")
@@ -753,13 +648,10 @@ function extractDeclaredTranslationKeys(
       }
     }
   };
-
   collect(doubleQuotePattern);
   collect(singleQuotePattern);
-
   return keys;
 }
-
 function validateI18nContracts(
   patchedContents: Record<string, string>,
 ): {
@@ -768,10 +660,8 @@ function validateI18nContracts(
 } {
   const i18nPath =
     "lib/i18n/index.ts";
-
   const i18nContent =
     patchedContents[i18nPath];
-
   if (
     typeof i18nContent !==
     "string"
@@ -781,14 +671,11 @@ function validateI18nContracts(
       errors: [],
     };
   }
-
   const declared =
     extractDeclaredTranslationKeys(
       i18nContent,
     );
-
   const errors: string[] = [];
-
   for (
     const [path, content] of Object.entries(
       patchedContents,
@@ -797,12 +684,10 @@ function validateI18nContracts(
     if (path === i18nPath) {
       continue;
     }
-
     const referenced =
       extractTranslationKeys(
         content,
       );
-
     for (const key of referenced) {
       if (!declared.has(key)) {
         errors.push(
@@ -811,13 +696,11 @@ function validateI18nContracts(
       }
     }
   }
-
   return {
     passed: errors.length === 0,
     errors,
   };
 }
-
 function validatePaths(
   targetPaths: string[],
   originalContents: Record<string, string>,
@@ -827,7 +710,6 @@ function validatePaths(
   errors: string[];
 } {
   const errors: string[] = [];
-
   if (
     targetPaths.length === 0 ||
     targetPaths.length > MAX_FILES
@@ -836,22 +718,18 @@ function validatePaths(
       `AIOS_SAFETY_TARGET_COUNT_INVALID: ${targetPaths.length}`,
     );
   }
-
   const uniquePaths =
     new Set<string>();
-
   for (
     const rawPath of targetPaths
   ) {
     const path =
       normalizePath(rawPath);
-
     if (!isSafePath(path)) {
       errors.push(
         `AIOS_SAFETY_PATH_REJECTED: ${path}`,
       );
     }
-
     if (
       uniquePaths.has(path)
     ) {
@@ -859,9 +737,7 @@ function validatePaths(
         `AIOS_SAFETY_DUPLICATE_PATH: ${path}`,
       );
     }
-
     uniquePaths.add(path);
-
     if (
       !(path in originalContents)
     ) {
@@ -869,7 +745,6 @@ function validatePaths(
         `AIOS_SAFETY_ORIGINAL_MISSING: ${path}`,
       );
     }
-
     if (
       !(path in patchedContents)
     ) {
@@ -878,13 +753,11 @@ function validatePaths(
       );
     }
   }
-
   return {
     passed: errors.length === 0,
     errors,
   };
 }
-
 function validateSources(
   targetPaths: string[],
   originalContents: Record<string, string>,
@@ -894,19 +767,15 @@ function validateSources(
   errors: string[];
 } {
   const errors: string[] = [];
-
   for (
     const rawPath of targetPaths
   ) {
     const path =
       normalizePath(rawPath);
-
     const original =
       originalContents[path];
-
     const patched =
       patchedContents[path];
-
     if (
       typeof patched !== "string" ||
       !patched.trim()
@@ -916,7 +785,6 @@ function validateSources(
       );
       continue;
     }
-
     if (
       patched.length >
       MAX_FILE_SIZE
@@ -925,7 +793,6 @@ function validateSources(
         `AIOS_SAFETY_SOURCE_TOO_LARGE: ${path}`,
       );
     }
-
     if (
       hasDangerousMarkers(patched)
     ) {
@@ -933,7 +800,6 @@ function validateSources(
         `AIOS_SAFETY_DANGEROUS_MARKER: ${path}`,
       );
     }
-
     if (
       !hasBalancedSource(patched)
     ) {
@@ -941,7 +807,6 @@ function validateSources(
         `AIOS_SAFETY_SOURCE_UNBALANCED: ${path}`,
       );
     }
-
     if (
       typeof original !== "string"
     ) {
@@ -950,7 +815,6 @@ function validateSources(
       );
       continue;
     }
-
     if (
       patched === original
     ) {
@@ -959,33 +823,27 @@ function validateSources(
       );
     }
   }
-
   return {
     passed: errors.length === 0,
     errors,
   };
 }
-
 function validateObjective(
   objective: string,
 ): string | null {
   const normalized =
     objective.trim();
-
   if (!normalized) {
     return "AIOS_SAFETY_OBJECTIVE_EMPTY";
   }
-
   if (
     normalized.length >
     MAX_OBJECTIVE_LENGTH
   ) {
     return "AIOS_SAFETY_OBJECTIVE_TOO_LARGE";
   }
-
   return null;
 }
-
 function buildChecks(
   pathResult: {
     passed: boolean;
@@ -1018,62 +876,50 @@ function buildChecks(
       ),
   };
 }
-
 export function runAutonomousDevelopmentSafetyGate(
   input: SafetyGateInput,
 ): AutonomousDevelopmentSafetyGateResult {
   const errors: string[] = [];
-
   const objectiveError =
     validateObjective(
       input.objective,
     );
-
   if (objectiveError) {
     errors.push(objectiveError);
   }
-
   const pathResult =
     validatePaths(
       input.targetPaths,
       input.originalContents,
       input.patchedContents,
     );
-
   errors.push(
     ...pathResult.errors,
   );
-
   const sourceResult =
     validateSources(
       input.targetPaths,
       input.originalContents,
       input.patchedContents,
     );
-
   errors.push(
     ...sourceResult.errors,
   );
-
   const i18nResult =
     validateI18nContracts(
       input.patchedContents,
     );
-
   errors.push(
     ...i18nResult.errors,
   );
-
   const checks =
     buildChecks(
       pathResult,
       sourceResult,
       i18nResult,
     );
-
   const passed =
     errors.length === 0;
-
   return {
     passed,
     code: passed
