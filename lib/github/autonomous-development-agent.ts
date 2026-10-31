@@ -834,6 +834,30 @@ function parsePatchBlocks(
       );
     }
 
+    /*
+     * The SEARCH_START / SEARCH_END / REPLACE_START / REPLACE_END
+     * style delimiters are internal patch protocol syntax only.
+     * Any occurrence of them outside of the recognized protocol
+     * structure indicates that the model leaked protocol markers
+     * into the intended repository source and the patch must be
+     * rejected before it can reach final source validation.
+     */
+    const residualProtocolPattern =
+      /(?:^|\r?\n)[ \t]*(?:SEARCH_START|SEARCH_END|REPLACE_START|REPLACE_END)[ \t]*(?=\r?\n|$)/;
+
+    if (
+      residualProtocolPattern.test(
+        searchMatch[1] || "",
+      ) ||
+      residualProtocolPattern.test(
+        replaceMatch[1] || "",
+      )
+    ) {
+      throw new Error(
+        "AIOS_PATCH_PROTOCOL_DELIMITER_LEAKED",
+      );
+    }
+
     const path =
       normalizePath(
         pathMatch[1] || "",
@@ -1181,6 +1205,14 @@ function scanRegexLiteral(
   return -1;
 }
 
+function containsLeakedPatchDelimiter(
+  content: string,
+) {
+  return /(?:^|\r?\n)[ \t]*SEARCH_(?:BEGIN|END)[ \t]*(?=\r?\n|$)/m.test(
+    content,
+  );
+}
+
 function validateFinalSource(
   path: string,
   content: string,
@@ -1196,6 +1228,16 @@ function validateFinalSource(
   ) {
     throw new Error(
       `AIOS_FINAL_SOURCE_EMPTY: ${path}`,
+    );
+  }
+
+  if (
+    containsLeakedPatchDelimiter(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_DELIMITER_INVALID: ${path}`,
     );
   }
 
