@@ -2516,14 +2516,14 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
+      const repairSafetyObjective = [
+        "autonomous Vercel build repair",
+        "fix only the current build failure",
+        "preserve existing safety boundaries",
+      ].join("\n");
+
       runSafetyGateOrThrow(
-        [
-          "autonomous Vercel build repair",
-          `repairRounds: ${repairRounds}`,
-          `repairTarget: ${repairTarget}`,
-          "fix only the current build failure",
-          "preserve existing safety boundaries",
-        ].join("\n"),
+        repairSafetyObjective,
         [repairTarget],
         repairOriginalContents,
         repairPatchedContents,
