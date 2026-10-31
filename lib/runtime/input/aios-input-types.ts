@@ -1,3 +1,4 @@
+
 export type AIOSInputKind =
   | "text"
   | "image"
@@ -31,7 +32,6 @@ export type AIOSInputMimeType =
   | "application/vnd.ms-excel"
   | "application/octet-stream"
   | string;
-SEARCH_END
 
 export interface AIOSInputSpreadsheetCell {
   row: number;
@@ -58,7 +58,6 @@ export interface AIOSInputExtractedData {
 }
 
 export interface AIOSInputMetadata {
-SEARCH_END
   name: string | null;
   mimeType: AIOSInputMimeType;
   sizeBytes: number | null;
@@ -106,7 +105,6 @@ export interface AIOSInputItem {
 
   processingError: string | null;
 }
-SEARCH_END
 
 export interface AIOSInputRequest {
   inputs: AIOSInputItem[];
@@ -196,4 +194,3 @@ export interface AIOSInputDocumentParseFailure {
 export type AIOSInputDocumentParseResult =
   | AIOSInputDocumentParseSuccess
   | AIOSInputDocumentParseFailure;
-SEARCH_END
