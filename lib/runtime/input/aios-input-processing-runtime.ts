@@ -299,19 +299,22 @@ async function extractPdfText(
       "pdf-parse"
     );
 
-  const pdfParse =
+  const pdfParseCandidate =
     (pdfParseModule as {
-      default?: (
-        data: Buffer,
-      ) => Promise<{
-        text?: string;
-      }>;
+      default?: unknown;
     }).default ??
-    (pdfParseModule as unknown as (
-      data: Buffer,
-    ) => Promise<{
-      text?: string;
-    }>);
+    (pdfParseModule as unknown);
+
+  const pdfParse =
+    typeof pdfParseCandidate ===
+    "function"
+      ? (pdfParseCandidate as (
+          data: Buffer,
+        ) => Promise<{
+          text?: string;
+        }>)
+      : undefined;
+SEARCH_END
 
   if (
     typeof pdfParse !==
