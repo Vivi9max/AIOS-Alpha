@@ -606,10 +606,10 @@ function extractTranslationKeys(
 ): string[] {
   const keys = new Set<string>();
   const patterns = [
-    /\bt\s*$begin:math:text$\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
-    /\bt\s*$begin:math:text$\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
-    /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\"\(\[\^\"\\\\\]\+\)\"\\s\*$end:math:text$/g,
-    /\btranslate\s*$begin:math:text$\\s\*\[\^\,\]\+\,\\s\*\'\(\[\^\'\\\\\]\+\)\'\\s\*$end:math:text$/g,
+    /\bt\s*\(\s*"([^"\\]+)"\s*\)/g,
+    /\bt\s*\(\s*'([^'\\]+)'\s*\)/g,
+    /\btranslate\s*\(\s*[^,]+\s*,\s*"([^"\\]+)"\s*\)/g,
+    /\btranslate\s*\(\s*[^,]+\s*,\s*'([^'\\]+)'\s*\)/g,
   ];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null = null;
