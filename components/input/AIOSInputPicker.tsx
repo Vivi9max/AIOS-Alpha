@@ -852,6 +852,8 @@ function getInputItem(
       null,
     extractedText:
       null,
+    extractedData:
+      null,
     processingStatus:
       "pending",
     processingError:
