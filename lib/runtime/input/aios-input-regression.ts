@@ -39,6 +39,9 @@ function createInput(
     extractedText:
       overrides.extractedText ??
       null,
+    extractedData:
+      overrides.extractedData ??
+      null,
     processingStatus:
       overrides.processingStatus ??
       "ready",
