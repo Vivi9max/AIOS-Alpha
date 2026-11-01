@@ -281,7 +281,7 @@ async function processSingleFile(
     file.type ||
     "application/octet-stream";
   const fileName =
-    input.metadata.fileName ||
+    input.metadata.name ||
     file.name ||
     "";
   const kind =
