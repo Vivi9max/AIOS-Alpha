@@ -105,11 +105,14 @@ function protectCsvFormula(
 function escapeCsvCell(
   value: unknown,
 ): string {
-  const normalized = protectCsvFormula(
-    normalizeCellValue(value),
-  );
+  const normalized = normalizeCellValue(value);
 
-  return `"${normalized.replace(/"/g, '""')}"`;
+  const safeValue =
+    typeof value === "string"
+      ? protectCsvFormula(normalized)
+      : normalized;
+
+  return `"${safeValue.replace(/"/g, '""')}"`;
 }
 
 function buildCsv(
