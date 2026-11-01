@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -21,10 +22,17 @@ import type {
   AIOSDataSourceResult,
 } from "@/lib/runtime/analysis/aios-data-analysis-types";
 
+type ArtifactFormat = "csv" | "json" | "md" | "txt";
+
 interface AnalysisApiResponse {
   success?: boolean;
   error?: string;
   result?: AIOSDataAnalysisResult;
+}
+
+interface ArtifactApiResponse {
+  success?: boolean;
+  error?: string;
 }
 
 interface SelectedFile {
@@ -33,7 +41,6 @@ interface SelectedFile {
 }
 
 const MAX_FILES = 8;
-
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 const ACCEPTED_EXTENSIONS = [
@@ -49,44 +56,41 @@ const ACCEPTED_MIME_TYPES = [
   "application/octet-stream",
 ];
 
-function isSupportedDataFile(
-  file: File,
-): boolean {
+const ARTIFACT_FORMATS: {
+  value: ArtifactFormat;
+  label: string;
+}[] = [
+  { value: "csv", label: "CSV" },
+  { value: "json", label: "JSON" },
+  { value: "md", label: "Markdown" },
+  { value: "txt", label: "TXT" },
+];
+
+function isSupportedDataFile(file: File): boolean {
   const name = file.name.toLowerCase();
 
   return (
-    ACCEPTED_EXTENSIONS.some(
-      (extension) => name.endsWith(extension),
+    ACCEPTED_EXTENSIONS.some((extension) =>
+      name.endsWith(extension),
     ) ||
     ACCEPTED_MIME_TYPES.includes(file.type)
   );
 }
 
-function getFileFormat(
-  fileName: string,
-): string {
-  const extension = fileName
-    .split(".")
-    .pop()
-    ?.toLowerCase();
-
-  return extension ?? "unknown";
+function getFileFormat(fileName: string): string {
+  return (
+    fileName.split(".").pop()?.toLowerCase() ??
+    "unknown"
+  );
 }
 
-function formatNumber(
-  value: number,
-): string {
-  return new Intl.NumberFormat(
-    undefined,
-    {
-      maximumFractionDigits: 4,
-    },
-  ).format(value);
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 4,
+  }).format(value);
 }
 
-function formatFileSize(
-  bytes: number,
-): string {
+function formatFileSize(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
@@ -105,39 +109,27 @@ function createInputItem(
 
   return {
     id: selected.id,
-
     kind: "file",
-
     metadata: {
       name: file.name,
       mimeType:
-        file.type ||
-        "application/octet-stream",
+        file.type || "application/octet-stream",
       sizeBytes: file.size,
       lastModifiedAt:
         file.lastModified > 0
-          ? new Date(
-              file.lastModified,
-            ).toISOString()
+          ? new Date(file.lastModified).toISOString()
           : null,
       source: "file-picker",
     },
-
     localReference: null,
-
     extractedText: null,
-
     extractedData: null,
-
     processingStatus: "pending",
-
     processingError: null,
   };
 }
 
-function getColumnTypeLabel(
-  type: string,
-): string {
+function getColumnTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     number: "数值",
     boolean: "布尔值",
@@ -149,10 +141,54 @@ function getColumnTypeLabel(
   return labels[type] ?? type;
 }
 
-function getFormatLabel(
-  format: string,
-): string {
+function getFormatLabel(format: string): string {
   return format.toUpperCase();
+}
+
+function getDownloadFileName(
+  disposition: string | null,
+  fallback: string,
+): string {
+  if (!disposition) {
+    return fallback;
+  }
+
+  const encodedMatch = disposition.match(
+    /filename\*=UTF-8''([^;]+)/i,
+  );
+
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(
+        encodedMatch[1].trim(),
+      );
+    } catch {
+      // Use the regular filename fallback.
+    }
+  }
+
+  const regularMatch = disposition.match(
+    /filename="?([^";]+)"?/i,
+  );
+
+  return regularMatch?.[1]?.trim() || fallback;
+}
+
+async function readApiError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload =
+      (await response.json()) as ArtifactApiResponse;
+
+    return (
+      payload.error ||
+      `${fallback}，HTTP ${response.status}`
+    );
+  } catch {
+    return `${fallback}，HTTP ${response.status}`;
+  }
 }
 
 export default function DataAnalysisPage() {
@@ -163,28 +199,24 @@ export default function DataAnalysisPage() {
     useState<SelectedFile[]>([]);
 
   const [analysisResult, setAnalysisResult] =
-    useState<AIOSDataAnalysisResult | null>(
-      null,
-    );
+    useState<AIOSDataAnalysisResult | null>(null);
 
   const [understoodInputs, setUnderstoodInputs] =
     useState<AIOSInputItem[]>([]);
 
-  const [groupBy, setGroupBy] =
-    useState("");
-
-  const [sortBy, setSortBy] =
-    useState("");
+  const [groupBy, setGroupBy] = useState("");
+  const [sortBy, setSortBy] = useState("");
 
   const [sortDirection, setSortDirection] =
     useState<"asc" | "desc">("desc");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [exportFormat, setExportFormat] =
+    useState<ArtifactFormat>("csv");
 
+  const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] =
     useState("");
 
@@ -196,21 +228,13 @@ export default function DataAnalysisPage() {
 
   const availableColumns = useMemo(() => {
     const source =
-      analysisResult?.sources[
-        activeSourceIndex
-      ];
+      analysisResult?.sources[activeSourceIndex];
 
     return source?.columns ?? [];
-  }, [
-    analysisResult,
-    activeSourceIndex,
-  ]);
+  }, [analysisResult, activeSourceIndex]);
 
-  const activeSource:
-    AIOSDataSourceResult | null =
-    analysisResult?.sources[
-      activeSourceIndex
-    ] ?? null;
+  const activeSource: AIOSDataSourceResult | null =
+    analysisResult?.sources[activeSourceIndex] ?? null;
 
   function handleFileSelection(
     event: ChangeEvent<HTMLInputElement>,
@@ -231,10 +255,7 @@ export default function DataAnalysisPage() {
     setUnderstoodInputs([]);
     setLimitations([]);
 
-    const nextFiles: SelectedFile[] = [
-      ...selectedFiles,
-    ];
-
+    const nextFiles = [...selectedFiles];
     const messages: string[] = [];
 
     for (const file of incomingFiles) {
@@ -242,7 +263,6 @@ export default function DataAnalysisPage() {
         messages.push(
           `${file.name}: 仅支持 CSV、JSON 和 XLSX 数据文件。`,
         );
-
         continue;
       }
 
@@ -250,7 +270,6 @@ export default function DataAnalysisPage() {
         messages.push(
           `${file.name}: 文件超过 25 MB 限制。`,
         );
-
         continue;
       }
 
@@ -258,15 +277,13 @@ export default function DataAnalysisPage() {
         (item) =>
           item.file.name === file.name &&
           item.file.size === file.size &&
-          item.file.lastModified ===
-            file.lastModified,
+          item.file.lastModified === file.lastModified,
       );
 
       if (duplicate) {
         messages.push(
           `${file.name}: 文件已经添加。`,
         );
-
         continue;
       }
 
@@ -274,7 +291,6 @@ export default function DataAnalysisPage() {
         messages.push(
           `最多同时分析 ${MAX_FILES} 个文件。`,
         );
-
         break;
       }
 
@@ -291,32 +307,23 @@ export default function DataAnalysisPage() {
     }
   }
 
-  function removeFile(
-    id: string,
-  ) {
+  function removeFile(id: string) {
     setSelectedFiles((current) =>
-      current.filter(
-        (item) => item.id !== id,
-      ),
+      current.filter((item) => item.id !== id),
     );
 
     setAnalysisResult(null);
     setUnderstoodInputs([]);
     setLimitations([]);
     setStatusMessage("");
+    setError("");
   }
 
   function buildAnalysisOptions():
     AIOSDataAnalysisOptions {
     return {
       limit: 500,
-
-      ...(groupBy
-        ? {
-            groupBy,
-          }
-        : {}),
-
+      ...(groupBy ? { groupBy } : {}),
       ...(sortBy
         ? {
             sortBy,
@@ -327,12 +334,14 @@ export default function DataAnalysisPage() {
   }
 
   async function runAnalysis() {
-    if (loading) {
+    if (loading || exporting) {
       return;
     }
 
     if (selectedFiles.length === 0) {
-      setError("请先选择 CSV、JSON 或 XLSX 文件。");
+      setError(
+        "请先选择 CSV、JSON 或 XLSX 文件。",
+      );
       return;
     }
 
@@ -359,32 +368,28 @@ export default function DataAnalysisPage() {
           "zh-CN",
         );
 
-      setUnderstoodInputs(
-        bridgeResult.inputs,
-      );
+      setUnderstoodInputs(bridgeResult.inputs);
 
-      if (
-        bridgeResult.limitations.length > 0
-      ) {
-        setLimitations(
-          bridgeResult.limitations,
-        );
+      if (bridgeResult.limitations.length > 0) {
+        setLimitations(bridgeResult.limitations);
       }
 
       const readyInputs =
-        bridgeResult.inputs.filter(
-          (input) =>
+        bridgeResult.inputs.filter((input) => {
+          const selected = selectedFiles.find(
+            (item) => item.id === input.id,
+          );
+
+          return (
             input.processingStatus === "ready" &&
             (
               input.extractedText !== null ||
               input.extractedData?.format === "xlsx"
             ) &&
-            isSupportedDataFile(
-              selectedFiles.find(
-                (item) => item.id === input.id,
-              )?.file ?? new File([], ""),
-            ),
-        );
+            selected !== undefined &&
+            isSupportedDataFile(selected.file)
+          );
+        });
 
       if (readyInputs.length === 0) {
         const failedDetails =
@@ -419,15 +424,11 @@ export default function DataAnalysisPage() {
         "/api/input/analysis",
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
           },
-
           credentials: "same-origin",
-
           cache: "no-store",
-
           body: JSON.stringify({
             inputs: readyInputs,
             options: buildAnalysisOptions(),
@@ -435,33 +436,25 @@ export default function DataAnalysisPage() {
         },
       );
 
-      let payload:
-        AnalysisApiResponse;
+      let payload: AnalysisApiResponse;
 
       try {
         payload =
-          (await response.json()) as
-            AnalysisApiResponse;
+          (await response.json()) as AnalysisApiResponse;
       } catch {
         throw new Error(
           "AIOS Data Analysis API 返回了无法识别的数据。",
         );
       }
 
-      if (
-        !response.ok ||
-        !payload.result
-      ) {
+      if (!response.ok || !payload.result) {
         throw new Error(
           payload.error ??
             `数据分析失败，HTTP ${response.status}`,
         );
       }
 
-      setAnalysisResult(
-        payload.result,
-      );
-
+      setAnalysisResult(payload.result);
       setActiveSourceIndex(0);
 
       setStatusMessage(
@@ -470,9 +463,7 @@ export default function DataAnalysisPage() {
           : "分析请求已完成，但没有可用的数据分析结果。",
       );
 
-      if (
-        payload.result.errors.length > 0
-      ) {
+      if (payload.result.errors.length > 0) {
         setLimitations((current) => [
           ...current,
           ...payload.result!.errors.map(
@@ -487,7 +478,6 @@ export default function DataAnalysisPage() {
           ? analysisError.message
           : "AIOS_DATA_ANALYSIS_FAILED",
       );
-
       setStatusMessage("");
     } finally {
       setLoading(false);
@@ -495,11 +485,11 @@ export default function DataAnalysisPage() {
   }
 
   async function rerunAnalysis() {
-    if (understoodInputs.length === 0) {
-      return;
-    }
-
-    if (loading) {
+    if (
+      understoodInputs.length === 0 ||
+      loading ||
+      exporting
+    ) {
       return;
     }
 
@@ -518,15 +508,11 @@ export default function DataAnalysisPage() {
         "/api/input/analysis",
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
           },
-
           credentials: "same-origin",
-
           cache: "no-store",
-
           body: JSON.stringify({
             inputs: readyInputs,
             options: buildAnalysisOptions(),
@@ -534,24 +520,25 @@ export default function DataAnalysisPage() {
         },
       );
 
-      const payload =
-        (await response.json()) as
-          AnalysisApiResponse;
+      let payload: AnalysisApiResponse;
 
-      if (
-        !response.ok ||
-        !payload.result
-      ) {
+      try {
+        payload =
+          (await response.json()) as AnalysisApiResponse;
+      } catch {
+        throw new Error(
+          "AIOS Data Analysis API 返回了无法识别的数据。",
+        );
+      }
+
+      if (!response.ok || !payload.result) {
         throw new Error(
           payload.error ??
             `分析请求失败，HTTP ${response.status}`,
         );
       }
 
-      setAnalysisResult(
-        payload.result,
-      );
-
+      setAnalysisResult(payload.result);
       setActiveSourceIndex(0);
 
       setStatusMessage(
@@ -563,76 +550,145 @@ export default function DataAnalysisPage() {
           ? analysisError.message
           : "AIOS_DATA_ANALYSIS_FAILED",
       );
-
       setStatusMessage("");
     } finally {
       setLoading(false);
     }
   }
 
-  function exportCurrentRows() {
-    if (!activeSource) {
+  async function exportArtifact() {
+    if (!analysisResult || !activeSource) {
+      setError("当前没有可导出的分析结果。");
       return;
     }
 
-    const rows = activeSource.rows;
-
-    if (rows.length === 0) {
-      setError("当前结果没有可导出的数据行。");
+    if (exporting || loading) {
       return;
     }
 
-    const headers = activeSource.columns.map(
-      (column) => column.name,
+    if (
+      !analysisResult.success ||
+      analysisResult.code ===
+        "AIOS_DATA_ANALYSIS_REJECTED"
+    ) {
+      setError("当前分析结果不允许导出。");
+      return;
+    }
+
+    setExporting(true);
+    setError("");
+    setStatusMessage(
+      `正在由 AIOS Artifact Engine 生成 ${exportFormat.toUpperCase()} 文件...`,
     );
 
-    const escapeCsv = (
-      value: unknown,
-    ): string => {
-      const text =
-        value === null || value === undefined
-          ? ""
-          : String(value);
+    let objectUrl: string | null = null;
 
-      return `"${text.replace(/"/g, '""')}"`;
-    };
+    try {
+      const response = await fetch(
+        "/api/input/artifacts",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "same-origin",
+          cache: "no-store",
+          body: JSON.stringify({
+            format: exportFormat,
+            result: analysisResult,
+            sourceIndex: activeSourceIndex,
+          }),
+        },
+      );
 
-    const csv = [
-      headers.map(escapeCsv).join(","),
-      ...rows.map((row) =>
-        headers
-          .map((header) =>
-            escapeCsv(row[header]),
-          )
-          .join(","),
-      ),
-    ].join("\r\n");
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(
+            response,
+            "AIOS Artifact Engine 文件生成失败",
+          ),
+        );
+      }
 
-    const blob = new Blob(
-      ["\uFEFF", csv],
-      {
-        type: "text/csv;charset=utf-8",
-      },
-    );
+      const blob = await response.blob();
 
-    const url = URL.createObjectURL(blob);
+      if (blob.size === 0) {
+        throw new Error(
+          "Artifact Engine 返回了空文件。",
+        );
+      }
 
-    const anchor =
-      document.createElement("a");
+      const fallbackBaseName =
+        activeSource.fileName.replace(/\.[^.]+$/, "") ||
+        "aios-analysis";
 
-    anchor.href = url;
+      const fallbackFileName =
+        `${fallbackBaseName}-analysis.${exportFormat}`;
 
-    anchor.download =
-      `${activeSource.fileName.replace(/\.[^.]+$/, "")}-analysis.csv`;
+      const fileName = getDownloadFileName(
+        response.headers.get("content-disposition"),
+        fallbackFileName,
+      );
 
-    document.body.appendChild(anchor);
+      objectUrl = URL.createObjectURL(blob);
 
-    anchor.click();
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.style.display = "none";
 
-    anchor.remove();
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
 
-    URL.revokeObjectURL(url);
+      setStatusMessage(
+        `文件生成成功：${fileName}（${formatFileSize(blob.size)}）。`,
+      );
+    } catch (exportError) {
+      setError(
+        exportError instanceof Error
+          ? exportError.message
+          : "AIOS_ARTIFACT_GENERATION_FAILED",
+      );
+      setStatusMessage("");
+    } finally {
+      if (objectUrl) {
+        window.setTimeout(() => {
+          URL.revokeObjectURL(objectUrl!);
+        }, 1000);
+      }
+
+      setExporting(false);
+    }
   }
+
+  const panelStyle: React.CSSProperties = {
+    padding: 18,
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+    background: "#ffffff",
+    marginBottom: 16,
+  };
+
+  const selectStyle: React.CSSProperties = {
+    minWidth: 0,
+    padding: 9,
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    background: "#ffffff",
+    color: "#0f172a",
+  };
+
+  const primaryButtonStyle: React.CSSProperties = {
+    border: 0,
+    borderRadius: 8,
+    padding: "9px 14px",
+    background: "#334155",
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: 12,
+    cursor: "pointer",
+  };
 
   return (
     <main
@@ -651,11 +707,7 @@ export default function DataAnalysisPage() {
           margin: "0 auto",
         }}
       >
-        <header
-          style={{
-            marginBottom: 28,
-          }}
-        >
+        <header style={{ marginBottom: 28 }}>
           <div
             style={{
               fontSize: 11,
@@ -739,14 +791,14 @@ export default function DataAnalysisPage() {
               onClick={() =>
                 fileInputRef.current?.click()
               }
-              disabled={loading}
+              disabled={loading || exporting}
               style={{
                 border: "1px solid #cbd5e1",
                 borderRadius: 9,
                 background: "#ffffff",
                 padding: "10px 15px",
                 fontWeight: 700,
-                cursor: loading
+                cursor: loading || exporting
                   ? "not-allowed"
                   : "pointer",
               }}
@@ -760,9 +812,7 @@ export default function DataAnalysisPage() {
               multiple
               accept=".csv,.json,.xlsx,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileSelection}
-              style={{
-                display: "none",
-              }}
+              style={{ display: "none" }}
             />
           </div>
 
@@ -772,7 +822,7 @@ export default function DataAnalysisPage() {
               onClick={() =>
                 fileInputRef.current?.click()
               }
-              disabled={loading}
+              disabled={loading || exporting}
               style={{
                 width: "100%",
                 minHeight: 150,
@@ -793,11 +843,7 @@ export default function DataAnalysisPage() {
                 +
               </div>
 
-              <div
-                style={{
-                  fontWeight: 750,
-                }}
-              >
+              <div style={{ fontWeight: 750 }}>
                 选择需要分析的数据文件
               </div>
 
@@ -845,15 +891,15 @@ export default function DataAnalysisPage() {
                         color: "#475569",
                       }}
                     >
-                      {getFileFormat(item.file.name).toUpperCase()}
+                      {getFileFormat(
+                        item.file.name,
+                      ).toUpperCase()}
                     </span>
 
                     <button
                       type="button"
-                      onClick={() =>
-                        removeFile(item.id)
-                      }
-                      disabled={loading}
+                      onClick={() => removeFile(item.id)}
+                      disabled={loading || exporting}
                       aria-label={`移除 ${item.file.name}`}
                       style={{
                         border: 0,
@@ -907,6 +953,7 @@ export default function DataAnalysisPage() {
               onClick={() => void runAnalysis()}
               disabled={
                 loading ||
+                exporting ||
                 selectedFiles.length === 0
               }
               style={{
@@ -916,6 +963,7 @@ export default function DataAnalysisPage() {
                 padding: "12px 20px",
                 background:
                   loading ||
+                  exporting ||
                   selectedFiles.length === 0
                     ? "#94a3b8"
                     : "#0f172a",
@@ -923,6 +971,7 @@ export default function DataAnalysisPage() {
                 fontWeight: 750,
                 cursor:
                   loading ||
+                  exporting ||
                   selectedFiles.length === 0
                     ? "not-allowed"
                     : "pointer",
@@ -947,9 +996,7 @@ export default function DataAnalysisPage() {
               background: error
                 ? "#fef2f2"
                 : "#eff6ff",
-              color: error
-                ? "#991b1b"
-                : "#1e40af",
+              color: error ? "#991b1b" : "#1e40af",
               marginBottom: 20,
               fontSize: 13,
               lineHeight: 1.7,
@@ -979,12 +1026,7 @@ export default function DataAnalysisPage() {
               文件解析状态
             </h3>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 8,
-              }}
-            >
+            <div style={{ display: "grid", gap: 8 }}>
               {understoodInputs.map((input) => (
                 <div
                   key={input.id}
@@ -1180,15 +1222,7 @@ export default function DataAnalysisPage() {
 
             {activeSource && (
               <>
-                <div
-                  style={{
-                    padding: 18,
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 14,
-                    background: "#ffffff",
-                    marginBottom: 16,
-                  }}
-                >
+                <div style={panelStyle}>
                   <div
                     style={{
                       display: "flex",
@@ -1295,15 +1329,7 @@ export default function DataAnalysisPage() {
                 {Object.keys(
                   activeSource.numericSummaries,
                 ).length > 0 && (
-                  <div
-                    style={{
-                      padding: 18,
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 14,
-                      background: "#ffffff",
-                      marginBottom: 16,
-                    }}
-                  >
+                  <div style={panelStyle}>
                     <h3
                       style={{
                         margin: "0 0 12px",
@@ -1314,11 +1340,7 @@ export default function DataAnalysisPage() {
                       数值统计
                     </h3>
 
-                    <div
-                      style={{
-                        overflowX: "auto",
-                      }}
-                    >
+                    <div style={{ overflowX: "auto" }}>
                       <table
                         style={{
                           width: "100%",
@@ -1405,15 +1427,7 @@ export default function DataAnalysisPage() {
                   </div>
                 )}
 
-                <div
-                  style={{
-                    padding: 18,
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 14,
-                    background: "#ffffff",
-                    marginBottom: 16,
-                  }}
-                >
+                <div style={panelStyle}>
                   <div
                     style={{
                       display: "flex",
@@ -1431,30 +1445,24 @@ export default function DataAnalysisPage() {
                         fontWeight: 800,
                       }}
                     >
-                      数据结果
+                      数据结果与导出
                     </h3>
 
-                    <button
-                      type="button"
-                      onClick={exportCurrentRows}
+                    <span
                       style={{
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 8,
-                        padding: "8px 12px",
-                        background: "#ffffff",
-                        fontWeight: 700,
-                        fontSize: 12,
+                        fontSize: 11,
+                        color: "#64748b",
                       }}
                     >
-                      导出 CSV
-                    </button>
+                      AIOS Artifact Engine
+                    </span>
                   </div>
 
                   <div
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "repeat(auto-fit, minmax(160px, 1fr))",
+                        "repeat(auto-fit, minmax(150px, 1fr))",
                       gap: 10,
                       marginBottom: 14,
                     }}
@@ -1474,14 +1482,7 @@ export default function DataAnalysisPage() {
                         onChange={(event) =>
                           setGroupBy(event.target.value)
                         }
-                        style={{
-                          minWidth: 0,
-                          padding: 9,
-                          border: "1px solid #cbd5e1",
-                          borderRadius: 8,
-                          background: "#ffffff",
-                          color: "#0f172a",
-                        }}
+                        style={selectStyle}
                       >
                         <option value="">不分组</option>
 
@@ -1513,14 +1514,7 @@ export default function DataAnalysisPage() {
                         onChange={(event) =>
                           setSortBy(event.target.value)
                         }
-                        style={{
-                          minWidth: 0,
-                          padding: 9,
-                          border: "1px solid #cbd5e1",
-                          borderRadius: 8,
-                          background: "#ffffff",
-                          color: "#0f172a",
-                        }}
+                        style={selectStyle}
                       >
                         <option value="">不排序</option>
 
@@ -1556,14 +1550,7 @@ export default function DataAnalysisPage() {
                               | "desc",
                           )
                         }
-                        style={{
-                          minWidth: 0,
-                          padding: 9,
-                          border: "1px solid #cbd5e1",
-                          borderRadius: 8,
-                          background: "#ffffff",
-                          color: "#0f172a",
-                        }}
+                        style={selectStyle}
                       >
                         <option value="desc">降序</option>
                         <option value="asc">升序</option>
@@ -1576,19 +1563,17 @@ export default function DataAnalysisPage() {
                     onClick={() =>
                       void rerunAnalysis()
                     }
-                    disabled={loading}
+                    disabled={loading || exporting}
                     style={{
-                      border: 0,
-                      borderRadius: 8,
-                      padding: "9px 14px",
-                      background: "#334155",
-                      color: "#ffffff",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      marginBottom: 14,
+                      ...primaryButtonStyle,
+                      marginBottom: 16,
+                      opacity:
+                        loading || exporting ? 0.6 : 1,
                     }}
                   >
-                    应用分组 / 排序
+                    {loading
+                      ? "处理中..."
+                      : "应用分组 / 排序"}
                   </button>
 
                   {activeSource.groupedCounts && (
@@ -1635,6 +1620,103 @@ export default function DataAnalysisPage() {
                       </div>
                     </div>
                   )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-end",
+                      flexWrap: "wrap",
+                      gap: 10,
+                      padding: 14,
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 10,
+                      background: "#f8fafc",
+                      marginBottom: 16,
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "grid",
+                        gap: 6,
+                        minWidth: 150,
+                        fontSize: 11,
+                        color: "#475569",
+                      }}
+                    >
+                      导出格式
+
+                      <select
+                        value={exportFormat}
+                        onChange={(event) =>
+                          setExportFormat(
+                            event.target.value as ArtifactFormat,
+                          )
+                        }
+                        disabled={exporting || loading}
+                        style={selectStyle}
+                      >
+                        {ARTIFACT_FORMATS.map(
+                          (format) => (
+                            <option
+                              key={format.value}
+                              value={format.value}
+                            >
+                              {format.label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void exportArtifact()
+                      }
+                      disabled={
+                        exporting ||
+                        loading ||
+                        !analysisResult.success
+                      }
+                      style={{
+                        border: 0,
+                        borderRadius: 8,
+                        padding: "10px 16px",
+                        background:
+                          exporting ||
+                          loading ||
+                          !analysisResult.success
+                            ? "#94a3b8"
+                            : "#0f172a",
+                        color: "#ffffff",
+                        fontWeight: 750,
+                        fontSize: 12,
+                        cursor:
+                          exporting ||
+                          loading ||
+                          !analysisResult.success
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {exporting
+                        ? "正在生成文件..."
+                        : `生成并下载 ${exportFormat.toUpperCase()}`}
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#64748b",
+                      lineHeight: 1.7,
+                      marginBottom: 14,
+                    }}
+                  >
+                    文件由服务端 AIOS Artifact Engine
+                    确定性生成。当前支持 CSV、JSON、Markdown
+                    和 TXT；不调用模型，不触发 Planner 或交易。
+                  </div>
 
                   <div
                     style={{
@@ -1708,12 +1790,10 @@ export default function DataAnalysisPage() {
                         {activeSource.rows.length === 0 && (
                           <tr>
                             <td
-                              colSpan={
-                                Math.max(
-                                  activeSource.columns.length,
-                                  1,
-                                )
-                              }
+                              colSpan={Math.max(
+                                activeSource.columns.length,
+                                1,
+                              )}
                               style={{
                                 padding: 20,
                                 textAlign: "center",
@@ -1797,21 +1877,19 @@ export default function DataAnalysisPage() {
                   处理提示
                 </h4>
 
-                {limitations.map(
-                  (item, index) => (
-                    <p
-                      key={index}
-                      style={{
-                        margin: "5px 0",
-                        fontSize: 11,
-                        color: "#9a3412",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {item}
-                    </p>
-                  ),
-                )}
+                {limitations.map((item, index) => (
+                  <p
+                    key={index}
+                    style={{
+                      margin: "5px 0",
+                      fontSize: 11,
+                      color: "#9a3412",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {item}
+                  </p>
+                ))}
               </div>
             )}
 
