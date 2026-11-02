@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -38,12 +39,6 @@ export default function FounderEvolutionVerification() {
     setResult(null);
 
     try {
-      /*
-       * C142.11.2
-       *
-       * Step 1:
-       * Create or locate the explicit Founder-approved Outcome.
-       */
       const createResponse = await fetch(
         "/api/outcomes",
         {
@@ -52,6 +47,7 @@ export default function FounderEvolutionVerification() {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            "x-aios-founder-key": key,
           },
           body: JSON.stringify({
             title: VERIFICATION_TITLE,
@@ -95,10 +91,6 @@ export default function FounderEvolutionVerification() {
             ).id
           : "";
 
-      /*
-       * If the Outcome already exists, locate the existing
-       * Founder verification Outcome instead of creating another one.
-       */
       if (
         !createResponse.ok &&
         createData.code === "DUPLICATE_OUTCOME"
@@ -110,6 +102,7 @@ export default function FounderEvolutionVerification() {
             cache: "no-store",
             headers: {
               Accept: "application/json",
+              "x-aios-founder-key": key,
             },
           },
         );
@@ -141,19 +134,6 @@ export default function FounderEvolutionVerification() {
         );
       }
 
-      /*
-       * Step 2:
-       *
-       * Work Queue only materializes autonomous work from
-       * an ACTIVE Outcome.
-       *
-       * The previous C142.11.2 test left the newly created
-       * Outcome in PLANNED state, so Heartbeat correctly
-       * remained idle.
-       *
-       * Explicitly activate the Founder-approved Outcome
-       * before triggering autonomous execution.
-       */
       const activateResponse = await fetch(
         "/api/outcomes",
         {
@@ -162,6 +142,7 @@ export default function FounderEvolutionVerification() {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            "x-aios-founder-key": key,
           },
           body: JSON.stringify({
             id: outcomeId,
@@ -181,12 +162,6 @@ export default function FounderEvolutionVerification() {
         );
       }
 
-      /*
-       * Step 3:
-       *
-       * Trigger exactly ONE Founder-authorized
-       * Evolution Heartbeat.
-       */
       const heartbeatResponse = await fetch(
         "/api/founder/evolution-heartbeat",
         {
@@ -210,12 +185,6 @@ export default function FounderEvolutionVerification() {
         );
       }
 
-      /*
-       * Step 4:
-       *
-       * Read the real persisted Outcome state
-       * after Heartbeat has completed.
-       */
       const stateResponse = await fetch(
         "/api/outcomes",
         {
@@ -223,6 +192,7 @@ export default function FounderEvolutionVerification() {
           cache: "no-store",
           headers: {
             Accept: "application/json",
+            "x-aios-founder-key": key,
           },
         },
       );
@@ -232,11 +202,8 @@ export default function FounderEvolutionVerification() {
 
       setResult({
         outcomePreparation: createData,
-
         outcomeActivation: activateData,
-
         heartbeat: heartbeatData,
-
         persistedState: stateData,
       });
     } catch (requestError) {
