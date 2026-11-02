@@ -1,3 +1,4 @@
+
 import {
   NextRequest,
   NextResponse,
@@ -9,8 +10,13 @@ import {
 } from "@/lib/auth/identity";
 
 import {
+  runWithFounderContext,
   runWithUserContext,
 } from "@/lib/runtime/request-context";
+
+import {
+  isFounderRequest,
+} from "@/lib/founder/auth";
 
 import {
   createOutcome,
@@ -35,74 +41,54 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
+async function runWithOutcomeContext<T>(
+  request: NextRequest,
+  userId: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  if (isFounderRequest(request)) {
+    return runWithFounderContext(
+      userId,
+      operation
+    );
+  }
+
+  return runWithUserContext(
+    userId,
+    operation
+  );
+}
+
 interface OutcomeRequestBody {
-  action?:
-    unknown;
-
-  id?:
-    unknown;
-
-  milestoneId?:
-    unknown;
-
-  title?:
-    unknown;
-
-  description?:
-    unknown;
-
-  successCriteria?:
-    unknown;
-
-  status?:
-    unknown;
-
-  priority?:
-    unknown;
-
-  progress?:
-    unknown;
-
-  targetDate?:
-    unknown;
-
-  taskIds?:
-    unknown;
-
-  milestones?:
-    unknown;
+  action?: unknown;
+  id?: unknown;
+  milestoneId?: unknown;
+  title?: unknown;
+  description?: unknown;
+  successCriteria?: unknown;
+  status?: unknown;
+  priority?: unknown;
+  progress?: unknown;
+  targetDate?: unknown;
+  taskIds?: unknown;
+  milestones?: unknown;
 }
 
 function applyIdentityCookie(
-  response:
-    NextResponse,
-
-  userId:
-    string
+  response: NextResponse,
+  userId: string
 ): NextResponse {
   response.cookies.set(
     AIOS_USER_COOKIE,
     userId,
     {
-      httpOnly:
-        true,
-
-      sameSite:
-        "lax",
-
+      httpOnly: true,
+      sameSite: "lax",
       secure:
-        process.env
-          .NODE_ENV ===
+        process.env.NODE_ENV ===
         "production",
-
-      path:
-        "/",
-
-      maxAge:
-        60 *
-        60 *
-        24 *
-        365,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
     }
   );
 
@@ -110,28 +96,17 @@ function applyIdentityCookie(
 }
 
 function jsonResponse(
-  body:
-    Record<
-      string,
-      unknown
-    >,
-
-  userId:
-    string,
-
-  status =
-    200
+  body: Record<string, unknown>,
+  userId: string,
+  status = 200
 ): NextResponse {
   const response =
     NextResponse.json(
       body,
       {
         status,
-
         headers: {
-          "Cache-Control":
-            "no-store",
-
+          "Cache-Control": "no-store",
           "Content-Type":
             "application/json; charset=utf-8",
         },
@@ -145,22 +120,14 @@ function jsonResponse(
 }
 
 function normalizeStatus(
-  value:
-    unknown
-):
-  | OutcomeStatus
-  | undefined {
+  value: unknown
+): OutcomeStatus | undefined {
   if (
-    value ===
-      "planned" ||
-    value ===
-      "active" ||
-    value ===
-      "blocked" ||
-    value ===
-      "completed" ||
-    value ===
-      "archived"
+    value === "planned" ||
+    value === "active" ||
+    value === "blocked" ||
+    value === "completed" ||
+    value === "archived"
   ) {
     return value;
   }
@@ -169,20 +136,13 @@ function normalizeStatus(
 }
 
 function normalizePriority(
-  value:
-    unknown
-):
-  | OutcomePriority
-  | undefined {
+  value: unknown
+): OutcomePriority | undefined {
   if (
-    value ===
-      "low" ||
-    value ===
-      "normal" ||
-    value ===
-      "high" ||
-    value ===
-      "critical"
+    value === "low" ||
+    value === "normal" ||
+    value === "high" ||
+    value === "critical"
   ) {
     return value;
   }
@@ -191,20 +151,13 @@ function normalizePriority(
 }
 
 function normalizeMilestoneStatus(
-  value:
-    unknown
-):
-  | OutcomeMilestone["status"]
-  | undefined {
+  value: unknown
+): OutcomeMilestone["status"] | undefined {
   if (
-    value ===
-      "pending" ||
-    value ===
-      "active" ||
-    value ===
-      "completed" ||
-    value ===
-      "blocked"
+    value === "pending" ||
+    value === "active" ||
+    value === "completed" ||
+    value === "blocked"
   ) {
     return value;
   }
@@ -213,142 +166,91 @@ function normalizeMilestoneStatus(
 }
 
 function normalizeTaskIds(
-  value:
-    unknown
-):
-  | string[]
-  | undefined {
-  if (
-    !Array.isArray(
-      value
-    )
-  ) {
+  value: unknown
+): string[] | undefined {
+  if (!Array.isArray(value)) {
     return undefined;
   }
 
   return value.filter(
-    (
-      item
-    ): item is string =>
-      typeof item ===
-        "string" &&
-      Boolean(
-        item.trim()
-      )
+    (item): item is string =>
+      typeof item === "string" &&
+      Boolean(item.trim())
   );
 }
 
 function normalizeMilestones(
-  value:
-    unknown
+  value: unknown
 ): CreateOutcomeInput["milestones"] {
-  if (
-    !Array.isArray(
-      value
-    )
-  ) {
+  if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .map(
-      (
-        item
-      ) => {
-        if (
-          !item ||
-          typeof item !==
-            "object"
-        ) {
-          return null;
-        }
-
-        const milestone =
-          item as {
-            title?:
-              unknown;
-
-            description?:
-              unknown;
-          };
-
-        if (
-          typeof milestone.title !==
-          "string"
-        ) {
-          return null;
-        }
-
-        return {
-          title:
-            milestone.title,
-
-          description:
-            typeof milestone.description ===
-            "string"
-              ? milestone.description
-              : "",
-        };
+    .map((item) => {
+      if (
+        !item ||
+        typeof item !== "object"
+      ) {
+        return null;
       }
-    )
+
+      const milestone = item as {
+        title?: unknown;
+        description?: unknown;
+      };
+
+      if (
+        typeof milestone.title !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        title: milestone.title,
+        description:
+          typeof milestone.description ===
+          "string"
+            ? milestone.description
+            : "",
+      };
+    })
     .filter(
       (
         item
       ): item is {
         title: string;
         description: string;
-      } =>
-        Boolean(
-          item
-        )
+      } => Boolean(item)
     );
 }
 
 export async function GET(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   const identity =
-    resolveAlphaIdentity(
-      request
-    );
+    resolveAlphaIdentity(request);
 
   try {
-    const url =
-      new URL(
-        request.url
-      );
+    const url = new URL(request.url);
 
     const id =
-      url.searchParams.get(
-        "id"
-      );
+      url.searchParams.get("id");
 
-    if (
-      id
-    ) {
+    if (id) {
       const outcome =
-        await runWithUserContext(
+        await runWithOutcomeContext(
+          request,
           identity.userId,
-          () =>
-            getOutcome(
-              id
-            )
+          () => getOutcome(id)
         );
 
-      if (
-        !outcome
-      ) {
+      if (!outcome) {
         return jsonResponse(
           {
-            success:
-              false,
-
-            error:
-              "Outcome not found.",
-
-            timestamp:
-              Date.now(),
+            success: false,
+            error: "Outcome not found.",
+            timestamp: Date.now(),
           },
           identity.userId,
           404
@@ -357,21 +259,13 @@ export async function GET(
 
       return jsonResponse(
         {
-          success:
-            true,
-
+          success: true,
           outcome,
-
           identity: {
-            userId:
-              identity.userId,
-
-            isolated:
-              true,
+            userId: identity.userId,
+            isolated: true,
           },
-
-          timestamp:
-            Date.now(),
+          timestamp: Date.now(),
         },
         identity.userId
       );
@@ -381,7 +275,8 @@ export async function GET(
       outcomes,
       summary,
     ] =
-      await runWithUserContext(
+      await runWithOutcomeContext(
+        request,
         identity.userId,
         async () =>
           Promise.all([
@@ -392,42 +287,27 @@ export async function GET(
 
     return jsonResponse(
       {
-        success:
-          true,
-
+        success: true,
         outcomes,
-
         summary,
-
         identity: {
-          userId:
-            identity.userId,
-
-          isolated:
-            true,
+          userId: identity.userId,
+          isolated: true,
         },
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId
     );
   } catch (error) {
     return jsonResponse(
       {
-        success:
-          false,
-
-        outcomes:
-          [],
-
+        success: false,
+        outcomes: [],
         error:
           error instanceof Error
             ? error.message
             : "Outcome loading failed.",
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId,
       500
@@ -436,13 +316,10 @@ export async function GET(
 }
 
 export async function POST(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   const identity =
-    resolveAlphaIdentity(
-      request
-    );
+    resolveAlphaIdentity(request);
 
   try {
     const body =
@@ -450,13 +327,13 @@ export async function POST(
         OutcomeRequestBody;
 
     const outcome =
-      await runWithUserContext(
+      await runWithOutcomeContext(
+        request,
         identity.userId,
         () =>
           createOutcome({
             title:
-              typeof body.title ===
-              "string"
+              typeof body.title === "string"
                 ? body.title
                 : "",
 
@@ -473,13 +350,11 @@ export async function POST(
                 : "",
 
             priority:
-              normalizePriority(
-                body.priority
-              ),
+              normalizePriority(body.priority),
 
             targetDate:
               typeof body.targetDate ===
-                "number"
+              "number"
                 ? body.targetDate
                 : null,
 
@@ -492,21 +367,13 @@ export async function POST(
 
     return jsonResponse(
       {
-        success:
-          true,
-
+        success: true,
         outcome,
-
         identity: {
-          userId:
-            identity.userId,
-
-          isolated:
-            true,
+          userId: identity.userId,
+          isolated: true,
         },
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId,
       201
@@ -519,21 +386,15 @@ export async function POST(
 
     return jsonResponse(
       {
-        success:
-          false,
-
-        error:
-          message,
-
+        success: false,
+        error: message,
         code:
           message.startsWith(
             "DUPLICATE_OUTCOME:"
           )
             ? "DUPLICATE_OUTCOME"
             : "OUTCOME_CREATE_ERROR",
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId,
       400
@@ -542,13 +403,10 @@ export async function POST(
 }
 
 export async function PATCH(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   const identity =
-    resolveAlphaIdentity(
-      request
-    );
+    resolveAlphaIdentity(request);
 
   try {
     const body =
@@ -556,24 +414,16 @@ export async function PATCH(
         OutcomeRequestBody;
 
     const id =
-      typeof body.id ===
-      "string"
+      typeof body.id === "string"
         ? body.id.trim()
         : "";
 
-    if (
-      !id
-    ) {
+    if (!id) {
       return jsonResponse(
         {
-          success:
-            false,
-
-          error:
-            "Outcome id is required.",
-
-          timestamp:
-            Date.now(),
+          success: false,
+          error: "Outcome id is required.",
+          timestamp: Date.now(),
         },
         identity.userId,
         400
@@ -581,8 +431,7 @@ export async function PATCH(
     }
 
     if (
-      body.action ===
-      "update-milestone"
+      body.action === "update-milestone"
     ) {
       const milestoneId =
         typeof body.milestoneId ===
@@ -590,19 +439,12 @@ export async function PATCH(
           ? body.milestoneId.trim()
           : "";
 
-      if (
-        !milestoneId
-      ) {
+      if (!milestoneId) {
         return jsonResponse(
           {
-            success:
-              false,
-
-            error:
-              "Milestone id is required.",
-
-            timestamp:
-              Date.now(),
+            success: false,
+            error: "Milestone id is required.",
+            timestamp: Date.now(),
           },
           identity.userId,
           400
@@ -610,7 +452,8 @@ export async function PATCH(
       }
 
       const outcome =
-        await runWithUserContext(
+        await runWithOutcomeContext(
+          request,
           identity.userId,
           () =>
             updateOutcomeMilestone(
@@ -642,19 +485,13 @@ export async function PATCH(
             )
         );
 
-      if (
-        !outcome
-      ) {
+      if (!outcome) {
         return jsonResponse(
           {
-            success:
-              false,
-
+            success: false,
             error:
               "Outcome or milestone not found.",
-
-            timestamp:
-              Date.now(),
+            timestamp: Date.now(),
           },
           identity.userId,
           404
@@ -663,28 +500,24 @@ export async function PATCH(
 
       return jsonResponse(
         {
-          success:
-            true,
-
+          success: true,
           outcome,
-
-          timestamp:
-            Date.now(),
+          timestamp: Date.now(),
         },
         identity.userId
       );
     }
 
     const outcome =
-      await runWithUserContext(
+      await runWithOutcomeContext(
+        request,
         identity.userId,
         () =>
           updateOutcome(
             id,
             {
               title:
-                typeof body.title ===
-                "string"
+                typeof body.title === "string"
                   ? body.title
                   : undefined,
 
@@ -701,14 +534,10 @@ export async function PATCH(
                   : undefined,
 
               status:
-                normalizeStatus(
-                  body.status
-                ),
+                normalizeStatus(body.status),
 
               priority:
-                normalizePriority(
-                  body.priority
-                ),
+                normalizePriority(body.priority),
 
               progress:
                 typeof body.progress ===
@@ -717,34 +546,24 @@ export async function PATCH(
                   : undefined,
 
               targetDate:
-                body.targetDate ===
-                  null ||
+                body.targetDate === null ||
                 typeof body.targetDate ===
                   "number"
                   ? body.targetDate
                   : undefined,
 
               taskIds:
-                normalizeTaskIds(
-                  body.taskIds
-                ),
+                normalizeTaskIds(body.taskIds),
             }
           )
       );
 
-    if (
-      !outcome
-    ) {
+    if (!outcome) {
       return jsonResponse(
         {
-          success:
-            false,
-
-          error:
-            "Outcome not found.",
-
-          timestamp:
-            Date.now(),
+          success: false,
+          error: "Outcome not found.",
+          timestamp: Date.now(),
         },
         identity.userId,
         404
@@ -753,29 +572,21 @@ export async function PATCH(
 
     return jsonResponse(
       {
-        success:
-          true,
-
+        success: true,
         outcome,
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId
     );
   } catch (error) {
     return jsonResponse(
       {
-        success:
-          false,
-
+        success: false,
         error:
           error instanceof Error
             ? error.message
             : "Outcome update failed.",
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId,
       500
@@ -784,38 +595,23 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  request:
-    NextRequest
+  request: NextRequest
 ) {
   const identity =
-    resolveAlphaIdentity(
-      request
-    );
+    resolveAlphaIdentity(request);
 
   try {
-    const url =
-      new URL(
-        request.url
-      );
+    const url = new URL(request.url);
 
     const id =
-      url.searchParams.get(
-        "id"
-      );
+      url.searchParams.get("id");
 
-    if (
-      !id
-    ) {
+    if (!id) {
       return jsonResponse(
         {
-          success:
-            false,
-
-          error:
-            "Outcome id is required.",
-
-          timestamp:
-            Date.now(),
+          success: false,
+          error: "Outcome id is required.",
+          timestamp: Date.now(),
         },
         identity.userId,
         400
@@ -823,27 +619,18 @@ export async function DELETE(
     }
 
     const deleted =
-      await runWithUserContext(
+      await runWithOutcomeContext(
+        request,
         identity.userId,
-        () =>
-          deleteOutcome(
-            id
-          )
+        () => deleteOutcome(id)
       );
 
-    if (
-      !deleted
-    ) {
+    if (!deleted) {
       return jsonResponse(
         {
-          success:
-            false,
-
-          error:
-            "Outcome not found.",
-
-          timestamp:
-            Date.now(),
+          success: false,
+          error: "Outcome not found.",
+          timestamp: Date.now(),
         },
         identity.userId,
         404
@@ -852,30 +639,21 @@ export async function DELETE(
 
     return jsonResponse(
       {
-        success:
-          true,
-
-        deleted:
-          true,
-
-        timestamp:
-          Date.now(),
+        success: true,
+        deleted: true,
+        timestamp: Date.now(),
       },
       identity.userId
     );
   } catch (error) {
     return jsonResponse(
       {
-        success:
-          false,
-
+        success: false,
         error:
           error instanceof Error
             ? error.message
             : "Outcome deletion failed.",
-
-        timestamp:
-          Date.now(),
+        timestamp: Date.now(),
       },
       identity.userId,
       500
