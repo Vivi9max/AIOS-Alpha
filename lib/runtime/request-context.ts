@@ -1,3 +1,4 @@
+
 import {
   AsyncLocalStorage,
 } from "node:async_hooks";
@@ -14,8 +15,9 @@ export interface RuntimeUserContext {
 const runtimeUserStorage =
   new AsyncLocalStorage<RuntimeUserContext>();
 
-export async function runWithUserContext<T>(
+async function runWithWorkspaceContext<T>(
   userId: string,
+  workspaceScope: RuntimeWorkspaceScope,
   operation: () => Promise<T>
 ): Promise<T> {
   const cleanUserId =
@@ -30,8 +32,19 @@ export async function runWithUserContext<T>(
   return runtimeUserStorage.run(
     {
       userId: cleanUserId,
-      workspaceScope: "user",
+      workspaceScope,
     },
+    operation
+  );
+}
+
+export async function runWithUserContext<T>(
+  userId: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  return runWithWorkspaceContext(
+    userId,
+    "user",
     operation
   );
 }
@@ -40,26 +53,14 @@ export async function runWithFounderContext<T>(
   userId: string,
   operation: () => Promise<T>
 ): Promise<T> {
-  const cleanUserId =
-    userId.trim();
-
-  if (!cleanUserId) {
-    throw new Error(
-      "Runtime user ID is required."
-    );
-  }
-
-  return runtimeUserStorage.run(
-    {
-      userId: cleanUserId,
-      workspaceScope: "founder",
-    },
+  return runWithWorkspaceContext(
+    userId,
+    "founder",
     operation
   );
 }
 
-export function getRuntimeUserId():
-  string {
+export function getRuntimeUserId(): string {
   const context =
     runtimeUserStorage.getStore();
 
