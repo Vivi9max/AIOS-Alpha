@@ -1,5 +1,6 @@
 import {
   getRuntimeUserId,
+  getRuntimeWorkspaceScope,
 } from "@/lib/runtime/request-context";
 
 function sanitizeScope(
@@ -40,9 +41,26 @@ export function createUserStorageKey(
         "-"
       );
 
+  const userScope =
+    getUserStorageScope();
+
+  const workspaceScope =
+    getRuntimeWorkspaceScope();
+
+  if (
+    workspaceScope === "founder"
+  ) {
+    return [
+      "aios",
+      userScope,
+      "founder",
+      cleanResource,
+    ].join(":");
+  }
+
   return [
     "aios",
-    getUserStorageScope(),
+    userScope,
     cleanResource,
   ].join(":");
 }
