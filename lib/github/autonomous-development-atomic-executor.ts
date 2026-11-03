@@ -45,13 +45,22 @@ interface GitHubRefResponse {
   };
 }
 
+/**
+ * Git Database API response for:
+ * GET /repos/{owner}/{repo}/git/commits/{commit_sha}
+ *
+ * Unlike the REST commit endpoint, the Git Database endpoint
+ * returns `tree` at the top level of the response.
+ */
 interface GitHubCommitResponse {
   sha?: string;
-  commit?: {
-    tree?: {
-      sha?: string;
-    };
+  tree?: {
+    sha?: string;
+    url?: string;
   };
+  parents?: Array<{
+    sha?: string;
+  }>;
 }
 
 interface GitHubBlobResponse {
@@ -394,7 +403,7 @@ async function getCommitTreeSha(
     );
 
   const treeSha =
-    result.data?.commit?.tree?.sha;
+    result.data?.tree?.sha;
 
   if (
     !result.success ||
