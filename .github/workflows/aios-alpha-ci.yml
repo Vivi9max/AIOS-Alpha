@@ -30,6 +30,42 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: C169.8-D2.1 independent control-plane verification
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p test-results
+          report_file="test-results/c169.8-d2.1-verification.txt"
+          set +e
+          node scripts/verify-autonomous-development-control-plane.mjs 2>&1 | tee "$report_file"
+          test_exit_code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## C169.8-D2.1 independent control-plane verification"
+            echo
+            echo "- Commit SHA: \`$COMMIT_SHA\`"
+            echo "- Workflow Run: \`$WORKFLOW_RUN_ID\`"
+            echo "- Attempt: \`$WORKFLOW_RUN_ATTEMPT\`"
+            echo "- Test process exit code: \`$test_exit_code\`"
+            echo
+            echo '```text'
+            cat "$report_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$test_exit_code"
+
+      - name: Preserve C169.8-D2.1 verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c169-8-d2-1-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/c169.8-d2.1-verification.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Verify project continuity
         run: npm run verify
 
