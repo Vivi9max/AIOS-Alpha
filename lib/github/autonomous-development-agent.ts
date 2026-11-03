@@ -326,7 +326,7 @@ async function discoverPath(
     await listGitHubPath({
       repo: REPOSITORY,
       path: node.path,
-      ref,
+      ref: BRANCH,
       accessToken,
     });
 
