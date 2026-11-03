@@ -480,10 +480,85 @@ function serializeTasks(): AutonomousDevelopmentTask[] {
   ).map(cloneTask);
 }
 
+function getLatestPhaseHistoryTimestamp(
+  task: AutonomousDevelopmentTask,
+): number | null {
+  const latest =
+    task.phaseHistory[
+      task.phaseHistory.length - 1
+    ];
+
+  if (!latest) {
+    return null;
+  }
+
+  const parsed =
+    new Date(latest.at).getTime();
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
 function compareTaskVersion(
   left: AutonomousDevelopmentTask,
   right: AutonomousDevelopmentTask,
 ): number {
+  const leftTerminal =
+    TERMINAL_STATUSES.has(
+      left.status,
+    );
+
+  const rightTerminal =
+    TERMINAL_STATUSES.has(
+      right.status,
+    );
+
+  const leftActive =
+    ACTIVE_STATUSES.has(
+      left.status,
+    );
+
+  const rightActive =
+    ACTIVE_STATUSES.has(
+      right.status,
+    );
+
+  if (
+    leftTerminal &&
+    rightActive
+  ) {
+    return 1;
+  }
+
+  if (
+    rightTerminal &&
+    leftActive
+  ) {
+    return -1;
+  }
+
+  const leftLatestPhase =
+    getLatestPhaseHistoryTimestamp(
+      left,
+    );
+
+  const rightLatestPhase =
+    getLatestPhaseHistoryTimestamp(
+      right,
+    );
+
+  if (
+    leftLatestPhase !== null &&
+    rightLatestPhase !== null &&
+    leftLatestPhase !== rightLatestPhase
+  ) {
+    return (
+      leftLatestPhase -
+      rightLatestPhase
+    );
+  }
+
   const leftUpdated =
     new Date(
       left.updatedAt,
@@ -879,6 +954,13 @@ function touchTask(
 
   task.lastHeartbeatAt =
     timestamp;
+}
+
+function touchHeartbeat(
+  task: AutonomousDevelopmentTask,
+): void {
+  task.lastHeartbeatAt =
+    now();
 }
 
 function isTaskHeartbeatStale(
@@ -1556,7 +1638,7 @@ export function updateAutonomousDevelopmentTask(
 
 export function heartbeatAutonomousDevelopmentTask(
   taskId: string,
-  reason?: string,
+  _reason?: string,
 ) {
   const task =
     tasks.get(
@@ -1618,15 +1700,7 @@ export function heartbeatAutonomousDevelopmentTask(
     );
   }
 
-  if (
-    reason !==
-    undefined
-  ) {
-    task.reason =
-      reason;
-  }
-
-  touchTask(
+  touchHeartbeat(
     task,
   );
 
