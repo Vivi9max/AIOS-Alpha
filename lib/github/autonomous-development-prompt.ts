@@ -96,8 +96,21 @@ function extractRepositoryPathMatches(
         " ",
       );
 
+  /*
+   * C169.8 FIX:
+   * Allow dots inside the filename stem.
+   *
+   * Previously:
+   * docs/C169.8-staging-smoke-test.md
+   *
+   * Could be truncated to:
+   * docs/C169.8
+   *
+   * The updated expression supports versioned and multi-dot
+   * filenames while retaining the final file extension check.
+   */
   const pattern =
-    /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+\/-]+\.[A-Za-z0-9]+/g;
+    /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+./-]+\.[A-Za-z0-9]+\b/g;
 
   const matches: string[] = [];
 
@@ -125,7 +138,7 @@ function extractRepositoryPathMatches(
 
     const normalizedValue =
       rawValue.replace(
-        /[.,;:!?)}\]]+$/g,
+        /[.,;:!?)}\]]+$/,
         "",
       );
 
