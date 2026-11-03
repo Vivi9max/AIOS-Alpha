@@ -13,8 +13,7 @@ import {
   getAutonomousDevelopmentTask,
   updateAutonomousDevelopmentTask,
 } from "@/lib/github/autonomous-development-control-plane";
-import { dispatchGitHubTask } from "@/lib/github/task-dispatch";
-import { createFounderDevelopmentContract } from "@/lib/github/founder-development-contract";
+import { executeAtomicStaging } from "@/lib/github/autonomous-development-atomic-executor";
 import {
   verifyVercelBuildForCommit,
   type VercelBuildVerificationResult,
@@ -318,6 +317,7 @@ type DiscoveryEntry = {
 
 async function discoverPath(
   node: DiscoveryNode,
+  accessToken?: string,
 ): Promise<{
   node: DiscoveryNode;
   entries: DiscoveryEntry[];
@@ -326,7 +326,8 @@ async function discoverPath(
     await listGitHubPath({
       repo: REPOSITORY,
       path: node.path,
-      ref: BRANCH,
+      ref,
+      accessToken,
     });
 
   if (
@@ -348,6 +349,7 @@ async function discoverPath(
 
 async function discoverRepositoryPaths(
   objective: string,
+  accessToken?: string,
 ) {
   const roots = [
     "app",
@@ -401,7 +403,7 @@ async function discoverRepositoryPaths(
       const results =
         await Promise.all(
           batch.map(
-            discoverPath,
+            (node) => discoverPath(node, accessToken),
           ),
         );
 
@@ -522,12 +524,15 @@ async function discoverRepositoryPaths(
 
 async function readFile(
   path: string,
+  accessToken?: string,
+  ref: string = BRANCH,
 ) {
   const result =
     await readGitHubFile({
       repo: REPOSITORY,
       path,
-      ref: BRANCH,
+      ref,
+      accessToken,
     });
 
   if (
@@ -1676,16 +1681,18 @@ function buildAutonomousCommitMessage(
       .toLowerCase();
 
   if (repairRound) {
-    return `fix(C167.28.4): autonomous build repair ${repairRound}${summary ? ` ${summary}` : ""}`;
+    return `fix(C169.8): autonomous build repair ${repairRound}${summary ? ` ${summary}` : ""}`;
   }
 
-  return `feat(C167.28.4): autonomous development${summary ? ` ${summary}` : ""}`;
+  return `feat(C169.8): autonomous development${summary ? ` ${summary}` : ""}`;
 }
 
 async function loadSafetyGateRepositoryContext(
   targetPaths: string[],
   originalContents: Record<string, string>,
   patchedContents: Record<string, string>,
+  accessToken?: string,
+  ref: string = BRANCH,
 ) {
   const i18nPath =
     "lib/i18n/index.ts";
@@ -1701,6 +1708,8 @@ async function loadSafetyGateRepositoryContext(
     const currentI18n =
       await readFile(
         i18nPath,
+        accessToken,
+        ref,
       );
 
     originalContents[
@@ -1738,68 +1747,6 @@ function runSafetyGateOrThrow(
   }
 
   return gate;
-}
-
-async function writeFinalFile(
-  objective: string,
-  targetPaths: string[],
-  path: string,
-  content: string,
-  commitMessage: string,
-) {
-  const contract =
-    createFounderDevelopmentContract(
-      {
-        objective,
-        requestedFiles:
-          targetPaths,
-        actions: [
-          "read",
-          "write",
-          "verify",
-        ],
-        verification: [
-          "readback",
-          "build",
-          "production",
-        ],
-        commitMessage,
-      },
-    );
-
-  const result =
-    await dispatchGitHubTask(
-      {
-        action: "write",
-        repo: REPOSITORY,
-        branch: BRANCH,
-        path,
-        content,
-        commitMessage,
-        contract,
-      },
-    );
-
-  if (
-    !result.success
-  ) {
-    throw new Error(
-      result.error ||
-        result.code ||
-        `GitHub write failed: ${path}`,
-    );
-  }
-
-  return {
-    path,
-    commitSha:
-      result.write
-        ?.commitSha || "",
-    readbackVerified:
-      result.write
-        ?.readbackVerified ===
-      true,
-  };
 }
 
 function selectRepairTarget(
@@ -1886,6 +1833,7 @@ export async function executeAutonomousDevelopmentAgent(
   input: {
     objective: string;
     taskId?: string;
+    accessToken?: string;
   },
 ): Promise<AutonomousDevelopmentAgentResult> {
   const objective =
@@ -1934,10 +1882,11 @@ export async function executeAutonomousDevelopmentAgent(
     | undefined;
 
   let repairRounds = 0;
+  let stagingBranch = "";
 
   const resultBase = () => ({
     repository: REPOSITORY,
-    branch: BRANCH,
+    branch: stagingBranch || BRANCH,
     objective,
     developmentPrompt,
     discoveredPaths,
@@ -2073,6 +2022,7 @@ export async function executeAutonomousDevelopmentAgent(
       discoveredPaths =
         await discoverRepositoryPaths(
           objective,
+          input.accessToken,
         );
 
       if (
@@ -2206,6 +2156,7 @@ export async function executeAutonomousDevelopmentAgent(
       const current =
         await readFile(
           targetPath,
+          input.accessToken,
         );
 
       const currentContent =
@@ -2274,6 +2225,7 @@ export async function executeAutonomousDevelopmentAgent(
       targetPaths,
       originalContents,
       patchedContents,
+      input.accessToken,
     );
 
     updateAutonomousDevelopmentTask(
@@ -2303,67 +2255,40 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
-    for (
-      const targetPath of targetPaths
-    ) {
+    for (const targetPath of targetPaths) {
       enforceAutonomousWriteBudget();
-
-      const finalContent =
-        patchedContents[
-          targetPath
-        ];
-
-      const written =
-        await writeFinalFile(
-          objective,
-          targetPaths,
-          targetPath,
-          finalContent,
-          buildAutonomousCommitMessage(
-            objective,
-          ),
-        );
-
-      changedPaths.push(
-        written.path,
-      );
-
-      if (
-        written.commitSha
-      ) {
-        commitShas.push(
-          written.commitSha,
-        );
-      }
-
-      readbackVerified =
-        readbackVerified &&
-        written.readbackVerified;
-
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          phase:
-            "READBACK",
-          commitSha:
-            written.commitSha ||
-            undefined,
-          changedPaths,
-          reason:
-            written.readbackVerified
-              ? `GitHub readback verified: ${targetPath}`
-              : `GitHub readback failed: ${targetPath}`,
-        },
-      );
-
-      if (
-        !written.readbackVerified
-      ) {
-        throw new Error(
-          `AUTONOMOUS_READBACK_FAILED: GitHub readback did not confirm the written content for "${targetPath}". The commit may not match the intended patch.`,
-        );
-      }
     }
+
+    const atomicResult = await executeAtomicStaging({
+      objective,
+      taskId,
+      repository: REPOSITORY,
+      baseBranch: BRANCH,
+      accessToken: input.accessToken,
+      commitMessage: buildAutonomousCommitMessage(objective),
+      files: targetPaths.map((path) => ({
+        path,
+        content: patchedContents[path],
+      })),
+    });
+
+    if (!atomicResult.success || !atomicResult.snapshot) {
+      throw new Error(
+        `${atomicResult.code}: ${atomicResult.reason}`,
+      );
+    }
+
+    stagingBranch = atomicResult.snapshot.stagingBranch;
+    changedPaths.push(...atomicResult.snapshot.changedPaths);
+    commitShas.push(atomicResult.snapshot.stagingCommitSha);
+    readbackVerified = true;
+
+    updateAutonomousDevelopmentTask(taskId, {
+      phase: "READBACK",
+      commitSha: atomicResult.snapshot.stagingCommitSha,
+      changedPaths,
+      reason: `Atomic staging branch head verified: ${stagingBranch}`,
+    });
 
     if (
       commitShas.length ===
@@ -2388,7 +2313,7 @@ export async function executeAutonomousDevelopmentAgent(
           latestCommitSha,
         changedPaths,
         reason:
-          "Running Vercel production build verification.",
+          "Running Vercel verification for the staging commit.",
       },
     );
 
@@ -2433,6 +2358,8 @@ export async function executeAutonomousDevelopmentAgent(
       const current =
         await readFile(
           repairTarget,
+          input.accessToken,
+          stagingBranch || BRANCH,
         );
 
       const repairContext = [
@@ -2510,6 +2437,8 @@ export async function executeAutonomousDevelopmentAgent(
         [repairTarget],
         repairOriginalContents,
         repairPatchedContents,
+        input.accessToken,
+        stagingBranch || BRANCH,
       );
 
       updateAutonomousDevelopmentTask(
@@ -2541,44 +2470,27 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
-      const written =
-        await writeFinalFile(
-          `${objective}\nVercel repair round ${repairRounds}.`,
-          targetPaths,
-          repairTarget,
-          finalContent,
-          buildAutonomousCommitMessage(
-            objective,
-            repairRounds,
-          ),
-        );
+      const repairAtomicResult = await executeAtomicStaging({
+        objective: `${objective}\nVercel repair round ${repairRounds}.`,
+        taskId: `${taskId}-repair-${repairRounds}`,
+        repository: REPOSITORY,
+        baseBranch: stagingBranch || BRANCH,
+        accessToken: input.accessToken,
+        commitMessage: buildAutonomousCommitMessage(objective, repairRounds),
+        files: [{ path: repairTarget, content: finalContent }],
+      });
 
-      changedPaths.push(
-        written.path,
-      );
-
-      if (
-        written.commitSha
-      ) {
-        commitShas.push(
-          written.commitSha,
-        );
-
-        latestCommitSha =
-          written.commitSha;
-      }
-
-      readbackVerified =
-        readbackVerified &&
-        written.readbackVerified;
-
-      if (
-        !written.readbackVerified
-      ) {
+      if (!repairAtomicResult.success || !repairAtomicResult.snapshot) {
         throw new Error(
-          `AUTONOMOUS_REPAIR_READBACK_FAILED: GitHub readback did not confirm the repair patch for "${repairTarget}" during build repair round ${repairRounds}.`,
+          `${repairAtomicResult.code}: ${repairAtomicResult.reason}`,
         );
       }
+
+      stagingBranch = repairAtomicResult.snapshot.stagingBranch;
+      changedPaths.push(repairTarget);
+      commitShas.push(repairAtomicResult.snapshot.stagingCommitSha);
+      latestCommitSha = repairAtomicResult.snapshot.stagingCommitSha;
+      readbackVerified = true;
 
       updateAutonomousDevelopmentTask(
         taskId,
@@ -2630,7 +2542,7 @@ export async function executeAutonomousDevelopmentAgent(
             `Targets: ${targetPaths.length}.`,
             `Changed: ${changedPaths.length}.`,
             `Repair rounds: ${repairRounds}.`,
-            "GitHub readback and Vercel production verification passed.",
+            "Staging branch readback and Vercel commit verification passed.",
           ].join(" ")
         : verification?.errorMessage ||
           verification?.errorCode ||
