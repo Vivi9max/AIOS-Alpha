@@ -1,80 +1,154 @@
+#!/usr/bin/env node
 /**
  * C169.8-D2.1 Independent Non-Destructive Verification
  *
- * Runs with: node scripts/verify-autonomous-development-control-plane.mjs
+ * Runs: node scripts/verify-autonomous-development-control-plane.mjs
  *
- * No production data is touched. @/lib/server-storage is replaced with an
- * in-memory stub via a custom ESM loader registered inside this file.
+ * Strategy:
+ *   1. Transpile the real production TypeScript modules with the repository's
+ *      installed `typescript` package (no new dependencies).
+ *   2. Replace `@/` aliases and `server-only` with local stubs inside a
+ *      temporary directory.
+ *   3. Import the transpiled production module and drive it exclusively
+ *      through its public API.
+ *   4. Use an in-memory storage stub — no Redis, no Production storage,
+ *      no GitHub/Vercel API, no real Autonomous Development task.
  */
 
-import { register } from "node:module";
-import { pathToFileURL } from "node:url";
-import test from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 
-// ---------------------------------------------------------------------------
-// In-memory storage stub, exposed globally so the loader can bind to it.
-// ---------------------------------------------------------------------------
-
-const STORAGE_STUB_KEY = "__AIOS_D2_1_STORAGE_STUB__";
-
-globalThis[STORAGE_STUB_KEY] = {
-  data: new Map(),
-  writes: 0,
-  resets: 0,
-};
-
-const stubStorage = {
-  async get(key) {
-    return globalThis[STORAGE_STUB_KEY].data.get(key) ?? null;
-  },
-  async set(key, value) {
-    globalThis[STORAGE_STUB_KEY].writes += 1;
-    globalThis[STORAGE_STUB_KEY].data.set(key, value);
-  },
-};
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, "..");
 
 // ---------------------------------------------------------------------------
-// ESM loader: resolve @/ aliases to repository root, stub server-only and
-// @/lib/server-storage.
+// TypeScript transpiler (repository dependency)
 // ---------------------------------------------------------------------------
 
-const REPO_ROOT = new URL("../", import.meta.url).href;
+let ts;
+try {
+  ts = (await import("typescript")).default;
+} catch {
+  console.error(
+    "TypeScript is not installed. Run `npm install` in the repository root first.",
+  );
+  process.exit(1);
+}
 
-register(
-  `data:text/javascript,${encodeURIComponent(`
-    const REPO_ROOT = ${JSON.stringify(REPO_ROOT)};
-    const STORAGE_STUB_KEY = ${JSON.stringify(STORAGE_STUB_KEY)};
+function transpile(source, fileName) {
+  const result = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+      isolatedModules: true,
+      skipLibCheck: true,
+    },
+    fileName,
+  });
+  return result.outputText;
+}
 
-    export async function resolve(specifier, context, next) {
-      if (specifier === "server-only") {
-        return { url: "data:text/javascript,export default {};", shortCircuit: true };
-      }
-      if (specifier === "@/lib/server-storage") {
-        const stubUrl =
-          "data:text/javascript," +
-          encodeURIComponent(\`
-            const KEY = "\${STORAGE_STUB_KEY}";
-            export const storage = globalThis[KEY];
-          \`);
-        return { url: stubUrl, shortCircuit: true };
-      }
-      if (specifier.startsWith("@/")) {
-        const rel = specifier.slice(2);
-        return { url: new URL(rel, REPO_ROOT).href, shortCircuit: true };
-      }
-      return next(specifier, context);
-    }
-  `)}`,
-  import.meta.url,
+// ---------------------------------------------------------------------------
+// Read real production sources
+// ---------------------------------------------------------------------------
+
+const controlPlaneSource = fs.readFileSync(
+  path.join(REPO_ROOT, "lib/github/autonomous-development-control-plane.ts"),
+  "utf8",
 );
 
-// Bind the stub into the loader's global slot.
-globalThis[STORAGE_STUB_KEY] = stubStorage;
+const receiptSource = fs.readFileSync(
+  path.join(REPO_ROOT, "lib/github/autonomous-development-receipt.ts"),
+  "utf8",
+);
 
 // ---------------------------------------------------------------------------
-// Dynamically import the module under test AFTER the loader is registered.
+// Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
+
+const patchedControlPlane = controlPlaneSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/server-storage"/g,
+    '"./server-storage-stub.mjs"',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-receipt"/g,
+    '"./autonomous-development-receipt.mjs"',
+  );
+
+const patchedReceipt = receiptSource.replace(
+  /import\s+"server-only";/,
+  'import "./server-only-stub.mjs";',
+);
+
+// ---------------------------------------------------------------------------
+// Temporary module directory
+// ---------------------------------------------------------------------------
+
+const tmpDir = fs.mkdtempSync(
+  path.join(os.tmpdir(), "aios-d2-1-verify-"),
+);
+
+function writeTmp(name, content) {
+  fs.writeFileSync(
+    path.join(tmpDir, name),
+    content,
+    "utf8",
+  );
+}
+
+writeTmp(
+  "control-plane.mjs",
+  transpile(patchedControlPlane, "control-plane.ts"),
+);
+
+writeTmp(
+  "autonomous-development-receipt.mjs",
+  transpile(patchedReceipt, "autonomous-development-receipt.ts"),
+);
+
+writeTmp(
+  "server-only-stub.mjs",
+  "export {};\n",
+);
+
+writeTmp(
+  "server-storage-stub.mjs",
+  [
+    "const data = new Map();",
+    "",
+    "export const storage = {",
+    "  async get(key) {",
+    "    return data.get(key) ?? null;",
+    "  },",
+    "  async set(key, value) {",
+    "    data.set(key, value);",
+    "  },",
+    "  __clear() {",
+    "    data.clear();",
+    "  },",
+    "};",
+    "",
+  ].join("\n"),
+);
+
+// ---------------------------------------------------------------------------
+// Import transpiled production module + storage stub
+// ---------------------------------------------------------------------------
+
+const { storage } = await import(
+  pathToFileURL(
+    path.join(tmpDir, "server-storage-stub.mjs"),
+  ).href
+);
 
 const {
   createAutonomousDevelopmentTask,
@@ -82,46 +156,51 @@ const {
   heartbeatAutonomousDevelopmentTask,
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
-  blockAutonomousDevelopmentTask,
+  persistAutonomousDevelopmentTasks,
 } = await import(
-  new URL("../lib/github/autonomous-development-control-plane.ts", import.meta.url)
-    .href
+  pathToFileURL(
+    path.join(tmpDir, "control-plane.mjs"),
+  ).href
 );
 
+const TASK_STORAGE_KEY =
+  "aios:autonomous-development:tasks";
+
 // ---------------------------------------------------------------------------
-// Helpers
+// Test harness
 // ---------------------------------------------------------------------------
 
-const results = [];
 let passed = 0;
 let failed = 0;
+const report = [];
 
-async function runTest(name, fn) {
+async function run(name, fn) {
   try {
     await fn();
-    results.push(`TEST ${name}: PASS`);
+    report.push(`TEST ${name}: PASS`);
     passed += 1;
   } catch (error) {
-    results.push(`TEST ${name}: FAIL — ${error.message}`);
+    report.push(`TEST ${name}: FAIL — ${error.message}`);
     failed += 1;
   }
 }
 
-function resetStub() {
-  globalThis[STORAGE_STUB_KEY].data.clear();
-  globalThis[STORAGE_STUB_KEY].writes = 0;
-  globalThis[STORAGE_STUB_KEY].resets += 1;
+async function resetStorage() {
+  // Drain any queued persistence writes before clearing.
+  await persistAutonomousDevelopmentTasks();
+  storage.__clear();
 }
 
 // ---------------------------------------------------------------------------
 // TEST 1 — Heartbeat Isolation
 // ---------------------------------------------------------------------------
 
-await runTest("1 HEARTBEAT ISOLATION", async () => {
-  resetStub();
+await run("1 HEARTBEAT ISOLATION", async () => {
+  await resetStorage();
 
   const task = createAutonomousDevelopmentTask({
-    objective: "C169.8-D2.1 heartbeat isolation fixture",
+    objective:
+      "C169.8-D2.1 heartbeat isolation fixture",
   });
 
   claimAutonomousDevelopmentTask(task.id);
@@ -130,145 +209,256 @@ await runTest("1 HEARTBEAT ISOLATION", async () => {
     updatedAt: task.updatedAt,
     reason: task.reason,
     lastHeartbeatAt: task.lastHeartbeatAt,
+    status: task.status,
+    phase: task.phase,
   };
 
-  // Force a distinct heartbeat timestamp by waiting one tick.
-  await new Promise((r) => setTimeout(r, 5));
+  await new Promise((resolve) =>
+    setTimeout(resolve, 10),
+  );
 
-  heartbeatAutonomousDevelopmentTask(task.id, "EXECUTION_REASON_MUST_NOT_BE_OVERWRITTEN");
+  heartbeatAutonomousDevelopmentTask(
+    task.id,
+    "SHOULD_NOT_BECOME_TASK_REASON",
+  );
 
-  const after = {
-    updatedAt: task.updatedAt,
-    reason: task.reason,
-    lastHeartbeatAt: task.lastHeartbeatAt,
-  };
+  assert.equal(
+    task.updatedAt,
+    before.updatedAt,
+    "heartbeat must not change updatedAt",
+  );
 
-  assert.equal(after.updatedAt, before.updatedAt, "updatedAt must not change on heartbeat");
-  assert.equal(after.reason, before.reason, "reason must not change on heartbeat");
-  assert.notEqual(after.lastHeartbeatAt, before.lastHeartbeatAt, "lastHeartbeatAt must advance");
+  assert.equal(
+    task.reason,
+    before.reason,
+    "heartbeat must not overwrite task.reason",
+  );
+
+  assert.notEqual(
+    task.lastHeartbeatAt,
+    before.lastHeartbeatAt,
+    "heartbeat must advance lastHeartbeatAt",
+  );
+
+  assert.equal(
+    task.status,
+    before.status,
+    "heartbeat must not change status",
+  );
+
+  assert.equal(
+    task.phase,
+    before.phase,
+    "heartbeat must not change phase",
+  );
 });
 
 // ---------------------------------------------------------------------------
 // TEST 2 — Terminal State Precedence
 // ---------------------------------------------------------------------------
 
-await runTest("2 TERMINAL PRECEDENCE", async () => {
-  resetStub();
+await run("2 TERMINAL PRECEDENCE", async () => {
+  await resetStorage();
 
-  const newerActive = {
-    id: "d2-1-terminal-fixture",
-    objective: "terminal precedence fixture",
-    repository: "Vivi9max/AIOS-Alpha",
-    branch: "main",
-    targetPaths: [],
-    status: "running",
-    phase: "GENERATING",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-03T00:00:00.000Z",
-    lastHeartbeatAt: "2026-01-03T00:00:00.000Z",
-    phaseHistory: [
-      { phase: "GENERATING", at: "2026-01-03T00:00:00.000Z" },
-    ],
-  };
+  const activeTask =
+    createAutonomousDevelopmentTask({
+      objective:
+        "C169.8-D2.1 terminal precedence active fixture",
+    });
 
-  const olderTerminal = {
-    id: "d2-1-terminal-fixture",
-    objective: "terminal precedence fixture",
+  claimAutonomousDevelopmentTask(activeTask.id);
+
+  // Ensure the claim's persistence write has settled before injecting
+  // the competing snapshot.
+  await persistAutonomousDevelopmentTasks();
+  storage.__clear();
+
+  const oldTime = new Date(
+    new Date(activeTask.updatedAt).getTime() -
+      3_600_000,
+  ).toISOString();
+
+  const terminalSnapshot = {
+    id: activeTask.id,
+    objective:
+      "C169.8-D2.1 terminal precedence active fixture",
     repository: "Vivi9max/AIOS-Alpha",
     branch: "main",
     targetPaths: [],
     status: "blocked",
     phase: "BLOCKED",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-02T00:00:00.000Z",
-    lastHeartbeatAt: "2026-01-02T00:00:00.000Z",
+    reason: "terminal precedence fixture",
+    createdAt: oldTime,
+    updatedAt: oldTime,
+    completedAt: oldTime,
+    lastHeartbeatAt: oldTime,
     phaseHistory: [
-      { phase: "BLOCKED", at: "2026-01-02T00:00:00.000Z" },
+      {
+        phase: "BLOCKED",
+        at: oldTime,
+        reason: "terminal precedence fixture",
+      },
     ],
-    completedAt: "2026-01-02T00:00:00.000Z",
-    reason: "terminal fixture",
   };
 
-  // Inject older terminal as the persistent snapshot, newer active as local.
-  globalThis[STORAGE_STUB_KEY].data.set(
-    "aios:autonomous-development:tasks",
-    [olderTerminal],
+  await storage.set(TASK_STORAGE_KEY, [
+    terminalSnapshot,
+  ]);
+
+  const hydrated =
+    await listPersistentAutonomousDevelopmentTasks();
+
+  const survivor = hydrated.find(
+    (task) => task.id === activeTask.id,
   );
 
-  // Force local map to contain the newer active task by importing a fresh
-  // module instance would be unreliable; instead, rely on hydrate merging
-  // persistent-only state and assert the terminal survives.
-  // The merge uses compareTaskVersion(existing, task) <= 0. Since the local
-  // map starts empty after import, the persistent terminal is loaded as-is.
-  // To exercise the precedence branch, we re-import a fresh module instance
-  // with the active task already in its local map via a second stub load.
-  // Simpler: directly assert that a terminal persistent snapshot is not
-  // downgraded when a local active snapshot exists — but local map is private.
-  //
-  // Pragmatic boundary: assert terminal status survives hydration when only
-  // persistent state exists, and separately assert the documented comparator
-  // contract via the observable merge of a terminal persistent task.
-  const hydrated = await listPersistentAutonomousDevelopmentTasks();
-  const survivor = hydrated.find((t) => t.id === "d2-1-terminal-fixture");
-  assert.ok(survivor, "terminal task must survive hydration");
-  assert.equal(survivor.status, "blocked", "terminal status must be preserved");
+  assert.ok(
+    survivor,
+    "merged collection must contain the fixture task",
+  );
+
+  assert.equal(
+    survivor.status,
+    "blocked",
+    "terminal snapshot must take precedence over newer active snapshot",
+  );
+
+  assert.equal(
+    survivor.phase,
+    "BLOCKED",
+    "terminal phase must be preserved",
+  );
 });
 
 // ---------------------------------------------------------------------------
-// TEST 3 — Phase History Version Precedence
+// TEST 3 — Phase History Version Precedence + Fallback
 // ---------------------------------------------------------------------------
 
-await runTest("3 PHASE HISTORY PRECEDENCE", async () => {
-  resetStub();
+await run("3 PHASE HISTORY PRECEDENCE", async () => {
+  await resetStorage();
 
-  const newerUpdatedOlderPhase = {
-    id: "d2-1-phase-fixture",
-    objective: "phase history precedence fixture",
+  const localTask =
+    createAutonomousDevelopmentTask({
+      objective:
+        "C169.8-D2.1 phase precedence local fixture",
+    });
+
+  claimAutonomousDevelopmentTask(localTask.id);
+
+  await persistAutonomousDevelopmentTasks();
+  storage.__clear();
+
+  const oldUpdated = new Date(
+    new Date(localTask.updatedAt).getTime() -
+      3_600_000,
+  ).toISOString();
+
+  const newerPhaseHistory = new Date(
+    new Date(localTask.updatedAt).getTime() +
+      3_600_000,
+  ).toISOString();
+
+  const persistentSnapshot = {
+    id: localTask.id,
+    objective:
+      "C169.8-D2.1 phase precedence local fixture",
     repository: "Vivi9max/AIOS-Alpha",
     branch: "main",
     targetPaths: [],
     status: "running",
     phase: "GENERATING",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-04T00:00:00.000Z",
-    lastHeartbeatAt: "2026-01-04T00:00:00.000Z",
+    createdAt: oldUpdated,
+    updatedAt: oldUpdated,
+    lastHeartbeatAt: new Date().toISOString(),
     phaseHistory: [
-      { phase: "READING", at: "2026-01-02T00:00:00.000Z" },
+      {
+        phase: "GENERATING",
+        at: newerPhaseHistory,
+      },
     ],
   };
 
-  const olderUpdatedNewerPhase = {
-    id: "d2-1-phase-fixture",
-    objective: "phase history precedence fixture",
+  await storage.set(TASK_STORAGE_KEY, [
+    persistentSnapshot,
+  ]);
+
+  const hydrated =
+    await listPersistentAutonomousDevelopmentTasks();
+
+  const survivor = hydrated.find(
+    (task) => task.id === localTask.id,
+  );
+
+  assert.ok(
+    survivor,
+    "merged collection must contain the phase fixture",
+  );
+
+  const lastEvent =
+    survivor.phaseHistory[
+      survivor.phaseHistory.length - 1
+    ];
+
+  assert.equal(
+    lastEvent.at,
+    newerPhaseHistory,
+    "newer phase-history timestamp must beat newer updatedAt",
+  );
+
+  // --- Fallback: invalid / missing phase-history timestamp ---
+
+  const fallbackLocal =
+    createAutonomousDevelopmentTask({
+      objective:
+        "C169.8-D2.1 phase fallback local fixture",
+    });
+
+  claimAutonomousDevelopmentTask(fallbackLocal.id);
+
+  await persistAutonomousDevelopmentTasks();
+  storage.__clear();
+
+  const fallbackOldUpdated = new Date(
+    new Date(fallbackLocal.updatedAt).getTime() -
+      3_600_000,
+  ).toISOString();
+
+  const fallbackSnapshot = {
+    id: fallbackLocal.id,
+    objective:
+      "C169.8-D2.1 phase fallback local fixture",
     repository: "Vivi9max/AIOS-Alpha",
     branch: "main",
     targetPaths: [],
     status: "running",
-    phase: "WRITING",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-03T00:00:00.000Z",
-    lastHeartbeatAt: "2026-01-03T00:00:00.000Z",
-    phaseHistory: [
-      { phase: "WRITING", at: "2026-01-03T12:00:00.000Z" },
-    ],
+    phase: "GENERATING",
+    createdAt: fallbackOldUpdated,
+    updatedAt: fallbackOldUpdated,
+    lastHeartbeatAt: new Date().toISOString(),
+    phaseHistory: [],
   };
 
-  // Persistent = older updated but newer phase history.
-  globalThis[STORAGE_STUB_KEY].data.set(
-    "aios:autonomous-development:tasks",
-    [olderUpdatedNewerPhase],
+  await storage.set(TASK_STORAGE_KEY, [
+    fallbackSnapshot,
+  ]);
+
+  const fallbackHydrated =
+    await listPersistentAutonomousDevelopmentTasks();
+
+  const fallbackSurvivor =
+    fallbackHydrated.find(
+      (task) => task.id === fallbackLocal.id,
+    );
+
+  assert.ok(
+    fallbackSurvivor,
+    "fallback fixture must survive hydration",
   );
 
-  const hydrated = await listPersistentAutonomousDevelopmentTasks();
-  const survivor = hydrated.find((t) => t.id === "d2-1-phase-fixture");
-  assert.ok(survivor, "phase fixture must survive hydration");
-  // Since local map is empty, persistent snapshot loads unconditionally.
-  // The observable contract we can assert is that the newer phase-history
-  // snapshot (persistent) is what survives hydration.
   assert.equal(
-    survivor.phase,
-    "WRITING",
-    "persistent snapshot with newer phase history must survive",
+    fallbackSurvivor.updatedAt,
+    fallbackLocal.updatedAt,
+    "when phase history is missing, newer updatedAt must win",
   );
 });
 
@@ -276,50 +466,90 @@ await runTest("3 PHASE HISTORY PRECEDENCE", async () => {
 // TEST 4 — Phase Transition Safety
 // ---------------------------------------------------------------------------
 
-await runTest("4 PHASE TRANSITION SAFETY", async () => {
-  resetStub();
+await run("4 PHASE TRANSITION SAFETY", async () => {
+  await resetStorage();
 
   const task = createAutonomousDevelopmentTask({
-    objective: "C169.8-D2.1 phase transition fixture",
+    objective:
+      "C169.8-D2.1 phase transition safety fixture",
   });
+
   claimAutonomousDevelopmentTask(task.id);
 
-  // Drive to GENERATING via READING.
-  updateAutonomousDevelopmentTask(task.id, { phase: "PLANNING" });
-  updateAutonomousDevelopmentTask(task.id, { phase: "READING" });
-  updateAutonomousDevelopmentTask(task.id, { phase: "GENERATING" });
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "PLANNING",
+  });
 
-  assert.equal(task.phase, "GENERATING", "fixture must reach GENERATING");
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "READING",
+  });
 
-  // 4a: GENERATING -> READBACK MUST be rejected.
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "GENERATING",
+  });
+
+  assert.equal(
+    task.phase,
+    "GENERATING",
+    "fixture must reach GENERATING",
+  );
+
   assert.throws(
-    () => updateAutonomousDevelopmentTask(task.id, { phase: "READBACK" }),
+    () =>
+      updateAutonomousDevelopmentTask(task.id, {
+        phase: "READBACK",
+      }),
     /Invalid autonomous development phase transition: GENERATING -> READBACK/,
     "GENERATING -> READBACK must be rejected",
   );
 
-  // 4b: GENERATING -> WRITING MUST be allowed.
-  updateAutonomousDevelopmentTask(task.id, { phase: "WRITING" });
-  assert.equal(task.phase, "WRITING", "GENERATING -> WRITING must succeed");
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "WRITING",
+  });
 
-  // 4c: WRITING -> READBACK MUST be allowed.
-  updateAutonomousDevelopmentTask(task.id, { phase: "READBACK" });
-  assert.equal(task.phase, "READBACK", "WRITING -> READBACK must succeed");
+  assert.equal(
+    task.phase,
+    "WRITING",
+    "GENERATING -> WRITING must be allowed",
+  );
+
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "READBACK",
+  });
+
+  assert.equal(
+    task.phase,
+    "READBACK",
+    "WRITING -> READBACK must be allowed",
+  );
 });
 
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
-console.log("\nC169.8-D2.1 INDEPENDENT VERIFICATION\n");
-for (const line of results) {
+console.log(
+  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+);
+
+for (const line of report) {
   console.log(`* ${line}`);
 }
+
 console.log(`\nTOTAL TESTS: ${passed + failed}`);
 console.log(`PASSED: ${passed}`);
 console.log(`FAILED: ${failed}`);
-console.log(`EXIT CODE: ${failed === 0 ? 0 : 1}\n`);
+console.log(
+  `EXIT CODE: ${failed === 0 ? 0 : 1}\n`,
+);
 
-if (failed > 0) {
-  process.exitCode = 1;
+try {
+  fs.rmSync(tmpDir, {
+    recursive: true,
+    force: true,
+  });
+} catch {
+  // Best-effort cleanup only.
 }
+
+process.exitCode = failed === 0 ? 0 : 1;
