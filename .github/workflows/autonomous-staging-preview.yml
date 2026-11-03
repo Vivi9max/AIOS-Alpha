@@ -1,0 +1,54 @@
+
+name: AIOS Autonomous Staging Preview Gate
+
+on:
+  push:
+    branches:
+      - "c169-8-ad-*"
+  workflow_dispatch:
+    inputs:
+      staging_branch:
+        description: "Existing AIOS autonomous staging branch"
+        required: true
+        type: string
+      commit_sha:
+        description: "Expected full 40-character commit SHA"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aios-staging-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-staging:
+    name: Exact GitHub Readback and Vercel Preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      STAGING_BRANCH: ${{ github.event.inputs.staging_branch || github.ref_name }}
+      STAGING_COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PREVIEW_TIMEOUT_MS: "900000"
+      VERCEL_PREVIEW_POLL_MS: "15000"
+    steps:
+      - name: Checkout exact staging commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify exact GitHub staging readback and Vercel Preview
+        run: node scripts/verify-autonomous-staging.mjs
