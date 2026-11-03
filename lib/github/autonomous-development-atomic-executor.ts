@@ -7,7 +7,7 @@ import {
 
 const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const DEFAULT_BASE_BRANCH = "main";
-const STAGING_PREFIX = "c167-28-5-ad-";
+const STAGING_PREFIX = "c169-8-ad-";
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = 200_000;
 
@@ -506,6 +506,7 @@ async function createTree(
 async function createCommit(
   repository: string,
   objective: string,
+  commitMessage: string | undefined,
   treeSha: string,
   parentSha: string,
   accessToken: string,
@@ -524,7 +525,8 @@ async function createCommit(
       .slice(0, 72);
 
   const message =
-    `feat(C167.28.5): autonomous atomic development${
+    commitMessage?.trim() ||
+    `feat(C169.8): autonomous atomic development${
       normalizedObjective
         ? ` ${normalizedObjective}`
         : ""
@@ -625,6 +627,7 @@ export async function executeAtomicStaging(
     baseBranch?: string;
     files: AutonomousAtomicFile[];
     accessToken?: string;
+    commitMessage?: string;
   },
 ): Promise<AutonomousAtomicExecutionResult> {
   const repository =
@@ -709,6 +712,7 @@ export async function executeAtomicStaging(
       await createCommit(
         repository,
         input.objective,
+        input.commitMessage,
         treeSha,
         baseSha,
         auth.accessToken,
