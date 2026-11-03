@@ -24,6 +24,8 @@ import {
   getAutonomousDevelopmentHeartbeatInterval,
 } from "@/lib/github/autonomous-development-heartbeat";
 import { executeAutonomousDevelopmentAgent } from "@/lib/github/autonomous-development-agent";
+import { readUserGitHubConnection } from "@/lib/integrations/github/user-github";
+import { resolveGitHubBridgeAuth } from "@/lib/github/bridge";
 import {
   finalizeAutonomousDevelopmentFailure,
   finalizeAutonomousDevelopmentTask,
@@ -383,6 +385,7 @@ function buildTaskListResponse(
 async function executeWithHeartbeatWatchdog(
   taskId: string,
   objective: string,
+  accessToken?: string,
 ) {
   const intervalMs =
     getAutonomousDevelopmentHeartbeatInterval();
@@ -452,6 +455,7 @@ async function executeWithHeartbeatWatchdog(
       {
         objective,
         taskId,
+        accessToken,
       },
     );
   } finally {
@@ -635,6 +639,24 @@ export async function POST(
       );
     }
 
+    const githubConnection = readUserGitHubConnection(request);
+    const githubAuth = await resolveGitHubBridgeAuth(
+      githubConnection && githubConnection.accessExpiresAt > Date.now() + 60_000
+        ? request
+        : undefined,
+    );
+
+    if (!githubAuth.accessToken) {
+      return json(
+        {
+          ok: false,
+          code: "AUTONOMOUS_GITHUB_AUTH_REQUIRED",
+          error: "Connect GitHub again or configure the server-side GitHub token before starting autonomous development.",
+        },
+        503,
+      );
+    }
+
     const task =
       createAutonomousDevelopmentTask(
         {
@@ -679,6 +701,7 @@ export async function POST(
           await executeWithHeartbeatWatchdog(
             claimedTask.id,
             objective,
+            githubAuth.accessToken,
           );
 
           /*
