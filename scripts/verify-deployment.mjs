@@ -1,3 +1,4 @@
+
 const baseUrl = process.argv[2] || process.env.AIOS_BASE_URL;
 
 if (!baseUrl) {
@@ -37,9 +38,36 @@ if (trustedOidcToken) {
   authenticationMode = "automation-bypass";
 }
 
+function getSafeUrlParts(value, base) {
+  try {
+    const parsed = base
+      ? new URL(value, base)
+      : new URL(value);
+
+    return {
+      host: parsed.host || "<unknown>",
+      path: parsed.pathname || "/",
+    };
+  } catch {
+    return {
+      host: "<unavailable>",
+      path: "<unavailable>",
+    };
+  }
+}
+
+function logSafeUrl(label, value, base) {
+  const parts = getSafeUrlParts(value, base);
+
+  console.log(`${label} host: ${parts.host}`);
+  console.log(`${label} path: ${parts.path}`);
+}
+
 console.log(
   `Deployment verification authentication mode: ${authenticationMode}`
 );
+
+logSafeUrl("Health endpoint", healthUrl);
 
 try {
   const response = await fetch(healthUrl, {
@@ -48,10 +76,50 @@ try {
     redirect: "manual",
   });
 
-  const body =
-    await response.json().catch(() => null);
+  const vercelRequestId =
+    response.headers.get("x-vercel-id");
+
+  const vercelRequestIdFallback =
+    response.headers.get("x-vercel-request-id");
+
+  console.log(
+    `HTTP status: ${response.status}`
+  );
+
+  console.log(
+    `HTTP status text: ${response.statusText || "<none>"}`
+  );
+
+  console.log(
+    `Vercel request ID: ${vercelRequestId || vercelRequestIdFallback || "<not provided>"}`
+  );
+
+  if (response.status >= 300 && response.status < 400) {
+    const redirectLocation =
+      response.headers.get("location");
+
+    if (redirectLocation) {
+      logSafeUrl(
+        "Redirect target",
+        redirectLocation,
+        healthUrl
+      );
+    } else {
+      console.log(
+        "Redirect target: <Location header missing>"
+      );
+    }
+  }
+
+  const body = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(
+        `HTTP ${response.status}: redirect received; redirects are not accepted as deployment verification success.`
+      );
+    }
+
     if (response.status === 401) {
       if (authenticationMode === "trusted-oidc") {
         throw new Error(
@@ -127,10 +195,6 @@ try {
 
   console.log(
     "AIOS Alpha deployment verification passed."
-  );
-
-  console.log(
-    `URL: ${healthUrl}`
   );
 
   console.log(
