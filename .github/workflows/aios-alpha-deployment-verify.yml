@@ -45,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify deployment health checker unit tests
-        run: node --test scripts/verify-deployment.test.mjs
+      - name: Verify deployment resolver and health checker unit tests
+        run: node --test scripts/wait-for-vercel-deployment.test.mjs scripts/verify-deployment.test.mjs
 
       - name: Production build
         run: npm run build
