@@ -71,16 +71,90 @@ const PLACEHOLDER_VALUES = new Set([
   "none",
 ]);
 
+const MAX_SCAN_DEPTH = 64;
+const MAX_SCAN_NODES = 50000;
+
 function toScanText(value) {
   if (typeof value === "string") {
     return value;
   }
 
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value) ?? String(value);
   } catch {
     return String(value);
   }
+}
+
+/**
+ * Collect raw string values separately from JSON serialization.
+ *
+ * This is important because JSON.stringify escapes quotation marks inside
+ * nested strings. Assignment patterns must also inspect the original string
+ * so text such as `api_key: "sensitive-value"` cannot bypass detection.
+ *
+ * Traversal is bounded and cycle-safe.
+ */
+function collectRawStringValues(value) {
+  const strings = [];
+  const visited = new WeakSet();
+
+  let visitedNodes = 0;
+
+  function visit(current, depth) {
+    if (visitedNodes >= MAX_SCAN_NODES) {
+      return;
+    }
+
+    visitedNodes += 1;
+
+    if (typeof current === "string") {
+      strings.push(current);
+      return;
+    }
+
+    if (
+      current === null ||
+      typeof current !== "object" ||
+      depth >= MAX_SCAN_DEPTH
+    ) {
+      return;
+    }
+
+    if (visited.has(current)) {
+      return;
+    }
+
+    visited.add(current);
+
+    let keys;
+
+    try {
+      keys = Object.keys(current);
+    } catch {
+      return;
+    }
+
+    for (const key of keys) {
+      if (visitedNodes >= MAX_SCAN_NODES) {
+        break;
+      }
+
+      let child;
+
+      try {
+        child = current[key];
+      } catch {
+        continue;
+      }
+
+      visit(child, depth + 1);
+    }
+  }
+
+  visit(value, 0);
+
+  return strings;
 }
 
 function isPlaceholder(value) {
@@ -110,40 +184,70 @@ function isPlaceholder(value) {
  * Returns metadata only. Secret values are never included.
  */
 export function scanForEngineeringSecrets(value) {
-  const source = toScanText(value);
+  const serializedSource = toScanText(value);
+  const rawStringSources = collectRawStringValues(value);
+
+  const sources = [
+    serializedSource,
+    ...rawStringSources,
+  ];
+
   const findings = [];
 
   for (const pattern of SECRET_PATTERNS) {
-    if (pattern.expression.test(source)) {
+    let matched = false;
+
+    for (const source of sources) {
+      pattern.expression.lastIndex = 0;
+
+      if (pattern.expression.test(source)) {
+        matched = true;
+        break;
+      }
+    }
+
+    pattern.expression.lastIndex = 0;
+
+    if (matched) {
       findings.push({
         type: pattern.id,
       });
     }
-
-    pattern.expression.lastIndex = 0;
   }
 
-  ASSIGNMENT_PATTERN.lastIndex = 0;
+  let assignmentDetected = false;
 
-  let assignmentMatch;
+  for (const source of sources) {
+    ASSIGNMENT_PATTERN.lastIndex = 0;
 
-  while (
-    (assignmentMatch = ASSIGNMENT_PATTERN.exec(source)) !== null
-  ) {
-    const candidate =
-      assignmentMatch[1] ??
-      assignmentMatch[2] ??
-      "";
+    let assignmentMatch;
 
-    if (!isPlaceholder(candidate)) {
-      findings.push({
-        type: "SENSITIVE_ASSIGNMENT",
-      });
+    while (
+      (assignmentMatch = ASSIGNMENT_PATTERN.exec(source)) !== null
+    ) {
+      const candidate =
+        assignmentMatch[1] ??
+        assignmentMatch[2] ??
+        "";
+
+      if (!isPlaceholder(candidate)) {
+        assignmentDetected = true;
+        break;
+      }
+    }
+
+    if (assignmentDetected) {
       break;
     }
   }
 
   ASSIGNMENT_PATTERN.lastIndex = 0;
+
+  if (assignmentDetected) {
+    findings.push({
+      type: "SENSITIVE_ASSIGNMENT",
+    });
+  }
 
   return {
     safe: findings.length === 0,
