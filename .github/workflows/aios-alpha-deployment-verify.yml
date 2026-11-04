@@ -51,6 +51,12 @@ jobs:
       - name: Verify C170.2 Dependency Impact Analyzer
         run: node --test scripts/aios-dependency-impact.test.mjs
 
+      - name: Verify C170.3 Engineering Secret Guard
+        run: node --test scripts/aios-engineering-secret-guard.test.mjs
+
+      - name: Verify C170.3 Provider Security Boundary
+        run: node --test scripts/aios-engineering-provider-security.test.mjs
+
       - name: Verify C170.3 Engineering Provider Adapter
         run: node --test scripts/aios-engineering-provider-adapter.test.mjs
 
