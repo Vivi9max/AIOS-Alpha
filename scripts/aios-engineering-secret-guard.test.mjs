@@ -144,6 +144,33 @@ test("detects sensitive assignments inside nested report strings", () => {
   );
 });
 
+test("detects sensitive assignments after JSON serialization", () => {
+  const report = {
+    risk: {
+      reasons: [
+        'api_key: "serialized-sensitive-value-123456"',
+      ],
+    },
+  };
+
+  const serializedReport = JSON.stringify(report);
+
+  const result = scanForEngineeringSecrets(
+    [
+      "C170.2 DEPENDENCY IMPACT REPORT",
+      serializedReport,
+    ].join("\n"),
+  );
+
+  assert.equal(result.safe, false);
+  assert.equal(
+    result.findings.some(
+      (item) => item.type === "SENSITIVE_ASSIGNMENT",
+    ),
+    true,
+  );
+});
+
 test("detects sensitive assignments inside deeply nested arrays", () => {
   const result = scanForEngineeringSecrets({
     report: {
@@ -239,16 +266,23 @@ test("blocks provider dispatch with a fixed error code", () => {
   );
 });
 
-test("blocks provider dispatch when a nested report contains a secret assignment", () => {
+test("blocks serialized nested report secrets before dispatch", () => {
+  const serializedReport = JSON.stringify({
+    risk: {
+      reasons: [
+        'api_key: "serialized-sensitive-value-123456"',
+      ],
+    },
+  });
+
   assert.throws(
     () =>
-      assertNoSecretsBeforeProviderDispatch({
-        risk: {
-          reasons: [
-            'api_key: "nested-sensitive-value-123456"',
-          ],
-        },
-      }),
+      assertNoSecretsBeforeProviderDispatch(
+        [
+          "C170.2 DEPENDENCY IMPACT REPORT",
+          serializedReport,
+        ].join("\n"),
+      ),
     {
       code: "AIOS_ENGINEERING_SECRET_SCAN_BLOCKED",
     },
