@@ -1,3 +1,4 @@
+
 name: AIOS Alpha Autonomous Development Verification
 
 on:
@@ -19,7 +20,7 @@ permissions:
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -45,8 +46,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify C170.1 Repository Intelligence
+        run: node --test scripts/aios-engineering-context.test.mjs
+
       - name: Verify deployment resolver and health checker unit tests
         run: node --test scripts/wait-for-vercel-deployment.test.mjs scripts/verify-deployment.test.mjs
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
 
       - name: Production build
         run: npm run build
