@@ -1,3 +1,4 @@
+```javascript
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -64,11 +65,7 @@ function createFixture() {
     }),
   );
 
-  write(
-    root,
-    ".gitignore",
-    "node_modules/\n",
-  );
+  write(root, ".gitignore", "node_modules/\n");
 
   write(
     root,
@@ -128,7 +125,6 @@ test("snapshot records HEAD, tracked files, and content hashes", () => {
     assert.equal(result.schemaVersion, 1);
     assert.match(result.head, /^[0-9a-f]{40,64}$/i);
     assert.equal(result.trackedFileCount, 6);
-    assert.ok(result.trackedFiles.length > 0);
 
     const service = result.trackedFiles.find(
       (item) => item.path === "src/service.ts",
@@ -142,7 +138,7 @@ test("snapshot records HEAD, tracked files, and content hashes", () => {
   }
 });
 
-test("snapshot does not include untracked files", () => {
+test("snapshot excludes untracked files", () => {
   const root = createFixture();
 
   try {
@@ -276,11 +272,39 @@ test("snapshot fails closed for unresolved internal dependencies", () => {
   }
 });
 
-test("inspect rejects a stale repository index", () => {
+test("inspect rejects a dirty worktree even with an existing index", () => {
   const root = createFixture();
 
   try {
     const index = buildRepositoryIndex(root);
+
+    write(
+      root,
+      "src/service.ts",
+      "export function service(): number { return 100; }\n",
+    );
+
+    assert.throws(
+      () =>
+        inspectRepositoryTarget(
+          root,
+          "src/service.ts",
+          index,
+        ),
+      (error) =>
+        error.code ===
+        "AIOS_ENGINEERING_TRACKED_WORKTREE_DIRTY",
+    );
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("inspect rejects an index from an older HEAD", () => {
+  const root = createFixture();
+
+  try {
+    const oldIndex = buildRepositoryIndex(root);
 
     write(
       root,
@@ -296,11 +320,11 @@ test("inspect rejects a stale repository index", () => {
         inspectRepositoryTarget(
           root,
           "src/service.ts",
-          index,
+          oldIndex,
         ),
       (error) =>
         error.code ===
-        "AIOS_ENGINEERING_TRACKED_WORKTREE_DIRTY",
+        "AIOS_ENGINEERING_INDEX_STALE",
     );
   } finally {
     cleanup(root);
@@ -326,9 +350,9 @@ test("inspect fails closed when context exceeds the configured limit", () => {
       () => inspectRepositoryTarget(root, "src/service.ts"),
       (error) =>
         error.code ===
-          "AIOS_ENGINEERING_FILE_TOO_LARGE" ||
+          "AIOS_ENGINEERING_CONTEXT_TOO_LARGE" ||
         error.code ===
-          "AIOS_ENGINEERING_CONTEXT_TOO_LARGE",
+          "AIOS_ENGINEERING_FILE_TOO_LARGE",
     );
   } finally {
     cleanup(root);
