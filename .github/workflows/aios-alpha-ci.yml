@@ -1,4 +1,3 @@
-
 name: AIOS Alpha CI
 
 on:
@@ -36,6 +35,15 @@ jobs:
 
       - name: Verify C170.2 Dependency Impact Analyzer
         run: node --test scripts/aios-dependency-impact.test.mjs
+
+      - name: Verify C170.3 Engineering Secret Guard
+        run: node --test scripts/aios-engineering-secret-guard.test.mjs
+
+      - name: Verify C170.3 Provider Security Boundary
+        run: node --test scripts/aios-engineering-provider-security.test.mjs
+
+      - name: Verify C170.3 Engineering Provider Adapter
+        run: node --test scripts/aios-engineering-provider-adapter.test.mjs
 
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
