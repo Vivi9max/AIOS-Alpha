@@ -1,3 +1,4 @@
+
 name: AIOS Alpha CI
 
 on:
@@ -29,6 +30,12 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Verify C170.1 Repository Intelligence
+        run: node --test scripts/aios-engineering-context.test.mjs
+
+      - name: Verify C170.2 Dependency Impact Analyzer
+        run: node --test scripts/aios-dependency-impact.test.mjs
 
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
