@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from "node:url";
 import path from "node:path";
+import {
+  fileURLToPath,
+  pathToFileURL,
+} from "node:url";
+
+import {
+  assertNoSecretsBeforeProviderDispatch,
+} from "./aios-engineering-secret-guard.mjs";
 
 export const ENGINEERING_PROVIDERS = Object.freeze({
   deepseek: {
@@ -115,9 +122,10 @@ function validateImpactReport(report, expectedHead) {
     );
   }
 
-  const serialized = JSON.stringify(report);
-
-  if (serialized.length > LIMITS.maxImpactChars) {
+  if (
+    JSON.stringify(report).length >
+    LIMITS.maxImpactChars
+  ) {
     fail(
       "AIOS_ENGINEERING_IMPACT_TOO_LARGE",
       "The C170.2 impact report exceeds the configured size limit.",
@@ -164,15 +172,23 @@ function getProviderConfig(providerId, env) {
 
   const apiKey = env[definition.keyEnv]?.trim() ?? "";
 
+  const legacyBaseUrlEnv =
+    providerId === "deepseek"
+      ? "DEEPSEEK_BASE_URL"
+      : providerId === "qwen"
+        ? "QWEN_BASE_URL"
+        : "OPENAI_BASE_URL";
+
+  const legacyModelEnv =
+    providerId === "deepseek"
+      ? "DEEPSEEK_MODEL"
+      : providerId === "qwen"
+        ? "QWEN_MODEL"
+        : "OPENAI_MODEL";
+
   const baseUrl = (
     env[definition.baseUrlEnv] ??
-    env[
-      providerId === "deepseek"
-        ? "DEEPSEEK_BASE_URL"
-        : providerId === "qwen"
-          ? "QWEN_BASE_URL"
-          : "OPENAI_BASE_URL"
-    ] ??
+    env[legacyBaseUrlEnv] ??
     definition.defaultBaseUrl
   )
     .trim()
@@ -180,13 +196,7 @@ function getProviderConfig(providerId, env) {
 
   const model = (
     env[definition.modelEnv] ??
-    env[
-      providerId === "deepseek"
-        ? "DEEPSEEK_MODEL"
-        : providerId === "qwen"
-          ? "QWEN_MODEL"
-          : "OPENAI_MODEL"
-    ] ??
+    env[legacyModelEnv] ??
     definition.defaultModel
   ).trim();
 
@@ -370,7 +380,10 @@ async function requestProvider({
 
     fail(
       "AIOS_ENGINEERING_PROVIDER_REQUEST_FAILED",
-      redactMessage(error?.message ?? error, [config.apiKey]),
+      redactMessage(
+        error?.message ?? error,
+        [config.apiKey],
+      ),
     );
   } finally {
     clearTimeout(timeout);
@@ -434,6 +447,18 @@ export async function runEngineeringTask({
       env.AIOS_ENGINEERING_PROVIDER_CHAIN,
   );
 
+  const systemPrompt = buildSystemPrompt();
+
+  const userPrompt = buildUserPrompt({
+    task,
+    repositoryContext,
+    impactReport,
+  });
+
+  // Mandatory fail-closed boundary.
+  // This executes before any external provider request.
+  assertNoSecretsBeforeProviderDispatch(userPrompt);
+
   const configs = chain
     .map((id) => getProviderConfig(id, env))
     .filter(Boolean);
@@ -455,14 +480,6 @@ export async function runEngineeringTask({
       readOnly: true,
     };
   }
-
-  const systemPrompt = buildSystemPrompt();
-
-  const userPrompt = buildUserPrompt({
-    task,
-    repositoryContext,
-    impactReport,
-  });
 
   const attempts = [];
 
@@ -565,10 +582,12 @@ const invokedPath = process.argv[1]
   ? path.resolve(process.argv[1])
   : "";
 
+const modulePath = fileURLToPath(import.meta.url);
+
 if (
   invokedPath &&
   pathToFileURL(invokedPath).href ===
-    pathToFileURL(new URL(import.meta.url).pathname).href
+    pathToFileURL(modulePath).href
 ) {
   try {
     main();
