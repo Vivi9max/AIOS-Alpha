@@ -49,6 +49,9 @@ jobs:
       - name: Verify C170.1 Repository Intelligence
         run: node --test scripts/aios-engineering-context.test.mjs
 
+      - name: Verify C170.2 Dependency Impact Analyzer
+        run: node --test scripts/aios-dependency-impact.test.mjs
+
       - name: Verify deployment resolver and health checker unit tests
         run: node --test scripts/wait-for-vercel-deployment.test.mjs scripts/verify-deployment.test.mjs
 
