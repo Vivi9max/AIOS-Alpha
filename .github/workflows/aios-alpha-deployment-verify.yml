@@ -34,6 +34,14 @@ jobs:
       - name: Reconcile lockfile from package.json
         run: npm install --package-lock-only --ignore-scripts
 
+      - name: Export reconciled package lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciled-package-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Install dependencies
         run: npm ci
 
