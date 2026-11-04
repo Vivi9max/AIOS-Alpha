@@ -45,7 +45,7 @@ const SECRET_PATTERNS = Object.freeze([
 ]);
 
 const ASSIGNMENT_PATTERN =
-  /(?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|private[_-]?key|secret)(?:["']?)\s*[:=]\s*(?:"([^"\r\n]{8,})"|'([^'\r\n]{8,})')/gi;
+  /(?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|private[_-]?key|secret)(?:["']?)\s*[:=]\s*(?:\\?"([^"\\\r\n]{8,})\\?"|'([^'\r\n]{8,})')/gi;
 
 const PLACEHOLDER_VALUES = new Set([
   "your_api_key",
@@ -86,15 +86,6 @@ function toScanText(value) {
   }
 }
 
-/**
- * Collect raw string values separately from JSON serialization.
- *
- * This is important because JSON.stringify escapes quotation marks inside
- * nested strings. Assignment patterns must also inspect the original string
- * so text such as `api_key: "sensitive-value"` cannot bypass detection.
- *
- * Traversal is bounded and cycle-safe.
- */
 function collectRawStringValues(value) {
   const strings = [];
   const visited = new WeakSet();
