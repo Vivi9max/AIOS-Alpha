@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify deployment health checker unit tests
+        run: node --test scripts/verify-deployment.test.mjs
+
       - name: Production build
         run: npm run build
 
@@ -71,7 +74,7 @@ jobs:
 
           echo "Vercel automation bypass secret is configured."
 
-      - name: Verify production deployment
+      - name: Verify resolved Vercel deployment
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
