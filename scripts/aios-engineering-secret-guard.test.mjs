@@ -126,11 +126,73 @@ test("detects quoted password assignments", () => {
   assert.equal(result.safe, false);
 });
 
+test("detects sensitive assignments inside nested report strings", () => {
+  const result = scanForEngineeringSecrets({
+    risk: {
+      reasons: [
+        'api_key: "sensitive-value-123456789"',
+      ],
+    },
+  });
+
+  assert.equal(result.safe, false);
+  assert.equal(
+    result.findings.some(
+      (item) => item.type === "SENSITIVE_ASSIGNMENT",
+    ),
+    true,
+  );
+});
+
+test("detects sensitive assignments inside deeply nested arrays", () => {
+  const result = scanForEngineeringSecrets({
+    report: {
+      analysis: [
+        {
+          details: [
+            'client_secret = "nested-sensitive-value-123"',
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.safe, false);
+  assert.equal(
+    result.findings.some(
+      (item) => item.type === "SENSITIVE_ASSIGNMENT",
+    ),
+    true,
+  );
+});
+
+test("detects secrets in cyclic objects without crashing", () => {
+  const payload = {
+    report: {
+      reasons: [
+        'api_key: "cyclic-sensitive-value-123456"',
+      ],
+    },
+  };
+
+  payload.self = payload;
+
+  const result = scanForEngineeringSecrets(payload);
+
+  assert.equal(result.safe, false);
+  assert.equal(
+    result.findings.some(
+      (item) => item.type === "SENSITIVE_ASSIGNMENT",
+    ),
+    true,
+  );
+});
+
 test("does not block common environment variable references", () => {
   const result = scanForEngineeringSecrets(
     [
-      'apiKey: process.env.OPENAI_API_KEY',
-      'token: process.env.GITHUB_TOKEN',
+      "apiKey: process.env.OPENAI_API_KEY",
+      "token: process.env.GITHUB_TOKEN",
       'secret: "${SECRET_VALUE}"',
       'password: "YOUR_PASSWORD"',
     ].join("\n"),
@@ -173,6 +235,22 @@ test("blocks provider dispatch with a fixed error code", () => {
       );
 
       return true;
+    },
+  );
+});
+
+test("blocks provider dispatch when a nested report contains a secret assignment", () => {
+  assert.throws(
+    () =>
+      assertNoSecretsBeforeProviderDispatch({
+        risk: {
+          reasons: [
+            'api_key: "nested-sensitive-value-123456"',
+          ],
+        },
+      }),
+    {
+      code: "AIOS_ENGINEERING_SECRET_SCAN_BLOCKED",
     },
   );
 });
