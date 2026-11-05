@@ -120,7 +120,7 @@ jobs:
           repository: ${{ github.repository }}
           path: ${{ runner.temp }}/source-artifact
 
-      - name: Resolve required evidence files
+      - name: Resolve all required evidence files
         id: evidence
         shell: bash
         env:
@@ -143,6 +143,8 @@ jobs:
 
           resolve_one "aios-founder-review.json" "review"
           resolve_one "aios-verified-delivery.json" "artifact"
+          resolve_one "aios-delivery-builder-summary.json" "builder_summary"
+          resolve_one "aios-delivery-verification.json" "verification"
           resolve_one "aios-delivery-artifact.sha256" "manifest"
 
       - name: Setup Node.js
@@ -167,6 +169,8 @@ jobs:
           APPROVAL_SCOPE: ${{ inputs.approval_scope }}
           REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
           DELIVERY_ARTIFACT: ${{ steps.evidence.outputs.artifact }}
+          BUILDER_SUMMARY: ${{ steps.evidence.outputs.builder_summary }}
+          VERIFICATION: ${{ steps.evidence.outputs.verification }}
           MANIFEST: ${{ steps.evidence.outputs.manifest }}
           OUTPUT_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
         run: |
@@ -186,6 +190,8 @@ jobs:
             --approval-scope "$APPROVAL_SCOPE" \
             --review-report "$REVIEW_REPORT" \
             --delivery-artifact "$DELIVERY_ARTIFACT" \
+            --builder-summary "$BUILDER_SUMMARY" \
+            --verification "$VERIFICATION" \
             --manifest "$MANIFEST" \
             --output "$OUTPUT_PATH" \
             | tee "$RUNNER_TEMP/aios-founder-approval/summary.json"
