@@ -33,18 +33,18 @@ on:
 permissions:
   contents: read
   actions: read
+  statuses: write
 
 jobs:
   founder-approval:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Checkout protected main
+      - name: Checkout exact dispatched candidate commit
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -75,21 +75,23 @@ jobs:
 
           echo "Founder identity and event checks passed."
 
-      - name: Validate candidate branch and fetch exact source
+      - name: Bind approval to exact candidate branch and commit
         shell: bash
         env:
           CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          GITHUB_REF_VALUE: ${{ github.ref }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          if ! [[ "$CANDIDATE_BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]; then
-            echo "::error::Invalid candidate branch."
+          if [ "$CANDIDATE_BRANCH" = "main" ]; then
+            echo "::error::Founder approval must run on a candidate branch."
             exit 1
           fi
 
-          if [[ "$CANDIDATE_BRANCH" == *".."* ]]; then
-            echo "::error::Invalid candidate branch path."
+          if ! git check-ref-format --branch "$CANDIDATE_BRANCH"; then
+            echo "::error::Invalid candidate branch."
             exit 1
           fi
 
@@ -98,18 +100,50 @@ jobs:
             exit 1
           fi
 
-          git fetch --no-tags origin \
-            "refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate"
+          requested_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
+          dispatched_ref="refs/heads/${CANDIDATE_BRANCH}"
 
-          actual_candidate_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
-          requested_candidate_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
-
-          if [ "$actual_candidate_sha" != "$requested_candidate_sha" ]; then
-            echo "::error::Candidate branch HEAD has changed. Start a new review against the latest candidate."
+          if [ "$GITHUB_REF_VALUE" != "$dispatched_ref" ]; then
+            echo "::error::Workflow must run on the exact candidate branch."
             exit 1
           fi
 
-          echo "Candidate branch HEAD matches the requested SHA."
+          if [ "$GITHUB_SHA_VALUE" != "$requested_sha" ]; then
+            echo "::error::Workflow dispatch SHA does not match the requested candidate SHA."
+            exit 1
+          fi
+
+          checkout_sha="$(git rev-parse HEAD)"
+
+          if [ "$checkout_sha" != "$requested_sha" ]; then
+            echo "::error::Checkout HEAD does not match the candidate SHA."
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate"
+
+          remote_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
+
+          if [ "$remote_sha" != "$requested_sha" ]; then
+            echo "::error::Candidate branch HEAD has changed. Start a new review."
+            exit 1
+          fi
+
+          echo "Candidate branch, workflow ref, checkout and remote HEAD match."
+          echo "Candidate SHA: $requested_sha"
+
+      - name: Validate source Run ID
+        shell: bash
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Source Run ID must contain digits only."
+            exit 1
+          fi
 
       - name: Download original verified delivery artifact
         uses: actions/download-artifact@v4
@@ -120,7 +154,7 @@ jobs:
           repository: ${{ github.repository }}
           path: ${{ runner.temp }}/source-artifact
 
-      - name: Resolve required evidence files
+      - name: Resolve all required evidence files
         id: evidence
         shell: bash
         env:
@@ -131,7 +165,10 @@ jobs:
           resolve_one() {
             local filename="$1"
             local output_name="$2"
-            mapfile -t matches < <(find "$SOURCE_DIR" -type f -name "$filename" -print)
+
+            mapfile -t matches < <(
+              find "$SOURCE_DIR" -type f -name "$filename" -print
+            )
 
             if [ "${#matches[@]}" -ne 1 ]; then
               echo "::error::Expected exactly one $filename; found ${#matches[@]}."
@@ -143,6 +180,8 @@ jobs:
 
           resolve_one "aios-founder-review.json" "review"
           resolve_one "aios-verified-delivery.json" "artifact"
+          resolve_one "aios-delivery-builder-summary.json" "builder_summary"
+          resolve_one "aios-delivery-verification.json" "verification"
           resolve_one "aios-delivery-artifact.sha256" "manifest"
 
       - name: Setup Node.js
@@ -150,7 +189,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Test Founder approval record
+      - name: Verify C170.6.3 Founder Approval Record
         run: node --test scripts/aios-founder-approval-record.test.mjs
 
       - name: Create write-once Founder approval record
@@ -167,6 +206,8 @@ jobs:
           APPROVAL_SCOPE: ${{ inputs.approval_scope }}
           REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
           DELIVERY_ARTIFACT: ${{ steps.evidence.outputs.artifact }}
+          BUILDER_SUMMARY: ${{ steps.evidence.outputs.builder_summary }}
+          VERIFICATION: ${{ steps.evidence.outputs.verification }}
           MANIFEST: ${{ steps.evidence.outputs.manifest }}
           OUTPUT_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
         run: |
@@ -186,6 +227,8 @@ jobs:
             --approval-scope "$APPROVAL_SCOPE" \
             --review-report "$REVIEW_REPORT" \
             --delivery-artifact "$DELIVERY_ARTIFACT" \
+            --builder-summary "$BUILDER_SUMMARY" \
+            --verification "$VERIFICATION" \
             --manifest "$MANIFEST" \
             --output "$OUTPUT_PATH" \
             | tee "$RUNNER_TEMP/aios-founder-approval/summary.json"
@@ -193,6 +236,7 @@ jobs:
           test -s "$OUTPUT_PATH"
 
       - name: Preserve Founder approval evidence
+        id: approval_evidence
         uses: actions/upload-artifact@v4
         with:
           name: aios-founder-approval-${{ inputs.candidate_sha }}-${{ github.run_id }}
@@ -201,3 +245,54 @@ jobs:
             ${{ runner.temp }}/aios-founder-approval/summary.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publish exact-commit Founder approval status
+        if: steps.approval_evidence.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          DECISION: ${{ inputs.decision }}
+          APPROVAL_SCOPE: ${{ inputs.approval_scope }}
+          RECORD_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          status_state="failure"
+          status_description="Founder approval does not authorize merge."
+
+          if node - "$RECORD_PATH" "$CANDIDATE_SHA" <<'NODE'
+          const fs = require("node:fs");
+
+          const record = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const candidateSha = process.argv[3].toLowerCase();
+
+          const valid =
+            record.recordType === "AIOS_FOUNDER_APPROVAL_RECORD" &&
+            record.decision === "APPROVE" &&
+            record.approvalScope === "merge" &&
+            record.approved === true &&
+            record.mergeAuthorized === true &&
+            record.productionDeploymentAuthorized === false &&
+            record.candidate?.commitSha === candidateSha &&
+            record.repository === "Vivi9max/AIOS-Alpha" &&
+            record.executionPerformed === false &&
+            record.mergeExecuted === false &&
+            record.productionMutationPerformed === false;
+
+          process.exit(valid ? 0 : 1);
+          NODE
+          then
+            status_state="success"
+            status_description="Founder approved this exact candidate commit for merge."
+          fi
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${CANDIDATE_SHA}" \
+            -f state="$status_state" \
+            -f context="founder-approval" \
+            -f description="$status_description" \
+            -f target_url="$TARGET_URL"
+
+          echo "Published founder-approval=$status_state for $CANDIDATE_SHA"
