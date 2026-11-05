@@ -298,7 +298,7 @@ test(
           root: fixture.root,
           artifactPath: fixture.artifactPath,
           baseSha: fixture.baseSha,
-          headSha: "b".repeat(40),
+          headSha: "not-a-sha",
         }),
         { code: "AIOS_DELIVERY_VERIFY_COMMIT_INVALID" },
       );
