@@ -1,5 +1,4 @@
 name: AIOS Alpha CI
-
 on:
   push:
     branches:
@@ -8,46 +7,36 @@ on:
   pull_request:
     branches:
       - main
-
 permissions:
   contents: read
-
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
-
       - name: Install dependencies
         run: npm install
-
       - name: Verify C170.1 Repository Intelligence
         run: node --test scripts/aios-engineering-context.test.mjs
-
       - name: Verify C170.2 Dependency Impact Analyzer
         run: node --test scripts/aios-dependency-impact.test.mjs
-
       - name: Verify C170.3 Engineering Secret Guard
         run: node --test scripts/aios-engineering-secret-guard.test.mjs
-
       - name: Verify C170.3 Provider Security Boundary
         run: node --test scripts/aios-engineering-provider-security.test.mjs
-
       - name: Verify C170.3 Engineering Provider Adapter
         run: node --test scripts/aios-engineering-provider-adapter.test.mjs
-
       - name: Verify C170.4 Independent Verification Runtime
         run: node --test scripts/aios-engineering-verification-runtime.test.mjs
-
+      - name: Verify C170.5 Verified Delivery Builder
+        run: node --test scripts/aios-verified-delivery-builder.test.mjs
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
@@ -74,7 +63,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$test_exit_code"
-
       - name: Preserve C169.8-D2.1 verification report
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,12 +71,9 @@ jobs:
           path: test-results/c169.8-d2.1-verification.txt
           if-no-files-found: ignore
           retention-days: 30
-
       - name: Verify project continuity
         run: npm run verify
-
       - name: Typecheck
         run: npm run typecheck
-
       - name: Production build
         run: npm run build
