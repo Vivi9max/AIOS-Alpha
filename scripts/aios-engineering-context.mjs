@@ -31,6 +31,9 @@ const ROOT_CONFIGS = [
   ".gitignore",
 ];
 
+const NON_CODE_ASSET_IMPORT =
+  /\.(?:css|scss|sass|less|styl|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp4|webm|mp3|wav|ogg|pdf)$/i;
+
 function fail(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -70,6 +73,15 @@ function isWithinRoot(root, candidate) {
 
 function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function isNonCodeAssetImport(specifier) {
+  if (typeof specifier !== "string") {
+    return false;
+  }
+
+  const normalized = specifier.split(/[?#]/, 1)[0];
+  return NON_CODE_ASSET_IMPORT.test(normalized);
 }
 
 function getGitState(root) {
@@ -383,8 +395,9 @@ function buildDependencyGraph(root, project, trackedSet) {
 
       if (!resolved) {
         if (
-          specifier.startsWith(".") ||
-          specifier.startsWith("@/")
+          (specifier.startsWith(".") ||
+            specifier.startsWith("@/")) &&
+          !isNonCodeAssetImport(specifier)
         ) {
           unresolvedInternal.push({
             from: sourcePath,
