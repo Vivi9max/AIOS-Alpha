@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Original verified delivery workflow Run ID"
+        description: "Original successful verified-delivery CI Run ID"
         required: true
         type: string
       candidate_branch:
@@ -37,18 +37,19 @@ permissions:
 
 jobs:
   founder-approval:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Checkout exact dispatched candidate commit
+      - name: Checkout protected main control plane
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify Founder identity and event
+      - name: Verify Founder identity and one-time dispatch
         shell: bash
         env:
           ACTOR: ${{ github.actor }}
@@ -69,135 +70,75 @@ jobs:
           fi
 
           if [ "$RUN_ATTEMPT" != "1" ]; then
-            echo "::error::Workflow reruns are not accepted."
+            echo "::error::Approval workflow reruns are not accepted."
             exit 1
           fi
 
-          echo "Founder identity and event checks passed."
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Founder Approval must execute from protected main."
+            exit 1
+          fi
 
-      - name: Bind approval to exact candidate branch and commit
+          echo "Founder identity and protected control-plane checks passed."
+
+      - name: Validate exact candidate branch and commit
         shell: bash
         env:
           CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          GITHUB_REF_VALUE: ${{ github.ref }}
-          GITHUB_SHA_VALUE: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          if [ "$CANDIDATE_BRANCH" = "main" ]; then
-            echo "::error::Founder approval must run on a candidate branch."
-            exit 1
-          fi
-
-          if ! git check-ref-format --branch "$CANDIDATE_BRANCH"; then
-            echo "::error::Invalid candidate branch."
+          if [ "$CANDIDATE_BRANCH" = "main" ] || ! git check-ref-format --branch "$CANDIDATE_BRANCH"; then
+            echo "::error::A valid non-main candidate branch is required."
             exit 1
           fi
 
           if ! [[ "$CANDIDATE_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            echo "::error::Candidate SHA must be 40 hexadecimal characters."
+            echo "::error::Candidate SHA must be a full 40-character Git SHA."
             exit 1
           fi
 
           requested_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
-          dispatched_ref="refs/heads/${CANDIDATE_BRANCH}"
-
-          if [ "$GITHUB_REF_VALUE" != "$dispatched_ref" ]; then
-            echo "::error::Workflow must run on the exact candidate branch."
-            exit 1
-          fi
-
-          if [ "$GITHUB_SHA_VALUE" != "$requested_sha" ]; then
-            echo "::error::Workflow dispatch SHA does not match the requested candidate SHA."
-            exit 1
-          fi
-
-          checkout_sha="$(git rev-parse HEAD)"
-
-          if [ "$checkout_sha" != "$requested_sha" ]; then
-            echo "::error::Checkout HEAD does not match the candidate SHA."
-            exit 1
-          fi
 
           git fetch --no-tags origin \
             "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate"
 
-          remote_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
+          actual_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
 
-          if [ "$remote_sha" != "$requested_sha" ]; then
-            echo "::error::Candidate branch HEAD has changed. Start a new review."
+          if [ "$actual_sha" != "$requested_sha" ]; then
+            echo "::error::Candidate branch HEAD changed. Generate a new delivery artifact and review."
             exit 1
           fi
 
-          echo "Candidate branch, workflow ref, checkout and remote HEAD match."
-          echo "Candidate SHA: $requested_sha"
+          echo "Candidate branch and HEAD are bound to $requested_sha"
 
-      - name: Validate source Run ID
+      - name: Validate Source Run ID
         shell: bash
         env:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
           set -euo pipefail
-
           if ! [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::Source Run ID must contain digits only."
             exit 1
           fi
 
-      - name: Verify original source Run identity and completion
+      - name: Fetch immutable Source Run identity and artifact inventory
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" \
+            > "$RUNNER_TEMP/aios-source-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/aios-source-artifacts.json"
+          test -s "$RUNNER_TEMP/aios-source-run.json"
+          test -s "$RUNNER_TEMP/aios-source-artifacts.json"
 
-          run_json="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
-
-          source_status="$(printf '%s' "$run_json" | jq -r '.status // empty')"
-          source_conclusion="$(printf '%s' "$run_json" | jq -r '.conclusion // empty')"
-          source_branch="$(printf '%s' "$run_json" | jq -r '.head_branch // empty')"
-          source_sha="$(printf '%s' "$run_json" | jq -r '.head_sha // empty' | tr 'A-F' 'a-f')"
-          source_repository="$(printf '%s' "$run_json" | jq -r '.repository.full_name // empty')"
-
-          expected_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
-
-          if [ "$source_repository" != "$GITHUB_REPOSITORY" ]; then
-            echo "::error::Source Run belongs to a different repository."
-            exit 1
-          fi
-
-          if [ "$source_status" != "completed" ]; then
-            echo "::error::Source Run is not completed."
-            exit 1
-          fi
-
-          if [ "$source_conclusion" != "success" ]; then
-            echo "::error::Source Run did not succeed."
-            exit 1
-          fi
-
-          if [ "$source_branch" != "$CANDIDATE_BRANCH" ]; then
-            echo "::error::Source Run branch does not match the candidate."
-            exit 1
-          fi
-
-          if [ "$source_sha" != "$expected_sha" ]; then
-            echo "::error::Source Run SHA does not match the candidate."
-            exit 1
-          fi
-
-          echo "Source Run identity verified."
-          echo "Source Run ID: $SOURCE_RUN_ID"
-          echo "Candidate branch: $source_branch"
-          echo "Candidate SHA: $source_sha"
-          echo "Conclusion: $source_conclusion"
-
-      - name: Download original verified delivery artifact
+      - name: Download exact verified-delivery artifact from Source Run
         uses: actions/download-artifact@v4
         with:
           name: aios-verified-delivery-${{ inputs.candidate_sha }}-${{ inputs.source_run_id }}
@@ -217,16 +158,11 @@ jobs:
           resolve_one() {
             local filename="$1"
             local output_name="$2"
-
-            mapfile -t matches < <(
-              find "$SOURCE_DIR" -type f -name "$filename" -print
-            )
-
+            mapfile -t matches < <(find "$SOURCE_DIR" -type f -name "$filename" -print)
             if [ "${#matches[@]}" -ne 1 ]; then
               echo "::error::Expected exactly one $filename; found ${#matches[@]}."
               exit 1
             fi
-
             echo "$output_name=${matches[0]}" >> "$GITHUB_OUTPUT"
           }
 
@@ -241,8 +177,27 @@ jobs:
         with:
           node-version: 24
 
-      - name: Verify C170.6.3 Founder Approval Record
+      - name: Verify C170.6.7 Source Run Identity
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
+        run: |
+          set -euo pipefail
+          node scripts/aios-founder-approval-source-run.mjs \
+            --run "$RUNNER_TEMP/aios-source-run.json" \
+            --artifacts "$RUNNER_TEMP/aios-source-artifacts.json" \
+            --review "$REVIEW_REPORT" \
+            --source-run-id "$SOURCE_RUN_ID" \
+            --candidate-branch "$CANDIDATE_BRANCH" \
+            --candidate-sha "$CANDIDATE_SHA"
+
+      - name: Verify C170.6.3 Founder Approval Record tests
         run: node --test scripts/aios-founder-approval-record.test.mjs
+
+      - name: Verify C170.6.7 Source Run Identity tests
+        run: node --test scripts/aios-founder-approval-source-run.test.mjs
 
       - name: Create write-once Founder approval record
         shell: bash
@@ -264,7 +219,6 @@ jobs:
           OUTPUT_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
         run: |
           set -euo pipefail
-
           mkdir -p "$(dirname "$OUTPUT_PATH")"
 
           node scripts/aios-founder-approval-record.mjs \
@@ -304,22 +258,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          DECISION: ${{ inputs.decision }}
-          APPROVAL_SCOPE: ${{ inputs.approval_scope }}
           RECORD_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
           TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-
           status_state="failure"
           status_description="Founder approval does not authorize merge."
 
           if node - "$RECORD_PATH" "$CANDIDATE_SHA" <<'NODE'
           const fs = require("node:fs");
-
           const record = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
           const candidateSha = process.argv[3].toLowerCase();
-
           const valid =
             record.recordType === "AIOS_FOUNDER_APPROVAL_RECORD" &&
             record.decision === "APPROVE" &&
@@ -332,7 +281,6 @@ jobs:
             record.executionPerformed === false &&
             record.mergeExecuted === false &&
             record.productionMutationPerformed === false;
-
           process.exit(valid ? 0 : 1);
           NODE
           then
