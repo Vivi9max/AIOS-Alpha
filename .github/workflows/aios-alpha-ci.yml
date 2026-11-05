@@ -51,6 +51,9 @@ jobs:
       - name: Verify C170.6.3 Founder Approval Record
         run: node --test scripts/aios-founder-approval-record.test.mjs
 
+      - name: Verify C170.6.7 Source Run Identity
+        run: node --test scripts/aios-founder-approval-source-run.test.mjs
+
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
