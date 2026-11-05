@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import {
   buildVerifiedDelivery,
   writeVerifiedDelivery,
+  VERIFIED_DELIVERY_BUILDER_VERSION,
   VERIFIED_DELIVERY_LIMITS,
 } from "./aios-verified-delivery-builder.mjs";
 
@@ -20,6 +21,8 @@ import {
   runIndependentVerification,
   verifyVerificationReceipt,
 } from "./aios-engineering-verification-runtime.mjs";
+
+const EXPECTED_BUILDER_VERSION = "C170.5.3";
 
 function git(root, args) {
   return execFileSync("git", args, {
@@ -60,7 +63,7 @@ function createReceipt(headSha) {
       durationMs: 1,
     }),
 
-    idFactory: () => "c1705-2-test-run",
+    idFactory: () => "c1705-3-test-run",
 
     now: (() => {
       let second = 0;
@@ -75,7 +78,7 @@ function createReceipt(headSha) {
 
 function createFixture(options = {}) {
   const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "aios-c1705-2-"),
+    path.join(os.tmpdir(), "aios-c1705-3-"),
   );
 
   git(root, ["init"]);
@@ -86,7 +89,7 @@ function createFixture(options = {}) {
     root,
     "package.json",
     JSON.stringify({
-      name: "aios-c1705-2-fixture",
+      name: "aios-c1705-3-fixture",
       private: true,
     }, null, 2),
   );
@@ -184,6 +187,16 @@ function cleanup(fixture) {
 }
 
 test(
+  "exports the exact C170.5.3 builder version",
+  () => {
+    assert.equal(
+      VERIFIED_DELIVERY_BUILDER_VERSION,
+      EXPECTED_BUILDER_VERSION,
+    );
+  },
+);
+
+test(
   "builds a complete immutable delivery using the real C170.2 analyzer and C170.4 verifier",
   () => {
     const fixture = createFixture();
@@ -214,7 +227,7 @@ test(
 
       assert.equal(
         artifact.payload.builder,
-        "C170.5.2",
+        EXPECTED_BUILDER_VERSION,
       );
 
       assert.equal(
@@ -304,7 +317,7 @@ test(
 
       assert.match(
         artifact.serialized,
-        /"builder": "C170\.5\.2"/,
+        /"builder": "C170\.5\.3"/,
       );
 
       assert.equal(
@@ -313,6 +326,331 @@ test(
           .createHash("sha256")
           .update(artifact.serialized)
           .digest("hex"),
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "accepts a base commit that is an ancestor of the candidate commit",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      const artifact = buildVerifiedDelivery(fixture);
+
+      assert.equal(
+        artifact.payload.repository.baseCommitSha,
+        fixture.baseSha,
+      );
+
+      assert.equal(
+        artifact.payload.repository.candidateCommitSha,
+        fixture.headSha,
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "rejects a base commit that is not an ancestor of the candidate commit",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      const baseTree = git(
+        fixture.root,
+        ["rev-parse", `${fixture.baseSha}^{tree}`],
+      );
+
+      const unrelatedBaseSha = git(
+        fixture.root,
+        [
+          "commit-tree",
+          baseTree,
+          "-m",
+          "unrelated base history",
+        ],
+      );
+
+      assert.notEqual(
+        unrelatedBaseSha,
+        fixture.baseSha,
+      );
+
+      assert.throws(
+        () =>
+          buildVerifiedDelivery({
+            ...fixture,
+            baseSha: unrelatedBaseSha,
+          }),
+        {
+          code: "AIOS_DELIVERY_BASE_NOT_ANCESTOR",
+        },
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "accepts Git Tree mode 100644 for a regular non-executable file",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      const mode = git(
+        fixture.root,
+        [
+          "ls-tree",
+          fixture.headSha,
+          "--",
+          "src/module.ts",
+        ],
+      ).split(/\s+/)[0];
+
+      assert.equal(mode, "100644");
+
+      const artifact = buildVerifiedDelivery(fixture);
+
+      assert.equal(
+        artifact.payload.files[0].path,
+        "src/module.ts",
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "accepts Git Tree mode 100755 for a regular executable file",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      const executablePath = path.join(
+        fixture.root,
+        "scripts",
+        "candidate-tool.sh",
+      );
+
+      write(
+        fixture.root,
+        "scripts/candidate-tool.sh",
+        "#!/bin/sh\necho candidate\n",
+      );
+
+      fs.chmodSync(executablePath, 0o755);
+
+      commitAll(
+        fixture.root,
+        "add executable candidate file",
+      );
+
+      const headSha = git(
+        fixture.root,
+        ["rev-parse", "HEAD"],
+      );
+
+      const mode = git(
+        fixture.root,
+        [
+          "ls-tree",
+          headSha,
+          "--",
+          "scripts/candidate-tool.sh",
+        ],
+      ).split(/\s+/)[0];
+
+      assert.equal(mode, "100755");
+
+      const receipt = createReceipt(headSha);
+
+      const artifact = buildVerifiedDelivery({
+        ...fixture,
+        headSha,
+        receipt,
+      });
+
+      assert.ok(
+        artifact.payload.files.some(
+          (item) => item.path === "scripts/candidate-tool.sh",
+        ),
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "rejects Git Tree mode 120000 symbolic links",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      fs.mkdirSync(
+        path.join(fixture.root, "src"),
+        { recursive: true },
+      );
+
+      fs.symlinkSync(
+        "base.ts",
+        path.join(fixture.root, "src", "linked-base.ts"),
+      );
+
+      commitAll(
+        fixture.root,
+        "add symbolic link candidate",
+      );
+
+      const headSha = git(
+        fixture.root,
+        ["rev-parse", "HEAD"],
+      );
+
+      const treeEntry = git(
+        fixture.root,
+        [
+          "ls-tree",
+          headSha,
+          "--",
+          "src/linked-base.ts",
+        ],
+      );
+
+      assert.match(treeEntry, /^120000\s+blob\s+/);
+
+      const receipt = createReceipt(headSha);
+
+      assert.throws(
+        () =>
+          buildVerifiedDelivery({
+            ...fixture,
+            headSha,
+            receipt,
+          }),
+        {
+          code: "AIOS_DELIVERY_FILE_MODE_UNSUPPORTED",
+        },
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "rejects Git Tree mode 160000 submodule gitlinks",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      git(
+        fixture.root,
+        [
+          "update-index",
+          "--add",
+          "--cacheinfo",
+          `160000,${fixture.headSha},vendor/submodule`,
+        ],
+      );
+
+      git(
+        fixture.root,
+        [
+          "-c",
+          "protocol.file.allow=always",
+          "commit",
+          "-m",
+          "add submodule gitlink candidate",
+        ],
+      );
+
+      const headSha = git(
+        fixture.root,
+        ["rev-parse", "HEAD"],
+      );
+
+      const treeEntry = git(
+        fixture.root,
+        [
+          "ls-tree",
+          headSha,
+          "--",
+          "vendor/submodule",
+        ],
+      );
+
+      assert.match(treeEntry, /^160000\s+commit\s+/);
+
+      const receipt = createReceipt(headSha);
+
+      assert.throws(
+        () =>
+          buildVerifiedDelivery({
+            ...fixture,
+            headSha,
+            receipt,
+          }),
+        {
+          code: "AIOS_DELIVERY_FILE_MODE_UNSUPPORTED",
+        },
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "rejects unsupported Git Tree entries before C170.2 analysis",
+  () => {
+    const fixture = createFixture();
+
+    try {
+      fs.symlinkSync(
+        "base.ts",
+        path.join(fixture.root, "src", "linked-base.ts"),
+      );
+
+      commitAll(
+        fixture.root,
+        "add symbolic link candidate",
+      );
+
+      const headSha = git(
+        fixture.root,
+        ["rev-parse", "HEAD"],
+      );
+
+      const receipt = createReceipt(headSha);
+
+      // Deliberately dirty a tracked file after committing the candidate.
+      // If C170.2 ran before Git Tree validation, its worktree check would
+      // reject this fixture first. C170.5.3 must reject the symlink mode first.
+      write(
+        fixture.root,
+        "README.md",
+        "deliberately dirty tracked file\n",
+      );
+
+      assert.throws(
+        () =>
+          buildVerifiedDelivery({
+            ...fixture,
+            headSha,
+            receipt,
+          }),
+        {
+          code: "AIOS_DELIVERY_FILE_MODE_UNSUPPORTED",
+        },
       );
     } finally {
       cleanup(fixture);
@@ -357,8 +695,6 @@ test(
     const fixture = createFixture();
 
     try {
-      // Preserve the original candidate commit and its verification receipt.
-      // Create a later commit so the candidate is no longer the checked-out HEAD.
       write(
         fixture.root,
         "README.md",
@@ -389,9 +725,6 @@ test(
         () =>
           buildVerifiedDelivery({
             ...fixture,
-
-            // The candidate and receipt remain bound to the original commit.
-            // The repository HEAD now points to the later commit.
             headSha: fixture.headSha,
           }),
         {
@@ -543,7 +876,7 @@ test(
     const fixture = createFixture();
 
     const outputDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "aios-c1705-2-output-"),
+      path.join(os.tmpdir(), "aios-c1705-3-output-"),
     );
 
     const outputPath = path.join(
