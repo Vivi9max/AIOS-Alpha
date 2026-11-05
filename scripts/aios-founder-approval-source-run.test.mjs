@@ -1,14 +1,38 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import {
+  verifyArtifactArchiveDigest,
   verifySourceRunIdentity,
 } from "./aios-founder-approval-source-run.mjs";
 
 const sha = "2a9818e577612fc37784dd2913a11449d808c2ac";
 const runId = "42070352461";
+const archiveBytes = Buffer.from("AIOS verified delivery archive test");
 
-function fixture() {
+function withArchive(callback) {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "aios-founder-approval-"),
+  );
+  const archivePath = path.join(directory, "artifact.zip");
+
+  try {
+    fs.writeFileSync(archivePath, archiveBytes, { flag: "wx" });
+    callback({
+      directory,
+      archivePath,
+      digest: `sha256:${crypto.createHash("sha256").update(archiveBytes).digest("hex")}`,
+    });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function fixture(archivePath, digest) {
   const run = {
     id: Number(runId),
     status: "completed",
@@ -33,7 +57,7 @@ function fixture() {
         id: 13435178299,
         name: `aios-verified-delivery-${sha}-${runId}`,
         expired: false,
-        digest: "sha256:example",
+        digest,
         workflow_run: {
           id: Number(runId),
           head_branch: run.head_branch,
@@ -68,6 +92,7 @@ function fixture() {
     run,
     artifacts,
     review,
+    artifactArchivePath: archivePath,
     sourceRunId: runId,
     candidateBranch: run.head_branch,
     candidateSha: sha,
@@ -75,23 +100,114 @@ function fixture() {
 }
 
 function rejects(change, code) {
-  const input = fixture();
-  change(input);
+  withArchive(({ archivePath, digest }) => {
+    const input = fixture(archivePath, digest);
+    change(input);
 
-  assert.throws(
-    () => verifySourceRunIdentity(input),
-    (error) => error.code === code,
-  );
+    assert.throws(
+      () => verifySourceRunIdentity(input),
+      (error) => error.code === code,
+    );
+  });
 }
 
 test("accepts the exact successful source workflow, candidate and artifact", () => {
-  const result = verifySourceRunIdentity(fixture());
+  withArchive(({ archivePath, digest }) => {
+    const result = verifySourceRunIdentity(
+      fixture(archivePath, digest),
+    );
 
-  assert.equal(result.valid, true);
-  assert.equal(result.sourceRunId, runId);
-  assert.equal(result.candidateSha, sha);
-  assert.equal(result.artifactId, 13435178299);
-  assert.equal(result.mergeAuthorized, false);
+    assert.equal(result.valid, true);
+    assert.equal(result.sourceRunId, runId);
+    assert.equal(result.candidateSha, sha);
+    assert.equal(result.artifactId, 13435178299);
+    assert.equal(result.mergeAuthorized, false);
+    assert.equal(result.artifactArchiveIntegrity.valid, true);
+    assert.equal(
+      result.artifactArchiveIntegrity.actualDigest,
+      digest.slice("sha256:".length),
+    );
+  });
+});
+
+test("accepts a matching Artifact ZIP SHA-256 digest", () => {
+  withArchive(({ archivePath, digest }) => {
+    const result = verifyArtifactArchiveDigest({
+      artifactDigest: digest,
+      artifactArchivePath: archivePath,
+    });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.algorithm, "sha256");
+    assert.equal(result.expectedDigest, result.actualDigest);
+  });
+});
+
+test("rejects an Artifact ZIP SHA-256 mismatch", () => {
+  withArchive(({ archivePath }) => {
+    assert.throws(
+      () => verifyArtifactArchiveDigest({
+        artifactDigest: `sha256:${"0".repeat(64)}`,
+        artifactArchivePath: archivePath,
+      }),
+      (error) => error.code === "ARTIFACT_DIGEST_MISMATCH",
+    );
+  });
+});
+
+test("rejects a missing Artifact digest", () => {
+  withArchive(({ archivePath }) => {
+    assert.throws(
+      () => verifyArtifactArchiveDigest({
+        artifactDigest: null,
+        artifactArchivePath: archivePath,
+      }),
+      (error) => error.code === "ARTIFACT_DIGEST_INVALID",
+    );
+  });
+});
+
+test("rejects an invalid Artifact digest format", () => {
+  withArchive(({ archivePath }) => {
+    assert.throws(
+      () => verifyArtifactArchiveDigest({
+        artifactDigest: "sha256:example",
+        artifactArchivePath: archivePath,
+      }),
+      (error) => error.code === "ARTIFACT_DIGEST_INVALID",
+    );
+  });
+});
+
+test("rejects a missing Artifact archive", () => {
+  assert.throws(
+    () => verifyArtifactArchiveDigest({
+      artifactDigest: `sha256:${"a".repeat(64)}`,
+      artifactArchivePath: path.join(os.tmpdir(), "aios-file-does-not-exist.zip"),
+    }),
+    (error) => error.code === "ARTIFACT_ARCHIVE_INVALID",
+  );
+});
+
+test("rejects an empty Artifact archive", () => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "aios-founder-approval-empty-"),
+  );
+  const archivePath = path.join(directory, "empty.zip");
+
+  try {
+    fs.writeFileSync(archivePath, Buffer.alloc(0));
+
+    assert.throws(
+      () => verifyArtifactArchiveDigest({
+        artifactDigest: `sha256:${"a".repeat(64)}`,
+        artifactArchivePath: archivePath,
+      }),
+      (error) => error.code === "ARTIFACT_ARCHIVE_INVALID",
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("rejects repository mismatch", () =>
