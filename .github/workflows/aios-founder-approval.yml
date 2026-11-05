@@ -145,6 +145,58 @@ jobs:
             exit 1
           fi
 
+      - name: Verify original source Run identity and completion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+
+          run_json="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+
+          source_status="$(printf '%s' "$run_json" | jq -r '.status // empty')"
+          source_conclusion="$(printf '%s' "$run_json" | jq -r '.conclusion // empty')"
+          source_branch="$(printf '%s' "$run_json" | jq -r '.head_branch // empty')"
+          source_sha="$(printf '%s' "$run_json" | jq -r '.head_sha // empty' | tr 'A-F' 'a-f')"
+          source_repository="$(printf '%s' "$run_json" | jq -r '.repository.full_name // empty')"
+
+          expected_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
+
+          if [ "$source_repository" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Source Run belongs to a different repository."
+            exit 1
+          fi
+
+          if [ "$source_status" != "completed" ]; then
+            echo "::error::Source Run is not completed."
+            exit 1
+          fi
+
+          if [ "$source_conclusion" != "success" ]; then
+            echo "::error::Source Run did not succeed."
+            exit 1
+          fi
+
+          if [ "$source_branch" != "$CANDIDATE_BRANCH" ]; then
+            echo "::error::Source Run branch does not match the candidate."
+            exit 1
+          fi
+
+          if [ "$source_sha" != "$expected_sha" ]; then
+            echo "::error::Source Run SHA does not match the candidate."
+            exit 1
+          fi
+
+          echo "Source Run identity verified."
+          echo "Source Run ID: $SOURCE_RUN_ID"
+          echo "Candidate branch: $source_branch"
+          echo "Candidate SHA: $source_sha"
+          echo "Conclusion: $source_conclusion"
+
       - name: Download original verified delivery artifact
         uses: actions/download-artifact@v4
         with:
