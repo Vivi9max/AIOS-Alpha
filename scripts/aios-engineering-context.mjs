@@ -31,6 +31,34 @@ const ROOT_CONFIGS = [
   ".gitignore",
 ];
 
+const STATIC_ASSET_EXTENSIONS = new Set([
+  ".css",
+  ".scss",
+  ".sass",
+  ".less",
+  ".styl",
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".avif",
+  ".ico",
+  ".bmp",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  ".mp4",
+  ".webm",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".pdf",
+]);
+
 function fail(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -357,6 +385,151 @@ function toRepoPath(root, absolutePath) {
   return normalizeRepoPath(relative);
 }
 
+function getStaticAssetPathname(specifier) {
+  if (typeof specifier !== "string" || specifier.length === 0) {
+    return null;
+  }
+
+  const pathname = specifier.split(/[?#]/, 1)[0];
+
+  if (!pathname) {
+    return null;
+  }
+
+  const extension = path.extname(pathname).toLowerCase();
+
+  if (!STATIC_ASSET_EXTENSIONS.has(extension)) {
+    return null;
+  }
+
+  return pathname;
+}
+
+function resolveStaticAssetCandidates(
+  root,
+  sourceFile,
+  pathname,
+  compilerOptions,
+) {
+  const candidates = [];
+
+  if (pathname.startsWith(".")) {
+    candidates.push(
+      path.resolve(
+        path.dirname(sourceFile.fileName),
+        pathname,
+      ),
+    );
+
+    return candidates;
+  }
+
+  const paths = compilerOptions.paths ?? {};
+  const pathsBasePath =
+    compilerOptions.pathsBasePath ??
+    compilerOptions.baseUrl ??
+    root;
+
+  for (const [pattern, substitutions] of Object.entries(paths)) {
+    const wildcardIndex = pattern.indexOf("*");
+
+    if (wildcardIndex === -1) {
+      if (pattern !== pathname) {
+        continue;
+      }
+
+      for (const substitution of substitutions) {
+        candidates.push(
+          path.resolve(pathsBasePath, substitution),
+        );
+      }
+
+      continue;
+    }
+
+    if (pattern.indexOf("*", wildcardIndex + 1) !== -1) {
+      continue;
+    }
+
+    const prefix = pattern.slice(0, wildcardIndex);
+    const suffix = pattern.slice(wildcardIndex + 1);
+
+    if (
+      !pathname.startsWith(prefix) ||
+      !pathname.endsWith(suffix) ||
+      pathname.length < prefix.length + suffix.length
+    ) {
+      continue;
+    }
+
+    const matched = pathname.slice(
+      prefix.length,
+      pathname.length - suffix.length,
+    );
+
+    for (const substitution of substitutions) {
+      const target = substitution.includes("*")
+        ? substitution.replace("*", matched)
+        : substitution;
+
+      candidates.push(
+        path.resolve(pathsBasePath, target),
+      );
+    }
+  }
+
+  return candidates;
+}
+
+function isTrackedStaticAsset(
+  root,
+  sourceFile,
+  specifier,
+  compilerOptions,
+  trackedSet,
+) {
+  const pathname = getStaticAssetPathname(specifier);
+
+  if (!pathname) {
+    return false;
+  }
+
+  const candidates = resolveStaticAssetCandidates(
+    root,
+    sourceFile,
+    pathname,
+    compilerOptions,
+  );
+
+  for (const candidate of candidates) {
+    if (!isWithinRoot(root, candidate)) {
+      continue;
+    }
+
+    let stat;
+
+    try {
+      stat = fs.lstatSync(candidate);
+    } catch {
+      continue;
+    }
+
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      continue;
+    }
+
+    const repoPath = toRepoPath(root, candidate);
+
+    if (!trackedSet.has(repoPath)) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 function buildDependencyGraph(root, project, trackedSet) {
   const dependencies = new Map();
   const reverseDependencies = new Map();
@@ -382,6 +555,18 @@ function buildDependencyGraph(root, project, trackedSet) {
       const resolved = resolution.resolvedModule?.resolvedFileName;
 
       if (!resolved) {
+        if (
+          isTrackedStaticAsset(
+            root,
+            sourceFile,
+            specifier,
+            project.compilerOptions,
+            trackedSet,
+          )
+        ) {
+          continue;
+        }
+
         if (
           specifier.startsWith(".") ||
           specifier.startsWith("@/")
