@@ -281,6 +281,11 @@ function createAuditRecord(input) {
     founderApproved: false,
     mergeAuthorized: false,
     productionDeploymentAuthorized: false,
+    storage: {
+      mode: "exclusive-create",
+      writeOnce: true,
+      appendOnly: false,
+    },
   };
 }
 
@@ -555,7 +560,9 @@ export function consumeVerifiedDelivery(options = {}) {
 
       audit: {
         path: safeAuditPath,
-        appendOnly: true,
+        writeOnce: true,
+        appendOnly: false,
+        storageMode: "exclusive-create",
       },
 
       rollback: {
