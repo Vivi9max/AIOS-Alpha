@@ -357,16 +357,42 @@ test(
     const fixture = createFixture();
 
     try {
-      const earlierCommit = git(
+      // Preserve the original candidate commit and its verification receipt.
+      // Create a later commit so the candidate is no longer the checked-out HEAD.
+      write(
         fixture.root,
-        ["rev-parse", `${fixture.headSha}^`],
+        "README.md",
+        "later checkout commit\n",
+      );
+
+      commitAll(
+        fixture.root,
+        "later checkout commit",
+      );
+
+      const checkedOutHead = git(
+        fixture.root,
+        ["rev-parse", "HEAD"],
+      );
+
+      assert.notEqual(
+        checkedOutHead,
+        fixture.headSha,
+      );
+
+      assert.notEqual(
+        fixture.baseSha,
+        fixture.headSha,
       );
 
       assert.throws(
         () =>
           buildVerifiedDelivery({
             ...fixture,
-            headSha: earlierCommit,
+
+            // The candidate and receipt remain bound to the original commit.
+            // The repository HEAD now points to the later commit.
+            headSha: fixture.headSha,
           }),
         {
           code: "AIOS_DELIVERY_CANDIDATE_NOT_HEAD",
