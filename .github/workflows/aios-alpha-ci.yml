@@ -59,6 +59,9 @@ jobs:
       - name: Verify C170.5.5 Delivery Consumer
         run: node --test scripts/aios-verified-delivery-consumer.test.mjs
 
+      - name: Verify C170.6 Founder Review Gate
+        run: node --test scripts/aios-founder-review-gate.test.mjs
+
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
@@ -315,6 +318,61 @@ jobs:
 
           cat "$RUNNER_TEMP/aios-delivery-handoff-summary.json" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Inspect main branch protection for Founder review gate
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        id: founder_protection
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          main_protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected' 2>/dev/null || printf 'unknown')"
+          rulesets_count="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" --jq 'length' 2>/dev/null || printf '%s' '-1')"
+
+          case "$main_protected" in
+            true|false) ;;
+            *) main_protected="unknown" ;;
+          esac
+
+          if ! [[ "$rulesets_count" =~ ^[0-9]+$ ]]; then
+            rulesets_count="-1"
+          fi
+
+          echo "main_protected=$main_protected" >> "$GITHUB_OUTPUT"
+          echo "rulesets_count=$rulesets_count" >> "$GITHUB_OUTPUT"
+
+          echo "main protected: $main_protected"
+          echo "repository rulesets: $rulesets_count"
+
+      - name: Generate independently verified Founder review report
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          MAIN_PROTECTED: ${{ steps.founder_protection.outputs.main_protected }}
+          RULESETS_COUNT: ${{ steps.founder_protection.outputs.rulesets_count }}
+        run: |
+          set -euo pipefail
+
+          node scripts/aios-founder-review-gate.mjs \
+            --artifact "$RUNNER_TEMP/aios-verified-delivery.json" \
+            --manifest "$RUNNER_TEMP/aios-delivery-artifact.sha256" \
+            --builder-summary "$RUNNER_TEMP/aios-delivery-builder-summary.json" \
+            --verification "$RUNNER_TEMP/aios-delivery-verification.json" \
+            --handoff "$RUNNER_TEMP/aios-delivery-handoff/handoff.json" \
+            --rollback "$RUNNER_TEMP/aios-delivery-handoff/rollback-evidence.json" \
+            --audit "$RUNNER_TEMP/aios-delivery-handoff-audit.json" \
+            --staging "$RUNNER_TEMP/aios-delivery-handoff" \
+            --output "$RUNNER_TEMP/aios-founder-review.json" \
+            --main-protected "$MAIN_PROTECTED" \
+            --rulesets-count "$RULESETS_COUNT" \
+            > "$RUNNER_TEMP/aios-founder-review-summary.json"
+
+          test -s "$RUNNER_TEMP/aios-founder-review.json"
+          test -s "$RUNNER_TEMP/aios-founder-review-summary.json"
+
+          cat "$RUNNER_TEMP/aios-founder-review-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Preserve independently verified Founder handoff
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
@@ -328,5 +386,8 @@ jobs:
             ${{ runner.temp }}/aios-delivery-handoff/
             ${{ runner.temp }}/aios-delivery-handoff-audit.json
             ${{ runner.temp }}/aios-delivery-handoff-summary.json
+            ${{ runner.temp }}/aios-founder-review.json
+            ${{ runner.temp }}/aios-founder-review-summary.json
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
