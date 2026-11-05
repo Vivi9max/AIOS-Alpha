@@ -30,7 +30,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Verify C170.1 Repository Intelligence
         run: node --test scripts/aios-engineering-context.test.mjs
@@ -127,6 +127,42 @@ jobs:
 
           echo "C170.4 receipt generated for $actual_head"
 
+      - name: Restore clean candidate checkout for Git-based analysis
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout HEAD does not match the workflow candidate SHA."
+            exit 1
+          fi
+
+          echo "Tracked files changed by CI before restoration:"
+          git diff --name-status HEAD --
+
+          echo "Restoring tracked files to the exact candidate commit."
+          git reset --hard "$EXPECTED_COMMIT_SHA"
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is still dirty after restoration."
+            git status --short
+            exit 1
+          fi
+
+          restored_head="$(git rev-parse HEAD)"
+
+          if [ "$restored_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate HEAD changed during restoration."
+            exit 1
+          fi
+
+          echo "Clean candidate checkout verified: $restored_head"
+
       - name: Generate real C170.5 delivery artifact from Git commits
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         shell: bash
@@ -139,6 +175,12 @@ jobs:
 
           if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
             echo "::error::Candidate SHA changed before artifact generation."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is dirty before C170.5 generation."
+            git status --short
             exit 1
           fi
 
