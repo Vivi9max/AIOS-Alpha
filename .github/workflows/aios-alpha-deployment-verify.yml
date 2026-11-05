@@ -63,6 +63,9 @@ jobs:
       - name: Verify C170.4 Independent Verification Runtime
         run: node --test scripts/aios-engineering-verification-runtime.test.mjs
 
+      - name: Verify C170.5 Verified Delivery Builder
+        run: node --test scripts/aios-verified-delivery-builder.test.mjs
+
       - name: Verify deployment resolver and health checker unit tests
         run: node --test scripts/wait-for-vercel-deployment.test.mjs scripts/verify-deployment.test.mjs
 
