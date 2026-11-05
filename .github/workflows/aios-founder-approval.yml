@@ -1,0 +1,203 @@
+name: AIOS Alpha Founder Approval Record
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Original verified delivery workflow Run ID"
+        required: true
+        type: string
+      candidate_branch:
+        description: "Exact candidate branch name"
+        required: true
+        type: string
+      candidate_sha:
+        description: "Exact 40-character candidate commit SHA"
+        required: true
+        type: string
+      decision:
+        description: "Founder decision"
+        required: true
+        type: choice
+        options:
+          - APPROVE
+          - REJECT
+      approval_scope:
+        description: "One approval scope only"
+        required: true
+        type: choice
+        options:
+          - merge
+          - production_deployment
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  founder-approval:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout protected main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify Founder identity and event
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_FOUNDER: Vivi9max
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::Only workflow_dispatch is accepted."
+            exit 1
+          fi
+
+          if [ "$ACTOR" != "$EXPECTED_FOUNDER" ]; then
+            echo "::error::Only the repository Founder may create approval records."
+            exit 1
+          fi
+
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::Workflow reruns are not accepted."
+            exit 1
+          fi
+
+          echo "Founder identity and event checks passed."
+
+      - name: Validate candidate branch and fetch exact source
+        shell: bash
+        env:
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$CANDIDATE_BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]; then
+            echo "::error::Invalid candidate branch."
+            exit 1
+          fi
+
+          if [[ "$CANDIDATE_BRANCH" == *".."* ]]; then
+            echo "::error::Invalid candidate branch path."
+            exit 1
+          fi
+
+          if ! [[ "$CANDIDATE_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Candidate SHA must be 40 hexadecimal characters."
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            "refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate"
+
+          actual_candidate_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
+          requested_candidate_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
+
+          if [ "$actual_candidate_sha" != "$requested_candidate_sha" ]; then
+            echo "::error::Candidate branch HEAD has changed. Start a new review against the latest candidate."
+            exit 1
+          fi
+
+          echo "Candidate branch HEAD matches the requested SHA."
+
+      - name: Download original verified delivery artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aios-verified-delivery-${{ inputs.candidate_sha }}-${{ inputs.source_run_id }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: ${{ runner.temp }}/source-artifact
+
+      - name: Resolve required evidence files
+        id: evidence
+        shell: bash
+        env:
+          SOURCE_DIR: ${{ runner.temp }}/source-artifact
+        run: |
+          set -euo pipefail
+
+          resolve_one() {
+            local filename="$1"
+            local output_name="$2"
+            mapfile -t matches < <(find "$SOURCE_DIR" -type f -name "$filename" -print)
+
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one $filename; found ${#matches[@]}."
+              exit 1
+            fi
+
+            echo "$output_name=${matches[0]}" >> "$GITHUB_OUTPUT"
+          }
+
+          resolve_one "aios-founder-review.json" "review"
+          resolve_one "aios-verified-delivery.json" "artifact"
+          resolve_one "aios-delivery-artifact.sha256" "manifest"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Test Founder approval record
+        run: node --test scripts/aios-founder-approval-record.test.mjs
+
+      - name: Create write-once Founder approval record
+        shell: bash
+        env:
+          EXPECTED_FOUNDER: Vivi9max
+          ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          DECISION: ${{ inputs.decision }}
+          APPROVAL_SCOPE: ${{ inputs.approval_scope }}
+          REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
+          DELIVERY_ARTIFACT: ${{ steps.evidence.outputs.artifact }}
+          MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          OUTPUT_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "$OUTPUT_PATH")"
+
+          node scripts/aios-founder-approval-record.mjs \
+            --expected-founder "$EXPECTED_FOUNDER" \
+            --actor "$ACTOR" \
+            --event-name "$EVENT_NAME" \
+            --run-attempt "$RUN_ATTEMPT" \
+            --source-run-id "$SOURCE_RUN_ID" \
+            --candidate-branch "$CANDIDATE_BRANCH" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --decision "$DECISION" \
+            --approval-scope "$APPROVAL_SCOPE" \
+            --review-report "$REVIEW_REPORT" \
+            --delivery-artifact "$DELIVERY_ARTIFACT" \
+            --manifest "$MANIFEST" \
+            --output "$OUTPUT_PATH" \
+            | tee "$RUNNER_TEMP/aios-founder-approval/summary.json"
+
+          test -s "$OUTPUT_PATH"
+
+      - name: Preserve Founder approval evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: aios-founder-approval-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/aios-founder-approval/record.json
+            ${{ runner.temp }}/aios-founder-approval/summary.json
+          if-no-files-found: error
+          retention-days: 90
