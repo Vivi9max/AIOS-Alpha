@@ -4,24 +4,30 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import {
+  analyzeDependencyImpact,
+} from "./aios-dependency-impact.mjs";
 
 import {
   verifyVerificationReceipt,
 } from "./aios-engineering-verification-runtime.mjs";
+
 import {
   assertNoSecretsBeforeProviderDispatch,
 } from "./aios-engineering-secret-guard.mjs";
 
-export const VERIFIED_DELIVERY_BUILDER_VERSION = "C170.5";
+export const VERIFIED_DELIVERY_BUILDER_VERSION = "C170.5.2";
 export const VERIFIED_DELIVERY_SCHEMA_VERSION = 1;
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const FILE_SHA_PATTERN = /^[a-f0-9]{64}$/;
 
-const LIMITS = Object.freeze({
-  maxChangedFiles: 500,
+export const VERIFIED_DELIVERY_LIMITS = Object.freeze({
+  maxChangedFiles: 100,
   maxFileBytes: 5 * 1024 * 1024,
   maxTotalBytes: 50 * 1024 * 1024,
 });
@@ -149,7 +155,16 @@ function parseDiff(root, baseSha, headSha) {
 
   for (let index = 0; index < tokens.length;) {
     const status = tokens[index++];
-    const filePath = assertRepoPath(tokens[index++]);
+    const rawPath = tokens[index++];
+
+    if (typeof rawPath !== "string") {
+      fail(
+        "AIOS_DELIVERY_DIFF_INVALID",
+        "Git returned an incomplete name-status diff.",
+      );
+    }
+
+    const filePath = assertRepoPath(rawPath);
 
     if (!["A", "M", "T"].includes(status)) {
       fail(
@@ -162,6 +177,13 @@ function parseDiff(root, baseSha, headSha) {
       status,
       path: filePath,
     });
+
+    if (entries.length > VERIFIED_DELIVERY_LIMITS.maxChangedFiles) {
+      fail(
+        "AIOS_DELIVERY_FILE_LIMIT",
+        `The change set exceeds the C170.2/C170.5 limit of ${VERIFIED_DELIVERY_LIMITS.maxChangedFiles} files.`,
+      );
+    }
   }
 
   if (entries.length === 0) {
@@ -171,16 +193,32 @@ function parseDiff(root, baseSha, headSha) {
     );
   }
 
-  if (entries.length > LIMITS.maxChangedFiles) {
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+
+  const uniquePaths = new Set(entries.map((item) => item.path));
+
+  if (uniquePaths.size !== entries.length) {
     fail(
-      "AIOS_DELIVERY_FILE_LIMIT",
-      `The change set exceeds ${LIMITS.maxChangedFiles} files.`,
+      "AIOS_DELIVERY_DIFF_DUPLICATE_PATH",
+      "Git diff returned duplicate changed paths.",
     );
   }
 
-  entries.sort((a, b) => a.path.localeCompare(b.path));
-
   return entries;
+}
+
+function assertCandidateCheckout(root, headSha) {
+  const checkedOutHead = runGit(
+    root,
+    ["rev-parse", "HEAD"],
+  ).trim();
+
+  if (checkedOutHead !== headSha) {
+    fail(
+      "AIOS_DELIVERY_CANDIDATE_NOT_HEAD",
+      "The candidate commit must be the exact currently checked-out Git HEAD before C170.2 analysis.",
+    );
+  }
 }
 
 function readCommitFile(root, headSha, filePath) {
@@ -193,14 +231,14 @@ function readCommitFile(root, headSha, filePath) {
     ],
     {
       encoding: "buffer",
-      maxBuffer: LIMITS.maxFileBytes + 1,
+      maxBuffer: VERIFIED_DELIVERY_LIMITS.maxFileBytes + 1,
     },
   );
 
-  if (blob.byteLength > LIMITS.maxFileBytes) {
+  if (blob.byteLength > VERIFIED_DELIVERY_LIMITS.maxFileBytes) {
     fail(
       "AIOS_DELIVERY_FILE_TOO_LARGE",
-      `Changed file exceeds the ${LIMITS.maxFileBytes}-byte limit: ${filePath}`,
+      `Changed file exceeds the ${VERIFIED_DELIVERY_LIMITS.maxFileBytes}-byte limit: ${filePath}`,
     );
   }
 
@@ -223,6 +261,7 @@ function validateImpactReport(report, headSha, changedPaths) {
   if (
     !report ||
     typeof report !== "object" ||
+    Array.isArray(report) ||
     report.schemaVersion !== 1 ||
     report.analyzer !== "C170.2" ||
     report.repository?.head !== headSha ||
@@ -234,7 +273,7 @@ function validateImpactReport(report, headSha, changedPaths) {
   ) {
     fail(
       "AIOS_DELIVERY_IMPACT_INVALID",
-      "A valid C170.2 report for the exact candidate commit is required.",
+      "The real C170.2 analyzer did not return a valid report for the exact candidate commit.",
     );
   }
 
@@ -245,6 +284,13 @@ function validateImpactReport(report, headSha, changedPaths) {
     fail(
       "AIOS_DELIVERY_IMPACT_CHANGESET_MISMATCH",
       "C170.2 changedFiles must exactly match the Git base-to-candidate diff.",
+    );
+  }
+
+  if (report.changedFileCount !== actual.length) {
+    fail(
+      "AIOS_DELIVERY_IMPACT_COUNT_MISMATCH",
+      "C170.2 changedFileCount does not match the Git diff.",
     );
   }
 }
@@ -299,6 +345,45 @@ function assertOutputOutsideRepository(root, outputPath) {
   return canonicalOutput;
 }
 
+function createRealImpactReport(root, headSha, changedPaths, suppliedReport) {
+  let report;
+
+  try {
+    report = analyzeDependencyImpact(
+      root,
+      changedPaths,
+    );
+  } catch (error) {
+    const code =
+      typeof error?.code === "string"
+        ? error.code
+        : "AIOS_DELIVERY_IMPACT_ANALYSIS_FAILED";
+
+    fail(
+      "AIOS_DELIVERY_IMPACT_ANALYSIS_FAILED",
+      `The real C170.2 analyzer rejected the candidate (${code}). Commit and clean the candidate checkout, then retry.`,
+    );
+  }
+
+  validateImpactReport(
+    report,
+    headSha,
+    changedPaths,
+  );
+
+  if (
+    suppliedReport !== undefined &&
+    !isDeepStrictEqual(suppliedReport, report)
+  ) {
+    fail(
+      "AIOS_DELIVERY_EXTERNAL_IMPACT_MISMATCH",
+      "The optional external impact report differs from the report independently recomputed by the real C170.2 analyzer.",
+    );
+  }
+
+  return report;
+}
+
 export function buildVerifiedDelivery(options = {}) {
   const requestedRoot = path.resolve(
     options.root || process.cwd(),
@@ -331,6 +416,25 @@ export function buildVerifiedDelivery(options = {}) {
     );
   }
 
+  assertCandidateCheckout(root, headSha);
+
+  const changes = parseDiff(
+    root,
+    baseSha,
+    headSha,
+  );
+
+  const changedPaths = changes.map(
+    (item) => item.path,
+  );
+
+  const impactReport = createRealImpactReport(
+    root,
+    headSha,
+    changedPaths,
+    options.impactReport,
+  );
+
   const receipt = options.receipt;
 
   const receiptResult = verifyVerificationReceipt(
@@ -345,22 +449,6 @@ export function buildVerifiedDelivery(options = {}) {
     );
   }
 
-  const changes = parseDiff(
-    root,
-    baseSha,
-    headSha,
-  );
-
-  const changedPaths = changes.map(
-    (item) => item.path,
-  );
-
-  validateImpactReport(
-    options.impactReport,
-    headSha,
-    changedPaths,
-  );
-
   let totalBytes = 0;
 
   const files = changes.map((change) => {
@@ -372,10 +460,10 @@ export function buildVerifiedDelivery(options = {}) {
 
     totalBytes += blob.byteLength;
 
-    if (totalBytes > LIMITS.maxTotalBytes) {
+    if (totalBytes > VERIFIED_DELIVERY_LIMITS.maxTotalBytes) {
       fail(
         "AIOS_DELIVERY_TOTAL_SIZE_LIMIT",
-        `Delivery exceeds the ${LIMITS.maxTotalBytes}-byte total limit.`,
+        `Delivery exceeds the ${VERIFIED_DELIVERY_LIMITS.maxTotalBytes}-byte total limit.`,
       );
     }
 
@@ -419,7 +507,7 @@ export function buildVerifiedDelivery(options = {}) {
       ).length,
 
       totalBytes,
-      risk: options.impactReport.risk,
+      risk: impactReport.risk,
     },
 
     files,
@@ -438,18 +526,18 @@ export function buildVerifiedDelivery(options = {}) {
     },
 
     impact: {
-      analyzer: options.impactReport.analyzer,
+      analyzer: impactReport.analyzer,
       changedFiles: [
-        ...options.impactReport.changedFiles,
+        ...impactReport.changedFiles,
       ],
       affectedFileCount:
-        options.impactReport.affectedFileCount,
+        impactReport.affectedFileCount,
       affectedFiles:
-        options.impactReport.affectedFiles,
+        impactReport.affectedFiles,
       likelyTests:
-        options.impactReport.likelyTests,
+        impactReport.likelyTests,
       limitations:
-        options.impactReport.limitations,
+        impactReport.limitations,
     },
 
     rollback: {
@@ -471,7 +559,10 @@ export function buildVerifiedDelivery(options = {}) {
 
     limitations: [
       "File contents are read from the immutable candidate Git commit, not the working tree.",
+      "The candidate commit must equal the currently checked-out HEAD.",
+      "The real C170.2 analyzer is invoked during artifact generation; its current-worktree validation requires tracked files to be clean.",
       "Only added, modified, and type-changed UTF-8 text files are supported; deletions and renames are rejected because C170.2 does not model them yet.",
+      "The maximum changed-file count is 100, matching the C170.2 analyzer limit.",
       "C170.4 receipt checksum is not a digital signature and does not authenticate the CI runner or receipt author.",
       "C170.2 dependency analysis is static and heuristic; it cannot prove complete runtime impact or test coverage.",
       "The C170.3 Secret Guard is heuristic and may produce false positives or false negatives.",
@@ -554,7 +645,7 @@ function parseArgs(argv) {
     ) {
       fail(
         "AIOS_DELIVERY_USAGE",
-        "Usage: node scripts/aios-verified-delivery-builder.mjs --base <base-commit-sha> --receipt <c170.4-receipt.json> --impact <c170.2-impact.json> --output <outside-repository-output.json>",
+        "Usage: node scripts/aios-verified-delivery-builder.mjs --base <base-commit-sha> --receipt <c170.4-receipt.json> [--impact <expected-c170.2-impact.json>] --output <delivery-artifact-outside-repository.json>",
       );
     }
 
@@ -579,13 +670,12 @@ function parseArgs(argv) {
   for (const field of [
     "baseSha",
     "receiptPath",
-    "impactPath",
     "outputPath",
   ]) {
     if (!values[field]) {
       fail(
         "AIOS_DELIVERY_USAGE",
-        "All four arguments are required.",
+        "The base, receipt, and output arguments are required.",
       );
     }
   }
@@ -602,10 +692,12 @@ function main() {
     "C170.4 verification receipt",
   );
 
-  const impactReport = readJsonFile(
-    path.resolve(args.impactPath),
-    "C170.2 impact report",
-  );
+  const impactReport = args.impactPath
+    ? readJsonFile(
+        path.resolve(args.impactPath),
+        "Expected C170.2 impact report",
+      )
+    : undefined;
 
   const artifact = buildVerifiedDelivery({
     root,
@@ -628,6 +720,14 @@ function main() {
         repository: artifact.payload.repository,
         fileCount: artifact.payload.changeSummary.fileCount,
         verification: artifact.payload.verification,
+        impact: {
+          analyzer: artifact.payload.impact.analyzer,
+          changedFileCount:
+            artifact.payload.impact.changedFiles.length,
+          affectedFileCount:
+            artifact.payload.impact.affectedFileCount,
+          risk: artifact.payload.changeSummary.risk,
+        },
         artifact: written,
         requiresFounderReview: true,
         mergeAuthorized: false,
