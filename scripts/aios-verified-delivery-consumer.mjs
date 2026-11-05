@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -415,19 +416,46 @@ export function consumeVerifiedDelivery(options = {}) {
     "Audit record",
   );
 
-  if (
-    fs.existsSync(safeStagingPath) ||
-    fs.existsSync(safeAuditPath)
-  ) {
-    fail(
-      "AIOS_HANDOFF_OVERWRITE_REJECTED",
-      "Existing staging or audit paths cannot be overwritten.",
-    );
-  }
-
   let auditWritten = false;
 
   try {
+    if (
+      fs.existsSync(safeStagingPath) ||
+      fs.existsSync(safeAuditPath)
+    ) {
+      fail(
+        "AIOS_HANDOFF_OVERWRITE_REJECTED",
+        "Existing staging or audit paths cannot be overwritten.",
+      );
+    }
+
+    let checkedOutHead;
+
+    try {
+      checkedOutHead = execFileSync(
+        "git",
+        ["rev-parse", "HEAD"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+        },
+      ).trim();
+    } catch {
+      fail(
+        "AIOS_DELIVERY_VERIFY_GIT_FAILED",
+        "Unable to read the checked-out Candidate Commit.",
+      );
+    }
+
+    if (checkedOutHead !== headSha) {
+      fail(
+        "AIOS_DELIVERY_VERIFY_COMMIT_INVALID",
+        "The checked-out HEAD does not equal the supplied Candidate Commit.",
+      );
+    }
+
     const manifest = parseManifest(safeManifestPath);
 
     const artifactVerification = verifyVerifiedDeliveryArtifact({
