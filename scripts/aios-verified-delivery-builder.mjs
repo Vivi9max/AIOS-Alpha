@@ -19,7 +19,7 @@ import {
   assertNoSecretsBeforeProviderDispatch,
 } from "./aios-engineering-secret-guard.mjs";
 
-export const VERIFIED_DELIVERY_BUILDER_VERSION = "C170.5.2";
+export const VERIFIED_DELIVERY_BUILDER_VERSION = "C170.5.3";
 export const VERIFIED_DELIVERY_SCHEMA_VERSION = 1;
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
@@ -221,6 +221,131 @@ function assertCandidateCheckout(root, headSha) {
   }
 }
 
+/**
+ * C170.5.3:
+ * The supplied base commit must be an ancestor of the candidate commit.
+ *
+ * git merge-base --is-ancestor:
+ *   exit 0 = ancestor
+ *   exit 1 = not an ancestor
+ *   other failure = Git execution or repository error
+ */
+function assertBaseIsAncestor(root, baseSha, headSha) {
+  try {
+    execFileSync(
+      "git",
+      [
+        "merge-base",
+        "--is-ancestor",
+        baseSha,
+        headSha,
+      ],
+      {
+        cwd: root,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
+  } catch (error) {
+    if (error?.status === 1) {
+      fail(
+        "AIOS_DELIVERY_BASE_NOT_ANCESTOR",
+        "The base commit must be an ancestor of the candidate commit.",
+      );
+    }
+
+    fail(
+      "AIOS_DELIVERY_GIT_COMMAND_FAILED",
+      "Git could not verify the base-to-candidate commit relationship.",
+    );
+  }
+}
+
+/**
+ * C170.5.3:
+ * Validate the exact Git Tree entry before reading its blob.
+ *
+ * Accepted:
+ *   100644 = regular non-executable file
+ *   100755 = regular executable file
+ *
+ * Rejected:
+ *   120000 = symbolic link
+ *   160000 = gitlink / submodule
+ *   tree entries and all unsupported modes
+ *
+ * -z prevents pathname quoting.
+ * :(literal) prevents Git pathspec wildcard interpretation.
+ */
+function assertSupportedGitTreeEntry(
+  root,
+  headSha,
+  filePath,
+) {
+  const raw = runGit(
+    root,
+    [
+      "ls-tree",
+      "-z",
+      headSha,
+      "--",
+      `:(literal)${filePath}`,
+    ],
+    {
+      encoding: "buffer",
+    },
+  );
+
+  const records = raw
+    .toString("utf8")
+    .split("\0")
+    .filter((item) => item.length > 0);
+
+  if (records.length !== 1) {
+    fail(
+      "AIOS_DELIVERY_TREE_ENTRY_INVALID",
+      `Expected exactly one Git Tree entry for ${filePath}.`,
+    );
+  }
+
+  const separator = records[0].indexOf("\t");
+
+  if (separator < 0) {
+    fail(
+      "AIOS_DELIVERY_TREE_ENTRY_INVALID",
+      `Git Tree entry is malformed for ${filePath}.`,
+    );
+  }
+
+  const metadata = records[0].slice(0, separator);
+  const actualPath = records[0].slice(separator + 1);
+  const parts = metadata.split(" ");
+
+  if (
+    parts.length !== 3 ||
+    actualPath !== filePath
+  ) {
+    fail(
+      "AIOS_DELIVERY_TREE_ENTRY_INVALID",
+      `Git Tree entry does not uniquely match ${filePath}.`,
+    );
+  }
+
+  const [mode, type] = parts;
+
+  if (
+    type !== "blob" ||
+    !["100644", "100755"].includes(mode)
+  ) {
+    fail(
+      "AIOS_DELIVERY_FILE_MODE_UNSUPPORTED",
+      `Unsupported Git Tree entry for ${filePath}; only regular files with mode 100644 or 100755 are supported.`,
+    );
+  }
+
+  return mode;
+}
+
 function readCommitFile(root, headSha, filePath) {
   const blob = runGit(
     root,
@@ -418,6 +543,12 @@ export function buildVerifiedDelivery(options = {}) {
 
   assertCandidateCheckout(root, headSha);
 
+  assertBaseIsAncestor(
+    root,
+    baseSha,
+    headSha,
+  );
+
   const changes = parseDiff(
     root,
     baseSha,
@@ -427,6 +558,21 @@ export function buildVerifiedDelivery(options = {}) {
   const changedPaths = changes.map(
     (item) => item.path,
   );
+
+  /**
+   * Validate every candidate Git Tree entry before:
+   * - C170.2 impact analysis
+   * - C170.4 receipt processing
+   * - Blob retrieval
+   * - Artifact construction
+   */
+  for (const change of changes) {
+    assertSupportedGitTreeEntry(
+      root,
+      headSha,
+      change.path,
+    );
+  }
 
   const impactReport = createRealImpactReport(
     root,
@@ -560,6 +706,8 @@ export function buildVerifiedDelivery(options = {}) {
     limitations: [
       "File contents are read from the immutable candidate Git commit, not the working tree.",
       "The candidate commit must equal the currently checked-out HEAD.",
+      "The base commit must be an ancestor of the candidate commit.",
+      "Only Git Tree regular-file modes 100644 and 100755 are supported; symbolic links, submodules, and other modes are rejected.",
       "The real C170.2 analyzer is invoked during artifact generation; its current-worktree validation requires tracked files to be clean.",
       "Only added, modified, and type-changed UTF-8 text files are supported; deletions and renames are rejected because C170.2 does not model them yet.",
       "The maximum changed-file count is 100, matching the C170.2 analyzer limit.",
