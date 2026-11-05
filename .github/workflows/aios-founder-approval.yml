@@ -81,7 +81,7 @@ jobs:
 
           echo "Founder identity and protected control-plane checks passed."
 
-      - name: Validate exact candidate branch and commit
+      - name: Validate exact candidate branch, commit and latest main ancestry
         shell: bash
         env:
           CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
@@ -102,16 +102,26 @@ jobs:
           requested_sha="$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')"
 
           git fetch --no-tags origin \
-            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate"
+            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/aios-approval-candidate" \
+            "+refs/heads/main:refs/remotes/origin/aios-approval-main"
 
           actual_sha="$(git rev-parse refs/remotes/origin/aios-approval-candidate)"
+          latest_main_sha="$(git rev-parse refs/remotes/origin/aios-approval-main)"
 
           if [ "$actual_sha" != "$requested_sha" ]; then
             echo "::error::Candidate branch HEAD changed. Generate a new delivery artifact and review."
             exit 1
           fi
 
+          if ! git merge-base --is-ancestor \
+            refs/remotes/origin/aios-approval-main \
+            refs/remotes/origin/aios-approval-candidate; then
+            echo "::error::Candidate does not contain the latest main commit. Update the candidate branch and rerun CI."
+            exit 1
+          fi
+
           echo "Candidate branch and HEAD are bound to $requested_sha"
+          echo "Latest main commit $latest_main_sha is an ancestor of the candidate."
 
       - name: Validate Source Run ID
         shell: bash
@@ -137,6 +147,89 @@ jobs:
             > "$RUNNER_TEMP/aios-source-artifacts.json"
           test -s "$RUNNER_TEMP/aios-source-run.json"
           test -s "$RUNNER_TEMP/aios-source-artifacts.json"
+
+      - name: Download and verify raw Source Artifact ZIP digest
+        id: source_archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+
+          expected_name="aios-verified-delivery-${CANDIDATE_SHA}-${SOURCE_RUN_ID}"
+
+          mapfile -t artifact_rows < <(
+            jq -cer \
+              --arg name "$expected_name" \
+              --arg run_id "$SOURCE_RUN_ID" \
+              --arg branch "$CANDIDATE_BRANCH" \
+              --arg sha "$(printf '%s' "$CANDIDATE_SHA" | tr 'A-F' 'a-f')" \
+              '
+                [
+                  .artifacts[]
+                  | select(
+                      .name == $name
+                      and .expired == false
+                      and ((.workflow_run.id | tostring) == $run_id)
+                      and (.workflow_run.head_branch == $branch)
+                      and ((.workflow_run.head_sha | ascii_downcase) == $sha)
+                    )
+                  | [.id, .digest]
+                  | @tsv
+                ][]
+              ' "$RUNNER_TEMP/aios-source-artifacts.json"
+          )
+
+          if [ "${#artifact_rows[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one unexpired candidate-bound Source Artifact; found ${#artifact_rows[@]}."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r artifact_id artifact_digest <<< "${artifact_rows[0]}"
+
+          if ! [[ "$artifact_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::Artifact ID is invalid."
+            exit 1
+          fi
+
+          if ! [[ "$artifact_digest" =~ ^sha256:[a-fA-F0-9]{64}$ ]]; then
+            echo "::error::GitHub Artifact SHA-256 digest is missing or invalid."
+            exit 1
+          fi
+
+          archive_path="$RUNNER_TEMP/aios-source-artifact.zip"
+
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output "$archive_path"
+
+          if [ ! -s "$archive_path" ]; then
+            echo "::error::Downloaded Source Artifact ZIP is empty."
+            exit 1
+          fi
+
+          expected_sha256="${artifact_digest#sha256:}"
+          actual_sha256="$(sha256sum "$archive_path" | awk '{print $1}')"
+
+          if [ "$actual_sha256" != "$expected_sha256" ]; then
+            echo "::error::Source Artifact ZIP SHA-256 mismatch."
+            echo "::error::Expected: $expected_sha256"
+            echo "::error::Actual:   $actual_sha256"
+            exit 1
+          fi
+
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_digest=$artifact_digest" >> "$GITHUB_OUTPUT"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+
+          echo "Raw Source Artifact ZIP SHA-256 verified."
+          echo "Artifact ID: $artifact_id"
 
       - name: Download exact verified-delivery artifact from Source Run
         uses: actions/download-artifact@v4
@@ -177,18 +270,20 @@ jobs:
         with:
           node-version: 24
 
-      - name: Verify C170.6.7 Source Run Identity
+      - name: Verify C170.6.9 Source Run identity and archive integrity
         env:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
+          ARTIFACT_ARCHIVE: ${{ steps.source_archive.outputs.archive_path }}
         run: |
           set -euo pipefail
           node scripts/aios-founder-approval-source-run.mjs \
             --run "$RUNNER_TEMP/aios-source-run.json" \
             --artifacts "$RUNNER_TEMP/aios-source-artifacts.json" \
             --review "$REVIEW_REPORT" \
+            --artifact-archive "$ARTIFACT_ARCHIVE" \
             --source-run-id "$SOURCE_RUN_ID" \
             --candidate-branch "$CANDIDATE_BRANCH" \
             --candidate-sha "$CANDIDATE_SHA"
@@ -196,7 +291,7 @@ jobs:
       - name: Verify C170.6.3 Founder Approval Record tests
         run: node --test scripts/aios-founder-approval-record.test.mjs
 
-      - name: Verify C170.6.7 Source Run Identity tests
+      - name: Verify C170.6.9 Source Run Identity and Artifact Integrity tests
         run: node --test scripts/aios-founder-approval-source-run.test.mjs
 
       - name: Create write-once Founder approval record

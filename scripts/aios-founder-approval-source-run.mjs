@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SHA40 = /^[a-f0-9]{40}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
 const BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 
 const DEFAULTS = Object.freeze({
@@ -40,10 +42,83 @@ function readJson(filePath, label) {
   }
 }
 
+export function verifyArtifactArchiveDigest({
+  artifactDigest,
+  artifactArchivePath,
+}) {
+  if (
+    typeof artifactDigest !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/i.test(artifactDigest)
+  ) {
+    fail(
+      "ARTIFACT_DIGEST_INVALID",
+      "GitHub Artifact SHA-256 digest is missing or invalid.",
+    );
+  }
+
+  if (
+    typeof artifactArchivePath !== "string" ||
+    artifactArchivePath.length === 0
+  ) {
+    fail(
+      "ARTIFACT_ARCHIVE_PATH_INVALID",
+      "A downloaded Artifact archive path is required.",
+    );
+  }
+
+  let stat;
+
+  try {
+    stat = fs.lstatSync(artifactArchivePath);
+  } catch {
+    fail(
+      "ARTIFACT_ARCHIVE_INVALID",
+      "Downloaded Artifact archive is missing or unreadable.",
+    );
+  }
+
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) {
+    fail(
+      "ARTIFACT_ARCHIVE_INVALID",
+      "Downloaded Artifact archive must be a non-empty regular file.",
+    );
+  }
+
+  let actualDigest;
+
+  try {
+    const hash = crypto.createHash("sha256");
+    hash.update(fs.readFileSync(artifactArchivePath));
+    actualDigest = hash.digest("hex");
+  } catch {
+    fail(
+      "ARTIFACT_ARCHIVE_INVALID",
+      "Downloaded Artifact archive could not be hashed.",
+    );
+  }
+
+  const expectedDigest = artifactDigest.slice("sha256:".length).toLowerCase();
+
+  if (actualDigest !== expectedDigest) {
+    fail(
+      "ARTIFACT_DIGEST_MISMATCH",
+      "Downloaded Artifact archive SHA-256 does not match GitHub Artifact metadata.",
+    );
+  }
+
+  return {
+    valid: true,
+    algorithm: "sha256",
+    expectedDigest,
+    actualDigest,
+  };
+}
+
 export function verifySourceRunIdentity({
   run,
   artifacts,
   review,
+  artifactArchivePath,
   repository = DEFAULTS.repository,
   workflowId = DEFAULTS.workflowId,
   workflowPath = DEFAULTS.workflowPath,
@@ -212,6 +287,11 @@ export function verifySourceRunIdentity({
     );
   }
 
+  const archiveIntegrity = verifyArtifactArchiveDigest({
+    artifactDigest: artifact.digest,
+    artifactArchivePath,
+  });
+
   if (!review || review.status !== "FOUNDER_REVIEW_READY") {
     fail(
       "REVIEW_STATUS_INVALID",
@@ -277,7 +357,8 @@ export function verifySourceRunIdentity({
     candidateSha: sha,
     artifactId: artifact.id,
     artifactName: artifact.name,
-    artifactDigest: artifact.digest || null,
+    artifactDigest: artifact.digest,
+    artifactArchiveIntegrity: archiveIntegrity,
     reviewStatus: review.status,
     approvalDecision: "PENDING",
     mergeAuthorized: false,
@@ -315,6 +396,7 @@ function parseArgs(argv) {
     "--run",
     "--artifacts",
     "--review",
+    "--artifact-archive",
     "--source-run-id",
     "--candidate-branch",
     "--candidate-sha",
@@ -347,6 +429,7 @@ function main() {
     run: readJson(args.run, "Source Run metadata"),
     artifacts: readJson(args.artifacts, "Source Run artifact listing"),
     review: readJson(args.review, "Founder Review report"),
+    artifactArchivePath: args.artifactArchive,
     sourceRunId: args.sourceRunId,
     candidateBranch: args.candidateBranch,
     candidateSha: args.candidateSha,
