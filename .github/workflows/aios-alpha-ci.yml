@@ -56,6 +56,9 @@ jobs:
       - name: Verify C170.5.4 Independent Artifact Verifier
         run: node --test scripts/aios-verified-delivery-artifact-verifier.test.mjs
 
+      - name: Verify C170.5.5 Delivery Consumer
+        run: node --test scripts/aios-verified-delivery-consumer.test.mjs
+
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
@@ -279,7 +282,40 @@ jobs:
 
           cat aios-delivery-artifact.sha256
 
-      - name: Preserve independently verified delivery artifact
+      - name: Consume verified delivery into isolated Founder handoff
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+          base_sha="$(git merge-base origin/main "$actual_head")"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before delivery consumption."
+            exit 1
+          fi
+
+          node scripts/aios-verified-delivery-consumer.mjs \
+            --artifact "$RUNNER_TEMP/aios-verified-delivery.json" \
+            --manifest "$RUNNER_TEMP/aios-delivery-artifact.sha256" \
+            --builder-summary "$RUNNER_TEMP/aios-delivery-builder-summary.json" \
+            --verification "$RUNNER_TEMP/aios-delivery-verification.json" \
+            --base "$base_sha" \
+            --head "$actual_head" \
+            --staging "$RUNNER_TEMP/aios-delivery-handoff" \
+            --audit "$RUNNER_TEMP/aios-delivery-handoff-audit.json" \
+            > "$RUNNER_TEMP/aios-delivery-handoff-summary.json"
+
+          test -s "$RUNNER_TEMP/aios-delivery-handoff/handoff.json"
+          test -s "$RUNNER_TEMP/aios-delivery-handoff/rollback-evidence.json"
+          test -s "$RUNNER_TEMP/aios-delivery-handoff-audit.json"
+
+          cat "$RUNNER_TEMP/aios-delivery-handoff-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve independently verified Founder handoff
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
@@ -289,5 +325,8 @@ jobs:
             ${{ runner.temp }}/aios-delivery-builder-summary.json
             ${{ runner.temp }}/aios-delivery-verification.json
             ${{ runner.temp }}/aios-delivery-artifact.sha256
+            ${{ runner.temp }}/aios-delivery-handoff/
+            ${{ runner.temp }}/aios-delivery-handoff-audit.json
+            ${{ runner.temp }}/aios-delivery-handoff-summary.json
           if-no-files-found: error
           retention-days: 7
