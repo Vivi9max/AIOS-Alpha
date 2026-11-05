@@ -45,6 +45,9 @@ jobs:
       - name: Verify C170.3 Engineering Provider Adapter
         run: node --test scripts/aios-engineering-provider-adapter.test.mjs
 
+      - name: Verify C170.4 Independent Verification Runtime
+        run: node --test scripts/aios-engineering-verification-runtime.test.mjs
+
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
