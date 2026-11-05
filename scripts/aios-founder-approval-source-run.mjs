@@ -358,7 +358,7 @@ export function verifySourceRunIdentity({
     artifactId: artifact.id,
     artifactName: artifact.name,
     artifactDigest: artifact.digest,
-    artifactArchiveIntegrity,
+    artifactArchiveIntegrity: archiveIntegrity,
     reviewStatus: review.status,
     approvalDecision: "PENDING",
     mergeAuthorized: false,
