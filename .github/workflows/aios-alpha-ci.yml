@@ -163,6 +163,32 @@ jobs:
 
           echo "Clean candidate checkout verified: $restored_head"
 
+      - name: Diagnose C170.1 dependency graph before delivery generation
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before dependency diagnosis."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is dirty before dependency diagnosis."
+            git status --short
+            exit 1
+          fi
+
+          echo "Running the real C170.1 repository index builder."
+          echo "Candidate Commit: $actual_head"
+
+          node scripts/aios-c1705-dependency-diagnostic.mjs
+
       - name: Generate real C170.5 delivery artifact from Git commits
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         shell: bash
