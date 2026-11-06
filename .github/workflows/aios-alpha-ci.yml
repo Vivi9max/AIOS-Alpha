@@ -68,6 +68,9 @@ jobs:
       - name: Verify C170.6.9 Source Run Identity and Artifact Archive Integrity
         run: node --test scripts/aios-founder-approval-source-run.test.mjs
 
+      - name: Verify C170.6.11 Founder Approval Auto Resolver
+        run: node --test scripts/aios-founder-approval-resolver.test.mjs
+      
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:

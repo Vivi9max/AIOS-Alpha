@@ -3,22 +3,11 @@ name: AIOS Alpha Founder Approval Record
 on:
   workflow_dispatch:
     inputs:
-      source_run_id:
-        description: "Original successful verified-delivery CI Run ID"
-        required: true
-        type: string
-      candidate_branch:
-        description: "Exact candidate branch name"
-        required: true
-        type: string
-      candidate_sha:
-        description: "Exact 40-character candidate commit SHA"
-        required: true
-        type: string
       decision:
         description: "Founder decision"
         required: true
         type: choice
+        default: REJECT
         options:
           - APPROVE
           - REJECT
@@ -26,6 +15,7 @@ on:
         description: "One approval scope only"
         required: true
         type: choice
+        default: merge
         options:
           - merge
           - production_deployment
@@ -33,13 +23,18 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
   statuses: write
+
+concurrency:
+  group: aios-founder-approval-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   founder-approval:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout protected main control plane
@@ -81,11 +76,34 @@ jobs:
 
           echo "Founder identity and protected control-plane checks passed."
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Automatically resolve exact Founder approval candidate
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          node scripts/aios-founder-approval-resolver.mjs \
+            | tee "$RUNNER_TEMP/aios-founder-approval-candidate.json"
+
+          test -s "$RUNNER_TEMP/aios-founder-approval-candidate.json"
+
+          echo "Resolved candidate:"
+          cat "$RUNNER_TEMP/aios-founder-approval-candidate.json"
+
       - name: Validate exact candidate branch, commit and latest main ancestry
         shell: bash
         env:
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
         run: |
           set -euo pipefail
 
@@ -126,7 +144,7 @@ jobs:
       - name: Validate Source Run ID
         shell: bash
         env:
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ID: ${{ steps.candidate.outputs.source_run_id }}
         run: |
           set -euo pipefail
           if ! [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
@@ -138,7 +156,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ID: ${{ steps.candidate.outputs.source_run_id }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" \
@@ -153,9 +171,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          SOURCE_RUN_ID: ${{ steps.candidate.outputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
         run: |
           set -euo pipefail
 
@@ -234,8 +252,8 @@ jobs:
       - name: Download exact verified-delivery artifact from Source Run
         uses: actions/download-artifact@v4
         with:
-          name: aios-verified-delivery-${{ inputs.candidate_sha }}-${{ inputs.source_run_id }}
-          run-id: ${{ inputs.source_run_id }}
+          name: aios-verified-delivery-${{ steps.candidate.outputs.candidate_sha }}-${{ steps.candidate.outputs.source_run_id }}
+          run-id: ${{ steps.candidate.outputs.source_run_id }}
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           path: ${{ runner.temp }}/source-artifact
@@ -265,16 +283,11 @@ jobs:
           resolve_one "aios-delivery-verification.json" "verification"
           resolve_one "aios-delivery-artifact.sha256" "manifest"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-
       - name: Verify C170.6.9 Source Run identity and archive integrity
         env:
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          SOURCE_RUN_ID: ${{ steps.candidate.outputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
           REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
           ARTIFACT_ARCHIVE: ${{ steps.source_archive.outputs.archive_path }}
         run: |
@@ -294,6 +307,9 @@ jobs:
       - name: Verify C170.6.9 Source Run Identity and Artifact Integrity tests
         run: node --test scripts/aios-founder-approval-source-run.test.mjs
 
+      - name: Verify C170.6.11 Founder Approval Resolver tests
+        run: node --test scripts/aios-founder-approval-resolver.test.mjs
+
       - name: Create write-once Founder approval record
         shell: bash
         env:
@@ -301,9 +317,9 @@ jobs:
           ACTOR: ${{ github.actor }}
           EVENT_NAME: ${{ github.event_name }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          SOURCE_RUN_ID: ${{ steps.candidate.outputs.source_run_id }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
           DECISION: ${{ inputs.decision }}
           APPROVAL_SCOPE: ${{ inputs.approval_scope }}
           REVIEW_REPORT: ${{ steps.evidence.outputs.review }}
@@ -340,7 +356,7 @@ jobs:
         id: approval_evidence
         uses: actions/upload-artifact@v4
         with:
-          name: aios-founder-approval-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          name: aios-founder-approval-${{ steps.candidate.outputs.candidate_sha }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/aios-founder-approval/record.json
             ${{ runner.temp }}/aios-founder-approval/summary.json
@@ -352,7 +368,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
           RECORD_PATH: ${{ runner.temp }}/aios-founder-approval/record.json
           TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

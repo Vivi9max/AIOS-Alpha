@@ -21,7 +21,7 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function createFixture() {
+function createFixture(riskLevel = "low") {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aios-c1706-test-"));
   const root = path.join(tempRoot, "repository");
   const output = path.join(tempRoot, "runner-temp");
@@ -52,7 +52,7 @@ function createFixture() {
       fileCount: 1,
       totalBytes: stagedBytes.byteLength,
       risk: {
-        level: "low",
+        level: riskLevel,
         reasons: [],
       },
     },
@@ -432,6 +432,49 @@ test(
           dependencies(),
         ),
         { code: "AIOS_FOUNDER_REVIEW_MANIFEST_HASH_MISMATCH" },
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "accepts the native C170.2 moderate risk level",
+  async () => {
+    const fixture = createFixture("moderate");
+
+    try {
+      const report = await createFounderReviewReport(
+        optionsFor(fixture),
+        dependencies(),
+      );
+
+      assert.equal(report.status, "FOUNDER_REVIEW_READY");
+      assert.equal(report.impact.analyzer, "C170.2");
+      assert.equal(report.impact.risk, "moderate");
+      assert.equal(report.founderApproval.decision, "PENDING");
+      assert.equal(report.founderApproval.approved, false);
+      assert.equal(report.founderApproval.mergeAuthorized, false);
+      assert.equal(report.founderApproval.productionDeploymentAuthorized, false);
+    } finally {
+      cleanup(fixture);
+    }
+  },
+);
+
+test(
+  "rejects medium because it is not a native C170.2 risk level",
+  async () => {
+    const fixture = createFixture("medium");
+
+    try {
+      await assert.rejects(
+        () => createFounderReviewReport(
+          optionsFor(fixture),
+          dependencies(),
+        ),
+        { code: "AIOS_FOUNDER_REVIEW_RISK_INVALID" },
       );
     } finally {
       cleanup(fixture);
