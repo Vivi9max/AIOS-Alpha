@@ -848,7 +848,6 @@ function assertSafeObjective(
     normalizeObjective(
       objective,
     );
-
   if (!normalized) {
     throw new Error(
       "Development objective is required.",
