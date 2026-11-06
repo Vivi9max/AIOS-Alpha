@@ -271,6 +271,46 @@ test("snapshot fails closed for unresolved internal dependencies", () => {
   }
 });
 
+test(
+  "snapshot accepts tracked CSS asset imports without treating them as unresolved TypeScript modules",
+  () => {
+    const root = createFixture();
+
+    try {
+      write(
+        root,
+        "src/asset-importer.ts",
+        [
+          'import "./global.css";',
+          "",
+          "export const assetReady = true;",
+          "",
+        ].join("\n"),
+      );
+
+      write(root, "src/global.css", "body { margin: 0; }\n");
+
+      git(root, ["add", "src/asset-importer.ts", "src/global.css"]);
+      git(root, ["commit", "-m", "add CSS asset import"]);
+
+      const result = buildRepositoryIndex(root);
+
+      assert.equal(
+        result.graph.dependencies["src/asset-importer.ts"].length,
+        0,
+      );
+      assert.equal(
+        result.trackedFiles.some(
+          (item) => item.path === "src/global.css",
+        ),
+        true,
+      );
+    } finally {
+      cleanup(root);
+    }
+  },
+);
+
 test("inspect rejects a dirty worktree even with an existing index", () => {
   const root = createFixture();
 

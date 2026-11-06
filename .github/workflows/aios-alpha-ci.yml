@@ -15,11 +15,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -48,10 +50,22 @@ jobs:
       - name: Verify C170.4 Independent Verification Runtime
         run: node --test scripts/aios-engineering-verification-runtime.test.mjs
 
+      - name: Verify C170.5 Verified Delivery Builder
+        run: node --test scripts/aios-verified-delivery-builder.test.mjs
+
+      - name: Verify C170.5.4 Independent Artifact Verifier
+        run: node --test scripts/aios-verified-delivery-artifact-verifier.test.mjs
+
+      - name: Verify C170.5.5 Delivery Consumer
+        run: node --test scripts/aios-verified-delivery-consumer.test.mjs
+
+      - name: Verify C170.6 Founder Review Gate
+        run: node --test scripts/aios-founder-review-gate.test.mjs
+
       - name: Verify C170.6.3 Founder Approval Record
         run: node --test scripts/aios-founder-approval-record.test.mjs
 
-      - name: Verify C170.6.7 Source Run Identity
+      - name: Verify C170.6.9 Source Run Identity and Artifact Archive Integrity
         run: node --test scripts/aios-founder-approval-source-run.test.mjs
 
       - name: C169.8-D2.1 independent control-plane verification
@@ -63,10 +77,12 @@ jobs:
         run: |
           mkdir -p test-results
           report_file="test-results/c169.8-d2.1-verification.txt"
+
           set +e
           node scripts/verify-autonomous-development-control-plane.mjs 2>&1 | tee "$report_file"
           test_exit_code=${PIPESTATUS[0]}
           set -e
+
           {
             echo "## C169.8-D2.1 independent control-plane verification"
             echo
@@ -79,6 +95,7 @@ jobs:
             cat "$report_file"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
           exit "$test_exit_code"
 
       - name: Preserve C169.8-D2.1 verification report
@@ -98,3 +115,285 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Generate C170.4 verification receipt for candidate commit
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout HEAD does not match the workflow candidate SHA."
+            exit 1
+          fi
+
+          receipt_path="$RUNNER_TEMP/aios-c1704-receipt.json"
+
+          node scripts/aios-engineering-verification-runtime.mjs verify > "$receipt_path"
+
+          test -s "$receipt_path"
+
+          echo "C170.4 receipt generated for $actual_head"
+
+      - name: Restore clean candidate checkout for Git-based analysis
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout HEAD does not match the workflow candidate SHA."
+            exit 1
+          fi
+
+          echo "Tracked files changed by CI before restoration:"
+          git diff --name-status HEAD --
+
+          echo "Restoring tracked files to the exact candidate commit."
+          git reset --hard "$EXPECTED_COMMIT_SHA"
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is still dirty after restoration."
+            git status --short
+            exit 1
+          fi
+
+          restored_head="$(git rev-parse HEAD)"
+
+          if [ "$restored_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate HEAD changed during restoration."
+            exit 1
+          fi
+
+          echo "Clean candidate checkout verified: $restored_head"
+
+      - name: Diagnose C170.1 dependency graph before delivery generation
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before dependency diagnosis."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is dirty before dependency diagnosis."
+            git status --short
+            exit 1
+          fi
+
+          echo "Running the real C170.1 repository index builder."
+          echo "Candidate Commit: $actual_head"
+
+          node scripts/aios-c1705-dependency-diagnostic.mjs
+
+      - name: Generate real C170.5 delivery artifact from Git commits
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before artifact generation."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Tracked worktree is dirty before C170.5 generation."
+            git status --short
+            exit 1
+          fi
+
+          base_sha="$(git merge-base origin/main "$actual_head")"
+
+          if [ -z "$base_sha" ] || [ "$base_sha" = "$actual_head" ]; then
+            echo "::error::A valid main-to-candidate commit range is required."
+            exit 1
+          fi
+
+          receipt_path="$RUNNER_TEMP/aios-c1704-receipt.json"
+          artifact_path="$RUNNER_TEMP/aios-verified-delivery.json"
+          summary_path="$RUNNER_TEMP/aios-delivery-builder-summary.json"
+
+          node scripts/aios-verified-delivery-builder.mjs \
+            --base "$base_sha" \
+            --receipt "$receipt_path" \
+            --output "$artifact_path" \
+            > "$summary_path"
+
+          test -s "$artifact_path"
+          test -s "$summary_path"
+
+          echo "C170.5 delivery artifact generated."
+          echo "Base Commit: $base_sha"
+          echo "Candidate Commit: $actual_head"
+
+      - name: Independently verify generated delivery artifact
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+          base_sha="$(git merge-base origin/main "$actual_head")"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before independent verification."
+            exit 1
+          fi
+
+          artifact_path="$RUNNER_TEMP/aios-verified-delivery.json"
+          verification_path="$RUNNER_TEMP/aios-delivery-verification.json"
+
+          node scripts/aios-verified-delivery-artifact-verifier.mjs \
+            --artifact "$artifact_path" \
+            --base "$base_sha" \
+            --head "$actual_head" \
+            > "$verification_path"
+
+          test -s "$verification_path"
+
+          cat "$verification_path" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create delivery artifact SHA-256 manifest
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$RUNNER_TEMP"
+
+          sha256sum \
+            aios-verified-delivery.json \
+            aios-delivery-builder-summary.json \
+            aios-delivery-verification.json \
+            > aios-delivery-artifact.sha256
+
+          cat aios-delivery-artifact.sha256
+
+      - name: Consume verified delivery into isolated Founder handoff
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+          base_sha="$(git merge-base origin/main "$actual_head")"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA changed before delivery consumption."
+            exit 1
+          fi
+
+          node scripts/aios-verified-delivery-consumer.mjs \
+            --artifact "$RUNNER_TEMP/aios-verified-delivery.json" \
+            --manifest "$RUNNER_TEMP/aios-delivery-artifact.sha256" \
+            --builder-summary "$RUNNER_TEMP/aios-delivery-builder-summary.json" \
+            --verification "$RUNNER_TEMP/aios-delivery-verification.json" \
+            --base "$base_sha" \
+            --head "$actual_head" \
+            --staging "$RUNNER_TEMP/aios-delivery-handoff" \
+            --audit "$RUNNER_TEMP/aios-delivery-handoff-audit.json" \
+            > "$RUNNER_TEMP/aios-delivery-handoff-summary.json"
+
+          test -s "$RUNNER_TEMP/aios-delivery-handoff/handoff.json"
+          test -s "$RUNNER_TEMP/aios-delivery-handoff/rollback-evidence.json"
+          test -s "$RUNNER_TEMP/aios-delivery-handoff-audit.json"
+
+          cat "$RUNNER_TEMP/aios-delivery-handoff-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect main branch protection for Founder review gate
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        id: founder_protection
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          main_protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected' 2>/dev/null || printf 'unknown')"
+          rulesets_count="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" --jq 'length' 2>/dev/null || printf '%s' '-1')"
+
+          case "$main_protected" in
+            true|false) ;;
+            *) main_protected="unknown" ;;
+          esac
+
+          if ! [[ "$rulesets_count" =~ ^[0-9]+$ ]]; then
+            rulesets_count="-1"
+          fi
+
+          echo "main_protected=$main_protected" >> "$GITHUB_OUTPUT"
+          echo "rulesets_count=$rulesets_count" >> "$GITHUB_OUTPUT"
+
+          echo "main protected: $main_protected"
+          echo "repository rulesets: $rulesets_count"
+
+      - name: Generate independently verified Founder review report
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          MAIN_PROTECTED: ${{ steps.founder_protection.outputs.main_protected }}
+          RULESETS_COUNT: ${{ steps.founder_protection.outputs.rulesets_count }}
+        run: |
+          set -euo pipefail
+
+          node scripts/aios-founder-review-gate.mjs \
+            --artifact "$RUNNER_TEMP/aios-verified-delivery.json" \
+            --manifest "$RUNNER_TEMP/aios-delivery-artifact.sha256" \
+            --builder-summary "$RUNNER_TEMP/aios-delivery-builder-summary.json" \
+            --verification "$RUNNER_TEMP/aios-delivery-verification.json" \
+            --handoff "$RUNNER_TEMP/aios-delivery-handoff/handoff.json" \
+            --rollback "$RUNNER_TEMP/aios-delivery-handoff/rollback-evidence.json" \
+            --audit "$RUNNER_TEMP/aios-delivery-handoff-audit.json" \
+            --staging "$RUNNER_TEMP/aios-delivery-handoff" \
+            --output "$RUNNER_TEMP/aios-founder-review.json" \
+            --main-protected "$MAIN_PROTECTED" \
+            --rulesets-count "$RULESETS_COUNT" \
+            > "$RUNNER_TEMP/aios-founder-review-summary.json"
+
+          test -s "$RUNNER_TEMP/aios-founder-review.json"
+          test -s "$RUNNER_TEMP/aios-founder-review-summary.json"
+
+          cat "$RUNNER_TEMP/aios-founder-review-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve independently verified Founder handoff
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aios-verified-delivery-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/aios-verified-delivery.json
+            ${{ runner.temp }}/aios-delivery-builder-summary.json
+            ${{ runner.temp }}/aios-delivery-verification.json
+            ${{ runner.temp }}/aios-delivery-artifact.sha256
+            ${{ runner.temp }}/aios-delivery-handoff/
+            ${{ runner.temp }}/aios-delivery-handoff-audit.json
+            ${{ runner.temp }}/aios-delivery-handoff-summary.json
+            ${{ runner.temp }}/aios-founder-review.json
+            ${{ runner.temp }}/aios-founder-review-summary.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
