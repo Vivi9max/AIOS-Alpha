@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * C169.8-D2.1 + R7 Independent Non-Destructive Verification
+ * C169.8-D2.1 + R7 + R8 Independent Non-Destructive Verification
  *
  * Runs: node scripts/verify-autonomous-development-control-plane.mjs
  *
@@ -13,10 +13,55 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
+
+const autonomousAgentSource = fs.readFileSync(
+  path.join(REPO_ROOT, "lib/github/autonomous-development-agent.ts"),
+  "utf8",
+);
+
+const repairGuardStart = "// R8_REPAIR_BASE_IDENTITY_GUARD_BEGIN";
+const repairGuardEnd = "// R8_REPAIR_BASE_IDENTITY_GUARD_END";
+const repairGuardStartIndex = autonomousAgentSource.indexOf(repairGuardStart);
+const repairGuardEndIndex = autonomousAgentSource.indexOf(repairGuardEnd);
+
+assert.ok(
+  repairGuardStartIndex >= 0 && repairGuardEndIndex > repairGuardStartIndex,
+  "Production Agent must contain the marked R8 repair identity guard",
+);
+
+const repairGuardSource = autonomousAgentSource.slice(
+  repairGuardStartIndex + repairGuardStart.length,
+  repairGuardEndIndex,
+);
+
+const repairGuardContext = {
+  isValidGitCommitSha(value) {
+    return (
+      typeof value === "string" &&
+      /^[0-9a-f]{40}$/i.test(value.trim())
+    );
+  },
+};
+
+vm.runInNewContext(
+  `${repairGuardSource}
+globalThis.assertRepairBaseIdentity = assertRepairBaseIdentity;`,
+  repairGuardContext,
+);
+
+const assertRepairBaseIdentity =
+  repairGuardContext.assertRepairBaseIdentity;
+
+assert.equal(
+  typeof assertRepairBaseIdentity,
+  "function",
+  "R8 production repair identity guard must be executable",
+);
 
 let ts;
 try {
@@ -626,9 +671,69 @@ await run(
   },
 );
 
+// TEST 8 — R8 Repair Base Commit Identity Guard
+await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
+  const validSha = "a".repeat(40);
+  const otherSha = "b".repeat(40);
+
+  assert.doesNotThrow(() =>
+    assertRepairBaseIdentity(validSha, validSha),
+  );
+
+  assert.doesNotThrow(() =>
+    assertRepairBaseIdentity(validSha.toUpperCase(), validSha),
+  );
+
+  assert.throws(
+    () => assertRepairBaseIdentity(validSha, otherSha),
+    /AUTONOMOUS_REPAIR_BASE_IDENTITY_MISMATCH/,
+  );
+
+  assert.throws(
+    () => assertRepairBaseIdentity("", validSha),
+    /AUTONOMOUS_REPAIR_EXPECTED_BASE_IDENTITY_INVALID/,
+  );
+
+  assert.throws(
+    () => assertRepairBaseIdentity("not-a-sha", validSha),
+    /AUTONOMOUS_REPAIR_EXPECTED_BASE_IDENTITY_INVALID/,
+  );
+
+  assert.throws(
+    () => assertRepairBaseIdentity(validSha, ""),
+    /AUTONOMOUS_REPAIR_BASE_IDENTITY_INVALID/,
+  );
+
+  assert.throws(
+    () => assertRepairBaseIdentity(validSha, "not-a-sha"),
+    /AUTONOMOUS_REPAIR_BASE_IDENTITY_INVALID/,
+  );
+
+  const captureIndex = autonomousAgentSource.indexOf(
+    "const expectedRepairBaseSha = latestCommitSha;",
+  );
+  const writeIndex = autonomousAgentSource.indexOf(
+    "const repairAtomicResult = await executeAtomicStaging({",
+  );
+  const assertionIndex = autonomousAgentSource.indexOf(
+    "assertRepairBaseIdentity(\n        expectedRepairBaseSha,\n        repairSnapshot.baseSha,\n      );",
+  );
+  const stagingMutationIndex = autonomousAgentSource.indexOf(
+    "stagingBranch =\n        repairSnapshot.stagingBranch;",
+  );
+  const latestCommitMutationIndex = autonomousAgentSource.indexOf(
+    "latestCommitSha =\n        repairSnapshot.stagingCommitSha;",
+  );
+
+  assert.ok(captureIndex >= 0 && captureIndex < writeIndex);
+  assert.ok(writeIndex < assertionIndex);
+  assert.ok(assertionIndex < stagingMutationIndex);
+  assert.ok(assertionIndex < latestCommitMutationIndex);
+});
+
 // Report
 console.log(
-  "\nC169.8-D2.1 + R7 INDEPENDENT VERIFICATION\n",
+  "\nC169.8-D2.1 + R7 + R8 INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {
