@@ -554,17 +554,34 @@ export async function dispatchGitHubTask(
   const contentSha =
     write.data.content?.sha;
 
-  const expectedCommitSha =
+  const existingData:
+    | {
+        sha: string;
+      }
+    | undefined =
     existing.success &&
     existing.data &&
     typeof existing.data.sha ===
       "string"
-      ? existing.data.sha
+      ? {
+          sha:
+            existing.data.sha,
+        }
       : undefined;
 
-  const checkoutRef =
-    typeof branch === "string" &&
-    branch.trim().length > 0
+  const expectedCommitSha:
+    string | undefined =
+    existingData !==
+    undefined
+      ? existingData.sha
+      : undefined;
+
+  const checkoutRef:
+    string | undefined =
+    typeof branch ===
+      "string" &&
+    branch.trim().length >
+      0
       ? branch.trim()
       : undefined;
 
