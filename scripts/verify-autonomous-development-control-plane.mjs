@@ -722,26 +722,80 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
     /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
   );
 
-  const captureIndex = autonomousAgentSource.indexOf(
-    "const expectedRepairBaseSha = latestCommitSha;",
-  );
-  const writeIndex = autonomousAgentSource.indexOf(
-    "const repairAtomicResult = await executeAtomicStaging({",
-  );
-  const assertionIndex = autonomousAgentSource.indexOf(
-    "assertRepairBaseIdentity(\n        expectedRepairBaseSha,\n        repairSnapshot.baseSha,\n      );",
-  );
-  const stagingMutationIndex = autonomousAgentSource.indexOf(
-    "stagingBranch =\n        repairSnapshot.stagingBranch;",
-  );
-  const latestCommitMutationIndex = autonomousAgentSource.indexOf(
-    "latestCommitSha =\n        repairSnapshot.stagingCommitSha;",
+  // Locate the expected repair base capture without assuming formatting.
+  const captureMatch = autonomousAgentSource.match(
+    /const expectedRepairBaseSha\s*=\s*latestCommitSha\s*;/,
   );
 
-  assert.ok(captureIndex >= 0 && captureIndex < writeIndex);
-  assert.ok(writeIndex < assertionIndex);
-  assert.ok(assertionIndex < stagingMutationIndex);
-  assert.ok(assertionIndex < latestCommitMutationIndex);
+  const captureIndex = captureMatch?.index ?? -1;
+
+  // Search for the repair staging call only after the captured base SHA.
+  const writeIndex = captureIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "const repairAtomicResult = await executeAtomicStaging({",
+        captureIndex,
+      )
+    : -1;
+
+  // Find the identity assertion after the repair staging operation.
+  const assertionIndex = writeIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "assertRepairBaseIdentity(",
+        writeIndex,
+      )
+    : -1;
+
+  // Find state mutations only after the identity assertion.
+  const stagingMutationIndex = assertionIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "stagingBranch =",
+        assertionIndex,
+      )
+    : -1;
+
+  const latestCommitMutationIndex = assertionIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "latestCommitSha =",
+        assertionIndex,
+      )
+    : -1;
+
+  const snapshotBaseShaIndex = assertionIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "repairSnapshot.baseSha",
+        assertionIndex,
+      )
+    : -1;
+
+  assert.ok(
+    captureIndex >= 0,
+    "R8 must capture expectedRepairBaseSha before repair staging",
+  );
+
+  assert.ok(
+    writeIndex > captureIndex,
+    "R8 repair staging must occur after expected base capture",
+  );
+
+  assert.ok(
+    assertionIndex > writeIndex,
+    "R8 identity assertion must occur after repair staging",
+  );
+
+  assert.ok(
+    snapshotBaseShaIndex > assertionIndex,
+    "R8 identity assertion must validate repairSnapshot.baseSha",
+  );
+
+  assert.ok(
+    stagingMutationIndex > snapshotBaseShaIndex,
+    "R8 must validate base identity before stagingBranch mutation",
+  );
+
+  assert.ok(
+    latestCommitMutationIndex > snapshotBaseShaIndex,
+    "R8 must validate base identity before latestCommitSha mutation",
+  );
 });
 
 // Report
