@@ -93,3 +93,24 @@ test(
     );
   },
 );
+
+test(
+  "explicit target parser allows test module filenames",
+  () => {
+    const pattern =
+      getRepositoryPathPattern();
+
+    const objective =
+      "Target: tests/autonomous-development-prompt-paths.test.mjs";
+
+    assert.deepEqual(
+      Array.from(
+        objective.matchAll(pattern),
+        (item) => item[0],
+      ),
+      [
+        "tests/autonomous-development-prompt-paths.test.mjs",
+      ],
+    );
+  },
+);

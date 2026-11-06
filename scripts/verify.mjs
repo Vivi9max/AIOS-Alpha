@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const requiredFiles = [
   "aios-alpha.manifest.json",
@@ -58,6 +59,57 @@ for (const script of [
   }
 }
 
+if (existsSync("package-lock.json")) {
+  try {
+    execFileSync("npm", ["ci", "--dry-run", "--ignore-scripts"], {
+      stdio: "pipe",
+      env: { ...process.env, npm_config_audit: "false", npm_config_fund: "false" }
+    });
+  } catch (error) {
+    const detail =
+      error && error.stderr
+        ? error.stderr.toString().trim()
+        : String(error);
+    failures.push(
+      `package-lock.json is not reproducible with npm ci: ${detail}`
+    );
+  }
+
+  try {
+    const lockRaw = readFileSync("package-lock.json", "utf8");
+    const lock = JSON.parse(lockRaw);
+    const lockRoot = lock.packages && lock.packages[""];
+    if (!lockRoot) {
+      failures.push("package-lock.json missing root package entry");
+    } else {
+      const pkgDeps = pkg.dependencies || {};
+      const lockDeps = lockRoot.dependencies || {};
+      for (const name of Object.keys(pkgDeps)) {
+        if (!(name in lockDeps)) {
+          failures.push(
+            `package-lock.json out of sync: missing dependency ${name}`
+          );
+        }
+      }
+      const pkgDevDeps = pkg.devDependencies || {};
+      const lockDevDeps = lockRoot.devDependencies || {};
+      for (const name of Object.keys(pkgDevDeps)) {
+        if (!(name in lockDevDeps)) {
+          failures.push(
+            `package-lock.json out of sync: missing devDependency ${name}`
+          );
+        }
+      }
+    }
+  } catch (error) {
+    failures.push(
+      `package-lock.json could not be validated: ${String(error)}`
+    );
+  }
+} else {
+  failures.push("package-lock.json is required for reproducible installs");
+}
+
 if (failures.length) {
   console.error(
     "AIOS Alpha verification failed."
@@ -84,4 +136,8 @@ console.log(
 
 console.log(
   "Development and production scripts: OK"
+);
+
+console.log(
+  "Lockfile consistency and reproducibility: OK"
 );

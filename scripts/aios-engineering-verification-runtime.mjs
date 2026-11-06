@@ -50,6 +50,11 @@ export const VERIFICATION_PLAN = Object.freeze([
     args: Object.freeze(["scripts/verify-autonomous-development-control-plane.mjs"]),
   }),
   Object.freeze({
+    id: "c170-6-12-lockfile-consistency",
+    command: "node",
+    args: Object.freeze(["--test", "scripts/aios-dependency-audit.test.mjs"]),
+  }),
+  Object.freeze({
     id: "project-continuity",
     command: "npm",
     args: Object.freeze(["run", "verify"]),

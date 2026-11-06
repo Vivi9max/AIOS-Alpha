@@ -506,3 +506,151 @@ function gitHead(root) {
     },
   ).trim();
 }
+
+test("reports configuration changes for lockfile-only edits", () => {
+  const root = createFixture();
+
+  try {
+    write(
+      root,
+      "package-lock.json",
+      JSON.stringify(
+        {
+          name: "aios-impact-fixture",
+          lockfileVersion: 3,
+          requires: true,
+          packages: {
+            "": {
+              name: "aios-impact-fixture",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    commitAll(root, "add lockfile");
+
+    const result = analyzeDependencyImpact(
+      root,
+      ["package-lock.json"],
+    );
+
+    assert.deepEqual(
+      result.configurationChanges,
+      ["package-lock.json"],
+    );
+
+    assert.equal(result.readOnly, true);
+    assert.equal(result.requiresFounderReview, true);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("treats lockfile and manifest changes as a single critical impact", () => {
+  const root = createFixture();
+
+  try {
+    write(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "aios-impact-fixture",
+          private: true,
+          dependencies: {
+            "left-pad": "1.3.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    write(
+      root,
+      "package-lock.json",
+      JSON.stringify(
+        {
+          name: "aios-impact-fixture",
+          lockfileVersion: 3,
+          requires: true,
+          packages: {
+            "": {
+              name: "aios-impact-fixture",
+              dependencies: {
+                "left-pad": "1.3.0",
+              },
+            },
+            "node_modules/left-pad": {
+              version: "1.3.0",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    commitAll(root, "add dependency and lockfile");
+
+    const result = analyzeDependencyImpact(
+      root,
+      ["package.json", "package-lock.json"],
+    );
+
+    assert.equal(result.risk.level, "critical");
+    assert.deepEqual(
+      result.configurationChanges,
+      ["package-lock.json", "package.json"],
+    );
+    assert.deepEqual(
+      result.changedFiles,
+      ["package-lock.json", "package.json"],
+    );
+    assert.equal(result.changedFileCount, 2);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("preserves deterministic ordering for configuration changes", () => {
+  const root = createFixture();
+
+  try {
+    write(
+      root,
+      "package-lock.json",
+      JSON.stringify(
+        {
+          name: "aios-impact-fixture",
+          lockfileVersion: 3,
+          requires: true,
+          packages: {
+            "": {
+              name: "aios-impact-fixture",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    commitAll(root, "add lockfile");
+
+    const result = analyzeDependencyImpact(
+      root,
+      ["package-lock.json", "package.json"],
+    );
+
+    assert.deepEqual(
+      result.configurationChanges,
+      ["package-lock.json", "package.json"],
+    );
+  } finally {
+    cleanup(root);
+  }
+});

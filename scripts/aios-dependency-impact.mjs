@@ -26,6 +26,8 @@ const ROOT_CONFIGS = new Set([
   "eslint.config.mjs",
   ".gitignore",
   "next-env.d.ts",
+  ".npmrc",
+  ".nvmrc",
 ]);
 
 function fail(code, message) {
@@ -304,6 +306,8 @@ function classifyRisk({
         "package.json",
         "package-lock.json",
         "tsconfig.json",
+        ".npmrc",
+        ".nvmrc",
       ].includes(file),
     )
   ) {
@@ -311,7 +315,7 @@ function classifyRisk({
       level: "critical",
       reasons: [
         ...reasons,
-        "A package or TypeScript project configuration file changed.",
+        "A package, lockfile, Node.js runtime, or TypeScript project configuration file changed.",
       ],
     };
   }
