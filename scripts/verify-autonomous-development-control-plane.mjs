@@ -43,6 +43,7 @@ const controlPlaneSource = fs.readFileSync(
   path.join(REPO_ROOT, "lib/github/autonomous-development-control-plane.ts"),
   "utf8",
 );
+
 const receiptSource = fs.readFileSync(
   path.join(REPO_ROOT, "lib/github/autonomous-development-receipt.ts"),
   "utf8",
@@ -67,12 +68,18 @@ function writeTmp(name, content) {
   fs.writeFileSync(path.join(tmpDir, name), content, "utf8");
 }
 
-writeTmp("control-plane.mjs", transpile(patchedControlPlane, "control-plane.ts"));
+writeTmp(
+  "control-plane.mjs",
+  transpile(patchedControlPlane, "control-plane.ts"),
+);
+
 writeTmp(
   "autonomous-development-receipt.mjs",
   transpile(patchedReceipt, "autonomous-development-receipt.ts"),
 );
+
 writeTmp("server-only-stub.mjs", "export {};\n");
+
 writeTmp(
   "server-storage-stub.mjs",
   [
@@ -100,14 +107,23 @@ const {
   heartbeatAutonomousDevelopmentTask,
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
+  getPersistentAutonomousDevelopmentTask,
   persistAutonomousDevelopmentTasks,
   completeAutonomousDevelopmentTask,
   completePersistentAutonomousDevelopmentTask,
 } = controlPlane;
 
+assert.equal(
+  typeof getPersistentAutonomousDevelopmentTask,
+  "function",
+  "Production Control Plane must export getPersistentAutonomousDevelopmentTask",
+);
+
 const TASK_STORAGE_KEY = "aios:autonomous-development:tasks";
+
 let passed = 0;
 let failed = 0;
+
 const report = [];
 
 async function run(name, fn) {
@@ -130,7 +146,9 @@ function createRunningTask(label) {
   const task = createAutonomousDevelopmentTask({
     objective: `R7 isolated fixture: ${label}`,
   });
+
   claimAutonomousDevelopmentTask(task.id);
+
   return task;
 }
 
@@ -145,11 +163,13 @@ function advanceTaskToBuild(task) {
   ]) {
     updateAutonomousDevelopmentTask(task.id, { phase });
   }
+
   assert.equal(task.phase, "BUILD");
 }
 
 function validEvidence() {
   const sha = "a".repeat(40);
+
   return {
     commitSha: sha,
     expectedCommitSha: sha,
@@ -210,19 +230,91 @@ function invalidEvidenceCases() {
 }
 
 function assertBlockedWithoutCompletion(receipt, task, label) {
-  assert.equal(task.status, "blocked", `${label}: task status must be blocked`);
-  assert.equal(task.phase, "BLOCKED", `${label}: task phase must be BLOCKED`);
-  assert.notEqual(task.status, "completed", `${label}: task must not complete`);
-  assert.notEqual(task.phase, "COMPLETED", `${label}: phase must not complete`);
-  assert.equal(receipt.status, "blocked", `${label}: receipt status must be blocked`);
-  assert.equal(receipt.successful, false, `${label}: receipt must not be successful`);
-  assert.equal(receipt.terminal, true, `${label}: blocked receipt must be terminal`);
+  assert.ok(task, `${label}: task must exist`);
+
+  assert.equal(
+    task.status,
+    "blocked",
+    `${label}: task status must be blocked`,
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    `${label}: task phase must be BLOCKED`,
+  );
+
+  assert.notEqual(
+    task.status,
+    "completed",
+    `${label}: task must not complete`,
+  );
+
+  assert.notEqual(
+    task.phase,
+    "COMPLETED",
+    `${label}: phase must not complete`,
+  );
+
+  assert.equal(
+    receipt.status,
+    "blocked",
+    `${label}: receipt status must be blocked`,
+  );
+
+  assert.equal(
+    receipt.successful,
+    false,
+    `${label}: receipt must not be successful`,
+  );
+
+  assert.equal(
+    receipt.terminal,
+    true,
+    `${label}: blocked receipt must be terminal`,
+  );
+}
+
+function assertCompletedSuccessfully(receipt, task, label) {
+  assert.ok(task, `${label}: task must exist`);
+
+  assert.equal(
+    task.status,
+    "completed",
+    `${label}: task status must be completed`,
+  );
+
+  assert.equal(
+    task.phase,
+    "COMPLETED",
+    `${label}: task phase must be COMPLETED`,
+  );
+
+  assert.equal(
+    receipt.status,
+    "completed",
+    `${label}: receipt status must be completed`,
+  );
+
+  assert.equal(
+    receipt.successful,
+    true,
+    `${label}: receipt must be successful`,
+  );
+
+  assert.equal(
+    receipt.valid,
+    true,
+    `${label}: receipt must be valid`,
+  );
 }
 
 // TEST 1 — Heartbeat Isolation
 await run("1 HEARTBEAT ISOLATION", async () => {
   await resetStorage();
+
   const task = createRunningTask("heartbeat isolation");
+
   const before = {
     updatedAt: task.updatedAt,
     reason: task.reason,
@@ -230,8 +322,14 @@ await run("1 HEARTBEAT ISOLATION", async () => {
     status: task.status,
     phase: task.phase,
   };
+
   await new Promise((resolve) => setTimeout(resolve, 10));
-  heartbeatAutonomousDevelopmentTask(task.id, "MUST_NOT_OVERWRITE_REASON");
+
+  heartbeatAutonomousDevelopmentTask(
+    task.id,
+    "MUST_NOT_OVERWRITE_REASON",
+  );
+
   assert.equal(task.updatedAt, before.updatedAt);
   assert.equal(task.reason, before.reason);
   assert.notEqual(task.lastHeartbeatAt, before.lastHeartbeatAt);
@@ -242,11 +340,16 @@ await run("1 HEARTBEAT ISOLATION", async () => {
 // TEST 2 — Terminal State Precedence
 await run("2 TERMINAL PRECEDENCE", async () => {
   await resetStorage();
+
   const task = createRunningTask("terminal precedence");
+
   await persistAutonomousDevelopmentTasks();
   storage.__clear();
 
-  const oldTime = new Date(Date.now() - 3_600_000).toISOString();
+  const oldTime = new Date(
+    Date.now() - 3_600_000,
+  ).toISOString();
+
   await storage.set(TASK_STORAGE_KEY, [{
     id: task.id,
     objective: task.objective,
@@ -268,7 +371,11 @@ await run("2 TERMINAL PRECEDENCE", async () => {
   }]);
 
   const hydrated = await listPersistentAutonomousDevelopmentTasks();
-  const survivor = hydrated.find((item) => item.id === task.id);
+
+  const survivor = hydrated.find(
+    (item) => item.id === task.id,
+  );
+
   assert.ok(survivor, "terminal fixture must survive hydration");
   assert.equal(survivor.status, "blocked");
   assert.equal(survivor.phase, "BLOCKED");
@@ -277,12 +384,20 @@ await run("2 TERMINAL PRECEDENCE", async () => {
 // TEST 3 — Phase History Precedence + Fallback
 await run("3 PHASE HISTORY PRECEDENCE", async () => {
   await resetStorage();
+
   const task = createRunningTask("phase history precedence");
+
   await persistAutonomousDevelopmentTasks();
   storage.__clear();
 
-  const oldUpdated = new Date(Date.now() - 3_600_000).toISOString();
-  const newerPhaseHistory = new Date(Date.now() + 3_600_000).toISOString();
+  const oldUpdated = new Date(
+    Date.now() - 3_600_000,
+  ).toISOString();
+
+  const newerPhaseHistory = new Date(
+    Date.now() + 3_600_000,
+  ).toISOString();
+
   await storage.set(TASK_STORAGE_KEY, [{
     id: task.id,
     objective: task.objective,
@@ -294,21 +409,36 @@ await run("3 PHASE HISTORY PRECEDENCE", async () => {
     createdAt: oldUpdated,
     updatedAt: oldUpdated,
     lastHeartbeatAt: new Date().toISOString(),
-    phaseHistory: [{ phase: "GENERATING", at: newerPhaseHistory }],
+    phaseHistory: [{
+      phase: "GENERATING",
+      at: newerPhaseHistory,
+    }],
   }]);
 
   let hydrated = await listPersistentAutonomousDevelopmentTasks();
-  let survivor = hydrated.find((item) => item.id === task.id);
+
+  let survivor = hydrated.find(
+    (item) => item.id === task.id,
+  );
+
   assert.ok(survivor);
+
   assert.equal(
     survivor.phaseHistory[survivor.phaseHistory.length - 1].at,
     newerPhaseHistory,
   );
 
-  const fallbackTask = createRunningTask("phase history fallback");
+  const fallbackTask = createRunningTask(
+    "phase history fallback",
+  );
+
   await persistAutonomousDevelopmentTasks();
   storage.__clear();
-  const fallbackOldUpdated = new Date(Date.now() - 3_600_000).toISOString();
+
+  const fallbackOldUpdated = new Date(
+    Date.now() - 3_600_000,
+  ).toISOString();
+
   await storage.set(TASK_STORAGE_KEY, [{
     id: fallbackTask.id,
     objective: fallbackTask.objective,
@@ -324,27 +454,55 @@ await run("3 PHASE HISTORY PRECEDENCE", async () => {
   }]);
 
   hydrated = await listPersistentAutonomousDevelopmentTasks();
-  survivor = hydrated.find((item) => item.id === fallbackTask.id);
+
+  survivor = hydrated.find(
+    (item) => item.id === fallbackTask.id,
+  );
+
   assert.ok(survivor);
-  assert.equal(survivor.updatedAt, fallbackTask.updatedAt);
+
+  assert.equal(
+    survivor.updatedAt,
+    fallbackTask.updatedAt,
+  );
 });
 
 // TEST 4 — Phase Transition Safety
 await run("4 PHASE TRANSITION SAFETY", async () => {
   await resetStorage();
+
   const task = createRunningTask("phase transition safety");
-  updateAutonomousDevelopmentTask(task.id, { phase: "PLANNING" });
-  updateAutonomousDevelopmentTask(task.id, { phase: "READING" });
-  updateAutonomousDevelopmentTask(task.id, { phase: "GENERATING" });
+
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "PLANNING",
+  });
+
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "READING",
+  });
+
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "GENERATING",
+  });
+
   assert.equal(task.phase, "GENERATING");
 
   assert.throws(
-    () => updateAutonomousDevelopmentTask(task.id, { phase: "READBACK" }),
+    () => updateAutonomousDevelopmentTask(
+      task.id,
+      { phase: "READBACK" },
+    ),
     /Invalid autonomous development phase transition: GENERATING -> READBACK/,
   );
 
-  updateAutonomousDevelopmentTask(task.id, { phase: "WRITING" });
-  updateAutonomousDevelopmentTask(task.id, { phase: "READBACK" });
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "WRITING",
+  });
+
+  updateAutonomousDevelopmentTask(task.id, {
+    phase: "READBACK",
+  });
+
   assert.equal(task.phase, "READBACK");
 });
 
@@ -352,75 +510,141 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 await run("5 R7 SYNC COMPLETION NEGATIVE EVIDENCE", async () => {
   for (const testCase of invalidEvidenceCases()) {
     await resetStorage();
-    const task = createRunningTask(`sync negative: ${testCase.name}`);
+
+    const task = createRunningTask(
+      `sync negative: ${testCase.name}`,
+    );
+
     advanceTaskToBuild(task);
+
     const evidence = validEvidence();
+
     testCase.mutate(evidence);
 
-    const receipt = completeAutonomousDevelopmentTask(task.id, evidence);
-    assertBlockedWithoutCompletion(receipt, task, testCase.name);
+    const receipt = completeAutonomousDevelopmentTask(
+      task.id,
+      evidence,
+    );
+
+    assertBlockedWithoutCompletion(
+      receipt,
+      task,
+      testCase.name,
+    );
   }
 });
 
 // TEST 6 — Invalid Completion Evidence Rejected by Persistent API
-await run("6 R7 PERSISTENT COMPLETION NEGATIVE EVIDENCE", async () => {
-  for (const testCase of invalidEvidenceCases()) {
-    await resetStorage();
-    const task = createRunningTask(`persistent negative: ${testCase.name}`);
-    advanceTaskToBuild(task);
-    await persistAutonomousDevelopmentTasks();
-    const evidence = validEvidence();
-    testCase.mutate(evidence);
+await run(
+  "6 R7 PERSISTENT COMPLETION NEGATIVE EVIDENCE",
+  async () => {
+    for (const testCase of invalidEvidenceCases()) {
+      await resetStorage();
 
-    const receipt = await completePersistentAutonomousDevelopmentTask(
-      task.id,
-      evidence,
-    );
-    assertBlockedWithoutCompletion(receipt, task, testCase.name);
-  }
-});
+      const task = createRunningTask(
+        `persistent negative: ${testCase.name}`,
+      );
+
+      advanceTaskToBuild(task);
+
+      await persistAutonomousDevelopmentTasks();
+
+      const evidence = validEvidence();
+
+      testCase.mutate(evidence);
+
+      const receipt =
+        await completePersistentAutonomousDevelopmentTask(
+          task.id,
+          evidence,
+        );
+
+      // The persistent API hydrates the task collection.
+      // The original task object is no longer authoritative.
+      const persistedTask =
+        await getPersistentAutonomousDevelopmentTask(
+          task.id,
+        );
+
+      assertBlockedWithoutCompletion(
+        receipt,
+        persistedTask,
+        testCase.name,
+      );
+    }
+  },
+);
 
 // TEST 7 — Valid Evidence Accepted by Both Completion APIs
-await run("7 R7 VALID COMPLETION EVIDENCE POSITIVE", async () => {
-  await resetStorage();
-  const syncTask = createRunningTask("sync positive");
-  advanceTaskToBuild(syncTask);
-  const syncReceipt = completeAutonomousDevelopmentTask(
-    syncTask.id,
-    validEvidence(),
-  );
-  assert.equal(syncTask.status, "completed");
-  assert.equal(syncTask.phase, "COMPLETED");
-  assert.equal(syncReceipt.status, "completed");
-  assert.equal(syncReceipt.successful, true);
-  assert.equal(syncReceipt.valid, true);
+await run(
+  "7 R7 VALID COMPLETION EVIDENCE POSITIVE",
+  async () => {
+    await resetStorage();
 
-  await resetStorage();
-  const persistentTask = createRunningTask("persistent positive");
-  advanceTaskToBuild(persistentTask);
-  await persistAutonomousDevelopmentTasks();
-  const persistentReceipt =
-    await completePersistentAutonomousDevelopmentTask(
-      persistentTask.id,
+    const syncTask = createRunningTask("sync positive");
+
+    advanceTaskToBuild(syncTask);
+
+    const syncReceipt = completeAutonomousDevelopmentTask(
+      syncTask.id,
       validEvidence(),
     );
-  assert.equal(persistentTask.status, "completed");
-  assert.equal(persistentTask.phase, "COMPLETED");
-  assert.equal(persistentReceipt.status, "completed");
-  assert.equal(persistentReceipt.successful, true);
-  assert.equal(persistentReceipt.valid, true);
-});
+
+    assertCompletedSuccessfully(
+      syncReceipt,
+      syncTask,
+      "sync positive",
+    );
+
+    await resetStorage();
+
+    const persistentTask = createRunningTask(
+      "persistent positive",
+    );
+
+    advanceTaskToBuild(persistentTask);
+
+    await persistAutonomousDevelopmentTasks();
+
+    const persistentReceipt =
+      await completePersistentAutonomousDevelopmentTask(
+        persistentTask.id,
+        validEvidence(),
+      );
+
+    // Re-read after persistent completion to avoid stale object references.
+    const persistedTask =
+      await getPersistentAutonomousDevelopmentTask(
+        persistentTask.id,
+      );
+
+    assertCompletedSuccessfully(
+      persistentReceipt,
+      persistedTask,
+      "persistent positive",
+    );
+  },
+);
 
 // Report
-console.log("\nC169.8-D2.1 + R7 INDEPENDENT VERIFICATION\n");
-for (const line of report) console.log(`* ${line}`);
+console.log(
+  "\nC169.8-D2.1 + R7 INDEPENDENT VERIFICATION\n",
+);
+
+for (const line of report) {
+  console.log(`* ${line}`);
+}
+
 console.log(`\nTOTAL TEST GROUPS: ${passed + failed}`);
 console.log(`PASSED: ${passed}`);
 console.log(`FAILED: ${failed}`);
 console.log(`EXIT CODE: ${failed === 0 ? 0 : 1}\n`);
 
 try {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  fs.rmSync(tmpDir, {
+    recursive: true,
+    force: true,
+  });
 } catch {
   // Best-effort temporary directory cleanup.
 }
