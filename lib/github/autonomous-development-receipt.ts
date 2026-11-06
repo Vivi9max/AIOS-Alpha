@@ -200,12 +200,16 @@ export function buildAutonomousDevelopmentReceipt(
     resultCommitShaValid &&
     expectedCommitShaValid &&
     checkoutHeadShaValid &&
-    commitSha!.toLowerCase() ===
-      resultCommitSha!.toLowerCase() &&
-    commitSha!.toLowerCase() ===
-      expectedCommitSha!.toLowerCase() &&
-    commitSha!.toLowerCase() ===
-      checkoutHeadSha!.toLowerCase();
+    typeof commitSha === "string" &&
+    typeof resultCommitSha === "string" &&
+    typeof expectedCommitSha === "string" &&
+    typeof checkoutHeadSha === "string" &&
+    commitSha.toLowerCase() ===
+      resultCommitSha.toLowerCase() &&
+    commitSha.toLowerCase() ===
+      expectedCommitSha.toLowerCase() &&
+    commitSha.toLowerCase() ===
+      checkoutHeadSha.toLowerCase();
 
   const missingEvidence: string[] =
     [];
