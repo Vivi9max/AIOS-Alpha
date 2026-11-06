@@ -202,6 +202,12 @@ export function buildAutonomousDevelopmentReceipt(
       checkoutRef,
     );
 
+  const expectedCheckoutHeadConsistent =
+    !expectedCommitSha ||
+    !checkoutHeadSha ||
+    expectedCommitSha.toLowerCase() ===
+      checkoutHeadSha.toLowerCase();
+
   const checkoutHeadConsistent =
     !checkoutHeadSha ||
     isValidAutonomousDevelopmentCommitSha(
@@ -314,14 +320,7 @@ export function buildAutonomousDevelopmentReceipt(
   if (
     input.status ===
       "completed" &&
-    isValidAutonomousDevelopmentCommitSha(
-      expectedCommitSha,
-    ) &&
-    isValidAutonomousDevelopmentCommitSha(
-      checkoutHeadSha,
-    ) &&
-    expectedCommitSha.toLowerCase() !==
-      checkoutHeadSha.toLowerCase()
+    !expectedCheckoutHeadConsistent
   ) {
     missingEvidence.push(
       "expectedCheckoutHeadConsistency",
