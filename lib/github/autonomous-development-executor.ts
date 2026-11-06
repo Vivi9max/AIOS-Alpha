@@ -605,19 +605,22 @@ export async function executeClaimedAutonomousDevelopmentTask(
       readbackVerified === true;
 
     /*
-     * C170.6.12-R5 completion evidence.
+     * C170.6.12-R5 completion evidence contract.
      *
-     * The write bridge returns the resulting Git
-     * commit SHA and confirms readback against that
-     * immutable commit identity. The read operation's
-     * SHA is a file/blob identity, not a Git commit
-     * identity, so it must never be used here.
+     * The control-plane validator requires
+     * expectedCommitSha, resultCommitSha,
+     * commitSha, and checkoutHeadSha to identify
+     * the same resulting Git commit.
      *
-     * The receipt validator requires all commit
-     * identity fields to agree. Use the commit SHA
-     * actually returned by the write bridge for each
-     * identity field, and retain the real target branch
-     * as the checkout reference.
+     * read.read.sha is a file/blob SHA returned
+     * by the read operation. It is not the Git
+     * commit SHA and must never be used as one.
+     *
+     * The write bridge's commitSha is the
+     * authoritative resulting commit identity.
+     * If the bridge does not return it, the
+     * completion evidence remains invalid and
+     * the task cannot be marked completed.
      */
     const expectedCommitSha =
       commitSha;
@@ -643,7 +646,7 @@ export async function executeClaimedAutonomousDevelopmentTask(
           readbackVerified,
           verificationPassed,
           reason:
-            "C170.6.12-R5 verified commit identity evidence.",
+            "C170.6.12-R5 autonomous development completion evidence.",
         },
       );
 
