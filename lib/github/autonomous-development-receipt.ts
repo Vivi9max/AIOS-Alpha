@@ -204,11 +204,9 @@ export function buildAutonomousDevelopmentReceipt(
 
   const checkoutHeadConsistent =
     !checkoutHeadSha ||
-    !isValidAutonomousDevelopmentCommitSha(
+    isValidAutonomousDevelopmentCommitSha(
       checkoutHeadSha,
-    )
-      ? false
-      : true;
+    );
 
   const missingEvidence: string[] =
     [];
