@@ -62,6 +62,76 @@ function normalizePath(
     .replace(/^\/+/, "");
 }
 
+const SHA_PATTERN =
+  /^[0-9a-fA-F]{40}$/;
+
+function isNonEmptyString(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+}
+
+function isFullSha(
+  value: unknown,
+): value is string {
+  return (
+    isNonEmptyString(value) &&
+    SHA_PATTERN.test(value)
+  );
+}
+
+function shasMatch(
+  a: string,
+  b: string,
+): boolean {
+  return (
+    a.toLowerCase() ===
+    b.toLowerCase()
+  );
+}
+
+function isRealCheckoutRef(
+  value: unknown,
+): value is string {
+  if (!isNonEmptyString(value)) {
+    return false;
+  }
+
+  const trimmed =
+    value.trim();
+
+  if (
+    trimmed.length < 2 ||
+    trimmed.startsWith("/") ||
+    trimmed.endsWith("/") ||
+    trimmed.includes("//") ||
+    trimmed.includes("..") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("\0") ||
+    trimmed.includes(" ")
+  ) {
+    return false;
+  }
+
+  /*
+   * Detached HEAD checkouts report
+   * "HEAD" or a raw SHA. Neither is a
+   * real branch/ref and must not bypass
+   * the SHA evidence requirements.
+   */
+  if (
+    trimmed === "HEAD" ||
+    SHA_PATTERN.test(trimmed)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function isSafeTargetPath(
   path: string,
 ): boolean {
@@ -212,6 +282,14 @@ export interface AutonomousDevelopmentExecutionResult {
   path: string;
 
   commitSha?: string;
+
+  resultCommitSha?: string;
+
+  expectedCommitSha?: string;
+
+  checkoutRef?: string;
+
+  checkoutHeadSha?: string;
 
   readbackVerified: boolean;
 
@@ -581,14 +659,249 @@ export async function executeClaimedAutonomousDevelopmentTask(
       };
     }
 
-    const commitSha =
+    const rawCommitSha =
       github.write
-        ?.commitSha || "";
+        ?.commitSha;
+
+    const rawResultCommitSha =
+      github.write
+        ?.resultCommitSha;
+
+    const rawExpectedCommitSha =
+      github.write
+        ?.expectedCommitSha;
+
+    const rawCheckoutRef =
+      github.write
+        ?.checkoutRef;
+
+    const rawCheckoutHeadSha =
+      github.write
+        ?.checkoutHeadSha;
 
     const readbackVerified =
       github.write
         ?.readbackVerified ===
       true;
+
+    /*
+     * C170.6.12-R2 STRICT FAIL-CLOSED
+     * RECEIPT EVIDENCE
+     *
+     * Every required SHA must exist, be a
+     * valid 40-character hexadecimal SHA,
+     * and match case-insensitively before
+     * completion may be recorded.
+     *
+     * checkoutRef must remain a real
+     * branch/ref. Detached checkout does
+     * not bypass these requirements.
+     */
+    const missingEvidence: string[] = [];
+
+    if (!isNonEmptyString(rawCommitSha)) {
+      missingEvidence.push("commitSha");
+    }
+
+    if (
+      !isNonEmptyString(rawResultCommitSha)
+    ) {
+      missingEvidence.push(
+        "resultCommitSha",
+      );
+    }
+
+    if (
+      !isNonEmptyString(
+        rawExpectedCommitSha,
+      )
+    ) {
+      missingEvidence.push(
+        "expectedCommitSha",
+      );
+    }
+
+    if (
+      !isNonEmptyString(
+        rawCheckoutHeadSha,
+      )
+    ) {
+      missingEvidence.push(
+        "checkoutHeadSha",
+      );
+    }
+
+    if (!isRealCheckoutRef(rawCheckoutRef)) {
+      missingEvidence.push("checkoutRef");
+    }
+
+    const invalidSha: string[] = [];
+
+    if (
+      isNonEmptyString(rawCommitSha) &&
+      !isFullSha(rawCommitSha)
+    ) {
+      invalidSha.push("commitSha");
+    }
+
+    if (
+      isNonEmptyString(rawResultCommitSha) &&
+      !isFullSha(rawResultCommitSha)
+    ) {
+      invalidSha.push("resultCommitSha");
+    }
+
+    if (
+      isNonEmptyString(
+        rawExpectedCommitSha,
+      ) &&
+      !isFullSha(rawExpectedCommitSha)
+    ) {
+      invalidSha.push(
+        "expectedCommitSha",
+      );
+    }
+
+    if (
+      isNonEmptyString(
+        rawCheckoutHeadSha,
+      ) &&
+      !isFullSha(rawCheckoutHeadSha)
+    ) {
+      invalidSha.push(
+        "checkoutHeadSha",
+      );
+    }
+
+    const mismatchedSha: string[] = [];
+
+    if (
+      isFullSha(rawCommitSha) &&
+      isFullSha(rawResultCommitSha) &&
+      !shasMatch(
+        rawCommitSha,
+        rawResultCommitSha,
+      )
+    ) {
+      mismatchedSha.push(
+        "commitSha/resultCommitSha",
+      );
+    }
+
+    if (
+      isFullSha(rawCommitSha) &&
+      isFullSha(rawExpectedCommitSha) &&
+      !shasMatch(
+        rawCommitSha,
+        rawExpectedCommitSha,
+      )
+    ) {
+      mismatchedSha.push(
+        "commitSha/expectedCommitSha",
+      );
+    }
+
+    if (
+      isFullSha(rawCommitSha) &&
+      isFullSha(rawCheckoutHeadSha) &&
+      !shasMatch(
+        rawCommitSha,
+        rawCheckoutHeadSha,
+      )
+    ) {
+      mismatchedSha.push(
+        "commitSha/checkoutHeadSha",
+      );
+    }
+
+    const evidenceComplete =
+      missingEvidence.length === 0 &&
+      invalidSha.length === 0 &&
+      mismatchedSha.length === 0 &&
+      readbackVerified === true &&
+      github.success === true;
+
+    const evidenceReason =
+      missingEvidence.length > 0
+        ? `C170.6.12-R2 receipt evidence missing: ${missingEvidence.join(", ")}`
+        : invalidSha.length > 0
+          ? `C170.6.12-R2 receipt evidence invalid SHA: ${invalidSha.join(", ")}`
+          : mismatchedSha.length > 0
+            ? `C170.6.12-R2 receipt evidence SHA mismatch: ${mismatchedSha.join(", ")}`
+            : readbackVerified !== true
+              ? "C170.6.12-R2 receipt evidence readback not verified."
+              : github.success !== true
+                ? "C170.6.12-R2 receipt evidence GitHub write not successful."
+                : undefined;
+
+    if (!evidenceComplete) {
+      const reason =
+        evidenceReason ||
+        "C170.6.12-R2 receipt evidence incomplete.";
+
+      blockAutonomousDevelopmentTask(
+        task.id,
+        reason,
+      );
+
+      return {
+        success: false,
+        code:
+          "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+        taskId: task.id,
+        repository:
+          ALLOWED_REPOSITORY,
+        branch:
+          ALLOWED_BRANCH,
+        path,
+        commitSha:
+          isFullSha(rawCommitSha)
+            ? rawCommitSha
+            : undefined,
+        resultCommitSha:
+          isFullSha(rawResultCommitSha)
+            ? rawResultCommitSha
+            : undefined,
+        expectedCommitSha:
+          isFullSha(rawExpectedCommitSha)
+            ? rawExpectedCommitSha
+            : undefined,
+        checkoutRef:
+          isRealCheckoutRef(rawCheckoutRef)
+            ? rawCheckoutRef
+            : undefined,
+        checkoutHeadSha:
+          isFullSha(rawCheckoutHeadSha)
+            ? rawCheckoutHeadSha
+            : undefined,
+        readbackVerified,
+        verificationPassed: false,
+        generatedContentLength:
+          generatedContent.length,
+        reason,
+      };
+    }
+
+    /*
+     * Evidence is complete and consistent.
+     * Explicit narrowing via isFullSha and
+     * isRealCheckoutRef above guarantees
+     * these values are strings.
+     */
+    const commitSha: string =
+      rawCommitSha;
+
+    const resultCommitSha: string =
+      rawResultCommitSha;
+
+    const expectedCommitSha: string =
+      rawExpectedCommitSha;
+
+    const checkoutRef: string =
+      rawCheckoutRef;
+
+    const checkoutHeadSha: string =
+      rawCheckoutHeadSha;
 
     /*
      * C142.4 verification means the actual
@@ -609,6 +922,10 @@ export async function executeClaimedAutonomousDevelopmentTask(
         task.id,
         {
           commitSha,
+          resultCommitSha,
+          expectedCommitSha,
+          checkoutRef,
+          checkoutHeadSha,
           readbackVerified,
           verificationPassed,
         },
@@ -631,6 +948,10 @@ export async function executeClaimedAutonomousDevelopmentTask(
         ALLOWED_BRANCH,
       path,
       commitSha,
+      resultCommitSha,
+      expectedCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
       readbackVerified,
       verificationPassed,
       generatedContentLength:

@@ -9,6 +9,9 @@ export type AutonomousDevelopmentReceiptInput = {
     | "blocked";
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -19,9 +22,13 @@ export type AutonomousDevelopmentReceipt = {
   valid: boolean;
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  checkoutRefValid: boolean;
   missingEvidence: string[];
 };
 
@@ -65,6 +72,51 @@ export function isValidAutonomousDevelopmentCommitSha(
   );
 }
 
+function isRealCheckoutRef(
+  value?: string,
+) {
+  const checkoutRef =
+    value?.trim() ?? "";
+
+  if (!checkoutRef) {
+    return false;
+  }
+
+  if (
+    checkoutRef.startsWith(
+      "refs/",
+    )
+  ) {
+    return checkoutRef.length >
+      "refs/".length;
+  }
+
+  if (
+    /^[0-9a-f]{40}$/i.test(
+      checkoutRef,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    checkoutRef ===
+      "HEAD" ||
+    checkoutRef.startsWith(
+      "HEAD~",
+    ) ||
+    checkoutRef.startsWith(
+      "HEAD^",
+    )
+  ) {
+    return false;
+  }
+
+  return /^[A-Za-z0-9._\/-]+$/.test(
+    checkoutRef,
+  );
+}
+
 /**
  * Builds the authoritative evidence state for
  * an autonomous development execution.
@@ -91,6 +143,20 @@ export function buildAutonomousDevelopmentReceipt(
       input.resultCommitSha,
     );
 
+  const expectedCommitSha =
+    normalizeCommitSha(
+      input.expectedCommitSha,
+    );
+
+  const checkoutHeadSha =
+    normalizeCommitSha(
+      input.checkoutHeadSha,
+    );
+
+  const checkoutRef =
+    input.checkoutRef?.trim() ??
+    "";
+
   const readbackVerified =
     input.readbackVerified ===
     true;
@@ -104,11 +170,42 @@ export function buildAutonomousDevelopmentReceipt(
       input.status,
     );
 
+  const commitShaValid =
+    isValidAutonomousDevelopmentCommitSha(
+      commitSha,
+    );
+
+  const resultCommitShaValid =
+    isValidAutonomousDevelopmentCommitSha(
+      resultCommitSha,
+    );
+
+  const expectedCommitShaValid =
+    isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    );
+
+  const checkoutHeadShaValid =
+    isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    );
+
+  const checkoutRefValid =
+    isRealCheckoutRef(
+      checkoutRef,
+    );
+
   const commitShaConsistent =
-    !commitSha ||
-    !resultCommitSha ||
-    commitSha.toLowerCase() ===
-      resultCommitSha.toLowerCase();
+    commitShaValid &&
+    resultCommitShaValid &&
+    expectedCommitShaValid &&
+    checkoutHeadShaValid &&
+    commitSha!.toLowerCase() ===
+      resultCommitSha!.toLowerCase() &&
+    commitSha!.toLowerCase() ===
+      expectedCommitSha!.toLowerCase() &&
+    commitSha!.toLowerCase() ===
+      checkoutHeadSha!.toLowerCase();
 
   const missingEvidence: string[] =
     [];
@@ -116,12 +213,50 @@ export function buildAutonomousDevelopmentReceipt(
   if (
     input.status ===
       "completed" &&
-    !isValidAutonomousDevelopmentCommitSha(
-      commitSha,
-    )
+    !commitShaValid
   ) {
     missingEvidence.push(
       "commitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !resultCommitShaValid
+  ) {
+    missingEvidence.push(
+      "resultCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !expectedCommitShaValid
+  ) {
+    missingEvidence.push(
+      "expectedCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutHeadShaValid
+  ) {
+    missingEvidence.push(
+      "checkoutHeadSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutRefValid
+  ) {
+    missingEvidence.push(
+      "checkoutRef",
     );
   }
 
@@ -148,6 +283,10 @@ export function buildAutonomousDevelopmentReceipt(
   if (
     input.status ===
       "completed" &&
+    commitShaValid &&
+    resultCommitShaValid &&
+    expectedCommitShaValid &&
+    checkoutHeadShaValid &&
     !commitShaConsistent
   ) {
     missingEvidence.push(
@@ -171,9 +310,14 @@ export function buildAutonomousDevelopmentReceipt(
         successful),
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutRef:
+      checkoutRef || undefined,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    checkoutRefValid,
     missingEvidence,
   };
 }

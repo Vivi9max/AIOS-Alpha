@@ -93,6 +93,235 @@ export interface AutonomousAtomicExecutionResult {
   snapshot?: AutonomousAtomicSnapshot;
 }
 
+const SHA_PATTERN = /^[0-9a-fA-F]{40}$/;
+
+export interface AutonomousReceiptEvidence {
+  expectedCommitSha: string;
+  checkoutRef: string;
+  checkoutHeadSha: string;
+  resultCommitSha: string;
+  parentCommitSha: string;
+  checkoutDetached: boolean;
+}
+
+export interface AutonomousReceiptEvidenceInput {
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
+  resultCommitSha?: string;
+  parentCommitSha?: string;
+  checkoutDetached?: boolean;
+}
+
+export interface AutonomousReceiptEvidenceResult {
+  success: boolean;
+  code: string;
+  reason: string;
+  evidence?: AutonomousReceiptEvidence;
+}
+
+function isPresentString(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+}
+
+function isFullSha(
+  value: unknown,
+): value is string {
+  return (
+    isPresentString(value) &&
+    SHA_PATTERN.test(value.trim())
+  );
+}
+
+function shasMatch(
+  left: string,
+  right: string,
+): boolean {
+  return (
+    left.trim().toLowerCase() ===
+    right.trim().toLowerCase()
+  );
+}
+
+export function resolveAutonomousReceiptEvidence(
+  input: AutonomousReceiptEvidenceInput,
+): AutonomousReceiptEvidenceResult {
+  const expectedCommitSha =
+    input.expectedCommitSha;
+
+  const checkoutRef =
+    input.checkoutRef;
+
+  const checkoutHeadSha =
+    input.checkoutHeadSha;
+
+  const resultCommitSha =
+    input.resultCommitSha;
+
+  const parentCommitSha =
+    input.parentCommitSha;
+
+  if (!isPresentString(expectedCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_EXPECTED_SHA_MISSING",
+      reason:
+        "Receipt expectedCommitSha is missing.",
+    };
+  }
+
+  if (!isPresentString(checkoutHeadSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_CHECKOUT_HEAD_SHA_MISSING",
+      reason:
+        "Receipt checkoutHeadSha is missing.",
+    };
+  }
+
+  if (!isPresentString(resultCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_RESULT_SHA_MISSING",
+      reason:
+        "Receipt resultCommitSha is missing.",
+    };
+  }
+
+  if (!isPresentString(parentCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_PARENT_SHA_MISSING",
+      reason:
+        "Receipt parentCommitSha is missing.",
+    };
+  }
+
+  if (!isPresentString(checkoutRef)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_CHECKOUT_REF_MISSING",
+      reason:
+        "Receipt checkoutRef is missing.",
+    };
+  }
+
+  if (!isFullSha(expectedCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_EXPECTED_SHA_INVALID",
+      reason:
+        "Receipt expectedCommitSha is not a valid 40-character hexadecimal SHA.",
+    };
+  }
+
+  if (!isFullSha(checkoutHeadSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_CHECKOUT_HEAD_SHA_INVALID",
+      reason:
+        "Receipt checkoutHeadSha is not a valid 40-character hexadecimal SHA.",
+    };
+  }
+
+  if (!isFullSha(resultCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_RESULT_SHA_INVALID",
+      reason:
+        "Receipt resultCommitSha is not a valid 40-character hexadecimal SHA.",
+    };
+  }
+
+  if (!isFullSha(parentCommitSha)) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_PARENT_SHA_INVALID",
+      reason:
+        "Receipt parentCommitSha is not a valid 40-character hexadecimal SHA.",
+    };
+  }
+
+  if (
+    input.checkoutDetached ===
+    true
+  ) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_CHECKOUT_DETACHED",
+      reason:
+        "Receipt checkout is detached; a real branch/ref is required.",
+    };
+  }
+
+  if (
+    !shasMatch(
+      checkoutHeadSha,
+      expectedCommitSha,
+    )
+  ) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_CHECKOUT_HEAD_MISMATCH",
+      reason:
+        "Receipt checkoutHeadSha does not match expectedCommitSha.",
+    };
+  }
+
+  if (
+    !shasMatch(
+      resultCommitSha,
+      expectedCommitSha,
+    )
+  ) {
+    return {
+      success: false,
+      code:
+        "AIOS_RECEIPT_RESULT_SHA_MISMATCH",
+      reason:
+        "Receipt resultCommitSha does not match expectedCommitSha.",
+    };
+  }
+
+  return {
+    success: true,
+    code:
+      "AIOS_RECEIPT_EVIDENCE_VALID",
+    reason:
+      "Receipt evidence is complete, well-formed and matching.",
+    evidence: {
+      expectedCommitSha:
+        expectedCommitSha.trim(),
+      checkoutRef:
+        checkoutRef.trim(),
+      checkoutHeadSha:
+        checkoutHeadSha.trim(),
+      resultCommitSha:
+        resultCommitSha.trim(),
+      parentCommitSha:
+        parentCommitSha.trim(),
+      checkoutDetached:
+        false,
+    },
+  };
+}
+
 function normalizeRepository(
   repository?: string,
 ): string {

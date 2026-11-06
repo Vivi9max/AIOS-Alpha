@@ -49,16 +49,83 @@ type PersistentTask = NonNullable<
   >
 >;
 
+const SHA_PATTERN =
+  /^[0-9a-fA-F]{40}$/;
+
+function normalizeSha(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string"
+  ) {
+    return undefined;
+  }
+
+  const trimmed =
+    value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
+function isShaFormat(
+  value: string | undefined,
+): value is string {
+  return (
+    typeof value === "string" &&
+    SHA_PATTERN.test(value)
+  );
+}
+
+function normalizeRef(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string"
+  ) {
+    return undefined;
+  }
+
+  const trimmed =
+    value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
 function getReceiptState(
   task: PersistentTask,
 ) {
   const taskCommitSha =
-    task.commitSha?.trim() ||
-    undefined;
+    normalizeSha(
+      task.commitSha,
+    );
 
   const resultCommitSha =
-    task.result?.commitSha?.trim() ||
-    undefined;
+    normalizeSha(
+      task.result?.commitSha,
+    );
+
+  const expectedCommitSha =
+    normalizeSha(
+      task.expectedCommitSha,
+    );
+
+  const checkoutHeadSha =
+    normalizeSha(
+      task.checkoutHeadSha,
+    );
+
+  const checkoutRef =
+    normalizeRef(
+      task.checkoutRef,
+    );
 
   const commitSha =
     taskCommitSha ??
@@ -77,9 +144,128 @@ function getReceiptState(
       task.status,
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutHeadSha,
+    checkoutRef,
     readbackVerified,
     verificationPassed,
   });
+}
+
+function collectStrictEvidenceFailures(
+  task: PersistentTask,
+): string[] {
+  const failures: string[] = [];
+
+  const commitSha =
+    normalizeSha(
+      task.commitSha,
+    );
+
+  const resultCommitSha =
+    normalizeSha(
+      task.result?.commitSha,
+    );
+
+  const expectedCommitSha =
+    normalizeSha(
+      task.expectedCommitSha,
+    );
+
+  const checkoutHeadSha =
+    normalizeSha(
+      task.checkoutHeadSha,
+    );
+
+  const checkoutRef =
+    normalizeRef(
+      task.checkoutRef,
+    );
+
+  if (!commitSha) {
+    failures.push("commitSha");
+  } else if (!isShaFormat(commitSha)) {
+    failures.push(
+      "commitSha:invalid",
+    );
+  }
+
+  if (!resultCommitSha) {
+    failures.push(
+      "resultCommitSha",
+    );
+  } else if (
+    !isShaFormat(resultCommitSha)
+  ) {
+    failures.push(
+      "resultCommitSha:invalid",
+    );
+  }
+
+  if (!expectedCommitSha) {
+    failures.push(
+      "expectedCommitSha",
+    );
+  } else if (
+    !isShaFormat(expectedCommitSha)
+  ) {
+    failures.push(
+      "expectedCommitSha:invalid",
+    );
+  }
+
+  if (!checkoutHeadSha) {
+    failures.push(
+      "checkoutHeadSha",
+    );
+  } else if (
+    !isShaFormat(checkoutHeadSha)
+  ) {
+    failures.push(
+      "checkoutHeadSha:invalid",
+    );
+  }
+
+  if (!checkoutRef) {
+    failures.push(
+      "checkoutRef",
+    );
+  }
+
+  if (
+    isShaFormat(commitSha) &&
+    isShaFormat(resultCommitSha) &&
+    commitSha.toLowerCase() !==
+      resultCommitSha.toLowerCase()
+  ) {
+    failures.push(
+      "commitSha:resultCommitSha:mismatch",
+    );
+  }
+
+  if (
+    isShaFormat(commitSha) &&
+    isShaFormat(expectedCommitSha) &&
+    commitSha.toLowerCase() !==
+      expectedCommitSha.toLowerCase()
+  ) {
+    failures.push(
+      "commitSha:expectedCommitSha:mismatch",
+    );
+  }
+
+  if (
+    isShaFormat(commitSha) &&
+    isShaFormat(checkoutHeadSha) &&
+    commitSha.toLowerCase() !==
+      checkoutHeadSha.toLowerCase()
+  ) {
+    failures.push(
+      "commitSha:checkoutHeadSha:mismatch",
+    );
+  }
+
+  return failures;
 }
 
 function buildResult(
@@ -293,6 +479,38 @@ export async function finalizeAutonomousDevelopmentTask(
       ...result,
       ok: false,
     };
+  }
+
+  /*
+   * Strict fail-closed completion evidence.
+   *
+   * A completed task must carry a fully sourced,
+   * format-valid and mutually consistent SHA set plus
+   * a real checkoutRef. Detached checkout does not
+   * bypass any of these requirements.
+   */
+  if (
+    finalizedTask.status ===
+    "completed"
+  ) {
+    const strictFailures =
+      collectStrictEvidenceFailures(
+        finalizedTask,
+      );
+
+    if (
+      strictFailures.length > 0
+    ) {
+      return {
+        ...result,
+        ok: false,
+        receiptValid: false,
+        missingEvidence:
+          strictFailures,
+        reason:
+          "AUTONOMOUS_DEVELOPMENT_STRICT_RECEIPT_EVIDENCE_INCOMPLETE",
+      };
+    }
   }
 
   /*
