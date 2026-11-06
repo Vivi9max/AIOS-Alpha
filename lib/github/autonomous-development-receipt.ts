@@ -9,6 +9,9 @@ export type AutonomousDevelopmentReceiptInput = {
     | "blocked";
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -19,9 +22,14 @@ export type AutonomousDevelopmentReceipt = {
   valid: boolean;
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  checkoutRefConsistent: boolean;
+  checkoutHeadConsistent: boolean;
   missingEvidence: string[];
 };
 
@@ -39,6 +47,66 @@ function normalizeCommitSha(
     value?.trim() ?? "";
 
   return commitSha || undefined;
+}
+
+function normalizeCheckoutRef(
+  value?: string,
+) {
+  const checkoutRef =
+    value?.trim() ?? "";
+
+  return checkoutRef || undefined;
+}
+
+function isDetachedCheckoutRef(
+  checkoutRef?: string,
+) {
+  const normalized =
+    normalizeCheckoutRef(
+      checkoutRef,
+    );
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized === "HEAD" ||
+    normalized === "head" ||
+    normalized.startsWith(
+      "refs/tags/",
+    )
+  );
+}
+
+function isBranchCheckoutRef(
+  checkoutRef?: string,
+) {
+  const normalized =
+    normalizeCheckoutRef(
+      checkoutRef,
+    );
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    isDetachedCheckoutRef(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    normalized.startsWith(
+      "refs/heads/",
+    ) ||
+    !/^[0-9a-f]{40}$/i.test(
+      normalized,
+    )
+  );
 }
 
 export function isAutonomousDevelopmentTerminalStatus(
@@ -91,6 +159,21 @@ export function buildAutonomousDevelopmentReceipt(
       input.resultCommitSha,
     );
 
+  const expectedCommitSha =
+    normalizeCommitSha(
+      input.expectedCommitSha,
+    );
+
+  const checkoutRef =
+    normalizeCheckoutRef(
+      input.checkoutRef,
+    );
+
+  const checkoutHeadSha =
+    normalizeCommitSha(
+      input.checkoutHeadSha,
+    );
+
   const readbackVerified =
     input.readbackVerified ===
     true;
@@ -110,6 +193,23 @@ export function buildAutonomousDevelopmentReceipt(
     commitSha.toLowerCase() ===
       resultCommitSha.toLowerCase();
 
+  const checkoutRefConsistent =
+    !checkoutRef ||
+    isBranchCheckoutRef(
+      checkoutRef,
+    ) ||
+    isDetachedCheckoutRef(
+      checkoutRef,
+    );
+
+  const checkoutHeadConsistent =
+    !checkoutHeadSha ||
+    !isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    )
+      ? false
+      : true;
+
   const missingEvidence: string[] =
     [];
 
@@ -122,6 +222,111 @@ export function buildAutonomousDevelopmentReceipt(
   ) {
     missingEvidence.push(
       "commitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    )
+  ) {
+    missingEvidence.push(
+      "expectedCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutRef
+  ) {
+    missingEvidence.push(
+      "checkoutRef",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    )
+  ) {
+    missingEvidence.push(
+      "checkoutHeadSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutRefConsistent
+  ) {
+    missingEvidence.push(
+      "checkoutRefConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutHeadConsistent
+  ) {
+    missingEvidence.push(
+      "checkoutHeadConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    isValidAutonomousDevelopmentCommitSha(
+      commitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    ) &&
+    commitSha.toLowerCase() !==
+      expectedCommitSha.toLowerCase()
+  ) {
+    missingEvidence.push(
+      "expectedCommitShaConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    isValidAutonomousDevelopmentCommitSha(
+      commitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    ) &&
+    commitSha.toLowerCase() !==
+      checkoutHeadSha.toLowerCase()
+  ) {
+    missingEvidence.push(
+      "checkoutHeadShaConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    ) &&
+    expectedCommitSha.toLowerCase() !==
+      checkoutHeadSha.toLowerCase()
+  ) {
+    missingEvidence.push(
+      "expectedCheckoutHeadConsistency",
     );
   }
 
@@ -171,9 +376,14 @@ export function buildAutonomousDevelopmentReceipt(
         successful),
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    checkoutRefConsistent,
+    checkoutHeadConsistent,
     missingEvidence,
   };
 }
