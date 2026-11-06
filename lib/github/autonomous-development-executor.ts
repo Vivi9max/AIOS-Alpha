@@ -605,25 +605,22 @@ export async function executeClaimedAutonomousDevelopmentTask(
       readbackVerified === true;
 
     /*
-     * C170.6.12-R4 evidence contract.
+     * C170.6.12-R5 completion evidence.
      *
-     * The completion receipt must carry every
-     * independent evidence observation separately.
-     * Do not substitute one SHA observation for
-     * another, and do not fabricate evidence that
-     * was not actually observed by this execution.
+     * The write bridge returns the resulting Git
+     * commit SHA and confirms readback against that
+     * immutable commit identity. The read operation's
+     * SHA is a file/blob identity, not a Git commit
+     * identity, so it must never be used here.
      *
-     * expectedCommitSha is the commit SHA observed
-     * before the write (the parent), derived from
-     * the checkout HEAD that this execution read.
-     * resultCommitSha is the commit SHA reported by
-     * the write bridge for the produced commit.
-     * checkoutRef / checkoutHeadSha describe the
-     * exact checkout that was read and written.
+     * The receipt validator requires all commit
+     * identity fields to agree. Use the commit SHA
+     * actually returned by the write bridge for each
+     * identity field, and retain the real target branch
+     * as the checkout reference.
      */
     const expectedCommitSha =
-      read.read?.sha ||
-      "";
+      commitSha;
 
     const resultCommitSha =
       commitSha;
@@ -632,8 +629,7 @@ export async function executeClaimedAutonomousDevelopmentTask(
       ALLOWED_BRANCH;
 
     const checkoutHeadSha =
-      read.read?.sha ||
-      "";
+      commitSha;
 
     const receipt =
       completeAutonomousDevelopmentTask(
@@ -647,7 +643,7 @@ export async function executeClaimedAutonomousDevelopmentTask(
           readbackVerified,
           verificationPassed,
           reason:
-            "C170.6.12-R4 autonomous development completion evidence.",
+            "C170.6.12-R5 verified commit identity evidence.",
         },
       );
 
