@@ -439,7 +439,7 @@ export async function createFounderReviewReport(options = {}, dependencies = {})
   const inventory = assertFileInventory(artifact, handoff, rollback, stagingPath);
   const riskLevel = artifact.changeSummary?.risk?.level;
 
-  if (!["low", "medium", "high", "critical"].includes(riskLevel)) {
+  if (!["low", "moderate", "high", "critical"].includes(riskLevel)) {
     fail(
       "AIOS_FOUNDER_REVIEW_RISK_INVALID",
       "Artifact does not contain a supported C170.2 risk level.",
