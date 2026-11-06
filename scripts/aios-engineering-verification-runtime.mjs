@@ -5,12 +5,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const VERIFICATION_RUNTIME_VERSION = "C170.4";
+export const VERIFICATION_RUNTIME_VERSION = "C170.6.12-R1";
 export const VERIFICATION_RECEIPT_SCHEMA_VERSION = 1;
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
+const SHORT_COMMIT_PATTERN = /^[a-f0-9]{7,40}$/;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -84,6 +85,7 @@ function toText(value) {
 function getRepositoryState(root) {
   let head;
   let branch;
+  let checkoutRef;
 
   try {
     head = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -97,6 +99,20 @@ function getRepositoryState(root) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
+
+    try {
+      checkoutRef = execFileSync(
+        "git",
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      ).trim();
+    } catch {
+      checkoutRef = "";
+    }
   } catch {
     fail(
       "AIOS_VERIFICATION_GIT_UNAVAILABLE",
@@ -118,7 +134,11 @@ function getRepositoryState(root) {
       "DETACHED";
   }
 
-  return { head, branch };
+  if (!checkoutRef) {
+    checkoutRef = branch;
+  }
+
+  return { head, branch, checkoutRef };
 }
 
 function safeEnvironment() {
@@ -208,6 +228,18 @@ export function runIndependentVerification(options = {}) {
   const now = options.now || (() => new Date());
   const makeId = options.idFactory || (() => crypto.randomUUID());
 
+  const expectedCommitSha =
+    typeof options.expectedCommitSha === "string"
+      ? options.expectedCommitSha.trim().toLowerCase()
+      : "";
+
+  if (expectedCommitSha && !COMMIT_PATTERN.test(expectedCommitSha)) {
+    fail(
+      "AIOS_VERIFICATION_EXPECTED_COMMIT_INVALID",
+      "expectedCommitSha must be a full 40-character commit SHA.",
+    );
+  }
+
   const repository = readRepositoryState(root);
 
   if (!repository || !COMMIT_PATTERN.test(repository.head || "")) {
@@ -224,6 +256,16 @@ export function runIndependentVerification(options = {}) {
     fail(
       "AIOS_VERIFICATION_BRANCH_INVALID",
       "A repository branch identifier is required.",
+    );
+  }
+
+  if (
+    expectedCommitSha &&
+    repository.head !== expectedCommitSha
+  ) {
+    fail(
+      "AIOS_VERIFICATION_CHECKOUT_MISMATCH",
+      `Checkout HEAD ${repository.head} does not match expected candidate commit ${expectedCommitSha}.`,
     );
   }
 
@@ -301,6 +343,16 @@ export function runIndependentVerification(options = {}) {
     repository: {
       commitSha: repository.head,
       branch: repository.branch,
+      checkoutRef:
+        typeof repository.checkoutRef === "string" &&
+        repository.checkoutRef.length > 0
+          ? repository.checkoutRef
+          : repository.branch,
+      expectedCommitSha: expectedCommitSha || null,
+      checkoutShaVerified:
+        expectedCommitSha.length > 0
+          ? repository.head === expectedCommitSha
+          : true,
     },
 
     profile: "full",
@@ -359,6 +411,13 @@ export function verifyVerificationReceipt(
     !COMMIT_PATTERN.test(receipt.repository.commitSha || "") ||
     typeof receipt.repository.branch !== "string" ||
     !receipt.repository.branch ||
+    typeof receipt.repository.checkoutRef !== "string" ||
+    !receipt.repository.checkoutRef ||
+    !(
+      receipt.repository.expectedCommitSha === null ||
+      COMMIT_PATTERN.test(receipt.repository.expectedCommitSha || "")
+    ) ||
+    typeof receipt.repository.checkoutShaVerified !== "boolean" ||
     !Array.isArray(receipt.checks) ||
     receipt.checks.length < 1 ||
     receipt.checks.length > VERIFICATION_PLAN.length ||
@@ -379,14 +438,51 @@ export function verifyVerificationReceipt(
     };
   }
 
+  const normalizedExpectedCommitSha =
+    typeof expectedCommitSha === "string"
+      ? expectedCommitSha.trim().toLowerCase()
+      : "";
+
   if (
-    expectedCommitSha !== undefined &&
-    receipt.repository.commitSha !== expectedCommitSha
+    normalizedExpectedCommitSha &&
+    !COMMIT_PATTERN.test(normalizedExpectedCommitSha)
+  ) {
+    return {
+      valid: false,
+      passed: false,
+      code: "AIOS_RECEIPT_EXPECTED_COMMIT_INVALID",
+    };
+  }
+
+  if (
+    normalizedExpectedCommitSha &&
+    receipt.repository.commitSha !== normalizedExpectedCommitSha
   ) {
     return {
       valid: false,
       passed: false,
       code: "AIOS_RECEIPT_COMMIT_MISMATCH",
+      expectedCommitSha: normalizedExpectedCommitSha,
+      actualCommitSha: receipt.repository.commitSha,
+    };
+  }
+
+  if (
+    receipt.repository.expectedCommitSha !== null &&
+    !COMMIT_PATTERN.test(receipt.repository.expectedCommitSha || "")
+  ) {
+    return {
+      valid: false,
+      passed: false,
+      code: "AIOS_RECEIPT_EXPECTED_COMMIT_INVALID",
+    };
+  }
+
+  if (receipt.repository.checkoutShaVerified !== true) {
+    return {
+      valid: false,
+      passed: false,
+      code: "AIOS_RECEIPT_CHECKOUT_UNVERIFIED",
     };
   }
 
@@ -466,7 +562,20 @@ function parseArgs(argv) {
   }
 
   if (argv.length === 1 && argv[0] === "verify") {
-    return { command: "verify" };
+    return { command: "verify", expectedCommitSha: "" };
+  }
+
+  if (argv.length === 3 && argv[0] === "verify" && argv[1] === "--expected-commit") {
+    const expectedCommitSha = String(argv[2] || "").trim().toLowerCase();
+
+    if (!COMMIT_PATTERN.test(expectedCommitSha)) {
+      fail(
+        "AIOS_VERIFICATION_EXPECTED_COMMIT_INVALID",
+        "--expected-commit must be a full 40-character commit SHA.",
+      );
+    }
+
+    return { command: "verify", expectedCommitSha };
   }
 
   fail(
@@ -474,6 +583,7 @@ function parseArgs(argv) {
     [
       "Usage:",
       "  node scripts/aios-engineering-verification-runtime.mjs verify",
+      "  node scripts/aios-engineering-verification-runtime.mjs verify --expected-commit <sha>",
       "  node scripts/aios-engineering-verification-runtime.mjs --help",
     ].join("\n"),
   );
@@ -484,14 +594,17 @@ function main() {
 
   if (args.command === "help") {
     process.stdout.write(
-      "C170.4 Independent Verification Runtime\n" +
+      "C170.6.12-R1 Independent Verification Runtime\n" +
       "Runs a fixed, repository-owned verification plan.\n" +
-      "No provider-supplied commands are accepted.\n",
+      "No provider-supplied commands are accepted.\n" +
+      "Enforces checkout HEAD consistency against an optional expected commit SHA.\n",
     );
     return;
   }
 
-  const receipt = runIndependentVerification();
+  const receipt = runIndependentVerification({
+    expectedCommitSha: args.expectedCommitSha || "",
+  });
 
   process.stdout.write(
     `${JSON.stringify(receipt, null, 2)}\n`,

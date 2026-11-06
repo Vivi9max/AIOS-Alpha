@@ -58,3 +58,33 @@ test("passes only a ready preview for the exact commit and branch", () => {
   assert.equal(result.ok, true);
   assert.equal(result.code, "VERCEL_EXACT_PREVIEW_VERIFIED");
 });
+
+test("rejects preview deployment whose git source SHA differs from expected", () => {
+  const result = verifyPreviewDeployment({
+    uid: "preview-id", url: "aios-alpha-preview.vercel.app",
+    target: "preview", readyState: "READY",
+    gitSource: { sha: "c".repeat(40), ref: branch }
+  }, sha, branch);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "VERCEL_PREVIEW_SHA_MISMATCH");
+});
+
+test("rejects preview deployment whose git source ref differs from expected branch", () => {
+  const result = verifyPreviewDeployment({
+    uid: "preview-id", url: "aios-alpha-preview.vercel.app",
+    target: "preview", readyState: "READY",
+    gitSource: { sha, ref: "main" }
+  }, sha, branch);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "VERCEL_PREVIEW_BRANCH_MISMATCH");
+});
+
+test("requires expected SHA to be a full 40-character commit SHA", () => {
+  const result = verifyPreviewDeployment({
+    uid: "preview-id", url: "aios-alpha-preview.vercel.app",
+    target: "preview", readyState: "READY",
+    gitSource: { sha: "a".repeat(7), ref: branch }
+  }, "a".repeat(7), branch);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "EXPECTED_SHA_INVALID");
+});

@@ -120,11 +120,25 @@ async function vercelFetch<T>(
   return parsed as T;
 }
 
+function normalizeCommitSha(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim().toLowerCase();
+
+  if (!/^[0-9a-f]{40}$/.test(trimmed)) {
+    return "";
+  }
+
+  return trimmed;
+}
+
 function deploymentMatchesCommit(
   deployment: VercelDeployment,
   commitSha: string,
 ): boolean {
-  const target = commitSha.trim().toLowerCase();
+  const target = normalizeCommitSha(commitSha);
 
   if (!target) {
     return false;
@@ -139,11 +153,7 @@ function deploymentMatchesCommit(
       ? deployment.meta.gitCommitSha
       : undefined,
   ]
-    .map((value) =>
-      typeof value === "string"
-        ? value.trim().toLowerCase()
-        : "",
-    )
+    .map((value) => normalizeCommitSha(value))
     .filter(Boolean);
 
   return candidates.some((value) => value === target);
