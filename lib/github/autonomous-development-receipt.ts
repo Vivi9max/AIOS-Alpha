@@ -9,6 +9,9 @@ export type AutonomousDevelopmentReceiptInput = {
     | "blocked";
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -19,9 +22,14 @@ export type AutonomousDevelopmentReceipt = {
   valid: boolean;
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  expectedCommitShaConsistent: boolean;
+  checkoutHeadConsistent: boolean;
   missingEvidence: string[];
 };
 
@@ -91,6 +99,21 @@ export function buildAutonomousDevelopmentReceipt(
       input.resultCommitSha,
     );
 
+  const expectedCommitSha =
+    normalizeCommitSha(
+      input.expectedCommitSha,
+    );
+
+  const checkoutRef =
+    normalizeCommitSha(
+      input.checkoutRef,
+    );
+
+  const checkoutHeadSha =
+    normalizeCommitSha(
+      input.checkoutHeadSha,
+    );
+
   const readbackVerified =
     input.readbackVerified ===
     true;
@@ -109,6 +132,18 @@ export function buildAutonomousDevelopmentReceipt(
     !resultCommitSha ||
     commitSha.toLowerCase() ===
       resultCommitSha.toLowerCase();
+
+  const expectedCommitShaConsistent =
+    !expectedCommitSha ||
+    !commitSha ||
+    expectedCommitSha.toLowerCase() ===
+      commitSha.toLowerCase();
+
+  const checkoutHeadConsistent =
+    !checkoutHeadSha ||
+    !commitSha ||
+    checkoutHeadSha.toLowerCase() ===
+      commitSha.toLowerCase();
 
   const missingEvidence: string[] =
     [];
@@ -155,6 +190,26 @@ export function buildAutonomousDevelopmentReceipt(
     );
   }
 
+  if (
+    input.status ===
+      "completed" &&
+    !expectedCommitShaConsistent
+  ) {
+    missingEvidence.push(
+      "expectedCommitShaConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutHeadConsistent
+  ) {
+    missingEvidence.push(
+      "checkoutHeadConsistency",
+    );
+  }
+
   const successful =
     input.status ===
       "completed" &&
@@ -171,9 +226,14 @@ export function buildAutonomousDevelopmentReceipt(
         successful),
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    expectedCommitShaConsistent,
+    checkoutHeadConsistent,
     missingEvidence,
   };
 }

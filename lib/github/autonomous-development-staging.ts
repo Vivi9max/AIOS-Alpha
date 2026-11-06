@@ -22,6 +22,9 @@ export interface AutonomousStagingSnapshot {
   stagingBranch: string;
   treeSha?: string;
   commitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutSha?: string;
   changedPaths: string[];
 }
 
@@ -758,7 +761,7 @@ export async function createAutonomousStaging(
       commitSha
     ) {
       throw new Error(
-        "AIOS_STAGING_COMMIT_READBACK_FAILED",
+        `AIOS_STAGING_COMMIT_READBACK_FAILED: expected ${commitSha} but staging branch ${stagingBranch} resolved to ${stagingHead}`,
       );
     }
 
@@ -775,6 +778,12 @@ export async function createAutonomousStaging(
         stagingBranch,
         treeSha,
         commitSha,
+        expectedCommitSha:
+          commitSha,
+        checkoutRef:
+          stagingBranch,
+        checkoutSha:
+          stagingHead,
         changedPaths:
           input.files.map(
             (file) =>
@@ -955,7 +964,7 @@ export async function promoteAutonomousStaging(
       input.stagingCommitSha
     ) {
       throw new Error(
-        "AIOS_PROMOTION_READBACK_FAILED",
+        `AIOS_PROMOTION_READBACK_FAILED: expected ${input.stagingCommitSha} but ${baseBranch} resolved to ${promotedSha}`,
       );
     }
 
@@ -974,6 +983,12 @@ export async function promoteAutonomousStaging(
           input.stagingBranch,
         commitSha:
           input.stagingCommitSha,
+        expectedCommitSha:
+          input.stagingCommitSha,
+        checkoutRef:
+          baseBranch,
+        checkoutSha:
+          promotedSha,
         changedPaths: [],
       },
     };
