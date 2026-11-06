@@ -1822,15 +1822,46 @@ export type AutonomousDevelopmentCompletionEvidence = {
 function normalizeEvidenceSha(
   value: unknown,
 ): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
+  if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : undefined;
+}
 
-  return trimmed
-    ? trimmed
-    : undefined;
+function isValidEvidenceSha(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim());
+}
+
+/*
+ * Existing executors use checkoutRef as either an immutable full
+ * commit SHA or refs/heads/<staging-branch>. Both forms are valid.
+ */
+function isValidCheckoutRef(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const ref = value.trim();
+  if (isValidEvidenceSha(ref)) return true;
+  if (!ref.startsWith("refs/heads/")) return false;
+
+  const branch = ref.slice("refs/heads/".length);
+  if (
+    !branch ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.endsWith(".") ||
+    branch.includes("//") ||
+    branch.includes("..") ||
+    branch.includes("@{") ||
+    /[\u0000-\u001f\u007f]/.test(branch) ||
+    [" ", "~", "^", ":", "?", "*", "[", "]", "\\"].some(
+      (character) => branch.includes(character),
+    )
+  ) return false;
+
+  return branch.split("/").every(
+    (component) =>
+      component.length > 0 &&
+      !component.startsWith(".") &&
+      !component.endsWith(".lock"),
+  );
 }
 
 function validateCompletionEvidence(
@@ -1844,61 +1875,27 @@ function validateCompletionEvidence(
   checkoutRef?: string;
   checkoutHeadSha?: string;
 } {
-  const commitSha =
-    normalizeEvidenceSha(
-      result.commitSha,
-    );
-
-  const expectedCommitSha =
-    normalizeEvidenceSha(
-      result.expectedCommitSha,
-    );
-
-  const resultCommitSha =
-    normalizeEvidenceSha(
-      result.resultCommitSha,
-    );
-
+  const commitSha = normalizeEvidenceSha(result.commitSha);
+  const expectedCommitSha = normalizeEvidenceSha(result.expectedCommitSha);
+  const resultCommitSha = normalizeEvidenceSha(result.resultCommitSha);
+  const rawCheckoutRef =
+    typeof result.checkoutRef === "string"
+      ? result.checkoutRef.trim()
+      : undefined;
   const checkoutRef =
-    normalizeEvidenceSha(
-      result.checkoutRef,
-    );
+    rawCheckoutRef && isValidEvidenceSha(rawCheckoutRef)
+      ? rawCheckoutRef.toLowerCase()
+      : rawCheckoutRef;
+  const checkoutHeadSha = normalizeEvidenceSha(result.checkoutHeadSha);
 
-  const checkoutHeadSha =
-    normalizeEvidenceSha(
-      result.checkoutHeadSha,
-    );
-
-  const missingEvidence: string[] =
-    [];
-
-  if (!commitSha) {
-    missingEvidence.push("commitSha");
-  }
-
-  if (!expectedCommitSha) {
-    missingEvidence.push("expectedCommitSha");
-  }
-
-  if (!resultCommitSha) {
-    missingEvidence.push("resultCommitSha");
-  }
-
-  if (!checkoutRef) {
-    missingEvidence.push("checkoutRef");
-  }
-
-  if (!checkoutHeadSha) {
-    missingEvidence.push("checkoutHeadSha");
-  }
-
-  if (result.readbackVerified !== true) {
-    missingEvidence.push("readbackVerified");
-  }
-
-  if (result.verificationPassed !== true) {
-    missingEvidence.push("verificationPassed");
-  }
+  const missingEvidence: string[] = [];
+  if (!commitSha) missingEvidence.push("commitSha");
+  if (!expectedCommitSha) missingEvidence.push("expectedCommitSha");
+  if (!resultCommitSha) missingEvidence.push("resultCommitSha");
+  if (!checkoutRef) missingEvidence.push("checkoutRef");
+  if (!checkoutHeadSha) missingEvidence.push("checkoutHeadSha");
+  if (result.readbackVerified !== true) missingEvidence.push("readbackVerified");
+  if (result.verificationPassed !== true) missingEvidence.push("verificationPassed");
 
   if (missingEvidence.length > 0) {
     return {
@@ -1912,14 +1909,29 @@ function validateCompletionEvidence(
     };
   }
 
-  if (
-    expectedCommitSha !==
-    resultCommitSha
-  ) {
+  const invalidShaFields = [
+    ["commitSha", result.commitSha],
+    ["expectedCommitSha", result.expectedCommitSha],
+    ["resultCommitSha", result.resultCommitSha],
+    ["checkoutHeadSha", result.checkoutHeadSha],
+  ].filter(([, value]) => !isValidEvidenceSha(value));
+
+  if (invalidShaFields.length > 0) {
     return {
       valid: false,
-      reason:
-        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: expectedCommitSha does not match resultCommitSha.",
+      reason: `AUTONOMOUS_DEVELOPMENT_EVIDENCE_SHA_INVALID: ${invalidShaFields.map(([field]) => field).join(", ")}`,
+      commitSha,
+      expectedCommitSha,
+      resultCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
+    };
+  }
+
+  if (!isValidCheckoutRef(checkoutRef)) {
+    return {
+      valid: false,
+      reason: "AUTONOMOUS_DEVELOPMENT_CHECKOUT_REF_INVALID: checkoutRef must be a full commit SHA or refs/heads/<branch>.",
       commitSha,
       expectedCommitSha,
       resultCommitSha,
@@ -1929,29 +1941,14 @@ function validateCompletionEvidence(
   }
 
   if (
-    commitSha !==
-    resultCommitSha
+    expectedCommitSha !== resultCommitSha ||
+    commitSha !== resultCommitSha ||
+    checkoutHeadSha !== resultCommitSha
   ) {
     return {
       valid: false,
       reason:
-        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: commitSha does not match resultCommitSha.",
-      commitSha,
-      expectedCommitSha,
-      resultCommitSha,
-      checkoutRef,
-      checkoutHeadSha,
-    };
-  }
-
-  if (
-    checkoutHeadSha !==
-    resultCommitSha
-  ) {
-    return {
-      valid: false,
-      reason:
-        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: checkoutHeadSha does not match resultCommitSha.",
+        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: commit, expected, result, and checkout head SHA values must match.",
       commitSha,
       expectedCommitSha,
       resultCommitSha,
