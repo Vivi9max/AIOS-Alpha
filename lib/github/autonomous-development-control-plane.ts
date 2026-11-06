@@ -36,6 +36,10 @@ export type AutonomousDevelopmentPhaseEvent = {
 
 export type AutonomousDevelopmentTaskResult = {
   commitSha?: string;
+  expectedCommitSha?: string;
+  resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
@@ -51,6 +55,10 @@ export type AutonomousDevelopmentTask = {
   phase: AutonomousDevelopmentTaskPhase;
   reason?: string;
   commitSha?: string;
+  expectedCommitSha?: string;
+  resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   changedPaths?: string[];
   result?: AutonomousDevelopmentTaskResult;
   createdAt: string;
@@ -369,6 +377,26 @@ function normalizeTask(
           ? candidate.commitSha
           : undefined,
 
+      expectedCommitSha:
+        typeof candidate.expectedCommitSha === "string"
+          ? candidate.expectedCommitSha
+          : undefined,
+
+      resultCommitSha:
+        typeof candidate.resultCommitSha === "string"
+          ? candidate.resultCommitSha
+          : undefined,
+
+      checkoutRef:
+        typeof candidate.checkoutRef === "string"
+          ? candidate.checkoutRef
+          : undefined,
+
+      checkoutHeadSha:
+        typeof candidate.checkoutHeadSha === "string"
+          ? candidate.checkoutHeadSha
+          : undefined,
+
       changedPaths:
         Array.isArray(
           candidate.changedPaths,
@@ -386,6 +414,30 @@ function normalizeTask(
                 typeof candidate.result.commitSha ===
                 "string"
                   ? candidate.result.commitSha
+                  : undefined,
+
+              expectedCommitSha:
+                typeof candidate.result.expectedCommitSha ===
+                "string"
+                  ? candidate.result.expectedCommitSha
+                  : undefined,
+
+              resultCommitSha:
+                typeof candidate.result.resultCommitSha ===
+                "string"
+                  ? candidate.result.resultCommitSha
+                  : undefined,
+
+              checkoutRef:
+                typeof candidate.result.checkoutRef ===
+                "string"
+                  ? candidate.result.checkoutRef
+                  : undefined,
+
+              checkoutHeadSha:
+                typeof candidate.result.checkoutHeadSha ===
+                "string"
+                  ? candidate.result.checkoutHeadSha
                   : undefined,
 
               readbackVerified:
@@ -1160,6 +1212,18 @@ function recoverStaleTask(
     commitSha:
       task.commitSha,
 
+    expectedCommitSha:
+      task.expectedCommitSha,
+
+    resultCommitSha:
+      task.resultCommitSha,
+
+    checkoutRef:
+      task.checkoutRef,
+
+    checkoutHeadSha:
+      task.checkoutHeadSha,
+
     readbackVerified:
       false,
 
@@ -1744,14 +1808,171 @@ export async function heartbeatPersistentAutonomousDevelopmentTask(
   );
 }
 
+export type AutonomousDevelopmentCompletionEvidence = {
+  commitSha: string;
+  expectedCommitSha: string;
+  resultCommitSha: string;
+  checkoutRef: string;
+  checkoutHeadSha: string;
+  readbackVerified: boolean;
+  verificationPassed: boolean;
+  reason?: string;
+};
+
+function normalizeEvidenceSha(
+  value: unknown,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed
+    ? trimmed
+    : undefined;
+}
+
+function validateCompletionEvidence(
+  result: AutonomousDevelopmentCompletionEvidence,
+): {
+  valid: boolean;
+  reason?: string;
+  commitSha?: string;
+  expectedCommitSha?: string;
+  resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
+} {
+  const commitSha =
+    normalizeEvidenceSha(
+      result.commitSha,
+    );
+
+  const expectedCommitSha =
+    normalizeEvidenceSha(
+      result.expectedCommitSha,
+    );
+
+  const resultCommitSha =
+    normalizeEvidenceSha(
+      result.resultCommitSha,
+    );
+
+  const checkoutRef =
+    normalizeEvidenceSha(
+      result.checkoutRef,
+    );
+
+  const checkoutHeadSha =
+    normalizeEvidenceSha(
+      result.checkoutHeadSha,
+    );
+
+  const missingEvidence: string[] =
+    [];
+
+  if (!commitSha) {
+    missingEvidence.push("commitSha");
+  }
+
+  if (!expectedCommitSha) {
+    missingEvidence.push("expectedCommitSha");
+  }
+
+  if (!resultCommitSha) {
+    missingEvidence.push("resultCommitSha");
+  }
+
+  if (!checkoutRef) {
+    missingEvidence.push("checkoutRef");
+  }
+
+  if (!checkoutHeadSha) {
+    missingEvidence.push("checkoutHeadSha");
+  }
+
+  if (result.readbackVerified !== true) {
+    missingEvidence.push("readbackVerified");
+  }
+
+  if (result.verificationPassed !== true) {
+    missingEvidence.push("verificationPassed");
+  }
+
+  if (missingEvidence.length > 0) {
+    return {
+      valid: false,
+      reason: `AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISSING: ${missingEvidence.join(", ")}`,
+      commitSha,
+      expectedCommitSha,
+      resultCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
+    };
+  }
+
+  if (
+    expectedCommitSha !==
+    resultCommitSha
+  ) {
+    return {
+      valid: false,
+      reason:
+        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: expectedCommitSha does not match resultCommitSha.",
+      commitSha,
+      expectedCommitSha,
+      resultCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
+    };
+  }
+
+  if (
+    commitSha !==
+    resultCommitSha
+  ) {
+    return {
+      valid: false,
+      reason:
+        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: commitSha does not match resultCommitSha.",
+      commitSha,
+      expectedCommitSha,
+      resultCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
+    };
+  }
+
+  if (
+    checkoutHeadSha !==
+    resultCommitSha
+  ) {
+    return {
+      valid: false,
+      reason:
+        "AUTONOMOUS_DEVELOPMENT_EVIDENCE_MISMATCH: checkoutHeadSha does not match resultCommitSha.",
+      commitSha,
+      expectedCommitSha,
+      resultCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
+    };
+  }
+
+  return {
+    valid: true,
+    commitSha,
+    expectedCommitSha,
+    resultCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
+  };
+}
+
 export async function completePersistentAutonomousDevelopmentTask(
   taskId: string,
-  result: {
-    commitSha: string;
-    readbackVerified: boolean;
-    verificationPassed: boolean;
-    reason?: string;
-  },
+  result: AutonomousDevelopmentCompletionEvidence,
 ): Promise<AutonomousDevelopmentReceipt> {
   await hydratePersistentTasks();
 
@@ -1785,23 +2006,17 @@ export async function completePersistentAutonomousDevelopmentTask(
     );
   }
 
-  const exactCommitSha =
-    result.commitSha.trim();
+  const evidence =
+    validateCompletionEvidence(
+      result,
+    );
 
-  const passed =
-    Boolean(
-      exactCommitSha,
-    ) &&
-    result.readbackVerified ===
-      true &&
-    result.verificationPassed ===
-      true;
-
-  if (!passed) {
+  if (!evidence.valid) {
     const blocked =
       blockAutonomousDevelopmentTask(
         taskId,
-        result.reason ||
+        evidence.reason ||
+          result.reason ||
           "Autonomous development verification did not pass.",
       );
 
@@ -1828,11 +2043,35 @@ export async function completePersistentAutonomousDevelopmentTask(
     result.reason;
 
   task.commitSha =
-    exactCommitSha;
+    evidence.commitSha;
+
+  task.expectedCommitSha =
+    evidence.expectedCommitSha;
+
+  task.resultCommitSha =
+    evidence.resultCommitSha;
+
+  task.checkoutRef =
+    evidence.checkoutRef;
+
+  task.checkoutHeadSha =
+    evidence.checkoutHeadSha;
 
   task.result = {
     commitSha:
-      exactCommitSha,
+      evidence.commitSha,
+
+    expectedCommitSha:
+      evidence.expectedCommitSha,
+
+    resultCommitSha:
+      evidence.resultCommitSha,
+
+    checkoutRef:
+      evidence.checkoutRef,
+
+    checkoutHeadSha:
+      evidence.checkoutHeadSha,
 
     readbackVerified:
       result.readbackVerified,
@@ -1873,12 +2112,7 @@ export async function completePersistentAutonomousDevelopmentTask(
 
 export function completeAutonomousDevelopmentTask(
   taskId: string,
-  result: {
-    commitSha: string;
-    readbackVerified: boolean;
-    verificationPassed: boolean;
-    reason?: string;
-  },
+  result: AutonomousDevelopmentCompletionEvidence,
 ): AutonomousDevelopmentReceipt {
   const task =
     tasks.get(
@@ -1910,19 +2144,16 @@ export function completeAutonomousDevelopmentTask(
     );
   }
 
-  const passed =
-    Boolean(
-      result.commitSha,
-    ) &&
-    result.readbackVerified ===
-      true &&
-    result.verificationPassed ===
-      true;
+  const evidence =
+    validateCompletionEvidence(
+      result,
+    );
 
-  if (!passed) {
+  if (!evidence.valid) {
     return blockAutonomousDevelopmentTask(
       taskId,
-      result.reason ||
+      evidence.reason ||
+        result.reason ||
         "Autonomous development verification did not pass.",
     ).receipt;
   }
@@ -1945,11 +2176,35 @@ export function completeAutonomousDevelopmentTask(
     result.reason;
 
   task.commitSha =
-    result.commitSha.trim();
+    evidence.commitSha;
+
+  task.expectedCommitSha =
+    evidence.expectedCommitSha;
+
+  task.resultCommitSha =
+    evidence.resultCommitSha;
+
+  task.checkoutRef =
+    evidence.checkoutRef;
+
+  task.checkoutHeadSha =
+    evidence.checkoutHeadSha;
 
   task.result = {
     commitSha:
-      result.commitSha.trim(),
+      evidence.commitSha,
+
+    expectedCommitSha:
+      evidence.expectedCommitSha,
+
+    resultCommitSha:
+      evidence.resultCommitSha,
+
+    checkoutRef:
+      evidence.checkoutRef,
+
+    checkoutHeadSha:
+      evidence.checkoutHeadSha,
 
     readbackVerified:
       result.readbackVerified,

@@ -604,13 +604,50 @@ export async function executeClaimedAutonomousDevelopmentTask(
       github.success === true &&
       readbackVerified === true;
 
+    /*
+     * C170.6.12-R4 evidence contract.
+     *
+     * The completion receipt must carry every
+     * independent evidence observation separately.
+     * Do not substitute one SHA observation for
+     * another, and do not fabricate evidence that
+     * was not actually observed by this execution.
+     *
+     * expectedCommitSha is the commit SHA observed
+     * before the write (the parent), derived from
+     * the checkout HEAD that this execution read.
+     * resultCommitSha is the commit SHA reported by
+     * the write bridge for the produced commit.
+     * checkoutRef / checkoutHeadSha describe the
+     * exact checkout that was read and written.
+     */
+    const expectedCommitSha =
+      read.read?.sha ||
+      "";
+
+    const resultCommitSha =
+      commitSha;
+
+    const checkoutRef =
+      ALLOWED_BRANCH;
+
+    const checkoutHeadSha =
+      read.read?.sha ||
+      "";
+
     const receipt =
       completeAutonomousDevelopmentTask(
         task.id,
         {
           commitSha,
+          expectedCommitSha,
+          resultCommitSha,
+          checkoutRef,
+          checkoutHeadSha,
           readbackVerified,
           verificationPassed,
+          reason:
+            "C170.6.12-R4 autonomous development completion evidence.",
         },
       );
 
