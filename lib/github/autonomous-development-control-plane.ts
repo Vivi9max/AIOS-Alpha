@@ -1827,7 +1827,7 @@ function normalizeEvidenceSha(
   return trimmed ? trimmed.toLowerCase() : undefined;
 }
 
-function isValidEvidenceSha(value: unknown): value is string {
+function isValidEvidenceSha(value: unknown): boolean {
   return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim());
 }
 
