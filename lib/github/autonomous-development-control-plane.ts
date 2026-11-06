@@ -1100,7 +1100,7 @@ function createReceipt(
         task.commitSha,
 
       resultCommitSha:
-        result?.commitSha,
+        result?.resultCommitSha,
 
       readbackVerified:
         result?.readbackVerified ===
