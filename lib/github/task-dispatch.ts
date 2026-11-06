@@ -578,8 +578,6 @@ export async function dispatchGitHubTask(
 
   const checkoutRef:
     string | undefined =
-    typeof branch ===
-      "string" &&
     branch.trim().length >
       0
       ? branch.trim()
