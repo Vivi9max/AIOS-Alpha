@@ -16,8 +16,30 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+let ts;
+
+try {
+  ts = (await import("typescript")).default;
+} catch {
+  console.error("TypeScript is not installed. Run `npm install` first.");
+  process.exit(1);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
+
+function transpile(source, fileName) {
+  return ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+      isolatedModules: true,
+      skipLibCheck: true,
+    },
+    fileName,
+  }).outputText;
+}
 
 const autonomousAgentSource = fs.readFileSync(
   path.join(REPO_ROOT, "lib/github/autonomous-development-agent.ts"),
@@ -48,8 +70,20 @@ const repairGuardContext = {
   },
 };
 
+const transpiledRepairGuard = ts.transpileModule(
+  repairGuardSource,
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.None,
+      target: ts.ScriptTarget.ES2020,
+      strict: true,
+    },
+    fileName: "autonomous-development-repair-guard.ts",
+  },
+).outputText;
+
 vm.runInNewContext(
-  `${repairGuardSource}
+  `${transpiledRepairGuard}
 globalThis.assertRepairBaseIdentity = assertRepairBaseIdentity;`,
   repairGuardContext,
 );
@@ -62,27 +96,6 @@ assert.equal(
   "function",
   "R8 production repair identity guard must be executable",
 );
-
-let ts;
-try {
-  ts = (await import("typescript")).default;
-} catch {
-  console.error("TypeScript is not installed. Run `npm install` first.");
-  process.exit(1);
-}
-
-function transpile(source, fileName) {
-  return ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.ESNext,
-      target: ts.ScriptTarget.ES2020,
-      esModuleInterop: true,
-      isolatedModules: true,
-      skipLibCheck: true,
-    },
-    fileName,
-  }).outputText;
-}
 
 const controlPlaneSource = fs.readFileSync(
   path.join(REPO_ROOT, "lib/github/autonomous-development-control-plane.ts"),
@@ -691,22 +704,22 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
 
   assert.throws(
     () => assertRepairBaseIdentity("", validSha),
-    /AUTONOMOUS_REPAIR_EXPECTED_BASE_IDENTITY_INVALID/,
+    /AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID/,
   );
 
   assert.throws(
     () => assertRepairBaseIdentity("not-a-sha", validSha),
-    /AUTONOMOUS_REPAIR_EXPECTED_BASE_IDENTITY_INVALID/,
+    /AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID/,
   );
 
   assert.throws(
     () => assertRepairBaseIdentity(validSha, ""),
-    /AUTONOMOUS_REPAIR_BASE_IDENTITY_INVALID/,
+    /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
   );
 
   assert.throws(
     () => assertRepairBaseIdentity(validSha, "not-a-sha"),
-    /AUTONOMOUS_REPAIR_BASE_IDENTITY_INVALID/,
+    /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
   );
 
   const captureIndex = autonomousAgentSource.indexOf(
