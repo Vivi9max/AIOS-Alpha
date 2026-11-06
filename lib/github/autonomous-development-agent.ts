@@ -389,7 +389,16 @@ async function discoverRepositoryPaths(
   while (
     frontier.length > 0 &&
     discovered.size <
-    MAX_DISCOVERY_ENTRIES;
+      MAX_DISCOVERY_ENTRIES
+  ) {
+    const nextFrontier:
+      DiscoveryNode[] = [];
+
+    for (
+      let start = 0;
+      start < frontier.length &&
+      discovered.size <
+        MAX_DISCOVERY_ENTRIES;
       start +=
         DISCOVERY_CONCURRENCY
     ) {
@@ -1539,6 +1548,156 @@ function validateFinalSource(
 
   return normalized;
 }
+        next === "/"
+      ) {
+        blockComment =
+          false;
+
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped =
+          false;
+
+        continue;
+      }
+
+      if (
+        current === "\\"
+      ) {
+        escaped =
+          true;
+
+        continue;
+      }
+
+      if (
+        current === quote
+      ) {
+        quote =
+          null;
+      }
+
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "/"
+    ) {
+      lineComment =
+        true;
+
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      next === "*"
+    ) {
+      blockComment =
+        true;
+
+      index += 1;
+      continue;
+    }
+
+    if (
+      current === "'" ||
+      current === "\"" ||
+      current === "`"
+    ) {
+      quote =
+        current as
+          | "'"
+          | "\""
+          | "`";
+
+      escaped =
+        false;
+
+      continue;
+    }
+
+    if (
+      current === "/" &&
+      isRegexLiteralStart(
+        normalized,
+        index,
+      )
+    ) {
+      const regexEnd =
+        scanRegexLiteral(
+          normalized,
+          index,
+        );
+
+      if (
+        regexEnd > index
+      ) {
+        index =
+          regexEnd - 1;
+
+        continue;
+      }
+    }
+
+    if (
+      current === "{" ||
+      current === "(" ||
+      current === "["
+    ) {
+      stack.push(
+        current,
+      );
+
+      continue;
+    }
+
+    if (
+      current === "}" ||
+      current === ")" ||
+      current === "]"
+    ) {
+      const expected =
+        current === "}"
+          ? "{"
+          : current === ")"
+            ? "("
+            : "[";
+
+      if (
+        stack[
+          stack.length - 1
+        ] !== expected
+      ) {
+        throw new Error(
+          `AIOS_FINAL_SOURCE_DELIMITER_INVALID: ${path}`,
+        );
+      }
+
+      stack.pop();
+    }
+  }
+
+  if (
+    quote ||
+    blockComment ||
+    stack.length > 0
+  ) {
+    throw new Error(
+      `AIOS_FINAL_SOURCE_INCOMPLETE: ${path}`,
+    );
+  }
+
+  return normalized;
+}
 
 async function generatePatch(
   objective: string,
@@ -2088,7 +2247,6 @@ export async function executeAutonomousDevelopmentAgent(
 
           continue;
         }
-
         try {
           targetPaths =
             parsePlannerResult(
@@ -2320,7 +2478,7 @@ export async function executeAutonomousDevelopmentAgent(
       phase: "READBACK",
       commitSha: initialSnapshot.stagingCommitSha,
       changedPaths,
-      reason: `Atomic staging commit created and branch head identity verified: ${stagingBranch}`,
+      reason: `Atomic staging commit created and branch head identity verified; immutable source readback is pending: ${stagingBranch}`,
     });
 
     if (
@@ -2567,7 +2725,7 @@ export async function executeAutonomousDevelopmentAgent(
             latestCommitSha,
           changedPaths,
           reason:
-            `Repair readback verified: ${repairTarget}`,
+            `Repair staging commit created; immutable final readback is pending: ${repairTarget}`,
         },
       );
 
