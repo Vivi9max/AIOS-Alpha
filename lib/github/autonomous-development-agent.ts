@@ -389,16 +389,7 @@ async function discoverRepositoryPaths(
   while (
     frontier.length > 0 &&
     discovered.size <
-      MAX_DISCOVERY_ENTRIES
-  ) {
-    const nextFrontier:
-      DiscoveryNode[] = [];
-
-    for (
-      let start = 0;
-      start < frontier.length &&
-      discovered.size <
-        MAX_DISCOVERY_ENTRIES;
+    MAX_DISCOVERY_ENTRIES;
       start +=
         DISCOVERY_CONCURRENCY
     ) {
@@ -1198,7 +1189,7 @@ function isRegexLiteralStart(
 }
 
 function scanRegexLiteral(
-  source: string,
+    source: string,
   start: number,
 ): number {
   let index =
@@ -2639,7 +2630,7 @@ export async function executeAutonomousDevelopmentAgent(
             await readFile(
               targetPath,
               input.accessToken,
-              stagingBranch,
+              latestExpectedCommitSha,
             );
 
           if (readback.content !== expectedContent) {
@@ -2671,9 +2662,7 @@ export async function executeAutonomousDevelopmentAgent(
       verification?.commitSha?.trim() || "";
 
     const checkoutRef =
-      stagingBranch
-        ? `refs/heads/${stagingBranch}`
-        : "";
+      latestExpectedCommitSha;
 
     const checkoutHeadSha =
       latestCheckoutHeadSha;
@@ -2700,7 +2689,7 @@ export async function executeAutonomousDevelopmentAgent(
             `Targets: ${targetPaths.length}.`,
             `Changed: ${changedPaths.length}.`,
             `Repair rounds: ${repairRounds}.`,
-            "Every target file was read back from the final staging branch and matched the generated source.",
+            "Every target file was read back from the exact final staging commit SHA and matched the generated source.",
             "Vercel returned PASS for the exact final staging commit SHA.",
             "All five commit and checkout identity fields were consistent.",
           ].join(" ")
