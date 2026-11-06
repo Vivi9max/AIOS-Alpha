@@ -118,7 +118,34 @@ function getRepositoryState(root) {
       "DETACHED";
   }
 
-  return { head, branch };
+  const expectedCommitSha =
+    (process.env.EXPECTED_COMMIT_SHA || "").trim() ||
+    (process.env.GITHUB_SHA || "").trim();
+
+  if (expectedCommitSha) {
+    if (!COMMIT_PATTERN.test(expectedCommitSha)) {
+      fail(
+        "AIOS_VERIFICATION_EXPECTED_COMMIT_INVALID",
+        "EXPECTED_COMMIT_SHA/GITHUB_SHA is not a full 40-character commit SHA.",
+      );
+    }
+
+    if (head !== expectedCommitSha) {
+      fail(
+        "AIOS_VERIFICATION_HEAD_MISMATCH",
+        [
+          "Checkout HEAD does not match the workflow candidate SHA.",
+          `HEAD=${head}`,
+          `EXPECTED_COMMIT_SHA=${expectedCommitSha}`,
+          `GITHUB_SHA=${(process.env.GITHUB_SHA || "").trim() || "(unset)"}`,
+          `GITHUB_REF=${process.env.GITHUB_REF || "(unset)"}`,
+          `GITHUB_REF_NAME=${process.env.GITHUB_REF_NAME || "(unset)"}`,
+        ].join(" "),
+      );
+    }
+  }
+
+  return { head, branch, expectedCommitSha: expectedCommitSha || null };
 }
 
 function safeEnvironment() {
@@ -144,6 +171,7 @@ function safeEnvironment() {
     "GITHUB_SHA",
     "GITHUB_RUN_ID",
     "GITHUB_RUN_ATTEMPT",
+    "EXPECTED_COMMIT_SHA",
   ];
 
   const environment = {};
@@ -301,6 +329,11 @@ export function runIndependentVerification(options = {}) {
     repository: {
       commitSha: repository.head,
       branch: repository.branch,
+      expectedCommitSha: repository.expectedCommitSha || null,
+      headMatchesExpected:
+        repository.expectedCommitSha === null
+          ? null
+          : repository.head === repository.expectedCommitSha,
     },
 
     profile: "full",
@@ -388,6 +421,24 @@ export function verifyVerificationReceipt(
       passed: false,
       code: "AIOS_RECEIPT_COMMIT_MISMATCH",
     };
+  }
+
+  if (
+    receipt.repository.expectedCommitSha !== undefined &&
+    receipt.repository.expectedCommitSha !== null
+  ) {
+    if (
+      !COMMIT_PATTERN.test(receipt.repository.expectedCommitSha) ||
+      receipt.repository.expectedCommitSha !==
+        receipt.repository.commitSha ||
+      receipt.repository.headMatchesExpected !== true
+    ) {
+      return {
+        valid: false,
+        passed: false,
+        code: "AIOS_RECEIPT_HEAD_MISMATCH",
+      };
+    }
   }
 
   for (let index = 0; index < receipt.checks.length; index += 1) {

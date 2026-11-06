@@ -193,7 +193,8 @@ function selectWorkflowRun(
 
         if (
           run.event &&
-          run.event !== "push"
+          run.event !== "push" &&
+          run.event !== "workflow_dispatch"
         ) {
           return false;
         }
@@ -301,6 +302,9 @@ export async function verifyGitHubActionsForCommit(
       commitSha,
     );
 
+  const targetSha =
+    commitSha.toLowerCase();
+
   const startedAt =
     Date.now();
 
@@ -333,6 +337,39 @@ export async function verifyGitHubActionsForCommit(
           commitSha,
           workflowName,
         );
+
+      if (
+        !latestRun &&
+        runs.length > 0
+      ) {
+        const mismatchedShas =
+          runs
+            .map((run) =>
+              run.head_sha
+                ? run.head_sha.toLowerCase()
+                : "unknown",
+            )
+            .filter(
+              (sha) =>
+                sha !== targetSha,
+            );
+
+        if (
+          mismatchedShas.length > 0
+        ) {
+          return {
+            status: "FAIL",
+            configured: true,
+            repository,
+            commitSha,
+            workflowName,
+            reason:
+              `AIOS_CI_HEAD_SHA_MISMATCH: workflow runs were found but none matched the exact candidate SHA ${commitSha}. Observed head_sha values: ${Array.from(
+                new Set(mismatchedShas),
+              ).join(", ")}.`,
+          };
+        }
+      }
 
       if (latestRun) {
         const status =
