@@ -9,6 +9,9 @@ export type AutonomousDevelopmentReceiptInput = {
     | "blocked";
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -19,9 +22,15 @@ export type AutonomousDevelopmentReceipt = {
   valid: boolean;
   commitSha?: string;
   resultCommitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  expectedCommitShaConsistent: boolean;
+  checkoutHeadShaConsistent: boolean;
+  checkoutRefValid: boolean;
   missingEvidence: string[];
 };
 
@@ -39,6 +48,49 @@ function normalizeCommitSha(
     value?.trim() ?? "";
 
   return commitSha || undefined;
+}
+
+function normalizeCheckoutRef(
+  value?: string,
+) {
+  const checkoutRef =
+    value?.trim() ?? "";
+
+  if (!checkoutRef) {
+    return undefined;
+  }
+
+  if (
+    checkoutRef === "HEAD" ||
+    checkoutRef.startsWith("refs/heads/") ||
+    checkoutRef.startsWith("refs/remotes/") ||
+    /^[A-Za-z0-9._\-\/]+$/.test(
+      checkoutRef,
+    )
+  ) {
+    return checkoutRef;
+  }
+
+  return undefined;
+}
+
+function isRealCheckoutRef(
+  checkoutRef?: string,
+) {
+  const normalized =
+    normalizeCheckoutRef(
+      checkoutRef,
+    );
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized === "HEAD") {
+    return false;
+  }
+
+  return true;
 }
 
 export function isAutonomousDevelopmentTerminalStatus(
@@ -91,6 +143,21 @@ export function buildAutonomousDevelopmentReceipt(
       input.resultCommitSha,
     );
 
+  const expectedCommitSha =
+    normalizeCommitSha(
+      input.expectedCommitSha,
+    );
+
+  const checkoutHeadSha =
+    normalizeCommitSha(
+      input.checkoutHeadSha,
+    );
+
+  const checkoutRef =
+    normalizeCheckoutRef(
+      input.checkoutRef,
+    );
+
   const readbackVerified =
     input.readbackVerified ===
     true;
@@ -110,6 +177,23 @@ export function buildAutonomousDevelopmentReceipt(
     commitSha.toLowerCase() ===
       resultCommitSha.toLowerCase();
 
+  const expectedCommitShaConsistent =
+    !expectedCommitSha ||
+    !commitSha ||
+    expectedCommitSha.toLowerCase() ===
+      commitSha.toLowerCase();
+
+  const checkoutHeadShaConsistent =
+    !checkoutHeadSha ||
+    !commitSha ||
+    checkoutHeadSha.toLowerCase() ===
+      commitSha.toLowerCase();
+
+  const checkoutRefValid =
+    isRealCheckoutRef(
+      checkoutRef,
+    );
+
   const missingEvidence: string[] =
     [];
 
@@ -122,6 +206,52 @@ export function buildAutonomousDevelopmentReceipt(
   ) {
     missingEvidence.push(
       "commitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      resultCommitSha,
+    )
+  ) {
+    missingEvidence.push(
+      "resultCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    )
+  ) {
+    missingEvidence.push(
+      "expectedCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    )
+  ) {
+    missingEvidence.push(
+      "checkoutHeadSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutRefValid
+  ) {
+    missingEvidence.push(
+      "checkoutRef",
     );
   }
 
@@ -155,6 +285,26 @@ export function buildAutonomousDevelopmentReceipt(
     );
   }
 
+  if (
+    input.status ===
+      "completed" &&
+    !expectedCommitShaConsistent
+  ) {
+    missingEvidence.push(
+      "expectedCommitShaConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutHeadShaConsistent
+  ) {
+    missingEvidence.push(
+      "checkoutHeadShaConsistency",
+    );
+  }
+
   const successful =
     input.status ===
       "completed" &&
@@ -171,9 +321,15 @@ export function buildAutonomousDevelopmentReceipt(
         successful),
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    expectedCommitShaConsistent,
+    checkoutHeadShaConsistent,
+    checkoutRefValid,
     missingEvidence,
   };
 }

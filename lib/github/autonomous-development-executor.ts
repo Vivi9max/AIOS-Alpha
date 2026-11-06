@@ -213,6 +213,14 @@ export interface AutonomousDevelopmentExecutionResult {
 
   commitSha?: string;
 
+  expectedCommitSha?: string;
+
+  resultCommitSha?: string;
+
+  checkoutRef?: string;
+
+  checkoutHeadSha?: string;
+
   readbackVerified: boolean;
 
   verificationPassed: boolean;
@@ -581,9 +589,50 @@ export async function executeClaimedAutonomousDevelopmentTask(
       };
     }
 
+    const rawCommitSha =
+      github.write?.commitSha;
+
     const commitSha =
+      typeof rawCommitSha ===
+        "string" &&
+      rawCommitSha.trim()
+        ? rawCommitSha.trim()
+        : "";
+
+    const rawExpectedCommitSha =
       github.write
-        ?.commitSha || "";
+        ?.expectedCommitSha;
+
+    const expectedCommitSha =
+      typeof rawExpectedCommitSha ===
+        "string" &&
+      rawExpectedCommitSha.trim()
+        ? rawExpectedCommitSha.trim()
+        : "";
+
+    const rawCheckoutRef =
+      github.write?.checkoutRef;
+
+    const checkoutRef =
+      typeof rawCheckoutRef ===
+        "string" &&
+      rawCheckoutRef.trim()
+        ? rawCheckoutRef.trim()
+        : "";
+
+    const rawCheckoutHeadSha =
+      github.write
+        ?.checkoutHeadSha;
+
+    const checkoutHeadSha =
+      typeof rawCheckoutHeadSha ===
+        "string" &&
+      rawCheckoutHeadSha.trim()
+        ? rawCheckoutHeadSha.trim()
+        : "";
+
+    const resultCommitSha =
+      commitSha;
 
     const readbackVerified =
       github.write
@@ -599,6 +648,12 @@ export async function executeClaimedAutonomousDevelopmentTask(
      * Build/Production remain contract-required
      * verification dimensions and are not falsely
      * reported as independently executed here.
+     *
+     * Evidence is fail-closed: the receipt layer
+     * independently re-validates every mandatory
+     * SHA field, so we only forward the values
+     * observed from the GitHub write path without
+     * fabricating or substituting them.
      */
     const verificationPassed =
       github.success === true &&
@@ -609,6 +664,10 @@ export async function executeClaimedAutonomousDevelopmentTask(
         task.id,
         {
           commitSha,
+          expectedCommitSha,
+          resultCommitSha,
+          checkoutRef,
+          checkoutHeadSha,
           readbackVerified,
           verificationPassed,
         },
@@ -631,6 +690,18 @@ export async function executeClaimedAutonomousDevelopmentTask(
         ALLOWED_BRANCH,
       path,
       commitSha,
+      expectedCommitSha:
+        expectedCommitSha ||
+        undefined,
+      resultCommitSha:
+        resultCommitSha ||
+        undefined,
+      checkoutRef:
+        checkoutRef ||
+        undefined,
+      checkoutHeadSha:
+        checkoutHeadSha ||
+        undefined,
       readbackVerified,
       verificationPassed,
       generatedContentLength:

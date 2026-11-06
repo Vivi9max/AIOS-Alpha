@@ -36,6 +36,10 @@ export type AutonomousDevelopmentPhaseEvent = {
 
 export type AutonomousDevelopmentTaskResult = {
   commitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
+  resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
@@ -51,6 +55,10 @@ export type AutonomousDevelopmentTask = {
   phase: AutonomousDevelopmentTaskPhase;
   reason?: string;
   commitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
+  resultCommitSha?: string;
   changedPaths?: string[];
   result?: AutonomousDevelopmentTaskResult;
   createdAt: string;
@@ -69,6 +77,9 @@ export type AutonomousDevelopmentReceipt = {
   targetPaths: string[];
   phases: string[];
   commitSha?: string;
+  expectedCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
@@ -369,6 +380,30 @@ function normalizeTask(
           ? candidate.commitSha
           : undefined,
 
+      expectedCommitSha:
+        typeof candidate.expectedCommitSha ===
+        "string"
+          ? candidate.expectedCommitSha
+          : undefined,
+
+      checkoutRef:
+        typeof candidate.checkoutRef ===
+        "string"
+          ? candidate.checkoutRef
+          : undefined,
+
+      checkoutHeadSha:
+        typeof candidate.checkoutHeadSha ===
+        "string"
+          ? candidate.checkoutHeadSha
+          : undefined,
+
+      resultCommitSha:
+        typeof candidate.resultCommitSha ===
+        "string"
+          ? candidate.resultCommitSha
+          : undefined,
+
       changedPaths:
         Array.isArray(
           candidate.changedPaths,
@@ -386,6 +421,38 @@ function normalizeTask(
                 typeof candidate.result.commitSha ===
                 "string"
                   ? candidate.result.commitSha
+                  : undefined,
+
+              expectedCommitSha:
+                typeof candidate.result
+                  .expectedCommitSha ===
+                "string"
+                  ? candidate.result
+                      .expectedCommitSha
+                  : undefined,
+
+              checkoutRef:
+                typeof candidate.result
+                  .checkoutRef ===
+                "string"
+                  ? candidate.result
+                      .checkoutRef
+                  : undefined,
+
+              checkoutHeadSha:
+                typeof candidate.result
+                  .checkoutHeadSha ===
+                "string"
+                  ? candidate.result
+                      .checkoutHeadSha
+                  : undefined,
+
+              resultCommitSha:
+                typeof candidate.result
+                  .resultCommitSha ===
+                "string"
+                  ? candidate.result
+                      .resultCommitSha
                   : undefined,
 
               readbackVerified:
@@ -450,6 +517,18 @@ function cloneTask(
     targetPaths: [
       ...task.targetPaths,
     ],
+
+    expectedCommitSha:
+      task.expectedCommitSha,
+
+    checkoutRef:
+      task.checkoutRef,
+
+    checkoutHeadSha:
+      task.checkoutHeadSha,
+
+    resultCommitSha:
+      task.resultCommitSha,
 
     changedPaths:
       task.changedPaths
@@ -1047,8 +1126,17 @@ function createReceipt(
       commitSha:
         task.commitSha,
 
+      expectedCommitSha:
+        task.expectedCommitSha,
+
+      checkoutRef:
+        task.checkoutRef,
+
+      checkoutHeadSha:
+        task.checkoutHeadSha,
+
       resultCommitSha:
-        result?.commitSha,
+        task.resultCommitSha,
 
       readbackVerified:
         result?.readbackVerified ===
@@ -1085,6 +1173,15 @@ function createReceipt(
 
     commitSha:
       canonical.commitSha,
+
+    expectedCommitSha:
+      canonical.expectedCommitSha,
+
+    checkoutRef:
+      canonical.checkoutRef,
+
+    checkoutHeadSha:
+      canonical.checkoutHeadSha,
 
     resultCommitSha:
       canonical.resultCommitSha,

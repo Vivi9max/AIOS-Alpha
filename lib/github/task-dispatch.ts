@@ -50,6 +50,9 @@ export interface GitHubTaskResult {
     commitSha: string;
     commitUrl?: string;
     readbackVerified?: boolean;
+    expectedCommitSha?: string;
+    checkoutRef?: string;
+    checkoutHeadSha?: string;
   };
   error?: string;
 }
@@ -551,6 +554,20 @@ export async function dispatchGitHubTask(
   const contentSha =
     write.data.content?.sha;
 
+  const expectedCommitSha =
+    existing.success &&
+    existing.data &&
+    typeof existing.data.sha ===
+      "string"
+      ? existing.data.sha
+      : undefined;
+
+  const checkoutRef =
+    typeof branch === "string" &&
+    branch.trim().length > 0
+      ? branch.trim()
+      : undefined;
+
   const readback =
     await readGitHubFile({
       repo:
@@ -561,6 +578,14 @@ export async function dispatchGitHubTask(
       accessToken:
         auth.accessToken,
     });
+
+  const checkoutHeadSha =
+    readback.success &&
+    readback.data &&
+    typeof readback.data.sha ===
+      "string"
+      ? readback.data.sha
+      : undefined;
 
   if (
     !readback.success ||
@@ -584,6 +609,9 @@ export async function dispatchGitHubTask(
         commitUrl,
         readbackVerified:
           false,
+        expectedCommitSha,
+        checkoutRef,
+        checkoutHeadSha,
       },
     };
   }
@@ -616,6 +644,9 @@ export async function dispatchGitHubTask(
         commitUrl,
         readbackVerified:
           false,
+        expectedCommitSha,
+        checkoutRef,
+        checkoutHeadSha,
       },
     };
   }
@@ -636,6 +667,9 @@ export async function dispatchGitHubTask(
       commitUrl,
       readbackVerified:
         true,
+      expectedCommitSha,
+      checkoutRef,
+      checkoutHeadSha,
     },
   };
 }

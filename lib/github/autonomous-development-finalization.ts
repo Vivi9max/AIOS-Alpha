@@ -49,20 +49,86 @@ type PersistentTask = NonNullable<
   >
 >;
 
+type OptionalEvidenceString = string | undefined;
+
+function normalizeEvidenceString(
+  value: unknown,
+): OptionalEvidenceString {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed =
+    value.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function readEvidenceString(
+  source: unknown,
+  key: string,
+): OptionalEvidenceString {
+  if (
+    !source ||
+    typeof source !== "object"
+  ) {
+    return undefined;
+  }
+
+  const record =
+    source as Record<string, unknown>;
+
+  return normalizeEvidenceString(
+    record[key],
+  );
+}
+
 function getReceiptState(
   task: PersistentTask,
 ) {
   const taskCommitSha =
-    task.commitSha?.trim() ||
-    undefined;
+    normalizeEvidenceString(
+      task.commitSha,
+    );
 
   const resultCommitSha =
-    task.result?.commitSha?.trim() ||
-    undefined;
+    normalizeEvidenceString(
+      task.result?.commitSha,
+    );
 
   const commitSha =
     taskCommitSha ??
     resultCommitSha;
+
+  const expectedCommitSha =
+    readEvidenceString(
+      task,
+      "expectedCommitSha",
+    ) ??
+    readEvidenceString(
+      task.result,
+      "expectedCommitSha",
+    );
+
+  const checkoutRef =
+    readEvidenceString(
+      task,
+      "checkoutRef",
+    ) ??
+    readEvidenceString(
+      task.result,
+      "checkoutRef",
+    );
+
+  const checkoutHeadSha =
+    readEvidenceString(
+      task,
+      "checkoutHeadSha",
+    ) ??
+    readEvidenceString(
+      task.result,
+      "checkoutHeadSha",
+    );
 
   const readbackVerified =
     task.result?.readbackVerified ===
@@ -77,6 +143,9 @@ function getReceiptState(
       task.status,
     commitSha,
     resultCommitSha,
+    expectedCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
   });
