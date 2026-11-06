@@ -196,14 +196,22 @@ export function buildAutonomousDevelopmentReceipt(
     );
 
   const commitShaConsistent =
-    commitShaValid &&
-    resultCommitShaValid &&
-    expectedCommitShaValid &&
-    checkoutHeadShaValid &&
     typeof commitSha === "string" &&
     typeof resultCommitSha === "string" &&
     typeof expectedCommitSha === "string" &&
     typeof checkoutHeadSha === "string" &&
+    isValidAutonomousDevelopmentCommitSha(
+      commitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      resultCommitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    ) &&
+    isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    ) &&
     commitSha.toLowerCase() ===
       resultCommitSha.toLowerCase() &&
     commitSha.toLowerCase() ===
