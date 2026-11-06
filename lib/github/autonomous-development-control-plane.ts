@@ -2334,6 +2334,18 @@ export function blockAutonomousDevelopmentTask(
     commitSha:
       task.commitSha,
 
+    expectedCommitSha:
+      task.expectedCommitSha,
+
+    resultCommitSha:
+      task.resultCommitSha,
+
+    checkoutRef:
+      task.checkoutRef,
+
+    checkoutHeadSha:
+      task.checkoutHeadSha,
+
     readbackVerified:
       false,
 
