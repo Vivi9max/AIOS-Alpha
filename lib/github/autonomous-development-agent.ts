@@ -281,28 +281,7 @@ function assertRepairBaseIdentity(
   }
 }
 // R8_REPAIR_BASE_IDENTITY_GUARD_END
-  if (!isValidGitCommitSha(expectedBaseSha)) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID",
-    );
-  }
-
-  if (!isValidGitCommitSha(actualBaseSha)) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID",
-    );
-  }
-
-  if (
-    expectedBaseSha.trim().toLowerCase() !==
-    actualBaseSha.trim().toLowerCase()
-  ) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_BASE_IDENTITY_MISMATCH",
-    );
-  }
-}
-
+  
 function objectiveTokens(
   objective: string,
 ) {
