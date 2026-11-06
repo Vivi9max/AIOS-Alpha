@@ -107,8 +107,14 @@ export function buildAutonomousDevelopmentReceipt(
   const commitShaConsistent =
     !commitSha ||
     !resultCommitSha ||
-    commitSha.toLowerCase() ===
-      resultCommitSha.toLowerCase();
+    (isValidAutonomousDevelopmentCommitSha(
+      commitSha,
+    ) &&
+      isValidAutonomousDevelopmentCommitSha(
+        resultCommitSha,
+      ) &&
+      commitSha.toLowerCase() ===
+        resultCommitSha.toLowerCase());
 
   const missingEvidence: string[] =
     [];
