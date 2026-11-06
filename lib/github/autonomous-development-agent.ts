@@ -245,6 +245,15 @@ function isSafePath(path: string) {
   );
 }
 
+function isValidGitCommitSha(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{40}$/i.test(value.trim())
+  );
+}
+
 function objectiveTokens(
   objective: string,
 ) {
@@ -1803,7 +1812,6 @@ function selectRepairTarget(
     null
   );
 }
-
 export interface AutonomousDevelopmentAgentResult {
   success: boolean;
   code: string;
@@ -1875,7 +1883,13 @@ export async function executeAutonomousDevelopmentAgent(
     [];
 
   let readbackVerified =
-    true;
+    false;
+
+  let latestExpectedCommitSha =
+    "";
+
+  let latestCheckoutHeadSha =
+    "";
 
   let verification:
     | VercelBuildVerificationResult
@@ -2278,16 +2292,44 @@ export async function executeAutonomousDevelopmentAgent(
       );
     }
 
-    stagingBranch = atomicResult.snapshot.stagingBranch;
-    changedPaths.push(...atomicResult.snapshot.changedPaths);
-    commitShas.push(atomicResult.snapshot.stagingCommitSha);
-    readbackVerified = true;
+    const initialSnapshot =
+      atomicResult.snapshot;
+
+    if (
+      !isValidGitCommitSha(initialSnapshot.baseSha) ||
+      !isValidGitCommitSha(initialSnapshot.treeSha) ||
+      !isValidGitCommitSha(initialSnapshot.stagingCommitSha) ||
+      !initialSnapshot.stagingBranch.trim()
+    ) {
+      throw new Error(
+        "AUTONOMOUS_ATOMIC_SNAPSHOT_IDENTITY_INVALID",
+      );
+    }
+
+    stagingBranch =
+      initialSnapshot.stagingBranch;
+
+    changedPaths.push(
+      ...initialSnapshot.changedPaths,
+    );
+
+    commitShas.push(
+      initialSnapshot.stagingCommitSha,
+    );
+
+    latestExpectedCommitSha =
+      initialSnapshot.stagingCommitSha;
+
+    latestCheckoutHeadSha =
+      initialSnapshot.stagingCommitSha;
+
+    readbackVerified = false;
 
     updateAutonomousDevelopmentTask(taskId, {
       phase: "READBACK",
-      commitSha: atomicResult.snapshot.stagingCommitSha,
+      commitSha: initialSnapshot.stagingCommitSha,
       changedPaths,
-      reason: `Atomic staging branch head verified: ${stagingBranch}`,
+      reason: `Atomic staging commit created and branch head identity verified: ${stagingBranch}`,
     });
 
     if (
@@ -2486,11 +2528,44 @@ export async function executeAutonomousDevelopmentAgent(
         );
       }
 
-      stagingBranch = repairAtomicResult.snapshot.stagingBranch;
-      changedPaths.push(repairTarget);
-      commitShas.push(repairAtomicResult.snapshot.stagingCommitSha);
-      latestCommitSha = repairAtomicResult.snapshot.stagingCommitSha;
-      readbackVerified = true;
+      const repairSnapshot =
+        repairAtomicResult.snapshot;
+
+      if (
+        !isValidGitCommitSha(repairSnapshot.baseSha) ||
+        !isValidGitCommitSha(repairSnapshot.treeSha) ||
+        !isValidGitCommitSha(repairSnapshot.stagingCommitSha) ||
+        !repairSnapshot.stagingBranch.trim()
+      ) {
+        throw new Error(
+          "AUTONOMOUS_REPAIR_ATOMIC_SNAPSHOT_IDENTITY_INVALID",
+        );
+      }
+
+      stagingBranch =
+        repairSnapshot.stagingBranch;
+
+      if (!changedPaths.includes(repairTarget)) {
+        changedPaths.push(repairTarget);
+      }
+
+      commitShas.push(
+        repairSnapshot.stagingCommitSha,
+      );
+
+      latestCommitSha =
+        repairSnapshot.stagingCommitSha;
+
+      latestExpectedCommitSha =
+        repairSnapshot.stagingCommitSha;
+
+      latestCheckoutHeadSha =
+        repairSnapshot.stagingCommitSha;
+
+      patchedContents[repairTarget] =
+        finalContent;
+
+      readbackVerified = false;
 
       updateAutonomousDevelopmentTask(
         taskId,
@@ -2526,14 +2601,97 @@ export async function executeAutonomousDevelopmentAgent(
           },
         );
     }
-
+        /*
+     * Final evidence is assembled only after the last atomic staging
+     * commit and the Vercel result refer to the same immutable SHA.
+     * Blob SHAs returned by Contents API reads are intentionally not
+     * used as commit identity evidence.
+     */
     const buildPassed =
-      verification?.status ===
-      "PASS";
+      verification?.status === "PASS" &&
+      isValidGitCommitSha(verification.commitSha) &&
+      verification.commitSha.trim().toLowerCase() ===
+        latestCommitSha.toLowerCase();
+
+    let readbackError =
+      "";
+
+    readbackVerified = false;
+
+    if (
+      stagingBranch &&
+      isValidGitCommitSha(latestExpectedCommitSha) &&
+      latestCheckoutHeadSha.toLowerCase() ===
+        latestExpectedCommitSha.toLowerCase()
+    ) {
+      try {
+        for (const targetPath of targetPaths) {
+          const expectedContent =
+            patchedContents[targetPath];
+
+          if (typeof expectedContent !== "string") {
+            throw new Error(
+              `AUTONOMOUS_FINAL_EXPECTED_CONTENT_MISSING: ${targetPath}`,
+            );
+          }
+
+          const readback =
+            await readFile(
+              targetPath,
+              input.accessToken,
+              stagingBranch,
+            );
+
+          if (readback.content !== expectedContent) {
+            throw new Error(
+              `AUTONOMOUS_FINAL_READBACK_CONTENT_MISMATCH: ${targetPath}`,
+            );
+          }
+        }
+
+        readbackVerified = true;
+      } catch (error) {
+        readbackError =
+          error instanceof Error
+            ? error.message
+            : "AUTONOMOUS_FINAL_READBACK_FAILED";
+      }
+    } else {
+      readbackError =
+        "AUTONOMOUS_FINAL_CHECKOUT_IDENTITY_INVALID";
+    }
+
+    const commitSha =
+      latestCommitSha;
+
+    const expectedCommitSha =
+      latestExpectedCommitSha;
+
+    const resultCommitSha =
+      verification?.commitSha?.trim() || "";
+
+    const checkoutRef =
+      stagingBranch
+        ? `refs/heads/${stagingBranch}`
+        : "";
+
+    const checkoutHeadSha =
+      latestCheckoutHeadSha;
 
     const verificationPassed =
+      buildPassed &&
       readbackVerified &&
-      buildPassed;
+      isValidGitCommitSha(commitSha) &&
+      isValidGitCommitSha(expectedCommitSha) &&
+      isValidGitCommitSha(resultCommitSha) &&
+      isValidGitCommitSha(checkoutHeadSha) &&
+      commitSha.toLowerCase() ===
+        expectedCommitSha.toLowerCase() &&
+      commitSha.toLowerCase() ===
+        resultCommitSha.toLowerCase() &&
+      commitSha.toLowerCase() ===
+        checkoutHeadSha.toLowerCase() &&
+      Boolean(checkoutRef);
 
     const reason =
       verificationPassed
@@ -2542,51 +2700,75 @@ export async function executeAutonomousDevelopmentAgent(
             `Targets: ${targetPaths.length}.`,
             `Changed: ${changedPaths.length}.`,
             `Repair rounds: ${repairRounds}.`,
-            "Staging branch readback and Vercel commit verification passed.",
+            "Every target file was read back from the final staging branch and matched the generated source.",
+            "Vercel returned PASS for the exact final staging commit SHA.",
+            "All five commit and checkout identity fields were consistent.",
           ].join(" ")
-        : verification?.errorMessage ||
+        : readbackError ||
+          verification?.errorMessage ||
           verification?.errorCode ||
-          "Final autonomous verification failed.";
+          "AUTONOMOUS_FINAL_COMMIT_EVIDENCE_INVALID";
 
-    updateAutonomousDevelopmentTask(
-      taskId,
-      {
-        phase:
-          verificationPassed
-            ? "COMPLETED"
-            : "BLOCKED",
+    if (!verificationPassed) {
+      blockAutonomousDevelopmentTask(
+        taskId,
         reason,
-        commitSha:
-          latestCommitSha,
-        changedPaths,
-      },
-    );
+      );
 
-    if (
-      verificationPassed
-    ) {
+      return {
+        success: false,
+        code: "AUTONOMOUS_DEVELOPMENT_BUILD_FAILED",
+        taskId,
+        ...resultBase(),
+        verificationPassed: false,
+        reason,
+      };
+    }
+
+    /*
+     * Do not pre-transition the task to COMPLETED here.
+     * The persistent control plane must atomically validate all
+     * required evidence and perform the terminal transition itself.
+     */
+    const receipt =
       await completePersistentAutonomousDevelopmentTask(
         taskId,
         {
-          commitSha:
-            latestCommitSha,
+          commitSha,
+          expectedCommitSha,
+          resultCommitSha,
+          checkoutRef,
+          checkoutHeadSha,
           readbackVerified,
           verificationPassed,
           reason,
         },
       );
+
+    const receiptPassed =
+      receipt.status === "completed" &&
+      receipt.valid === true &&
+      receipt.successful === true;
+
+    if (!receiptPassed) {
+      return {
+        success: false,
+        code: "AUTONOMOUS_DEVELOPMENT_RECEIPT_INVALID",
+        taskId,
+        ...resultBase(),
+        verificationPassed: false,
+        reason:
+          receipt.reason ||
+          "AUTONOMOUS_DEVELOPMENT_RECEIPT_INVALID",
+      };
     }
 
     return {
-      success:
-        verificationPassed,
-      code:
-        verificationPassed
-          ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
-          : "AUTONOMOUS_DEVELOPMENT_BUILD_FAILED",
+      success: true,
+      code: "AUTONOMOUS_DEVELOPMENT_COMPLETED",
       taskId,
       ...resultBase(),
-      verificationPassed,
+      verificationPassed: true,
       reason,
     };
   } catch (error) {
