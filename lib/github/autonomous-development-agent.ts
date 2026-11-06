@@ -254,6 +254,32 @@ function isValidGitCommitSha(
   );
 }
 
+function assertRepairBaseIdentity(
+  expectedBaseSha: unknown,
+  actualBaseSha: unknown,
+) {
+  if (!isValidGitCommitSha(expectedBaseSha)) {
+    throw new Error(
+      "AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID",
+    );
+  }
+
+  if (!isValidGitCommitSha(actualBaseSha)) {
+    throw new Error(
+      "AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID",
+    );
+  }
+
+  if (
+    expectedBaseSha.trim().toLowerCase() !==
+    actualBaseSha.trim().toLowerCase()
+  ) {
+    throw new Error(
+      "AUTONOMOUS_REPAIR_BASE_IDENTITY_MISMATCH",
+    );
+  }
+}
+
 function objectiveTokens(
   objective: string,
 ) {
@@ -2511,6 +2537,9 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
+      const expectedRepairBaseSha =
+        latestCommitSha;
+      
       const repairAtomicResult = await executeAtomicStaging({
         objective: `${objective}\nVercel repair round ${repairRounds}.`,
         taskId: `${taskId}-repair-${repairRounds}`,
@@ -2541,6 +2570,11 @@ export async function executeAutonomousDevelopmentAgent(
         );
       }
 
+      assertRepairBaseIdentity(
+        expectedRepairBaseSha,
+        repairSnapshot.baseSha,
+      );
+      
       stagingBranch =
         repairSnapshot.stagingBranch;
 
