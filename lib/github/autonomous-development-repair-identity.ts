@@ -9,7 +9,7 @@ export function assertRepairBaseIdentity(
     !GIT_COMMIT_SHA_PATTERN.test(expectedBaseSha.trim())
   ) {
     throw new Error(
-      "AUTONOMOUS_REPAIR_EXPECTED_BASE_IDENTITY_INVALID",
+      "AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID",
     );
   }
 
@@ -18,7 +18,7 @@ export function assertRepairBaseIdentity(
     !GIT_COMMIT_SHA_PATTERN.test(actualBaseSha.trim())
   ) {
     throw new Error(
-      "AUTONOMOUS_REPAIR_BASE_IDENTITY_INVALID",
+      "AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID",
     );
   }
 
