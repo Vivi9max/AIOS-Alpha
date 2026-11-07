@@ -157,11 +157,41 @@ const {
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
   persistAutonomousDevelopmentTasks,
+  completeAutonomousDevelopmentTask,
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
   ).href
 );
+
+const { buildAutonomousDevelopmentReceipt } = await import(
+  pathToFileURL(
+    path.join(tmpDir, "autonomous-development-receipt.mjs"),
+  ).href
+);
+
+const VALID_COMMIT_SHA =
+  "46700475cfb24a88299d87764381807973567c51";
+const VALID_EXPECTED_SHA =
+  "46700475CFB24A88299D87764381807973567C51";
+const VALID_RESULT_SHA =
+  "0123456789abcdef0123456789abcdef01234567";
+const VALID_CHECKOUT_HEAD_SHA =
+  "89abcdef0123456789abcdef0123456789abcdef";
+const VALID_CHECKOUT_REF = "staging/c170.6.19";
+
+function validEvidence(overrides = {}) {
+  return {
+    commitSha: VALID_COMMIT_SHA,
+    expectedCommitSha: VALID_EXPECTED_SHA,
+    resultCommitSha: VALID_RESULT_SHA,
+    checkoutRef: VALID_CHECKOUT_REF,
+    checkoutHeadSha: VALID_CHECKOUT_HEAD_SHA,
+    readbackVerified: true,
+    verificationPassed: true,
+    ...overrides,
+  };
+}
 
 const TASK_STORAGE_KEY =
   "aios:autonomous-development:tasks";
@@ -525,11 +555,557 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// TEST 5 — Identity Evidence: Valid Evidence Completes
+// ---------------------------------------------------------------------------
+
+await run("5 IDENTITY EVIDENCE VALID COMPLETES", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 identity evidence valid fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const evidence = validEvidence();
+
+  completeAutonomousDevelopmentTask(task.id, evidence);
+
+  assert.equal(
+    task.status,
+    "completed",
+    "valid identity evidence must complete the task",
+  );
+
+  assert.equal(
+    task.phase,
+    "COMPLETED",
+    "valid identity evidence must reach COMPLETED phase",
+  );
+
+  assert.equal(
+    task.commitSha,
+    VALID_COMMIT_SHA,
+    "commitSha must be preserved",
+  );
+
+  assert.equal(
+    task.expectedCommitSha,
+    VALID_EXPECTED_SHA,
+    "expectedCommitSha must be preserved",
+  );
+
+  assert.equal(
+    task.resultCommitSha,
+    VALID_RESULT_SHA,
+    "resultCommitSha must be preserved",
+  );
+
+  assert.equal(
+    task.checkoutRef,
+    VALID_CHECKOUT_REF,
+    "checkoutRef must be preserved",
+  );
+
+  assert.equal(
+    task.checkoutHeadSha,
+    VALID_CHECKOUT_HEAD_SHA,
+    "checkoutHeadSha must be preserved",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 6 — Identity Evidence: Each Missing Field Blocks
+// ---------------------------------------------------------------------------
+
+const MISSING_FIELD_CASES = [
+  "commitSha",
+  "expectedCommitSha",
+  "resultCommitSha",
+  "checkoutRef",
+  "checkoutHeadSha",
+];
+
+for (const missingField of MISSING_FIELD_CASES) {
+  await run(
+    `6 IDENTITY EVIDENCE MISSING ${missingField.toUpperCase()} BLOCKS`,
+    async () => {
+      await resetStorage();
+
+      const task = createAutonomousDevelopmentTask({
+        objective: `C170.6.19 missing ${missingField} fixture`,
+      });
+
+      claimAutonomousDevelopmentTask(task.id);
+
+      const evidence = validEvidence();
+      delete evidence[missingField];
+
+      completeAutonomousDevelopmentTask(task.id, evidence);
+
+      assert.equal(
+        task.status,
+        "blocked",
+        `missing ${missingField} must block completion`,
+      );
+
+      assert.equal(
+        task.phase,
+        "BLOCKED",
+        `missing ${missingField} must reach BLOCKED phase`,
+      );
+
+      assert.ok(
+        Array.isArray(task.missingEvidence),
+        "missingEvidence must be an array",
+      );
+
+      assert.ok(
+        task.missingEvidence.includes(missingField),
+        `missingEvidence must include ${missingField}`,
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TEST 7 — Identity Evidence: SHA Mismatches Block
+// ---------------------------------------------------------------------------
+
+const SHA_MISMATCH_CASES = [
+  {
+    name: "commitSha vs expectedCommitSha",
+    overrides: {
+      commitSha: VALID_RESULT_SHA,
+      expectedCommitSha: VALID_COMMIT_SHA,
+    },
+  },
+  {
+    name: "commitSha vs resultCommitSha",
+    overrides: {
+      commitSha: VALID_COMMIT_SHA,
+      resultCommitSha: VALID_EXPECTED_SHA,
+    },
+  },
+  {
+    name: "checkoutRef SHA vs checkoutHeadSha",
+    overrides: {
+      checkoutRef: VALID_RESULT_SHA,
+      checkoutHeadSha: VALID_CHECKOUT_HEAD_SHA,
+    },
+  },
+];
+
+for (const mismatch of SHA_MISMATCH_CASES) {
+  await run(
+    `7 IDENTITY EVIDENCE MISMATCH ${mismatch.name.toUpperCase()} BLOCKS`,
+    async () => {
+      await resetStorage();
+
+      const task = createAutonomousDevelopmentTask({
+        objective: `C170.6.19 mismatch ${mismatch.name} fixture`,
+      });
+
+      claimAutonomousDevelopmentTask(task.id);
+
+      completeAutonomousDevelopmentTask(
+        task.id,
+        validEvidence(mismatch.overrides),
+      );
+
+      assert.equal(
+        task.status,
+        "blocked",
+        `mismatch ${mismatch.name} must block completion`,
+      );
+
+      assert.equal(
+        task.phase,
+        "BLOCKED",
+        `mismatch ${mismatch.name} must reach BLOCKED phase`,
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TEST 8 — Identity Evidence: Invalid checkoutRef Blocks
+// ---------------------------------------------------------------------------
+
+await run("8 IDENTITY EVIDENCE INVALID CHECKOUT REF BLOCKS", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 invalid checkoutRef fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  completeAutonomousDevelopmentTask(
+    task.id,
+    validEvidence({ checkoutRef: "not a valid ref!!" }),
+  );
+
+  assert.equal(
+    task.status,
+    "blocked",
+    "invalid checkoutRef must block completion",
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    "invalid checkoutRef must reach BLOCKED phase",
+  );
+
+  assert.ok(
+    Array.isArray(task.missingEvidence) &&
+      task.missingEvidence.includes("checkoutRef"),
+    "missingEvidence must include checkoutRef",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 9 — Missing Readback / Final Verification Blocks
+// ---------------------------------------------------------------------------
+
+await run("9 IDENTITY EVIDENCE MISSING READBACK BLOCKS", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 missing readback fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  completeAutonomousDevelopmentTask(
+    task.id,
+    validEvidence({ readbackVerified: false }),
+  );
+
+  assert.equal(
+    task.status,
+    "blocked",
+    "readbackVerified=false must block completion",
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    "readbackVerified=false must reach BLOCKED phase",
+  );
+});
+
+await run("9 IDENTITY EVIDENCE MISSING FINAL VERIFICATION BLOCKS", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 missing final verification fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  completeAutonomousDevelopmentTask(
+    task.id,
+    validEvidence({ verificationPassed: false }),
+  );
+
+  assert.equal(
+    task.status,
+    "blocked",
+    "verificationPassed=false must block completion",
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    "verificationPassed=false must reach BLOCKED phase",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 10 — Undefined / Non-String Values Do Not Throw
+// ---------------------------------------------------------------------------
+
+await run("10 IDENTITY EVIDENCE UNDEFINED VALUES DO NOT THROW", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 undefined evidence fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  assert.doesNotThrow(() => {
+    completeAutonomousDevelopmentTask(task.id, {
+      commitSha: undefined,
+      expectedCommitSha: undefined,
+      resultCommitSha: undefined,
+      checkoutRef: undefined,
+      checkoutHeadSha: undefined,
+      readbackVerified: true,
+      verificationPassed: true,
+    });
+  }, "undefined evidence values must not throw");
+
+  assert.equal(
+    task.status,
+    "blocked",
+    "undefined evidence must block completion",
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    "undefined evidence must reach BLOCKED phase",
+  );
+});
+
+await run("10 IDENTITY EVIDENCE NON-STRING VALUES DO NOT THROW", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 non-string evidence fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  assert.doesNotThrow(() => {
+    completeAutonomousDevelopmentTask(task.id, {
+      commitSha: 12345,
+      expectedCommitSha: null,
+      resultCommitSha: {},
+      checkoutRef: [],
+      checkoutHeadSha: true,
+      readbackVerified: true,
+      verificationPassed: true,
+    });
+  }, "non-string evidence values must not throw");
+
+  assert.equal(
+    task.status,
+    "blocked",
+    "non-string evidence must block completion",
+  );
+
+  assert.equal(
+    task.phase,
+    "BLOCKED",
+    "non-string evidence must reach BLOCKED phase",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 11 — Repeated Blocked Completion Remains Blocked
+// ---------------------------------------------------------------------------
+
+await run("11 IDENTITY EVIDENCE REPEATED BLOCKED STAYS BLOCKED", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 repeated blocked fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  completeAutonomousDevelopmentTask(task.id, {
+    commitSha: VALID_COMMIT_SHA,
+    expectedCommitSha: VALID_COMMIT_SHA,
+    resultCommitSha: VALID_RESULT_SHA,
+    checkoutRef: VALID_CHECKOUT_REF,
+    checkoutHeadSha: VALID_CHECKOUT_HEAD_SHA,
+    readbackVerified: true,
+    verificationPassed: true,
+  });
+
+  assert.equal(
+    task.status,
+    "completed",
+    "first valid completion must succeed",
+  );
+
+  // Now simulate a repeated completion with missing evidence — must not
+  // upgrade or downgrade the terminal state silently.
+  assert.doesNotThrow(() => {
+    completeAutonomousDevelopmentTask(task.id, {
+      readbackVerified: true,
+      verificationPassed: true,
+    });
+  }, "repeated completion with missing evidence must not throw");
+
+  assert.equal(
+    task.status,
+    "completed",
+    "repeated completion must not downgrade completed state",
+  );
+
+  // Fresh blocked task: repeated blocked completion remains blocked.
+  const blockedTask = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 repeated blocked fresh fixture",
+  });
+
+  claimAutonomousDevelopmentTask(blockedTask.id);
+
+  completeAutonomousDevelopmentTask(blockedTask.id, {
+    readbackVerified: true,
+    verificationPassed: true,
+  });
+
+  assert.equal(
+    blockedTask.status,
+    "blocked",
+    "first blocked completion must be blocked",
+  );
+
+  completeAutonomousDevelopmentTask(blockedTask.id, {
+    readbackVerified: true,
+    verificationPassed: true,
+  });
+
+  assert.equal(
+    blockedTask.status,
+    "blocked",
+    "repeated blocked completion must remain blocked",
+  );
+
+  assert.equal(
+    blockedTask.phase,
+    "BLOCKED",
+    "repeated blocked completion must remain BLOCKED phase",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 12 — Persistence Hydration Retains All Five Fields
+// ---------------------------------------------------------------------------
+
+await run("12 IDENTITY EVIDENCE PERSISTENCE HYDRATION", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective:
+      "C170.6.19 persistence hydration fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  completeAutonomousDevelopmentTask(
+    task.id,
+    validEvidence(),
+  );
+
+  await persistAutonomousDevelopmentTasks();
+
+  const hydrated =
+    await listPersistentAutonomousDevelopmentTasks();
+
+  const survivor = hydrated.find(
+    (entry) => entry.id === task.id,
+  );
+
+  assert.ok(
+    survivor,
+    "hydrated collection must contain the fixture",
+  );
+
+  assert.equal(
+    survivor.commitSha,
+    VALID_COMMIT_SHA,
+    "hydrated commitSha must be preserved",
+  );
+
+  assert.equal(
+    survivor.expectedCommitSha,
+    VALID_EXPECTED_SHA,
+    "hydrated expectedCommitSha must be preserved",
+  );
+
+  assert.equal(
+    survivor.resultCommitSha,
+    VALID_RESULT_SHA,
+    "hydrated resultCommitSha must be preserved",
+  );
+
+  assert.equal(
+    survivor.checkoutRef,
+    VALID_CHECKOUT_REF,
+    "hydrated checkoutRef must be preserved",
+  );
+
+  assert.equal(
+    survivor.checkoutHeadSha,
+    VALID_CHECKOUT_HEAD_SHA,
+    "hydrated checkoutHeadSha must be preserved",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 13 — Receipt Projection Retains All Five Fields
+// ---------------------------------------------------------------------------
+
+await run("13 IDENTITY EVIDENCE RECEIPT PROJECTION", async () => {
+  const receipt = buildAutonomousDevelopmentReceipt({
+    taskId: "fixture-task",
+    objective:
+      "C170.6.19 receipt projection fixture",
+    status: "completed",
+    phase: "COMPLETED",
+    commitSha: VALID_COMMIT_SHA,
+    expectedCommitSha: VALID_EXPECTED_SHA,
+    resultCommitSha: VALID_RESULT_SHA,
+    checkoutRef: VALID_CHECKOUT_REF,
+    checkoutHeadSha: VALID_CHECKOUT_HEAD_SHA,
+    readbackVerified: true,
+    verificationPassed: true,
+  });
+
+  assert.ok(receipt, "receipt must be produced");
+
+  assert.equal(
+    receipt.commitSha,
+    VALID_COMMIT_SHA,
+    "receipt commitSha must be preserved",
+  );
+
+  assert.equal(
+    receipt.expectedCommitSha,
+    VALID_EXPECTED_SHA,
+    "receipt expectedCommitSha must be preserved",
+  );
+
+  assert.equal(
+    receipt.resultCommitSha,
+    VALID_RESULT_SHA,
+    "receipt resultCommitSha must be preserved",
+  );
+
+  assert.equal(
+    receipt.checkoutRef,
+    VALID_CHECKOUT_REF,
+    "receipt checkoutRef must be preserved",
+  );
+
+  assert.equal(
+    receipt.checkoutHeadSha,
+    VALID_CHECKOUT_HEAD_SHA,
+    "receipt checkoutHeadSha must be preserved",
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC170.6.19 INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {

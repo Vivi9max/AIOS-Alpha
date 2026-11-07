@@ -8,7 +8,10 @@ export type AutonomousDevelopmentReceiptInput = {
     | "failed"
     | "blocked";
   commitSha?: string;
+  expectedCommitSha?: string;
   resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
 };
@@ -18,10 +21,14 @@ export type AutonomousDevelopmentReceipt = {
   successful: boolean;
   valid: boolean;
   commitSha?: string;
+  expectedCommitSha?: string;
   resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  checkoutRefConsistent: boolean;
   missingEvidence: string[];
 };
 
@@ -36,9 +43,63 @@ function normalizeCommitSha(
   value?: string,
 ) {
   const commitSha =
-    value?.trim() ?? "";
+    typeof value === "string"
+      ? value.trim()
+      : "";
 
   return commitSha || undefined;
+}
+
+function normalizeCheckoutRef(
+  value?: string,
+) {
+  const checkoutRef =
+    typeof value === "string"
+      ? value.trim()
+      : "";
+
+  return checkoutRef || undefined;
+}
+
+export function isValidAutonomousDevelopmentCheckoutRef(
+  checkoutRef?: string,
+) {
+  const normalized =
+    normalizeCheckoutRef(
+      checkoutRef,
+    );
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    /^[0-9a-f]{40}$/i.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return /^[A-Za-z0-9._\-/]+$/.test(
+    normalized,
+  );
+}
+
+export function isAutonomousDevelopmentCheckoutRefSha(
+  checkoutRef?: string,
+) {
+  const normalized =
+    normalizeCheckoutRef(
+      checkoutRef,
+    );
+
+  return Boolean(
+    normalized &&
+      /^[0-9a-f]{40}$/i.test(
+        normalized,
+      ),
+  );
 }
 
 export function isAutonomousDevelopmentTerminalStatus(
@@ -86,9 +147,24 @@ export function buildAutonomousDevelopmentReceipt(
       input.commitSha,
     );
 
+  const expectedCommitSha =
+    normalizeCommitSha(
+      input.expectedCommitSha,
+    );
+
   const resultCommitSha =
     normalizeCommitSha(
       input.resultCommitSha,
+    );
+
+  const checkoutRef =
+    normalizeCheckoutRef(
+      input.checkoutRef,
+    );
+
+  const checkoutHeadSha =
+    normalizeCommitSha(
+      input.checkoutHeadSha,
     );
 
   const readbackVerified =
@@ -110,6 +186,15 @@ export function buildAutonomousDevelopmentReceipt(
     commitSha.toLowerCase() ===
       resultCommitSha.toLowerCase();
 
+  const checkoutRefConsistent =
+    !checkoutRef ||
+    !isAutonomousDevelopmentCheckoutRefSha(
+      checkoutRef,
+    ) ||
+    (Boolean(checkoutHeadSha) &&
+      checkoutRef.toLowerCase() ===
+        checkoutHeadSha!.toLowerCase());
+
   const missingEvidence: string[] =
     [];
 
@@ -122,6 +207,74 @@ export function buildAutonomousDevelopmentReceipt(
   ) {
     missingEvidence.push(
       "commitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      expectedCommitSha,
+    )
+  ) {
+    missingEvidence.push(
+      "expectedCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      resultCommitSha,
+    )
+  ) {
+    missingEvidence.push(
+      "resultCommitSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCheckoutRef(
+      checkoutRef,
+    )
+  ) {
+    missingEvidence.push(
+      "checkoutRef",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !isValidAutonomousDevelopmentCommitSha(
+      checkoutHeadSha,
+    )
+  ) {
+    missingEvidence.push(
+      "checkoutHeadSha",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !commitShaConsistent
+  ) {
+    missingEvidence.push(
+      "commitShaConsistency",
+    );
+  }
+
+  if (
+    input.status ===
+      "completed" &&
+    !checkoutRefConsistent
+  ) {
+    missingEvidence.push(
+      "checkoutRefConsistency",
     );
   }
 
@@ -145,16 +298,6 @@ export function buildAutonomousDevelopmentReceipt(
     );
   }
 
-  if (
-    input.status ===
-      "completed" &&
-    !commitShaConsistent
-  ) {
-    missingEvidence.push(
-      "commitShaConsistency",
-    );
-  }
-
   const successful =
     input.status ===
       "completed" &&
@@ -170,10 +313,14 @@ export function buildAutonomousDevelopmentReceipt(
         "completed" ||
         successful),
     commitSha,
+    expectedCommitSha,
     resultCommitSha,
+    checkoutRef,
+    checkoutHeadSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    checkoutRefConsistent,
     missingEvidence,
   };
 }

@@ -36,6 +36,10 @@ export type AutonomousDevelopmentPhaseEvent = {
 
 export type AutonomousDevelopmentTaskResult = {
   commitSha?: string;
+  expectedCommitSha?: string;
+  resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
@@ -69,7 +73,10 @@ export type AutonomousDevelopmentReceipt = {
   targetPaths: string[];
   phases: string[];
   commitSha?: string;
+  expectedCommitSha?: string;
   resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
@@ -386,6 +393,37 @@ function normalizeTask(
                 typeof candidate.result.commitSha ===
                 "string"
                   ? candidate.result.commitSha
+                  : undefined,
+
+              expectedCommitSha:
+                typeof candidate.result
+                  .expectedCommitSha ===
+                "string"
+                  ? candidate.result
+                      .expectedCommitSha
+                  : undefined,
+
+              resultCommitSha:
+                typeof candidate.result
+                  .resultCommitSha ===
+                "string"
+                  ? candidate.result
+                      .resultCommitSha
+                  : undefined,
+
+              checkoutRef:
+                typeof candidate.result
+                  .checkoutRef === "string"
+                  ? candidate.result
+                      .checkoutRef
+                  : undefined,
+
+              checkoutHeadSha:
+                typeof candidate.result
+                  .checkoutHeadSha ===
+                "string"
+                  ? candidate.result
+                      .checkoutHeadSha
                   : undefined,
 
               readbackVerified:
@@ -1047,8 +1085,17 @@ function createReceipt(
       commitSha:
         task.commitSha,
 
+      expectedCommitSha:
+        result?.expectedCommitSha,
+
       resultCommitSha:
-        result?.commitSha,
+        result?.resultCommitSha,
+
+      checkoutRef:
+        result?.checkoutRef,
+
+      checkoutHeadSha:
+        result?.checkoutHeadSha,
 
       readbackVerified:
         result?.readbackVerified ===
@@ -1086,8 +1133,17 @@ function createReceipt(
     commitSha:
       canonical.commitSha,
 
+    expectedCommitSha:
+      canonical.expectedCommitSha,
+
     resultCommitSha:
       canonical.resultCommitSha,
+
+    checkoutRef:
+      canonical.checkoutRef,
+
+    checkoutHeadSha:
+      canonical.checkoutHeadSha,
 
     readbackVerified:
       canonical.readbackVerified,
@@ -1159,6 +1215,18 @@ function recoverStaleTask(
   task.result = {
     commitSha:
       task.commitSha,
+
+    expectedCommitSha:
+      task.result?.expectedCommitSha,
+
+    resultCommitSha:
+      task.result?.resultCommitSha,
+
+    checkoutRef:
+      task.result?.checkoutRef,
+
+    checkoutHeadSha:
+      task.result?.checkoutHeadSha,
 
     readbackVerified:
       false,
@@ -1748,6 +1816,10 @@ export async function completePersistentAutonomousDevelopmentTask(
   taskId: string,
   result: {
     commitSha: string;
+    expectedCommitSha: string;
+    resultCommitSha: string;
+    checkoutRef: string;
+    checkoutHeadSha: string;
     readbackVerified: boolean;
     verificationPassed: boolean;
     reason?: string;
@@ -1875,6 +1947,10 @@ export function completeAutonomousDevelopmentTask(
   taskId: string,
   result: {
     commitSha: string;
+    expectedCommitSha: string;
+    resultCommitSha: string;
+    checkoutRef: string;
+    checkoutHeadSha: string;
     readbackVerified: boolean;
     verificationPassed: boolean;
     reason?: string;
