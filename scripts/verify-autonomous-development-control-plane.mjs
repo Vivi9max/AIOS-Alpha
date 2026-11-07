@@ -157,9 +157,17 @@ const {
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
   persistAutonomousDevelopmentTasks,
+  completeAutonomousDevelopmentTask,
+  completeAutonomousDevelopmentTaskPersistent,
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
+  ).href
+);
+
+const { buildAutonomousDevelopmentReceipt } = await import(
+  pathToFileURL(
+    path.join(tmpDir, "autonomous-development-receipt.mjs"),
   ).href
 );
 
@@ -521,6 +529,317 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
     task.phase,
     "READBACK",
     "WRITING -> READBACK must be allowed",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 5 — Receipt Type / Builder Field Parity
+// ---------------------------------------------------------------------------
+
+await run("5 RECEIPT TYPE BUILDER PARITY", async () => {
+  const receipt = buildAutonomousDevelopmentReceipt({
+    taskId: "parity-fixture",
+    status: "blocked",
+    phase: "BLOCKED",
+    reason: "parity fixture",
+    evidence: {},
+  });
+
+  const builderKeys = Object.keys(receipt).sort();
+
+  const requiredKeys = [
+    "taskId",
+    "status",
+    "phase",
+    "reason",
+    "evidence",
+    "missingEvidence",
+    "invalidEvidence",
+    "issuedAt",
+  ].sort();
+
+  for (const key of requiredKeys) {
+    assert.ok(
+      builderKeys.includes(key),
+      `receipt builder must expose "${key}"`,
+    );
+  }
+
+  assert.ok(
+    Array.isArray(receipt.missingEvidence),
+    "missingEvidence must be an array",
+  );
+
+  assert.ok(
+    Array.isArray(receipt.invalidEvidence),
+    "invalidEvidence must be an array",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 6 — Missing Evidence Produces BLOCKED (Persistent)
+// ---------------------------------------------------------------------------
+
+const missingEvidenceCases = [
+  "commitSha",
+  "expectedCommitSha",
+  "resultCommitSha",
+  "checkoutRef",
+  "checkoutHeadSha",
+];
+
+for (const missingField of missingEvidenceCases) {
+  await run(
+    `6 MISSING EVIDENCE PERSISTENT — ${missingField}`,
+    async () => {
+      await resetStorage();
+
+      const task = createAutonomousDevelopmentTask({
+        objective: `C170.6.18 missing ${missingField} fixture`,
+      });
+
+      claimAutonomousDevelopmentTask(task.id);
+
+      const baseEvidence = {
+        commitSha: "a".repeat(40),
+        expectedCommitSha: "a".repeat(40),
+        resultCommitSha: "a".repeat(40),
+        checkoutRef: "refs/heads/main",
+        checkoutHeadSha: "a".repeat(40),
+      };
+
+      const evidence = { ...baseEvidence };
+      delete evidence[missingField];
+
+      const completed =
+        await completeAutonomousDevelopmentTaskPersistent(
+          task.id,
+          evidence,
+        );
+
+      assert.equal(
+        completed.status,
+        "blocked",
+        `missing ${missingField} must block the task`,
+      );
+
+      assert.equal(
+        completed.phase,
+        "BLOCKED",
+        `missing ${missingField} must set BLOCKED phase`,
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TEST 7 — Valid Evidence Completes Successfully
+// ---------------------------------------------------------------------------
+
+await run("7 VALID EVIDENCE COMPLETES", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 valid evidence fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const sha = "b".repeat(40);
+
+  const completed =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {
+        commitSha: sha,
+        expectedCommitSha: sha,
+        resultCommitSha: sha,
+        checkoutRef: "refs/heads/main",
+        checkoutHeadSha: sha,
+      },
+    );
+
+  assert.equal(
+    completed.status,
+    "completed",
+    "valid matching evidence must complete the task",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 8 — Mismatched SHA Blocks
+// ---------------------------------------------------------------------------
+
+await run("8 MISMATCHED SHA BLOCKS", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 mismatched sha fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const completed =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {
+        commitSha: "c".repeat(40),
+        expectedCommitSha: "d".repeat(40),
+        resultCommitSha: "c".repeat(40),
+        checkoutRef: "refs/heads/main",
+        checkoutHeadSha: "c".repeat(40),
+      },
+    );
+
+  assert.equal(
+    completed.status,
+    "blocked",
+    "mismatched SHA must block the task",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 9 — Invalid Git Refs Block
+// ---------------------------------------------------------------------------
+
+await run("9 INVALID GIT REFS BLOCK", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 invalid ref fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const sha = "e".repeat(40);
+
+  const completed =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {
+        commitSha: sha,
+        expectedCommitSha: sha,
+        resultCommitSha: sha,
+        checkoutRef: "not a valid ref!!",
+        checkoutHeadSha: sha,
+      },
+    );
+
+  assert.equal(
+    completed.status,
+    "blocked",
+    "invalid git ref must block the task",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 10 — Branch Refs Remain Branch Refs
+// ---------------------------------------------------------------------------
+
+await run("10 BRANCH REF PRESERVED", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 branch ref fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const sha = "f".repeat(40);
+
+  const completed =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {
+        commitSha: sha,
+        expectedCommitSha: sha,
+        resultCommitSha: sha,
+        checkoutRef: "refs/heads/feature-branch",
+        checkoutHeadSha: sha,
+      },
+    );
+
+  assert.equal(
+    completed.status,
+    "completed",
+    "valid branch ref must complete the task",
+  );
+
+  assert.equal(
+    completed.evidence.checkoutRef,
+    "refs/heads/feature-branch",
+    "branch ref must remain a branch ref",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 11 — Repeated Completion Remains Blocked
+// ---------------------------------------------------------------------------
+
+await run("11 REPEATED COMPLETION BLOCKED", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 repeated completion fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const first =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {},
+    );
+
+  assert.equal(
+    first.status,
+    "blocked",
+    "empty evidence must block on first completion",
+  );
+
+  const sha = "1".repeat(40);
+
+  const second =
+    await completeAutonomousDevelopmentTaskPersistent(
+      task.id,
+      {
+        commitSha: sha,
+        expectedCommitSha: sha,
+        resultCommitSha: sha,
+        checkoutRef: "refs/heads/main",
+        checkoutHeadSha: sha,
+      },
+    );
+
+  assert.equal(
+    second.status,
+    "blocked",
+    "repeated completion of a blocked task must remain blocked",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TEST 12 — Non-Persistent Completion Missing Evidence Safe
+// ---------------------------------------------------------------------------
+
+await run("12 NON-PERSISTENT MISSING EVIDENCE SAFE", async () => {
+  await resetStorage();
+
+  const task = createAutonomousDevelopmentTask({
+    objective: "C170.6.18 non-persistent missing fixture",
+  });
+
+  claimAutonomousDevelopmentTask(task.id);
+
+  const completed = completeAutonomousDevelopmentTask(
+    task.id,
+    {},
+  );
+
+  assert.equal(
+    completed.status,
+    "blocked",
+    "non-persistent completion with missing evidence must block",
   );
 });
 

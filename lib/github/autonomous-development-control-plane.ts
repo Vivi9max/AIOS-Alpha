@@ -111,6 +111,21 @@ const ACTIVE_TASK_STALE_MS =
 const TASK_STORAGE_KEY =
   "aios:autonomous-development:tasks";
 
+function normalizeEvidenceString(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string"
+  ) {
+    return undefined;
+  }
+
+  const trimmed =
+    value.trim();
+
+  return trimmed || undefined;
+}
+
 const TERMINAL_STATUSES =
   new Set<AutonomousDevelopmentTaskStatus>([
     "completed",
@@ -1593,18 +1608,18 @@ export function updateAutonomousDevelopmentTask(
     undefined
   ) {
     const commitSha =
-      update.commitSha.trim();
+      normalizeEvidenceString(
+        update.commitSha,
+      );
 
     task.commitSha =
-      commitSha ||
-      undefined;
+      commitSha;
 
     if (
       task.result
     ) {
       task.result.commitSha =
-        commitSha ||
-        undefined;
+        commitSha;
     }
   }
 
@@ -1786,7 +1801,9 @@ export async function completePersistentAutonomousDevelopmentTask(
   }
 
   const exactCommitSha =
-    result.commitSha.trim();
+    normalizeEvidenceString(
+      result.commitSha,
+    );
 
   const passed =
     Boolean(
@@ -1910,9 +1927,14 @@ export function completeAutonomousDevelopmentTask(
     );
   }
 
+  const exactCommitSha =
+    normalizeEvidenceString(
+      result.commitSha,
+    );
+
   const passed =
     Boolean(
-      result.commitSha,
+      exactCommitSha,
     ) &&
     result.readbackVerified ===
       true &&
@@ -1945,11 +1967,11 @@ export function completeAutonomousDevelopmentTask(
     result.reason;
 
   task.commitSha =
-    result.commitSha.trim();
+    exactCommitSha;
 
   task.result = {
     commitSha:
-      result.commitSha.trim(),
+      exactCommitSha,
 
     readbackVerified:
       result.readbackVerified,
