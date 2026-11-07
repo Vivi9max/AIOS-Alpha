@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * C169.8-D2.1 + R7 + R8 Independent Non-Destructive Verification
+ * C169.8-D2.1 + R7 + R9 Independent Non-Destructive Verification
  *
  * Runs: node scripts/verify-autonomous-development-control-plane.mjs
  *
- * Transpiles the real production Control Plane and receipt modules, redirects
- * storage to an isolated in-memory Map, and exercises only public APIs.
+ * Transpiles the real production Control Plane, receipt and repair identity
+ * modules, redirects storage to an isolated in-memory Map, and exercises
+ * only public APIs.
  * No production storage, GitHub/Vercel API, or real task is used.
  */
 
@@ -13,7 +14,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
-import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 let ts;
@@ -46,57 +46,6 @@ const autonomousAgentSource = fs.readFileSync(
   "utf8",
 );
 
-const repairGuardStart = "// R8_REPAIR_BASE_IDENTITY_GUARD_BEGIN";
-const repairGuardEnd = "// R8_REPAIR_BASE_IDENTITY_GUARD_END";
-const repairGuardStartIndex = autonomousAgentSource.indexOf(repairGuardStart);
-const repairGuardEndIndex = autonomousAgentSource.indexOf(repairGuardEnd);
-
-assert.ok(
-  repairGuardStartIndex >= 0 && repairGuardEndIndex > repairGuardStartIndex,
-  "Production Agent must contain the marked R8 repair identity guard",
-);
-
-const repairGuardSource = autonomousAgentSource.slice(
-  repairGuardStartIndex + repairGuardStart.length,
-  repairGuardEndIndex,
-);
-
-const repairGuardContext = {
-  isValidGitCommitSha(value) {
-    return (
-      typeof value === "string" &&
-      /^[0-9a-f]{40}$/i.test(value.trim())
-    );
-  },
-};
-
-const transpiledRepairGuard = ts.transpileModule(
-  repairGuardSource,
-  {
-    compilerOptions: {
-      module: ts.ModuleKind.None,
-      target: ts.ScriptTarget.ES2020,
-      strict: true,
-    },
-    fileName: "autonomous-development-repair-guard.ts",
-  },
-).outputText;
-
-vm.runInNewContext(
-  `${transpiledRepairGuard}
-globalThis.assertRepairBaseIdentity = assertRepairBaseIdentity;`,
-  repairGuardContext,
-);
-
-const assertRepairBaseIdentity =
-  repairGuardContext.assertRepairBaseIdentity;
-
-assert.equal(
-  typeof assertRepairBaseIdentity,
-  "function",
-  "R8 production repair identity guard must be executable",
-);
-
 const controlPlaneSource = fs.readFileSync(
   path.join(REPO_ROOT, "lib/github/autonomous-development-control-plane.ts"),
   "utf8",
@@ -120,11 +69,44 @@ const patchedReceipt = receiptSource.replace(
   'import "./server-only-stub.mjs";',
 );
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aios-r7-verify-"));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aios-r9-verify-"));
 
 function writeTmp(name, content) {
   fs.writeFileSync(path.join(tmpDir, name), content, "utf8");
 }
+
+const repairIdentitySource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-repair-identity.ts",
+  ),
+  "utf8",
+);
+
+writeTmp(
+  "autonomous-development-repair-identity.mjs",
+  transpile(
+    repairIdentitySource,
+    "autonomous-development-repair-identity.ts",
+  ),
+);
+
+const {
+  assertRepairBaseIdentity,
+} = await import(
+  pathToFileURL(
+    path.join(
+      tmpDir,
+      "autonomous-development-repair-identity.mjs",
+    ),
+  ).href
+);
+
+assert.equal(
+  typeof assertRepairBaseIdentity,
+  "function",
+  "Standalone production repair identity module must be executable",
+);
 
 writeTmp(
   "control-plane.mjs",
@@ -684,8 +666,8 @@ await run(
   },
 );
 
-// TEST 8 — R8 Repair Base Commit Identity Guard
-await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
+// TEST 8 — R9 Standalone Repair Identity Module
+await run("8 R9 STANDALONE REPAIR IDENTITY MODULE", async () => {
   const validSha = "a".repeat(40);
   const otherSha = "b".repeat(40);
 
@@ -695,6 +677,10 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
 
   assert.doesNotThrow(() =>
     assertRepairBaseIdentity(validSha.toUpperCase(), validSha),
+  );
+
+  assert.doesNotThrow(() =>
+    assertRepairBaseIdentity(` ${validSha} `, validSha),
   );
 
   assert.throws(
@@ -713,6 +699,11 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
   );
 
   assert.throws(
+    () => assertRepairBaseIdentity(null, validSha),
+    /AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID/,
+  );
+
+  assert.throws(
     () => assertRepairBaseIdentity(validSha, ""),
     /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
   );
@@ -722,14 +713,35 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
     /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
   );
 
-  // Locate the expected repair base capture without assuming formatting.
+  assert.throws(
+    () => assertRepairBaseIdentity(validSha, null),
+    /AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID/,
+  );
+
+  assert.match(
+    autonomousAgentSource,
+    /import\s*\{\s*assertRepairBaseIdentity\s*\}\s*from\s*"@\/lib\/github\/autonomous-development-repair-identity"/,
+    "Production Agent must import the standalone identity module",
+  );
+
+  assert.doesNotMatch(
+    autonomousAgentSource,
+    /function\s+assertRepairBaseIdentity\s*\(/,
+    "Production Agent must not retain a duplicate local implementation",
+  );
+
+  assert.doesNotMatch(
+    autonomousAgentSource,
+    /R8_REPAIR_BASE_IDENTITY_GUARD_/,
+    "Obsolete R8 local guard markers must be removed",
+  );
+
   const captureMatch = autonomousAgentSource.match(
     /const expectedRepairBaseSha\s*=\s*latestCommitSha\s*;/,
   );
 
   const captureIndex = captureMatch?.index ?? -1;
 
-  // Search for the repair staging call only after the captured base SHA.
   const writeIndex = captureIndex >= 0
     ? autonomousAgentSource.indexOf(
         "const repairAtomicResult = await executeAtomicStaging({",
@@ -737,7 +749,6 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
       )
     : -1;
 
-  // Find the identity assertion after the repair staging operation.
   const assertionIndex = writeIndex >= 0
     ? autonomousAgentSource.indexOf(
         "assertRepairBaseIdentity(",
@@ -745,7 +756,13 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
       )
     : -1;
 
-  // Find state mutations only after the identity assertion.
+  const snapshotBaseShaIndex = assertionIndex >= 0
+    ? autonomousAgentSource.indexOf(
+        "repairSnapshot.baseSha",
+        assertionIndex,
+      )
+    : -1;
+
   const stagingMutationIndex = assertionIndex >= 0
     ? autonomousAgentSource.indexOf(
         "stagingBranch =",
@@ -760,47 +777,40 @@ await run("8 R8 REPAIR BASE IDENTITY GUARD", async () => {
       )
     : -1;
 
-  const snapshotBaseShaIndex = assertionIndex >= 0
-    ? autonomousAgentSource.indexOf(
-        "repairSnapshot.baseSha",
-        assertionIndex,
-      )
-    : -1;
-
   assert.ok(
     captureIndex >= 0,
-    "R8 must capture expectedRepairBaseSha before repair staging",
+    "R9 must capture expectedRepairBaseSha before repair staging",
   );
 
   assert.ok(
     writeIndex > captureIndex,
-    "R8 repair staging must occur after expected base capture",
+    "Repair staging must occur after expected base capture",
   );
 
   assert.ok(
     assertionIndex > writeIndex,
-    "R8 identity assertion must occur after repair staging",
+    "Identity assertion must occur after repair staging",
   );
 
   assert.ok(
     snapshotBaseShaIndex > assertionIndex,
-    "R8 identity assertion must validate repairSnapshot.baseSha",
+    "Identity assertion must validate repairSnapshot.baseSha",
   );
 
   assert.ok(
     stagingMutationIndex > snapshotBaseShaIndex,
-    "R8 must validate base identity before stagingBranch mutation",
+    "stagingBranch mutation must occur after identity validation",
   );
 
   assert.ok(
     latestCommitMutationIndex > snapshotBaseShaIndex,
-    "R8 must validate base identity before latestCommitSha mutation",
+    "latestCommitSha mutation must occur after identity validation",
   );
 });
 
 // Report
 console.log(
-  "\nC169.8-D2.1 + R7 + R8 INDEPENDENT VERIFICATION\n",
+  "\nC169.8-D2.1 + R7 + R9 INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {
