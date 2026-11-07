@@ -36,6 +36,10 @@ export type AutonomousDevelopmentPhaseEvent = {
 
 export type AutonomousDevelopmentTaskResult = {
   commitSha?: string;
+  expectedCommitSha?: string;
+  resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
@@ -69,11 +73,19 @@ export type AutonomousDevelopmentReceipt = {
   targetPaths: string[];
   phases: string[];
   commitSha?: string;
+  expectedCommitSha?: string;
   resultCommitSha?: string;
+  checkoutRef?: string;
+  checkoutHeadSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  checkoutRefIsCommitSha: boolean;
+  checkoutRefIsBranchRef: boolean;
+  shaValuesConsistent: boolean;
+  identityComplete: boolean;
   missingEvidence: string[];
+  invalidEvidence: string[];
   terminal: boolean;
   successful: boolean;
   valid: boolean;
@@ -386,6 +398,33 @@ function normalizeTask(
                 typeof candidate.result.commitSha ===
                 "string"
                   ? candidate.result.commitSha
+                  : undefined,
+
+              expectedCommitSha:
+                typeof candidate.result
+                  .expectedCommitSha === "string"
+                  ? candidate.result
+                      .expectedCommitSha
+                  : undefined,
+
+              resultCommitSha:
+                typeof candidate.result
+                  .resultCommitSha === "string"
+                  ? candidate.result
+                      .resultCommitSha
+                  : undefined,
+
+              checkoutRef:
+                typeof candidate.result.checkoutRef ===
+                "string"
+                  ? candidate.result.checkoutRef
+                  : undefined,
+
+              checkoutHeadSha:
+                typeof candidate.result
+                  .checkoutHeadSha === "string"
+                  ? candidate.result
+                      .checkoutHeadSha
                   : undefined,
 
               readbackVerified:
@@ -1047,8 +1086,17 @@ function createReceipt(
       commitSha:
         task.commitSha,
 
+      expectedCommitSha:
+        result?.expectedCommitSha,
+
       resultCommitSha:
-        result?.commitSha,
+        result?.resultCommitSha,
+
+      checkoutRef:
+        result?.checkoutRef,
+
+      checkoutHeadSha:
+        result?.checkoutHeadSha,
 
       readbackVerified:
         result?.readbackVerified ===
@@ -1086,8 +1134,17 @@ function createReceipt(
     commitSha:
       canonical.commitSha,
 
+    expectedCommitSha:
+      canonical.expectedCommitSha,
+
     resultCommitSha:
       canonical.resultCommitSha,
+
+    checkoutRef:
+      canonical.checkoutRef,
+
+    checkoutHeadSha:
+      canonical.checkoutHeadSha,
 
     readbackVerified:
       canonical.readbackVerified,
@@ -1098,8 +1155,23 @@ function createReceipt(
     commitShaConsistent:
       canonical.commitShaConsistent,
 
+    checkoutRefIsCommitSha:
+      canonical.checkoutRefIsCommitSha,
+
+    checkoutRefIsBranchRef:
+      canonical.checkoutRefIsBranchRef,
+
+    shaValuesConsistent:
+      canonical.shaValuesConsistent,
+
+    identityComplete:
+      canonical.identityComplete,
+
     missingEvidence:
       canonical.missingEvidence,
+
+    invalidEvidence:
+      canonical.invalidEvidence,
 
     terminal:
       canonical.terminal,
@@ -1748,6 +1820,10 @@ export async function completePersistentAutonomousDevelopmentTask(
   taskId: string,
   result: {
     commitSha: string;
+    expectedCommitSha: string;
+    resultCommitSha: string;
+    checkoutRef: string;
+    checkoutHeadSha: string;
     readbackVerified: boolean;
     verificationPassed: boolean;
     reason?: string;
@@ -1788,21 +1864,81 @@ export async function completePersistentAutonomousDevelopmentTask(
   const exactCommitSha =
     result.commitSha.trim();
 
-  const passed =
-    Boolean(
-      exactCommitSha,
-    ) &&
-    result.readbackVerified ===
-      true &&
-    result.verificationPassed ===
-      true;
+  const exactExpectedCommitSha =
+    result.expectedCommitSha.trim();
 
-  if (!passed) {
+  const exactResultCommitSha =
+    result.resultCommitSha.trim();
+
+  const exactCheckoutRef =
+    result.checkoutRef.trim();
+
+  const exactCheckoutHeadSha =
+    result.checkoutHeadSha.trim();
+
+  const candidateReceipt =
+    buildAutonomousDevelopmentReceipt({
+      status:
+        "completed",
+
+      commitSha:
+        exactCommitSha,
+
+      expectedCommitSha:
+        exactExpectedCommitSha,
+
+      resultCommitSha:
+        exactResultCommitSha,
+
+      checkoutRef:
+        exactCheckoutRef,
+
+      checkoutHeadSha:
+        exactCheckoutHeadSha,
+
+      readbackVerified:
+        result.readbackVerified ===
+        true,
+
+      verificationPassed:
+        result.verificationPassed ===
+        true,
+    });
+
+  if (!candidateReceipt.valid) {
+    const failureReason =
+      result.reason ||
+      [
+        candidateReceipt.missingEvidence
+          .length
+          ? `missing evidence: ${candidateReceipt.missingEvidence.join(", ")}`
+          : null,
+
+        candidateReceipt.invalidEvidence
+          .length
+          ? `invalid evidence: ${candidateReceipt.invalidEvidence.join(", ")}`
+          : null,
+
+        candidateReceipt.readbackVerified
+          ? null
+          : "github readback not verified",
+
+        candidateReceipt.verificationPassed
+          ? null
+          : "final verification not passed",
+      ]
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.length > 0,
+        )
+        .join("; ") ||
+      "Autonomous development evidence is incomplete or inconsistent.";
+
     const blocked =
       blockAutonomousDevelopmentTask(
         taskId,
-        result.reason ||
-          "Autonomous development verification did not pass.",
+        failureReason,
       );
 
     await persistTasksAwaited();
@@ -1833,6 +1969,18 @@ export async function completePersistentAutonomousDevelopmentTask(
   task.result = {
     commitSha:
       exactCommitSha,
+
+    expectedCommitSha:
+      exactExpectedCommitSha,
+
+    resultCommitSha:
+      exactResultCommitSha,
+
+    checkoutRef:
+      exactCheckoutRef,
+
+    checkoutHeadSha:
+      exactCheckoutHeadSha,
 
     readbackVerified:
       result.readbackVerified,
@@ -1875,6 +2023,10 @@ export function completeAutonomousDevelopmentTask(
   taskId: string,
   result: {
     commitSha: string;
+    expectedCommitSha: string;
+    resultCommitSha: string;
+    checkoutRef: string;
+    checkoutHeadSha: string;
     readbackVerified: boolean;
     verificationPassed: boolean;
     reason?: string;
@@ -1910,20 +2062,83 @@ export function completeAutonomousDevelopmentTask(
     );
   }
 
-  const passed =
-    Boolean(
-      result.commitSha,
-    ) &&
-    result.readbackVerified ===
-      true &&
-    result.verificationPassed ===
-      true;
+  const exactCommitSha =
+    result.commitSha.trim();
 
-  if (!passed) {
+  const exactExpectedCommitSha =
+    result.expectedCommitSha.trim();
+
+  const exactResultCommitSha =
+    result.resultCommitSha.trim();
+
+  const exactCheckoutRef =
+    result.checkoutRef.trim();
+
+  const exactCheckoutHeadSha =
+    result.checkoutHeadSha.trim();
+
+  const candidateReceipt =
+    buildAutonomousDevelopmentReceipt({
+      status:
+        "completed",
+
+      commitSha:
+        exactCommitSha,
+
+      expectedCommitSha:
+        exactExpectedCommitSha,
+
+      resultCommitSha:
+        exactResultCommitSha,
+
+      checkoutRef:
+        exactCheckoutRef,
+
+      checkoutHeadSha:
+        exactCheckoutHeadSha,
+
+      readbackVerified:
+        result.readbackVerified ===
+        true,
+
+      verificationPassed:
+        result.verificationPassed ===
+        true,
+    });
+
+  if (!candidateReceipt.valid) {
+    const failureReason =
+      result.reason ||
+      [
+        candidateReceipt.missingEvidence
+          .length
+          ? `missing evidence: ${candidateReceipt.missingEvidence.join(", ")}`
+          : null,
+
+        candidateReceipt.invalidEvidence
+          .length
+          ? `invalid evidence: ${candidateReceipt.invalidEvidence.join(", ")}`
+          : null,
+
+        candidateReceipt.readbackVerified
+          ? null
+          : "github readback not verified",
+
+        candidateReceipt.verificationPassed
+          ? null
+          : "final verification not passed",
+      ]
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.length > 0,
+        )
+        .join("; ") ||
+      "Autonomous development evidence is incomplete or inconsistent.";
+
     return blockAutonomousDevelopmentTask(
       taskId,
-      result.reason ||
-        "Autonomous development verification did not pass.",
+      failureReason,
     ).receipt;
   }
 
@@ -1945,11 +2160,23 @@ export function completeAutonomousDevelopmentTask(
     result.reason;
 
   task.commitSha =
-    result.commitSha.trim();
+    exactCommitSha;
 
   task.result = {
     commitSha:
-      result.commitSha.trim(),
+      exactCommitSha,
+
+    expectedCommitSha:
+      exactExpectedCommitSha,
+
+    resultCommitSha:
+      exactResultCommitSha,
+
+    checkoutRef:
+      exactCheckoutRef,
+
+    checkoutHeadSha:
+      exactCheckoutHeadSha,
 
     readbackVerified:
       result.readbackVerified,
