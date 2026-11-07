@@ -15,6 +15,9 @@ import {
 } from "@/lib/github/autonomous-development-control-plane";
 import { executeAtomicStaging } from "@/lib/github/autonomous-development-atomic-executor";
 import {
+  assertRepairBaseIdentity,
+} from "@/lib/github/autonomous-development-repair-identity";
+import {
   verifyVercelBuildForCommit,
   type VercelBuildVerificationResult,
 } from "@/lib/github/autonomous-build-verification";
@@ -253,34 +256,6 @@ function isValidGitCommitSha(
     /^[0-9a-f]{40}$/i.test(value.trim())
   );
 }
-
-// R8_REPAIR_BASE_IDENTITY_GUARD_BEGIN
-function assertRepairBaseIdentity(
-  expectedBaseSha: unknown,
-  actualBaseSha: unknown,
-) {
-  if (!isValidGitCommitSha(expectedBaseSha)) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_EXPECTED_BASE_SHA_INVALID",
-    );
-  }
-
-  if (!isValidGitCommitSha(actualBaseSha)) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_ACTUAL_BASE_SHA_INVALID",
-    );
-  }
-
-  if (
-    expectedBaseSha.trim().toLowerCase() !==
-    actualBaseSha.trim().toLowerCase()
-  ) {
-    throw new Error(
-      "AUTONOMOUS_REPAIR_BASE_IDENTITY_MISMATCH",
-    );
-  }
-}
-// R8_REPAIR_BASE_IDENTITY_GUARD_END
   
 function objectiveTokens(
   objective: string,
