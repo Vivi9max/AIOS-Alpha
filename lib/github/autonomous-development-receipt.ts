@@ -192,7 +192,6 @@ export function buildAutonomousDevelopmentReceipt(
       checkoutRef,
     ) ||
     (Boolean(checkoutHeadSha) &&
-      checkoutHeadSha !== undefined &&
       checkoutRef.toLowerCase() ===
         checkoutHeadSha.toLowerCase());
 
