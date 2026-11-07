@@ -720,7 +720,7 @@ await run("8 R9 STANDALONE REPAIR IDENTITY MODULE", async () => {
 
   assert.match(
     autonomousAgentSource,
-    /import\s*\{\s*assertRepairBaseIdentity\s*\}\s*from\s*"@\/lib\/github\/autonomous-development-repair-identity"/,
+    /import\s*\{\s*assertRepairBaseIdentity\s*,?\s*\}\s*from\s*"@\/lib\/github\/autonomous-development-repair-identity"/,
     "Production Agent must import the standalone identity module",
   );
 
