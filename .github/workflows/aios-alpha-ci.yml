@@ -388,6 +388,20 @@ jobs:
           branch_raw="$work_dir/branch-protection.json"
           rulesets_raw="$work_dir/rulesets-list.json"
           ruleset_details="$work_dir/ruleset-details.jsonl"
+          branch_error="$work_dir/branch-protection.error.txt"
+          rulesets_error="$work_dir/rulesets.error.txt"
+
+          branch_error_message="No Branch Protection API response was captured."
+          rulesets_error_message="No Rulesets API response was captured."
+
+          sanitize_api_error() {
+            local error_file="$1"
+            if [ -s "$error_file" ]; then
+              tr '\r\n' ' ' < "$error_file" | sed -E -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' | cut -c1-280
+            else
+              printf '%s' "No error text captured; the API may have returned an unexpected response."
+            fi
+          }
 
           actual_head="$(git rev-parse HEAD)"
 
@@ -415,7 +429,7 @@ jobs:
           if [ -n "${GH_TOKEN:-}" ]; then
             if gh api \
               "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
-              > "$branch_raw" 2>/dev/null; then
+              > "$branch_raw" 2>"$branch_error"; then
 
               if jq -e 'type == "object"' "$branch_raw" >/dev/null; then
                 branch_available=true
@@ -457,9 +471,17 @@ jobs:
               fi
             fi
 
+            if [ "$branch_available" = "true" ]; then
+              branch_error_message="request succeeded"
+            elif [ -s "$branch_raw" ]; then
+              branch_error_message="API response received, but Branch Protection response schema was invalid."
+            else
+              branch_error_message="$(sanitize_api_error "$branch_error")"
+            fi
+
             if gh api --paginate --slurp \
               "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" \
-              > "$rulesets_raw" 2>/dev/null; then
+              > "$rulesets_raw" 2>"$rulesets_error"; then
 
               if jq -e '
                 type == "array" and
@@ -485,11 +507,13 @@ jobs:
 
                   if [ "$ruleset_target" = "branch" ] && [ "$ruleset_enforcement" = "active" ]; then
                     detail_file="$work_dir/ruleset-${ruleset_id}.json"
+                    detail_error="$work_dir/ruleset-${ruleset_id}.error.txt"
 
                     if ! gh api \
                       "repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_id}" \
-                      > "$detail_file" 2>/dev/null; then
+                      > "$detail_file" 2>"$detail_error"; then
                       rulesets_available=false
+                      rulesets_error_message="Ruleset ${ruleset_id} detail request failed: $(sanitize_api_error "$detail_error")"
                       break
                     fi
 
@@ -499,6 +523,7 @@ jobs:
                       (.enforcement | type == "string")
                     ' "$detail_file" >/dev/null 2>&1; then
                       rulesets_available=false
+                      rulesets_error_message="Ruleset ${ruleset_id} detail response failed schema validation."
                       break
                     fi
 
@@ -543,7 +568,23 @@ jobs:
                 fi
               fi
             fi
+
+            if [ "$rulesets_available" = "true" ]; then
+              rulesets_error_message="request succeeded"
+            elif [[ "$rulesets_error_message" == Ruleset* ]]; then
+              :
+            elif [ -s "$rulesets_raw" ]; then
+              rulesets_error_message="API response received, but Rulesets response schema validation failed."
+            else
+              rulesets_error_message="$(sanitize_api_error "$rulesets_error")"
+            fi
+          else
+            branch_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
+            rulesets_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
           fi
+
+          rulesets_count="$(jq -r 'if type == "array" then length else 0 end' <<< "$rulesets_json")"
+          active_branch_rulesets_count="$(jq -r 'if type == "array" then ([.[] | select(.target == "branch" and .enforcement == "active")] | length) else 0 end' <<< "$rulesets_json")"
 
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
@@ -564,7 +605,11 @@ jobs:
 
           echo "policy_evidence_path=$evidence_path" >> "$GITHUB_OUTPUT"
           echo "Branch Protection API available: $branch_available"
+          echo "Branch Protection diagnostic: $branch_error_message"
           echo "Rulesets API available: $rulesets_available"
+          echo "Rulesets diagnostic: $rulesets_error_message"
+          echo "Rulesets collected: $rulesets_count"
+          echo "Active branch Rulesets collected: $active_branch_rulesets_count"
           echo "Policy evidence written outside the repository."
 
           {
@@ -573,7 +618,11 @@ jobs:
             echo "- Repository: \`$GITHUB_REPOSITORY\`"
             echo "- Branch reviewed: \`main\`"
             echo "- Candidate Commit: \`$actual_head\`"
+            echo "- Branch Protection diagnostic: $branch_error_message"
             echo "- Branch Protection API available: \`$branch_available\`"
+            echo "- Rulesets diagnostic: $rulesets_error_message"
+            echo "- Rulesets collected: $rulesets_count"
+            echo "- Active branch Rulesets collected: $active_branch_rulesets_count"
             echo "- Rulesets API available: \`$rulesets_available\`"
             echo "- Evidence file: \`$evidence_path\`"
             echo
