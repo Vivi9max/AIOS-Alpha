@@ -368,7 +368,7 @@ jobs:
           cat "$RUNNER_TEMP/aios-delivery-handoff-summary.json" >> "$GITHUB_STEP_SUMMARY"
 
       # ------------------------------------------------------------
-      # C170.6.23 structured Founder policy evidence
+      # C170.6.25 structured Founder policy evidence
       # ------------------------------------------------------------
 
       - name: Collect structured Branch Protection and Rulesets evidence
@@ -390,17 +390,34 @@ jobs:
           ruleset_details="$work_dir/ruleset-details.jsonl"
           branch_error="$work_dir/branch-protection.error.txt"
           rulesets_error="$work_dir/rulesets.error.txt"
+          branch_http_status_file="$work_dir/branch-protection.http-status"
 
+          branch_http_status="NOT_RUN"
           branch_error_message="No Branch Protection API response was captured."
           rulesets_error_message="No Rulesets API response was captured."
 
           sanitize_api_error() {
             local error_file="$1"
             if [ -s "$error_file" ]; then
-              tr '\r\n' ' ' < "$error_file" | sed -E -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' | cut -c1-280
+              tr '\r\n' ' ' < "$error_file" |
+                sed -E \
+                  -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' \
+                  -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' \
+                  -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' |
+                cut -c1-280
             else
-              printf '%s' "No error text captured; the API may have returned an unexpected response."
+              printf '%s' "No error text captured."
             fi
+          }
+
+          sanitize_api_message() {
+            printf '%s' "$1" |
+              tr '\r\n' ' ' |
+              sed -E \
+                -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' \
+                -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' \
+                -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' |
+              cut -c1-180
           }
 
           actual_head="$(git rev-parse HEAD)"
@@ -427,57 +444,106 @@ jobs:
           rulesets_json='null'
 
           if [ -n "${GH_TOKEN:-}" ]; then
-            if gh api \
-              "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
-              > "$branch_raw" 2>"$branch_error"; then
+            branch_http_status="000"
 
-              if jq -e 'type == "object"' "$branch_raw" >/dev/null; then
-                branch_available=true
-
-                branch_protection_json="$(jq -c '{
-                  available: true,
-                  protected: true,
-                  enforceAdmins: (
-                    if (.enforce_admins.enabled | type) == "boolean"
-                    then .enforce_admins.enabled
-                    else null
-                    end
-                  ),
-                  allowForcePushes: (
-                    if (.allow_force_pushes.enabled | type) == "boolean"
-                    then .allow_force_pushes.enabled
-                    else null
-                    end
-                  ),
-                  allowDeletions: (
-                    if (.allow_deletions.enabled | type) == "boolean"
-                    then .allow_deletions.enabled
-                    else null
-                    end
-                  ),
-                  requiredPullRequestReviews: (
-                    if has("required_pull_request_reviews")
-                    then (.required_pull_request_reviews != null)
-                    else null
-                    end
-                  ),
-                  requiredStatusChecks: (
-                    if has("required_status_checks")
-                    then (.required_status_checks != null)
-                    else null
-                    end
-                  )
-                }' "$branch_raw")"
-              fi
-            fi
-
-            if [ "$branch_available" = "true" ]; then
-              branch_error_message="request succeeded"
-            elif [ -s "$branch_raw" ]; then
-              branch_error_message="API response received, but Branch Protection response schema was invalid."
+            if curl --location --silent --show-error \
+              --connect-timeout 15 \
+              --max-time 45 \
+              --output "$branch_raw" \
+              --write-out '%{http_code}' \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main/protection" \
+              > "$branch_http_status_file" 2>"$branch_error"; then
+              branch_http_status="$(cat "$branch_http_status_file" 2>/dev/null || true)"
             else
-              branch_error_message="$(sanitize_api_error "$branch_error")"
+              branch_http_status="000"
             fi
+
+            if ! [[ "$branch_http_status" =~ ^[0-9]{3}$ ]]; then
+              branch_http_status="000"
+            fi
+
+            case "$branch_http_status" in
+              200)
+                if jq -e 'type == "object"' "$branch_raw" >/dev/null 2>&1; then
+                  branch_available=true
+                  branch_error_message="HTTP 200: Branch Protection response received."
+
+                  branch_protection_json="$(jq -c '{
+                    available: true,
+                    protected: true,
+                    enforceAdmins: (
+                      if (.enforce_admins.enabled | type) == "boolean"
+                      then .enforce_admins.enabled
+                      else null
+                      end
+                    ),
+                    allowForcePushes: (
+                      if (.allow_force_pushes.enabled | type) == "boolean"
+                      then .allow_force_pushes.enabled
+                      else null
+                      end
+                    ),
+                    allowDeletions: (
+                      if (.allow_deletions.enabled | type) == "boolean"
+                      then .allow_deletions.enabled
+                      else null
+                      end
+                    ),
+                    requiredPullRequestReviews: (
+                      if has("required_pull_request_reviews")
+                      then (.required_pull_request_reviews != null)
+                      else null
+                      end
+                    ),
+                    requiredStatusChecks: (
+                      if has("required_status_checks")
+                      then (.required_status_checks != null)
+                      else null
+                      end
+                    )
+                  }' "$branch_raw")"
+                else
+                  branch_error_message="HTTP 200: Branch Protection response was not a JSON object."
+                fi
+                ;;
+
+              403)
+                branch_error_message="HTTP 403: Branch Protection access is forbidden. Verify FOUNDER_POLICY_READ_TOKEN Administration: Read permission and repository access."
+                ;;
+
+              404)
+                branch_api_message="$(jq -r '
+                  if type == "object" and (.message | type) == "string"
+                  then .message
+                  else empty
+                  end
+                ' "$branch_raw" 2>/dev/null || true)"
+
+                if [ -n "$branch_api_message" ]; then
+                  branch_error_message="HTTP 404: $(sanitize_api_message "$branch_api_message")"
+                else
+                  branch_error_message="HTTP 404: Branch Protection resource was not found."
+                fi
+                ;;
+
+              000)
+                branch_error_message="HTTP 000: Branch Protection request failed before receiving an HTTP response."
+                ;;
+
+              *)
+                branch_api_message="$(jq -r '
+                  if type == "object" and (.message | type) == "string"
+                  then .message
+                  else empty
+                  end
+                ' "$branch_raw" 2>/dev/null || true)"
+
+                branch_error_message="HTTP ${branch_http_status}: $(sanitize_api_message "${branch_api_message:-Unexpected GitHub API response.}")"
+                ;;
+            esac
 
             if gh api --paginate --slurp \
               "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" \
@@ -579,9 +645,19 @@ jobs:
               rulesets_error_message="$(sanitize_api_error "$rulesets_error")"
             fi
           else
+            branch_http_status="NOT_RUN"
             branch_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
             rulesets_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
           fi
+
+          # Keep diagnostic information in the retained evidence artifact.
+          branch_protection_json="$(jq -c \
+            --arg httpStatus "$branch_http_status" \
+            --arg diagnostic "$branch_error_message" \
+            '. + {
+              httpStatus: $httpStatus,
+              diagnostic: $diagnostic
+            }' <<< "$branch_protection_json")"
 
           rulesets_count="$(jq -r 'if type == "array" then length else 0 end' <<< "$rulesets_json")"
           active_branch_rulesets_count="$(jq -r 'if type == "array" then ([.[] | select(.target == "branch" and .enforcement == "active")] | length) else 0 end' <<< "$rulesets_json")"
@@ -604,6 +680,7 @@ jobs:
           test -s "$evidence_path"
 
           echo "policy_evidence_path=$evidence_path" >> "$GITHUB_OUTPUT"
+          echo "Branch Protection HTTP status: $branch_http_status"
           echo "Branch Protection API available: $branch_available"
           echo "Branch Protection diagnostic: $branch_error_message"
           echo "Rulesets API available: $rulesets_available"
@@ -618,6 +695,7 @@ jobs:
             echo "- Repository: \`$GITHUB_REPOSITORY\`"
             echo "- Branch reviewed: \`main\`"
             echo "- Candidate Commit: \`$actual_head\`"
+            echo "- Branch Protection HTTP status: \`$branch_http_status\`"
             echo "- Branch Protection diagnostic: $branch_error_message"
             echo "- Branch Protection API available: \`$branch_available\`"
             echo "- Rulesets diagnostic: $rulesets_error_message"
