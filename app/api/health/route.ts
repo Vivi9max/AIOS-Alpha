@@ -4,6 +4,9 @@ import manifest from "../../../aios-alpha.manifest.json";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const commitSha =
+    process.env.VERCEL_GIT_COMMIT_SHA || null;
+
   return NextResponse.json(
     {
       ok: true,
@@ -11,9 +14,18 @@ export async function GET() {
       release: manifest.release,
       status: manifest.status,
       locale: manifest.defaultLocale,
+      commitSha,
       timestamp: new Date().toISOString(),
-      checks: { application: "ok", manifest: "ok" }
+      checks: {
+        application: "ok",
+        manifest: "ok",
+      },
     },
-    { status: 200, headers: { "Cache-Control": "no-store" } }
+    {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
   );
 }
