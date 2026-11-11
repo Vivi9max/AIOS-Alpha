@@ -228,6 +228,39 @@ test("does not block common environment variable references", () => {
   assert.equal(result.safe, true);
 });
 
+test("accepts exact test-only Vercel bypass placeholder", () => {
+  const result = scanForEngineeringSecrets({
+    VERCEL_AUTOMATION_BYPASS_SECRET: "test-secret",
+  });
+
+  assert.equal(result.safe, true);
+  assert.deepEqual(result.findings, []);
+});
+
+test("accepts exact test-only trusted OIDC placeholder", () => {
+  const result = scanForEngineeringSecrets({
+    VERCEL_TRUSTED_OIDC_TOKEN: "test-oidc-token",
+  });
+
+  assert.equal(result.safe, true);
+  assert.deepEqual(result.findings, []);
+});
+
+test("does not accept arbitrary values as test placeholders", () => {
+  const result = scanForEngineeringSecrets({
+    VERCEL_AUTOMATION_BYPASS_SECRET:
+      "production-sensitive-value-123456",
+  });
+
+  assert.equal(result.safe, false);
+  assert.equal(
+    result.findings.some(
+      (item) => item.type === "SENSITIVE_ASSIGNMENT",
+    ),
+    true,
+  );
+});
+
 test("does not return secret values in findings", () => {
   const secret = "sk-" + "C".repeat(32);
   const result = scanForEngineeringSecrets(secret);
