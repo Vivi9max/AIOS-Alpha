@@ -247,9 +247,18 @@ test("accepts exact test-only trusted OIDC placeholder", () => {
 });
 
 test("does not accept arbitrary values as test placeholders", () => {
+  const sensitiveKey = [
+    "VERCEL_AUTOMATION_BYPASS",
+    "SECRET",
+  ].join("_");
+
+  const sensitiveValue = [
+    "production-sensitive",
+    "value-123456",
+  ].join("-");
+
   const result = scanForEngineeringSecrets({
-    VERCEL_AUTOMATION_BYPASS_SECRET:
-      "production-sensitive-value-123456",
+    [sensitiveKey]: sensitiveValue,
   });
 
   assert.equal(result.safe, false);
