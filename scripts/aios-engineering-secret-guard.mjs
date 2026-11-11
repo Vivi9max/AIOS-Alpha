@@ -64,6 +64,8 @@ const PLACEHOLDER_VALUES = new Set([
   "example-token",
   "test_key",
   "test-token",
+  "test-secret",
+  "test-oidc-token",
   "redacted",
   "[redacted]",
   "undefined",
