@@ -10,12 +10,19 @@ const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const FILE_SHA_PATTERN = /^[a-f0-9]{64}$/;
 const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 
-export const FOUNDER_REVIEW_GATE_VERSION = "C170.6.1";
+export const FOUNDER_REVIEW_GATE_VERSION = "C170.6.23";
 
 const REQUIRED_MANIFEST_FILES = [
   "aios-verified-delivery.json",
   "aios-delivery-builder-summary.json",
   "aios-delivery-verification.json",
+];
+
+const REQUIRED_RULE_TYPES = [
+  "pull_request",
+  "required_status_checks",
+  "non_fast_forward",
+  "deletion",
 ];
 
 function fail(code, message) {
@@ -283,34 +290,228 @@ function resolveGitRef(root, ref, gitResolve) {
   }
 }
 
-export async function createFounderReviewReport(options = {}, dependencies = {}) {
-  const root = path.resolve(options.root || process.cwd());
-  const artifactPath = assertOutsideRepository(root, options.artifactPath || "", "Artifact");
-  const manifestPath = assertOutsideRepository(root, options.manifestPath || "", "Manifest");
-  const builderSummaryPath = assertOutsideRepository(root, options.builderSummaryPath || "", "Builder summary");
-  const verificationPath = assertOutsideRepository(root, options.verificationPath || "", "Verification report");
-  const handoffPath = assertOutsideRepository(root, options.handoffPath || "", "Founder handoff");
-  const rollbackPath = assertOutsideRepository(root, options.rollbackPath || "", "Rollback evidence");
-  const auditPath = assertOutsideRepository(root, options.auditPath || "", "Audit record");
-  const stagingPath = assertOutsideRepository(root, options.stagingPath || "", "Staging directory");
+function isStringArray(value) {
+  return Array.isArray(value) &&
+    value.every((item) => typeof item === "string" && item.length > 0);
+}
 
-  for (const [key, value] of Object.entries({
-    artifactPath,
-    manifestPath,
-    builderSummaryPath,
-    verificationPath,
-    handoffPath,
-    rollbackPath,
-    auditPath,
-    stagingPath,
-  })) {
-    if (!options[key] || !value) {
+function globMatches(pattern, branch) {
+  if (pattern === "~ALL") return true;
+  if (pattern === "~DEFAULT_BRANCH") return branch === "refs/heads/main";
+
+  if (
+    typeof pattern !== "string" ||
+    pattern.length === 0 ||
+    pattern.includes("\0")
+  ) {
+    return false;
+  }
+
+  let expression = "^";
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+
+    if (char === "*") {
+      expression += ".*";
+    } else if (char === "?") {
+      expression += ".";
+    } else {
+      expression += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+
+  expression += "$";
+
+  try {
+    return new RegExp(expression).test(branch);
+  } catch {
+    return false;
+  }
+}
+
+function appliesToMain(ruleSet) {
+  if (
+    !ruleSet.conditions ||
+    typeof ruleSet.conditions !== "object" ||
+    !ruleSet.conditions.ref_name ||
+    typeof ruleSet.conditions.ref_name !== "object"
+  ) {
+    fail(
+      "AIOS_FOUNDER_REVIEW_POLICY_EVIDENCE_INVALID",
+      "Active branch ruleset is missing ref_name conditions.",
+    );
+  }
+
+  const include = ruleSet.conditions.ref_name.include;
+  const exclude = ruleSet.conditions.ref_name.exclude;
+
+  if (!isStringArray(include) || !isStringArray(exclude)) {
+    fail(
+      "AIOS_FOUNDER_REVIEW_POLICY_EVIDENCE_INVALID",
+      "Ruleset include/exclude patterns must be string arrays.",
+    );
+  }
+
+  const mainRef = "refs/heads/main";
+  const included = include.some((pattern) => globMatches(pattern, mainRef));
+  const excluded = exclude.some((pattern) => globMatches(pattern, mainRef));
+
+  return included && !excluded;
+}
+
+export function validatePolicyEvidence(evidence, expected = {}) {
+  const blockers = [];
+
+  const block = (message) => {
+    blockers.push(message);
+  };
+
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    return ["Policy evidence must be a JSON object."];
+  }
+
+  if (evidence.schemaVersion !== 1) {
+    block("Policy evidence schemaVersion must be 1.");
+  }
+
+  if (
+    typeof evidence.repository !== "string" ||
+    !evidence.repository ||
+    evidence.repository !== expected.repository
+  ) {
+    block("Policy evidence repository does not match this workflow repository.");
+  }
+
+  if (evidence.branch !== "main") {
+    block("Policy evidence must describe the main branch.");
+  }
+
+  if (
+    typeof evidence.candidateCommitSha !== "string" ||
+    evidence.candidateCommitSha !== expected.candidateCommitSha ||
+    !SHA_PATTERN.test(evidence.candidateCommitSha)
+  ) {
+    block("Policy evidence candidateCommitSha does not match the checked-out commit.");
+  }
+
+  const protection = evidence.branchProtection;
+
+  if (!protection || typeof protection !== "object" || Array.isArray(protection)) {
+    block("Branch Protection evidence is missing or malformed.");
+  } else {
+    if (protection.available !== true) block("Branch Protection API evidence is unavailable.");
+    if (protection.protected !== true) block("main is not confirmed as protected.");
+    if (protection.enforceAdmins !== true) block("Branch Protection does not enforce rules for administrators.");
+    if (protection.allowForcePushes !== false) block("Force-push protection is missing or unknown.");
+    if (protection.allowDeletions !== false) block("Branch deletion protection is missing or unknown.");
+    if (protection.requiredPullRequestReviews !== true) block("Required pull-request reviews are missing or unknown.");
+    if (protection.requiredStatusChecks !== true) block("Required status checks are missing or unknown.");
+  }
+
+  if (!Array.isArray(evidence.rulesets)) {
+    block("Repository Rulesets evidence must be a complete array.");
+  }
+
+  const applicable = [];
+  const effectiveRuleTypes = new Set();
+
+  if (Array.isArray(evidence.rulesets)) {
+    for (let index = 0; index < evidence.rulesets.length; index += 1) {
+      const item = evidence.rulesets[index];
+
+      if (
+        !item ||
+        typeof item !== "object" ||
+        typeof item.target !== "string" ||
+        typeof item.enforcement !== "string"
+      ) {
+        block(`Ruleset ${index} is malformed.`);
+        continue;
+      }
+
+      if (item.target !== "branch" || item.enforcement !== "active") {
+        continue;
+      }
+
+      let applies = false;
+
+      try {
+        applies = appliesToMain(item);
+      } catch (error) {
+        block(error.message);
+        continue;
+      }
+
+      if (!applies) continue;
+
+      applicable.push(item);
+
+      if (!Array.isArray(item.bypassActors)) {
+        block(`Applicable ruleset ${index} has unknown bypass actors.`);
+      } else if (item.bypassActors.length > 0) {
+        block(`Applicable ruleset ${index} permits bypass actors.`);
+      }
+
+      if (!isStringArray(item.ruleTypes)) {
+        block(`Applicable ruleset ${index} has malformed ruleTypes.`);
+      } else {
+        for (const ruleType of item.ruleTypes) {
+          effectiveRuleTypes.add(ruleType);
+        }
+      }
+    }
+  }
+
+  if (applicable.length === 0) {
+    block("No active repository ruleset was confirmed to apply to main.");
+  }
+
+  for (const requiredType of REQUIRED_RULE_TYPES) {
+    if (!effectiveRuleTypes.has(requiredType)) {
+      block(`Required effective ruleset rule is missing: ${requiredType}.`);
+    }
+  }
+
+  return {
+    blockers: [...new Set(blockers)],
+    applicableRulesetCount: applicable.length,
+    effectiveRuleTypes: [...effectiveRuleTypes].sort(),
+  };
+}
+
+export async function createFounderReviewReport(options = {}, dependencies = {}) {
+  const requiredOptions = [
+    "artifactPath",
+    "manifestPath",
+    "builderSummaryPath",
+    "verificationPath",
+    "handoffPath",
+    "rollbackPath",
+    "auditPath",
+    "stagingPath",
+    "policyEvidencePath",
+  ];
+
+  for (const key of requiredOptions) {
+    if (typeof options[key] !== "string" || !options[key]) {
       fail(
         "AIOS_FOUNDER_REVIEW_USAGE",
         `Required Founder Review input is missing: ${key}.`,
       );
     }
   }
+
+  const root = path.resolve(options.root || process.cwd());
+  const artifactPath = assertOutsideRepository(root, options.artifactPath, "Artifact");
+  const manifestPath = assertOutsideRepository(root, options.manifestPath, "Manifest");
+  const builderSummaryPath = assertOutsideRepository(root, options.builderSummaryPath, "Builder summary");
+  const verificationPath = assertOutsideRepository(root, options.verificationPath, "Verification report");
+  const handoffPath = assertOutsideRepository(root, options.handoffPath, "Founder handoff");
+  const rollbackPath = assertOutsideRepository(root, options.rollbackPath, "Rollback evidence");
+  const auditPath = assertOutsideRepository(root, options.auditPath, "Audit record");
+  const stagingPath = assertOutsideRepository(root, options.stagingPath, "Staging directory");
+  const policyEvidencePath = assertOutsideRepository(root, options.policyEvidencePath, "Policy evidence");
 
   const artifactBytes = readBytes(artifactPath, "Delivery artifact");
   const artifact = readJson(artifactPath, "Delivery artifact");
@@ -321,6 +522,7 @@ export async function createFounderReviewReport(options = {}, dependencies = {})
   const audit = readJson(auditPath, "Audit record");
   const manifestBytes = readBytes(manifestPath, "SHA-256 manifest");
   const manifest = parseManifest(manifestBytes);
+  const policyEvidence = readJson(policyEvidencePath, "Founder policy evidence");
 
   const baseSha = assertSha(artifact.repository?.baseCommitSha, "Base Commit");
   const headSha = assertSha(artifact.repository?.candidateCommitSha, "Candidate Commit");
@@ -446,28 +648,28 @@ export async function createFounderReviewReport(options = {}, dependencies = {})
     );
   }
 
-  const integrationBlockers = [];
-  const mainProtected = options.mainProtected === true || options.mainProtected === "true";
-  const parsedRulesetsCount = Number(options.rulesetsCount);
-  const rulesetsCountKnown = Number.isSafeInteger(parsedRulesetsCount) && parsedRulesetsCount >= 0;
+  const policyResult = validatePolicyEvidence(policyEvidence, {
+    repository: options.repository || null,
+    candidateCommitSha: headSha,
+  });
 
-  if (!mainProtected) {
-    integrationBlockers.push(
-      "GitHub does not confirm an active native protection rule for main. Configure and verify main branch protection before controlled integration.",
-    );
-  }
+  const policyBlockers = Array.isArray(policyResult)
+    ? policyResult
+    : policyResult.blockers;
 
-  if (!rulesetsCountKnown) {
-    integrationBlockers.push(
-      "Repository ruleset status is unknown; a Founder must verify that no bypass path weakens main protection.",
-    );
-  }
+  const applicableRulesetCount = Array.isArray(policyResult)
+    ? 0
+    : policyResult.applicableRulesetCount;
+
+  const effectiveRuleTypes = Array.isArray(policyResult)
+    ? []
+    : policyResult.effectiveRuleTypes;
 
   return {
     schemaVersion: 1,
     reviewGate: FOUNDER_REVIEW_GATE_VERSION,
     generatedAt: new Date().toISOString(),
-    status: integrationBlockers.length === 0 ? "FOUNDER_REVIEW_READY" : "FOUNDER_REVIEW_BLOCKED",
+    status: policyBlockers.length === 0 ? "FOUNDER_REVIEW_READY" : "FOUNDER_REVIEW_BLOCKED",
     repository: {
       name: options.repository || null,
       branch: options.branch || null,
@@ -504,11 +706,12 @@ export async function createFounderReviewReport(options = {}, dependencies = {})
     },
     files: inventory,
     branchProtection: {
-      mainProtected,
-      rulesetsCount: rulesetsCountKnown ? parsedRulesetsCount : null,
-      verificationScope: "presence-only",
+      policyEvidenceValid: policyBlockers.length === 0,
+      applicableRulesetCount,
+      effectiveRuleTypes,
+      verificationScope: "structured-policy-evidence",
       policyReviewRequired: true,
-      integrationBlockers,
+      policyBlockers,
     },
     founderApproval: {
       required: true,
@@ -524,7 +727,7 @@ export async function createFounderReviewReport(options = {}, dependencies = {})
     mergeExecuted: false,
     nextRequiredActions: [
       "Review every file path, status, and SHA-256 against the GitHub candidate diff.",
-      "Verify main branch protection and ensure direct pushes, force pushes, and bypass paths are blocked.",
+      "Review the structured main Branch Protection and applicable Rulesets evidence.",
       "Record explicit Founder approval against this exact Candidate Commit and artifact SHA-256.",
       "Only after explicit approval may a separate controlled integration procedure be started.",
       "After integration, verify the exact Production Commit SHA and runtime health.",
@@ -573,9 +776,8 @@ function parseArgs(argv) {
     "--rollback": "rollbackPath",
     "--audit": "auditPath",
     "--staging": "stagingPath",
+    "--policy-evidence": "policyEvidencePath",
     "--output": "outputPath",
-    "--main-protected": "mainProtected",
-    "--rulesets-count": "rulesetsCount",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -585,7 +787,7 @@ function parseArgs(argv) {
     if (!mapping[key] || !value || value.startsWith("--")) {
       fail(
         "AIOS_FOUNDER_REVIEW_USAGE",
-        "Invalid arguments. Required: --artifact --manifest --builder-summary --verification --handoff --rollback --audit --staging --output --main-protected --rulesets-count.",
+        "Invalid arguments. Required: --artifact --manifest --builder-summary --verification --handoff --rollback --audit --staging --policy-evidence --output.",
       );
     }
 
@@ -619,6 +821,7 @@ export async function runFounderReviewGate(argv = process.argv.slice(2), environ
     artifactSha256: report.artifact.sha256,
     fileCount: report.artifact.fileCount,
     risk: report.impact.risk,
+    branchProtection: report.branchProtection,
     founderApproval: report.founderApproval,
     mergeExecuted: false,
     outputPath,

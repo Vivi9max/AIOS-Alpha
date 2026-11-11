@@ -70,7 +70,7 @@ jobs:
 
       - name: Verify C170.6.11 Founder Approval Auto Resolver
         run: node --test scripts/aios-founder-approval-resolver.test.mjs
-      
+
       - name: C169.8-D2.1 independent control-plane verification
         shell: bash
         env:
@@ -119,8 +119,48 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Generate C170.4 verification receipt for candidate commit
+      # ------------------------------------------------------------
+      # Candidate identity and no-difference guard
+      # ------------------------------------------------------------
+
+      - name: Detect candidate changes against main
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        id: candidate_diff
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout HEAD does not match the workflow candidate SHA."
+            exit 1
+          fi
+
+          git fetch origin main
+
+          if ! git merge-base origin/main "$actual_head" >/dev/null 2>&1; then
+            echo "::error::Unable to establish the main-to-candidate commit base."
+            exit 1
+          fi
+
+          if git diff --quiet origin/main..."$actual_head" --; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No file differences exist between main and this candidate."
+            echo "Delivery generation and Founder Review will be skipped."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Candidate contains file differences against main."
+          fi
+
+      # ------------------------------------------------------------
+      # C170.4 candidate receipt
+      # ------------------------------------------------------------
+
+      - name: Generate C170.4 verification receipt for candidate commit
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -143,7 +183,7 @@ jobs:
           echo "C170.4 receipt generated for $actual_head"
 
       - name: Restore clean candidate checkout for Git-based analysis
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -179,7 +219,7 @@ jobs:
           echo "Clean candidate checkout verified: $restored_head"
 
       - name: Diagnose C170.1 dependency graph before delivery generation
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -205,7 +245,7 @@ jobs:
           node scripts/aios-c1705-dependency-diagnostic.mjs
 
       - name: Generate real C170.5 delivery artifact from Git commits
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -250,7 +290,7 @@ jobs:
           echo "Candidate Commit: $actual_head"
 
       - name: Independently verify generated delivery artifact
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -279,7 +319,7 @@ jobs:
           cat "$verification_path" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create delivery artifact SHA-256 manifest
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -295,7 +335,7 @@ jobs:
           cat aios-delivery-artifact.sha256
 
       - name: Consume verified delivery into isolated Founder handoff
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -327,41 +367,358 @@ jobs:
 
           cat "$RUNNER_TEMP/aios-delivery-handoff-summary.json" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Inspect main branch protection for Founder review gate
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
-        id: founder_protection
+      # ------------------------------------------------------------
+      # C170.6.25 structured Founder policy evidence
+      # ------------------------------------------------------------
+
+      - name: Collect structured Branch Protection and Rulesets evidence
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
+        id: founder_policy_evidence
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FOUNDER_POLICY_READ_TOKEN }}
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          main_protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected' 2>/dev/null || printf 'unknown')"
-          rulesets_count="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" --jq 'length' 2>/dev/null || printf '%s' '-1')"
+          work_dir="$RUNNER_TEMP/aios-founder-policy"
+          mkdir -p "$work_dir"
 
-          case "$main_protected" in
-            true|false) ;;
-            *) main_protected="unknown" ;;
-          esac
+          evidence_path="$work_dir/founder-policy-evidence.json"
+          branch_raw="$work_dir/branch-protection.json"
+          rulesets_raw="$work_dir/rulesets-list.json"
+          ruleset_details="$work_dir/ruleset-details.jsonl"
+          branch_error="$work_dir/branch-protection.error.txt"
+          rulesets_error="$work_dir/rulesets.error.txt"
+          branch_http_status_file="$work_dir/branch-protection.http-status"
 
-          if ! [[ "$rulesets_count" =~ ^[0-9]+$ ]]; then
-            rulesets_count="-1"
+          branch_http_status="NOT_RUN"
+          branch_error_message="No Branch Protection API response was captured."
+          rulesets_error_message="No Rulesets API response was captured."
+
+          sanitize_api_error() {
+            local error_file="$1"
+            if [ -s "$error_file" ]; then
+              tr '\r\n' ' ' < "$error_file" |
+                sed -E \
+                  -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' \
+                  -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' \
+                  -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' |
+                cut -c1-280
+            else
+              printf '%s' "No error text captured."
+            fi
+          }
+
+          sanitize_api_message() {
+            printf '%s' "$1" |
+              tr '\r\n' ' ' |
+              sed -E \
+                -e 's/(github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+)/[REDACTED]/g' \
+                -e 's/(Bearer )[A-Za-z0-9._-]+/TOKEN_REDACTED/g' \
+                -e 's/(token=)[^& ]+/TOKEN_REDACTED/g' |
+              cut -c1-180
+          }
+
+          actual_head="$(git rev-parse HEAD)"
+
+          if [ "$actual_head" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Candidate SHA does not match the workflow SHA."
+            exit 1
           fi
 
-          echo "main_protected=$main_protected" >> "$GITHUB_OUTPUT"
-          echo "rulesets_count=$rulesets_count" >> "$GITHUB_OUTPUT"
+          # Unknown or unavailable policy data must never be converted
+          # into a successful security value.
+          branch_available=false
+          branch_protection_json='{
+            "available": false,
+            "protected": false,
+            "enforceAdmins": null,
+            "allowForcePushes": null,
+            "allowDeletions": null,
+            "requiredPullRequestReviews": null,
+            "requiredStatusChecks": null
+          }'
 
-          echo "main protected: $main_protected"
-          echo "repository rulesets: $rulesets_count"
+          rulesets_available=false
+          rulesets_json='null'
+
+          if [ -n "${GH_TOKEN:-}" ]; then
+            branch_http_status="000"
+
+            if curl --location --silent --show-error \
+              --connect-timeout 15 \
+              --max-time 45 \
+              --output "$branch_raw" \
+              --write-out '%{http_code}' \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main/protection" \
+              > "$branch_http_status_file" 2>"$branch_error"; then
+              branch_http_status="$(cat "$branch_http_status_file" 2>/dev/null || true)"
+            else
+              branch_http_status="000"
+            fi
+
+            if ! [[ "$branch_http_status" =~ ^[0-9]{3}$ ]]; then
+              branch_http_status="000"
+            fi
+
+            case "$branch_http_status" in
+              200)
+                if jq -e 'type == "object"' "$branch_raw" >/dev/null 2>&1; then
+                  branch_available=true
+                  branch_error_message="HTTP 200: Branch Protection response received."
+
+                  branch_protection_json="$(jq -c '{
+                    available: true,
+                    protected: true,
+                    enforceAdmins: (
+                      if (.enforce_admins.enabled | type) == "boolean"
+                      then .enforce_admins.enabled
+                      else null
+                      end
+                    ),
+                    allowForcePushes: (
+                      if (.allow_force_pushes.enabled | type) == "boolean"
+                      then .allow_force_pushes.enabled
+                      else null
+                      end
+                    ),
+                    allowDeletions: (
+                      if (.allow_deletions.enabled | type) == "boolean"
+                      then .allow_deletions.enabled
+                      else null
+                      end
+                    ),
+                    requiredPullRequestReviews: (
+                      if has("required_pull_request_reviews")
+                      then (.required_pull_request_reviews != null)
+                      else null
+                      end
+                    ),
+                    requiredStatusChecks: (
+                      if has("required_status_checks")
+                      then (.required_status_checks != null)
+                      else null
+                      end
+                    )
+                  }' "$branch_raw")"
+                else
+                  branch_error_message="HTTP 200: Branch Protection response was not a JSON object."
+                fi
+                ;;
+
+              403)
+                branch_error_message="HTTP 403: Branch Protection access is forbidden. Verify FOUNDER_POLICY_READ_TOKEN Administration: Read permission and repository access."
+                ;;
+
+              404)
+                branch_api_message="$(jq -r '
+                  if type == "object" and (.message | type) == "string"
+                  then .message
+                  else empty
+                  end
+                ' "$branch_raw" 2>/dev/null || true)"
+
+                if [ -n "$branch_api_message" ]; then
+                  branch_error_message="HTTP 404: $(sanitize_api_message "$branch_api_message")"
+                else
+                  branch_error_message="HTTP 404: Branch Protection resource was not found."
+                fi
+                ;;
+
+              000)
+                branch_error_message="HTTP 000: Branch Protection request failed before receiving an HTTP response."
+                ;;
+
+              *)
+                branch_api_message="$(jq -r '
+                  if type == "object" and (.message | type) == "string"
+                  then .message
+                  else empty
+                  end
+                ' "$branch_raw" 2>/dev/null || true)"
+
+                branch_error_message="HTTP ${branch_http_status}: $(sanitize_api_message "${branch_api_message:-Unexpected GitHub API response.}")"
+                ;;
+            esac
+
+            if gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/rulesets?per_page=100" \
+              > "$rulesets_raw" 2>"$rulesets_error"; then
+
+              if jq -e '
+                type == "array" and
+                all(.[]; type == "array") and
+                (add | type == "array") and
+                all(add[]; (
+                  type == "object" and
+                  (.id | type == "number" or type == "string") and
+                  (.target | type == "string") and
+                  (.enforcement | type == "string")
+                ))
+              ' "$rulesets_raw" >/dev/null 2>&1; then
+
+                jq 'add' "$rulesets_raw" > "$work_dir/rulesets-flat.json"
+                : > "$ruleset_details"
+                rulesets_available=true
+
+                while IFS=$'\t' read -r ruleset_id ruleset_target ruleset_enforcement; do
+                  if [ -z "$ruleset_id" ] || [ -z "$ruleset_target" ] || [ -z "$ruleset_enforcement" ]; then
+                    rulesets_available=false
+                    break
+                  fi
+
+                  if [ "$ruleset_target" = "branch" ] && [ "$ruleset_enforcement" = "active" ]; then
+                    detail_file="$work_dir/ruleset-${ruleset_id}.json"
+                    detail_error="$work_dir/ruleset-${ruleset_id}.error.txt"
+
+                    if ! gh api \
+                      "repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_id}" \
+                      > "$detail_file" 2>"$detail_error"; then
+                      rulesets_available=false
+                      rulesets_error_message="Ruleset ${ruleset_id} detail request failed: $(sanitize_api_error "$detail_error")"
+                      break
+                    fi
+
+                    if ! jq -e '
+                      type == "object" and
+                      (.target | type == "string") and
+                      (.enforcement | type == "string")
+                    ' "$detail_file" >/dev/null 2>&1; then
+                      rulesets_available=false
+                      rulesets_error_message="Ruleset ${ruleset_id} detail response failed schema validation."
+                      break
+                    fi
+
+                    jq -c '{
+                      target: .target,
+                      enforcement: .enforcement,
+                      conditions: {
+                        ref_name: {
+                          include: .conditions.ref_name.include,
+                          exclude: .conditions.ref_name.exclude
+                        }
+                      },
+                      bypassActors: (
+                        if has("bypass_actors")
+                        then .bypass_actors
+                        else null
+                        end
+                      ),
+                      ruleTypes: (
+                        if (.rules | type) == "array"
+                        then [.rules[].type]
+                        else null
+                        end
+                      )
+                    }' "$detail_file" >> "$ruleset_details"
+                  else
+                    jq -cn \
+                      --arg target "$ruleset_target" \
+                      --arg enforcement "$ruleset_enforcement" \
+                      '{target: $target, enforcement: $enforcement}' \
+                      >> "$ruleset_details"
+                  fi
+                done < <(
+                  jq -r '.[] | [.id, .target, .enforcement] | @tsv' \
+                    "$work_dir/rulesets-flat.json"
+                )
+
+                if [ "$rulesets_available" = "true" ]; then
+                  rulesets_json="$(jq -s '.' "$ruleset_details")"
+                else
+                  rulesets_json='null'
+                fi
+              fi
+            fi
+
+            if [ "$rulesets_available" = "true" ]; then
+              rulesets_error_message="request succeeded"
+            elif [[ "$rulesets_error_message" == Ruleset* ]]; then
+              :
+            elif [ -s "$rulesets_raw" ]; then
+              rulesets_error_message="API response received, but Rulesets response schema validation failed."
+            else
+              rulesets_error_message="$(sanitize_api_error "$rulesets_error")"
+            fi
+          else
+            branch_http_status="NOT_RUN"
+            branch_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
+            rulesets_error_message="FOUNDER_POLICY_READ_TOKEN is empty or unavailable."
+          fi
+
+          # Keep diagnostic information in the retained evidence artifact.
+          branch_protection_json="$(jq -c \
+            --arg httpStatus "$branch_http_status" \
+            --arg diagnostic "$branch_error_message" \
+            '. + {
+              httpStatus: $httpStatus,
+              diagnostic: $diagnostic
+            }' <<< "$branch_protection_json")"
+
+          rulesets_count="$(jq -r 'if type == "array" then length else 0 end' <<< "$rulesets_json")"
+          active_branch_rulesets_count="$(jq -r 'if type == "array" then ([.[] | select(.target == "branch" and .enforcement == "active")] | length) else 0 end' <<< "$rulesets_json")"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch "main" \
+            --arg candidateCommitSha "$actual_head" \
+            --argjson branchProtection "$branch_protection_json" \
+            --argjson rulesets "$rulesets_json" \
+            '{
+              schemaVersion: 1,
+              repository: $repository,
+              branch: $branch,
+              candidateCommitSha: $candidateCommitSha,
+              branchProtection: $branchProtection,
+              rulesets: $rulesets
+            }' > "$evidence_path"
+
+          test -s "$evidence_path"
+
+          echo "policy_evidence_path=$evidence_path" >> "$GITHUB_OUTPUT"
+          echo "Branch Protection HTTP status: $branch_http_status"
+          echo "Branch Protection API available: $branch_available"
+          echo "Branch Protection diagnostic: $branch_error_message"
+          echo "Rulesets API available: $rulesets_available"
+          echo "Rulesets diagnostic: $rulesets_error_message"
+          echo "Rulesets collected: $rulesets_count"
+          echo "Active branch Rulesets collected: $active_branch_rulesets_count"
+          echo "Policy evidence written outside the repository."
+
+          {
+            echo "## Founder policy evidence collection"
+            echo
+            echo "- Repository: \`$GITHUB_REPOSITORY\`"
+            echo "- Branch reviewed: \`main\`"
+            echo "- Candidate Commit: \`$actual_head\`"
+            echo "- Branch Protection HTTP status: \`$branch_http_status\`"
+            echo "- Branch Protection diagnostic: $branch_error_message"
+            echo "- Branch Protection API available: \`$branch_available\`"
+            echo "- Rulesets diagnostic: $rulesets_error_message"
+            echo "- Rulesets collected: $rulesets_count"
+            echo "- Active branch Rulesets collected: $active_branch_rulesets_count"
+            echo "- Rulesets API available: \`$rulesets_available\`"
+            echo "- Evidence file: \`$evidence_path\`"
+            echo
+            echo "Raw policy evidence is retained as a workflow artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate independently verified Founder review report
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         shell: bash
         env:
-          MAIN_PROTECTED: ${{ steps.founder_protection.outputs.main_protected }}
-          RULESETS_COUNT: ${{ steps.founder_protection.outputs.rulesets_count }}
+          POLICY_EVIDENCE_PATH: ${{ steps.founder_policy_evidence.outputs.policy_evidence_path }}
         run: |
           set -euo pipefail
+
+          if [ -z "${POLICY_EVIDENCE_PATH:-}" ] || [ ! -s "$POLICY_EVIDENCE_PATH" ]; then
+            echo "::error::Founder policy evidence is missing."
+            exit 1
+          fi
 
           node scripts/aios-founder-review-gate.mjs \
             --artifact "$RUNNER_TEMP/aios-verified-delivery.json" \
@@ -372,9 +729,8 @@ jobs:
             --rollback "$RUNNER_TEMP/aios-delivery-handoff/rollback-evidence.json" \
             --audit "$RUNNER_TEMP/aios-delivery-handoff-audit.json" \
             --staging "$RUNNER_TEMP/aios-delivery-handoff" \
+            --policy-evidence "$POLICY_EVIDENCE_PATH" \
             --output "$RUNNER_TEMP/aios-founder-review.json" \
-            --main-protected "$MAIN_PROTECTED" \
-            --rulesets-count "$RULESETS_COUNT" \
             > "$RUNNER_TEMP/aios-founder-review-summary.json"
 
           test -s "$RUNNER_TEMP/aios-founder-review.json"
@@ -382,8 +738,8 @@ jobs:
 
           cat "$RUNNER_TEMP/aios-founder-review-summary.json" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Preserve independently verified Founder handoff
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+      - name: Preserve independently verified Founder handoff and policy evidence
+        if: always() && github.event_name == 'push' && github.ref != 'refs/heads/main' && steps.candidate_diff.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: aios-verified-delivery-${{ github.sha }}-${{ github.run_id }}
@@ -397,6 +753,7 @@ jobs:
             ${{ runner.temp }}/aios-delivery-handoff-summary.json
             ${{ runner.temp }}/aios-founder-review.json
             ${{ runner.temp }}/aios-founder-review-summary.json
+            ${{ runner.temp }}/aios-founder-policy/founder-policy-evidence.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
