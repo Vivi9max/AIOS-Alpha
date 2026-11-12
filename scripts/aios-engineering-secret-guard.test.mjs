@@ -23,6 +23,21 @@ function makeSensitiveAssignment(key, operator, value) {
   ].join("");
 }
 
+function makePemPrivateKeyHeader() {
+  return [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    "-----",
+  ].join("");
+}
+
+function makeAwsAccessKey() {
+  return [
+    "AKIA",
+    "1234567890ABCDEF",
+  ].join("");
+}
+
 test("accepts ordinary engineering source code", () => {
   const result = scanForEngineeringSecrets(
     [
@@ -65,7 +80,7 @@ test("detects GitHub personal access tokens", () => {
 
 test("detects AWS access keys", () => {
   const result = scanForEngineeringSecrets(
-    "AKIA1234567890ABCDEF",
+    makeAwsAccessKey(),
   );
 
   assert.equal(result.safe, false);
@@ -77,7 +92,7 @@ test("detects AWS access keys", () => {
 
 test("detects PEM private key headers", () => {
   const result = scanForEngineeringSecrets(
-    "-----BEGIN PRIVATE KEY-----",
+    makePemPrivateKeyHeader(),
   );
 
   assert.equal(result.safe, false);
