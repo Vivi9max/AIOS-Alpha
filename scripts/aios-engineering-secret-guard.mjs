@@ -3,6 +3,9 @@
  *
  * Scans all engineering prompt content before external provider dispatch.
  * Never returns or logs matched secret values.
+ *
+ * C170.5.5:
+ * Adds safe source-location diagnostics without weakening detection.
  */
 
 const SECRET_PATTERNS = Object.freeze([
@@ -64,6 +67,8 @@ const PLACEHOLDER_VALUES = new Set([
   "example-token",
   "test_key",
   "test-token",
+  "test-secret",
+  "test-oidc-token",
   "redacted",
   "[redacted]",
   "undefined",
@@ -73,6 +78,7 @@ const PLACEHOLDER_VALUES = new Set([
 
 const MAX_SCAN_DEPTH = 64;
 const MAX_SCAN_NODES = 50000;
+const MAX_DIAGNOSTIC_LOCATIONS = 10;
 
 function toScanText(value) {
   if (typeof value === "string") {
@@ -86,13 +92,32 @@ function toScanText(value) {
   }
 }
 
+function safePathSegment(value) {
+  const key = String(value);
+
+  if (
+    key.length > 80 ||
+    !/^[A-Za-z0-9_.@/-]+$/.test(key)
+  ) {
+    return "<key>";
+  }
+
+  return key;
+}
+
+/**
+ * Collects raw strings with safe structural locations.
+ *
+ * Object keys are sanitized before they enter diagnostics.
+ * String values are never included in diagnostic paths.
+ */
 function collectRawStringValues(value) {
   const strings = [];
   const visited = new WeakSet();
 
   let visitedNodes = 0;
 
-  function visit(current, depth) {
+  function visit(current, depth, location) {
     if (visitedNodes >= MAX_SCAN_NODES) {
       return;
     }
@@ -100,7 +125,11 @@ function collectRawStringValues(value) {
     visitedNodes += 1;
 
     if (typeof current === "string") {
-      strings.push(current);
+      strings.push({
+        value: current,
+        location,
+      });
+
       return;
     }
 
@@ -139,11 +168,19 @@ function collectRawStringValues(value) {
         continue;
       }
 
-      visit(child, depth + 1);
+      const segment = Array.isArray(current)
+        ? `[${key}]`
+        : `[${safePathSegment(key)}]`;
+
+      visit(
+        child,
+        depth + 1,
+        `${location}${segment}`,
+      );
     }
   }
 
-  visit(value, 0);
+  visit(value, 0, "$");
 
   return strings;
 }
@@ -171,42 +208,87 @@ function isPlaceholder(value) {
   );
 }
 
+function addFinding(
+  findings,
+  type,
+  location,
+) {
+  const key = `${type}:${location}`;
+
+  if (
+    findings.some(
+      (finding) =>
+        `${finding.type}:${finding.location}` === key,
+    )
+  ) {
+    return;
+  }
+
+  findings.push({
+    type,
+    location,
+  });
+}
+
 /**
- * Returns metadata only. Secret values are never included.
+ * Returns metadata only.
+ *
+ * Findings contain:
+ * - detection type
+ * - safe structural source location
+ *
+ * Secret values are never returned.
  */
 export function scanForEngineeringSecrets(value) {
   const serializedSource = toScanText(value);
   const rawStringSources = collectRawStringValues(value);
 
+  // Scan raw strings first to prefer precise source locations.
+  // The serialized representation remains included to preserve
+  // the original whole-payload detection boundary.
   const sources = [
-    serializedSource,
-    ...rawStringSources,
+    ...rawStringSources.map((item) => ({
+      text: item.value,
+      location: item.location,
+    })),
+    {
+      text: serializedSource,
+      location: "$serialized",
+    },
   ];
 
   const findings = [];
 
   for (const pattern of SECRET_PATTERNS) {
-    let matched = false;
+    const matchedLocations = new Set();
 
     for (const source of sources) {
       pattern.expression.lastIndex = 0;
 
-      if (pattern.expression.test(source)) {
-        matched = true;
+      if (pattern.expression.test(source.text)) {
+        matchedLocations.add(source.location);
+      }
+
+      pattern.expression.lastIndex = 0;
+
+      if (
+        matchedLocations.size >=
+        MAX_DIAGNOSTIC_LOCATIONS
+      ) {
         break;
       }
     }
 
-    pattern.expression.lastIndex = 0;
-
-    if (matched) {
-      findings.push({
-        type: pattern.id,
-      });
+    for (const location of matchedLocations) {
+      addFinding(
+        findings,
+        pattern.id,
+        location,
+      );
     }
   }
 
-  let assignmentDetected = false;
+  const assignmentLocations = new Set();
 
   for (const source of sources) {
     ASSIGNMENT_PATTERN.lastIndex = 0;
@@ -214,7 +296,9 @@ export function scanForEngineeringSecrets(value) {
     let assignmentMatch;
 
     while (
-      (assignmentMatch = ASSIGNMENT_PATTERN.exec(source)) !== null
+      (assignmentMatch = ASSIGNMENT_PATTERN.exec(
+        source.text,
+      )) !== null
     ) {
       const candidate =
         assignmentMatch[1] ??
@@ -222,47 +306,59 @@ export function scanForEngineeringSecrets(value) {
         "";
 
       if (!isPlaceholder(candidate)) {
-        assignmentDetected = true;
+        assignmentLocations.add(source.location);
         break;
       }
     }
 
-    if (assignmentDetected) {
+    if (
+      assignmentLocations.size >=
+      MAX_DIAGNOSTIC_LOCATIONS
+    ) {
       break;
     }
   }
 
   ASSIGNMENT_PATTERN.lastIndex = 0;
 
-  if (assignmentDetected) {
-    findings.push({
-      type: "SENSITIVE_ASSIGNMENT",
-    });
+  for (const location of assignmentLocations) {
+    addFinding(
+      findings,
+      "SENSITIVE_ASSIGNMENT",
+      location,
+    );
   }
 
   return {
     safe: findings.length === 0,
-    findings: [
-      ...new Map(
-        findings.map((finding) => [
-          finding.type,
-          finding,
-        ]),
-      ).values(),
-    ],
+    findings,
   };
 }
 
 /**
  * Must run on the exact user prompt immediately before provider dispatch.
- * Fail closed: no configurable bypass is provided.
+ *
+ * Fail closed:
+ * - no configurable bypass
+ * - no secret-value logging
+ * - diagnostic locations only
  */
 export function assertNoSecretsBeforeProviderDispatch(value) {
   const result = scanForEngineeringSecrets(value);
 
   if (!result.safe) {
+    const diagnosticSummary = result.findings
+      .map(
+        (finding) =>
+          `${finding.type} at ${finding.location}`,
+      )
+      .join("; ");
+
     const error = new Error(
-      "Engineering provider dispatch blocked by the secret security guard.",
+      [
+        "Engineering provider dispatch blocked by the secret security guard.",
+        `Safe diagnostics: ${diagnosticSummary}`,
+      ].join(" "),
     );
 
     error.code =
@@ -271,6 +367,7 @@ export function assertNoSecretsBeforeProviderDispatch(value) {
     error.findings = result.findings.map(
       (finding) => ({
         type: finding.type,
+        location: finding.location,
       }),
     );
 

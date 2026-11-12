@@ -1,4 +1,4 @@
-name: AIOS Alpha Autonomous Development Verification
+name: AIOS Alpha Production Commit Verification
 
 on:
   push:
@@ -6,24 +6,58 @@ on:
       - main
 
   workflow_dispatch:
-    inputs:
-      base_url:
-        description: "Optional deployed AIOS Alpha URL"
-        required: false
-        type: string
 
 permissions:
   contents: read
   deployments: read
 
+concurrency:
+  group: aios-production-verification-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
   build-and-verify:
+    name: Build and Verify Exact Production Commit
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Enforce main-only Production verification
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Production verification is restricted to main."
+            echo "::error::Current ref: $GITHUB_REF"
+            exit 1
+          fi
+
+          echo "Production verification target confirmed: main."
+
+      - name: Checkout exact triggering commit
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checkout identity
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_sha="$(git rev-parse HEAD)"
+
+          if [ "$actual_sha" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout SHA does not match triggering commit."
+            exit 1
+          fi
+
+          echo "Exact triggering commit verified."
+          echo "Commit SHA: $actual_sha"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -63,8 +97,13 @@ jobs:
       - name: Verify C170.4 Independent Verification Runtime
         run: node --test scripts/aios-engineering-verification-runtime.test.mjs
 
-      - name: Verify deployment resolver and health checker unit tests
-        run: node --test scripts/wait-for-vercel-deployment.test.mjs scripts/verify-deployment.test.mjs
+      - name: Verify deployment resolver and Production SHA checker
+        run: |
+          set -euo pipefail
+
+          node --test \
+            scripts/wait-for-vercel-deployment.test.mjs \
+            scripts/verify-deployment.test.mjs
 
       - name: TypeScript typecheck
         run: npm run typecheck
@@ -72,22 +111,13 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Resolve deployment URL
-        id: deployment
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MANUAL_URL: ${{ inputs.base_url }}
-        run: |
-          if [ -n "$MANUAL_URL" ]; then
-            echo "base_url=$MANUAL_URL" >> "$GITHUB_OUTPUT"
-          else
-            node scripts/wait-for-vercel-deployment.mjs
-          fi
-
-      - name: Check automation bypass secret
+      - name: Validate Production verification configuration
+        shell: bash
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
+          set -euo pipefail
+
           if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
             echo "::error::Missing GitHub Actions secret: VERCEL_AUTOMATION_BYPASS_SECRET"
             exit 1
@@ -95,8 +125,111 @@ jobs:
 
           echo "Vercel automation bypass secret is configured."
 
-      - name: Verify resolved Vercel deployment
+      - name: Resolve exact Production deployment for triggering commit
+        id: deployment
         env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
-          node scripts/verify-deployment.mjs "${{ steps.deployment.outputs.base_url }}"
+          set -euo pipefail
+
+          : "${GITHUB_OUTPUT:?GitHub Actions did not provide GITHUB_OUTPUT}"
+
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::Production verification is restricted to main."
+            exit 1
+          fi
+
+          node scripts/wait-for-vercel-deployment.mjs
+
+          if [ ! -s "$GITHUB_OUTPUT" ]; then
+            echo "::error::Deployment resolver did not produce GitHub outputs."
+            exit 1
+          fi
+
+          if ! grep -q '^base_url=https://' "$GITHUB_OUTPUT"; then
+            echo "::error::Deployment resolver did not produce a valid HTTPS base URL."
+            exit 1
+          fi
+
+          echo "Production deployment URL resolved for exact triggering commit."
+
+      - name: Verify exact Production Commit SHA and health
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          AIOS_PRODUCTION_VERIFICATION_OUTPUT: ${{ runner.temp }}/aios-production-verification.json
+        run: |
+          set -euo pipefail
+
+          : "${GITHUB_STEP_SUMMARY:?GitHub Actions did not provide GITHUB_STEP_SUMMARY}"
+
+          node scripts/verify-deployment.mjs \
+            "${{ steps.deployment.outputs.base_url }}"
+
+          if [ ! -s "$AIOS_PRODUCTION_VERIFICATION_OUTPUT" ]; then
+            echo "::error::Production verification receipt was not created."
+            exit 1
+          fi
+
+          echo "Exact Production Commit SHA verification completed."
+
+      - name: Validate verification receipt
+        if: success()
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          RECEIPT_PATH: ${{ runner.temp }}/aios-production-verification.json
+        run: |
+          set -euo pipefail
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const receiptPath = process.env.RECEIPT_PATH;
+          const expectedSha = process.env.EXPECTED_COMMIT_SHA;
+
+          const receipt = JSON.parse(
+            fs.readFileSync(receiptPath, "utf8")
+          );
+
+          if (receipt.schemaVersion !== 1) {
+            throw new Error("Unsupported verification receipt schema.");
+          }
+
+          if (receipt.status !== "PRODUCTION_VERIFIED") {
+            throw new Error("Receipt status is not PRODUCTION_VERIFIED.");
+          }
+
+          if (receipt.expectedCommitSha !== expectedSha) {
+            throw new Error("Receipt expected SHA does not match GitHub SHA.");
+          }
+
+          if (receipt.observedCommitSha !== expectedSha) {
+            throw new Error("Receipt observed SHA does not match GitHub SHA.");
+          }
+
+          if (receipt.repository !== "Vivi9max/AIOS-Alpha") {
+            throw new Error("Receipt repository identity mismatch.");
+          }
+
+          if (!receipt.verifiedAt || !receipt.deploymentUrl) {
+            throw new Error("Receipt is missing verification evidence.");
+          }
+
+          console.log("Production verification receipt validated.");
+          console.log(`Verified commit: ${expectedSha}`);
+          console.log(`Deployment URL: ${receipt.deploymentUrl}`);
+          console.log(`Verified at: ${receipt.verifiedAt}`);
+          NODE
+
+      - name: Preserve Production verification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aios-production-verification-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/aios-production-verification.json
+          if-no-files-found: ignore
+          retention-days: 90
