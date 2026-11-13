@@ -97,13 +97,14 @@ jobs:
       - name: Verify C170.4 Independent Verification Runtime
         run: node --test scripts/aios-engineering-verification-runtime.test.mjs
 
-      - name: Verify deployment resolver and Production SHA checker
+      - name: Verify C170.7 deployment and canonical domain verification
         run: |
           set -euo pipefail
 
           node --test \
             scripts/wait-for-vercel-deployment.test.mjs \
-            scripts/verify-deployment.test.mjs
+            scripts/verify-deployment.test.mjs \
+            scripts/verify-canonical-production-domain.test.mjs
 
       - name: TypeScript typecheck
         run: npm run typecheck
@@ -176,60 +177,115 @@ jobs:
 
           echo "Exact Production Commit SHA verification completed."
 
-      - name: Validate verification receipt
+      - name: Verify canonical Production domain
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          AIOS_CANONICAL_DOMAIN_VERIFICATION_OUTPUT: ${{ runner.temp }}/aios-canonical-domain-verification.json
+        run: |
+          set -euo pipefail
+
+          node scripts/verify-canonical-production-domain.mjs
+
+          if [ ! -s "$AIOS_CANONICAL_DOMAIN_VERIFICATION_OUTPUT" ]; then
+            echo "::error::Canonical domain verification receipt was not created."
+            exit 1
+          fi
+
+          echo "Canonical Production domain verification completed."
+
+      - name: Validate both Production verification receipts
         if: success()
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
-          RECEIPT_PATH: ${{ runner.temp }}/aios-production-verification.json
+          PRIMARY_RECEIPT: ${{ runner.temp }}/aios-production-verification.json
+          CANONICAL_RECEIPT: ${{ runner.temp }}/aios-canonical-domain-verification.json
         run: |
           set -euo pipefail
 
           node --input-type=module <<'NODE'
           import fs from "node:fs";
 
-          const receiptPath = process.env.RECEIPT_PATH;
           const expectedSha = process.env.EXPECTED_COMMIT_SHA;
 
-          const receipt = JSON.parse(
-            fs.readFileSync(receiptPath, "utf8")
+          const receipts = [
+            {
+              path: process.env.PRIMARY_RECEIPT,
+              expectedUrlPattern: /^https:\/\/.+$/,
+              label: "Deployment URL"
+            },
+            {
+              path: process.env.CANONICAL_RECEIPT,
+              expectedUrlPattern: /^https:\/\/aiosalpha\.com$/,
+              label: "Canonical domain"
+            }
+          ];
+
+          for (const item of receipts) {
+            const receipt = JSON.parse(
+              fs.readFileSync(item.path, "utf8")
+            );
+
+            if (receipt.schemaVersion !== 1) {
+              throw new Error(
+                `${item.label}: unsupported receipt schema.`
+              );
+            }
+
+            if (receipt.status !== "PRODUCTION_VERIFIED") {
+              throw new Error(
+                `${item.label}: receipt is not PRODUCTION_VERIFIED.`
+              );
+            }
+
+            if (
+              receipt.expectedCommitSha !== expectedSha ||
+              receipt.observedCommitSha !== expectedSha
+            ) {
+              throw new Error(
+                `${item.label}: Commit SHA mismatch.`
+              );
+            }
+
+            if (receipt.repository !== "Vivi9max/AIOS-Alpha") {
+              throw new Error(
+                `${item.label}: repository identity mismatch.`
+              );
+            }
+
+            if (
+              typeof receipt.deploymentUrl !== "string" ||
+              !item.expectedUrlPattern.test(receipt.deploymentUrl)
+            ) {
+              throw new Error(
+                `${item.label}: deployment URL mismatch.`
+              );
+            }
+
+            if (!receipt.verifiedAt || !receipt.requestId) {
+              throw new Error(
+                `${item.label}: verification evidence is incomplete.`
+              );
+            }
+
+            console.log(
+              `${item.label} receipt validated: ${receipt.deploymentUrl}`
+            );
+          }
+
+          console.log(
+            `Both Production receipts match ${expectedSha}.`
           );
-
-          if (receipt.schemaVersion !== 1) {
-            throw new Error("Unsupported verification receipt schema.");
-          }
-
-          if (receipt.status !== "PRODUCTION_VERIFIED") {
-            throw new Error("Receipt status is not PRODUCTION_VERIFIED.");
-          }
-
-          if (receipt.expectedCommitSha !== expectedSha) {
-            throw new Error("Receipt expected SHA does not match GitHub SHA.");
-          }
-
-          if (receipt.observedCommitSha !== expectedSha) {
-            throw new Error("Receipt observed SHA does not match GitHub SHA.");
-          }
-
-          if (receipt.repository !== "Vivi9max/AIOS-Alpha") {
-            throw new Error("Receipt repository identity mismatch.");
-          }
-
-          if (!receipt.verifiedAt || !receipt.deploymentUrl) {
-            throw new Error("Receipt is missing verification evidence.");
-          }
-
-          console.log("Production verification receipt validated.");
-          console.log(`Verified commit: ${expectedSha}`);
-          console.log(`Deployment URL: ${receipt.deploymentUrl}`);
-          console.log(`Verified at: ${receipt.verifiedAt}`);
           NODE
 
-      - name: Preserve Production verification receipt
+      - name: Preserve Production verification receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aios-production-verification-${{ github.sha }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/aios-production-verification.json
-          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/aios-production-verification.json
+            ${{ runner.temp }}/aios-canonical-domain-verification.json
+          if-no-files-found: warn
           retention-days: 90

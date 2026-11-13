@@ -1,0 +1,111 @@
+name: AIOS Alpha Canonical Domain CI
+
+on:
+  push:
+    branches:
+      - "c*"
+
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aios-canonical-domain-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-canonical-domain:
+    name: Verify Canonical Production Domain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Verify candidate checkout identity
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          actual_sha="$(git rev-parse HEAD)"
+
+          if [ "$actual_sha" != "$EXPECTED_COMMIT_SHA" ]; then
+            echo "::error::Checkout SHA does not match the triggering commit."
+            exit 1
+          fi
+
+          echo "Candidate commit identity verified."
+          echo "Commit SHA: $actual_sha"
+
+      - name: Verify canonical domain implementation
+        run: |
+          set -euo pipefail
+
+          node --check scripts/verify-canonical-production-domain.mjs
+
+          node --check scripts/verify-canonical-production-domain.test.mjs
+
+      - name: Run C170.7.2 canonical domain tests
+        run: |
+          set -euo pipefail
+
+          node --test scripts/verify-canonical-production-domain.test.mjs
+
+      - name: Verify canonical domain test coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test_file="scripts/verify-canonical-production-domain.test.mjs"
+
+          required_cases=(
+            "C170.7.2-01"
+            "C170.7.2-02"
+            "C170.7.2-03"
+            "C170.7.2-04"
+            "C170.7.2-05"
+          )
+
+          for case_id in "${required_cases[@]}"; do
+            if ! grep -Fq "$case_id" "$test_file"; then
+              echo "::error::Missing required test case: $case_id"
+              exit 1
+            fi
+          done
+
+          echo "All five C170.7.2 test cases are present."
+
+      - name: Record verification identity
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## C170.7.2 Canonical Domain CI"
+            echo
+            echo "- Status: PASS"
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Commit SHA: $EXPECTED_COMMIT_SHA"
+            echo "- Workflow Run: $WORKFLOW_RUN_ID"
+            echo "- Attempt: $WORKFLOW_RUN_ATTEMPT"
+            echo "- Verification: five required test cases present"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
