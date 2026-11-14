@@ -36,7 +36,7 @@ export const ENGINEERING_PROVIDERS = Object.freeze({
 });
 
 const LIMITS = Object.freeze({
-  maxTaskChars: 12000,
+  maxTaskChars: 16000,
   maxContextChars: 200000,
   maxImpactChars: 300000,
   maxOutputChars: 40000,
@@ -64,11 +64,15 @@ function isPlainObject(value) {
   );
 }
 
+function countUnicodeCharacters(value) {
+  return Array.from(value).length;
+}
+
 function boundedString(value, name, maximum) {
   if (
     typeof value !== "string" ||
     value.trim().length === 0 ||
-    value.length > maximum
+    countUnicodeCharacters(value) > maximum
   ) {
     fail(
       "AIOS_ENGINEERING_ADAPTER_INPUT_INVALID",
