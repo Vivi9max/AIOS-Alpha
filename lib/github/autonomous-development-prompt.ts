@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
+
 export type AutonomousDevelopmentPromptMode =
   | "EXPLICIT_TARGET_PATCH"
   | "PLANNED_PATCH";
@@ -10,7 +14,6 @@ export type AutonomousDevelopmentPromptInput = {
   mode: AutonomousDevelopmentPromptMode;
 };
 
-const MAX_OBJECTIVE_LENGTH = 4000;
 const MAX_TARGET_PATHS = 6;
 
 function normalizePath(value: string) {
@@ -31,10 +34,14 @@ function uniquePaths(paths: string[]) {
 }
 
 function normalizeObjective(value: string) {
-  return value
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, MAX_OBJECTIVE_LENGTH);
+  const normalized = value.trim();
+  const error = getObjectiveLengthError(normalized);
+
+  if (error) {
+    throw new Error(error);
+  }
+
+  return normalized;
 }
 
 function isNegatedExplicitPath(
@@ -90,7 +97,6 @@ function extractRepositoryPathMatches(
 ) {
   const normalizedObjective =
     objective
-      .slice(0, MAX_OBJECTIVE_LENGTH)
       .replace(
         /[`"'“”‘’]/g,
         " ",
