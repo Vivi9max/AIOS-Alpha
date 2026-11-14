@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
+
+import {
   storage,
 } from "@/lib/server-storage";
 
@@ -92,9 +96,6 @@ const ALLOWED_REPOSITORY =
 
 const ALLOWED_BRANCH =
   "main";
-
-const MAX_OBJECTIVE_LENGTH =
-  4000;
 
 const MAX_TARGET_PATHS =
   6;
@@ -211,9 +212,7 @@ function createTaskId(): string {
 function normalizeObjective(
   objective: string,
 ): string {
-  return objective
-    .trim()
-    .replace(/\s+/g, " ");
+  return objective.trim();
 }
 
 function normalizeTargetPaths(
@@ -488,7 +487,8 @@ function getLatestPhaseHistoryTimestamp(
       task.phaseHistory.length - 1
     ];
 
-  if (!latest) {
+  if (!latest) 
+{
     return null;
   }
 
@@ -797,19 +797,11 @@ function assertSafeObjective(
       objective,
     );
 
-  if (!normalized) {
-    throw new Error(
-      "Development objective is required.",
-    );
-  }
+  const objectiveError =
+    getObjectiveLengthError(normalized);
 
-  if (
-    normalized.length >
-    MAX_OBJECTIVE_LENGTH
-  ) {
-    throw new Error(
-      "Development objective exceeds the maximum allowed length.",
-    );
+  if (objectiveError) {
+    throw new Error(objectiveError);
   }
 
   return normalized;
@@ -1693,6 +1685,7 @@ export function heartbeatAutonomousDevelopmentTask(
   ) {
     recoverStaleTask(
       task,
+
     );
 
     throw new Error(
