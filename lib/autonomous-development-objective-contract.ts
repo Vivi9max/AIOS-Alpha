@@ -12,7 +12,7 @@ export function getObjectiveLengthError(
   const length =
     countObjectiveCharacters(value);
 
-  if (length === 0) {
+  if (!value.trim()) {
     return "Development objective is required.";
   }
 
