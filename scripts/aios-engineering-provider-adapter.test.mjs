@@ -7,6 +7,12 @@ import {
 
 const HEAD = "a".repeat(40);
 
+// These are deliberately recognized placeholder values.
+// Never put realistic credential-shaped values in source fixtures.
+const TEST_DEEPSEEK_KEY = "your_deepseek_api_key";
+const TEST_QWEN_KEY = "your_qwen_api_key";
+const TEST_OPENAI_KEY = "your_openai_api_key";
+
 function createRepositoryContext() {
   return {
     schemaVersion: 1,
@@ -89,9 +95,9 @@ function createFetchResponse({
 
 function createEnv(overrides = {}) {
   return {
-    DEEPSEEK_API_KEY: "test-deepseek-secret",
-    QWEN_API_KEY: "test-qwen-secret",
-    OPENAI_API_KEY: "test-openai-secret",
+    DEEPSEEK_API_KEY: TEST_DEEPSEEK_KEY,
+    QWEN_API_KEY: TEST_QWEN_KEY,
+    OPENAI_API_KEY: TEST_OPENAI_KEY,
     ...overrides,
   };
 }
@@ -252,7 +258,7 @@ test("does not treat an empty model response as success", async () => {
 });
 
 test("does not expose provider API keys in errors", async () => {
-  const secret = "test-deepseek-secret";
+  const secret = TEST_DEEPSEEK_KEY;
 
   const result = await runEngineeringTask(
     createArguments({
