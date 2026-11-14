@@ -1,4 +1,7 @@
 import "server-only";
+import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
 type SafetyGateInput = {
   objective: string;
   targetPaths: string[];
@@ -23,7 +26,6 @@ export type AutonomousDevelopmentSafetyGateResult = {
 };
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = 200000;
-const MAX_OBJECTIVE_LENGTH = 4000;
 const ALLOWED_PREFIXES = [
   "app/",
   "components/",
@@ -833,15 +835,20 @@ function validateObjective(
 ): string | null {
   const normalized =
     objective.trim();
+
   if (!normalized) {
     return "AIOS_SAFETY_OBJECTIVE_EMPTY";
   }
-  if (
-    normalized.length >
-    MAX_OBJECTIVE_LENGTH
-  ) {
+
+  const objectiveError =
+    getObjectiveLengthError(
+      normalized,
+    );
+
+  if (objectiveError) {
     return "AIOS_SAFETY_OBJECTIVE_TOO_LARGE";
   }
+
   return null;
 }
 function buildChecks(
