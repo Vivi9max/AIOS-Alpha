@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
+
 export interface PlannerDevelopmentIntent {
   isDevelopment: boolean;
   targetPaths: string[];
@@ -9,7 +13,6 @@ export interface PlannerDevelopmentIntent {
 
 const MAX_TARGET_PATHS = 8;
 const MAX_TARGET_PATH_LENGTH = 240;
-const MAX_OBJECTIVE_LENGTH = 1000;
 
 const DEVELOPMENT_KEYWORDS = [
   "开发",
@@ -170,8 +173,19 @@ export function buildPlannerDevelopmentIntent(
     `Target Paths: ${targetPaths.join(", ")}`,
   ]
     .filter(Boolean)
-    .join("\n")
-    .slice(0, MAX_OBJECTIVE_LENGTH);
+    .join("\n");
+
+  const objectiveError =
+    getObjectiveLengthError(objective);
+
+  if (objectiveError) {
+    return {
+      isDevelopment: false,
+      targetPaths: [],
+      objective: "",
+      reason: objectiveError,
+    };
+  }
 
   return {
     isDevelopment: true,

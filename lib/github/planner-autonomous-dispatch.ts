@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
+
+import {
   listPersistentTasks,
 } from "@/lib/task/server-store";
 
@@ -22,9 +26,6 @@ const ALLOWED_REPOSITORY =
 
 const ALLOWED_BRANCH =
   "main";
-
-const MAX_OBJECTIVE_LENGTH =
-  1000;
 
 const MAX_TARGET_PATH_LENGTH =
   240;
@@ -162,10 +163,7 @@ function buildObjective(
       ? `${title}: ${description}`
       : title;
 
-  return objective.slice(
-    0,
-    MAX_OBJECTIVE_LENGTH,
-  );
+  return objective;
 }
 
 function isPlannerTaskEligible(
@@ -319,6 +317,26 @@ export async function dispatchNextPlannerDevelopmentTask(): Promise<PlannerDevel
     buildObjective(
       plannerTask,
     );
+
+  const objectiveError =
+    getObjectiveLengthError(objective);
+
+  if (objectiveError) {
+    return {
+      success: false,
+      code: "PLANNER_TASK_BLOCKED",
+      eligibility: "blocked",
+      repository: ALLOWED_REPOSITORY,
+      branch: ALLOWED_BRANCH,
+      plannerTask: {
+        id: plannerTask.id,
+        title: plannerTask.title,
+        description: plannerTask.description ?? "",
+        status: plannerTask.status,
+      },
+      reason: objectiveError,
+    };
+  }
 
   if (!objective) {
     return {

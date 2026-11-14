@@ -66,6 +66,14 @@ const receiptSource = fs.readFileSync(
   "utf8",
 );
 
+const objectiveContractSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/autonomous-development-objective-contract.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
@@ -82,6 +90,10 @@ const patchedControlPlane = controlPlaneSource
   .replace(
     /"@\/lib\/github\/autonomous-development-receipt"/g,
     '"./autonomous-development-receipt.mjs"',
+  )
+  .replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./autonomous-development-objective-contract.mjs"',
   );
 
 const patchedReceipt = receiptSource.replace(
@@ -113,6 +125,14 @@ writeTmp(
 writeTmp(
   "autonomous-development-receipt.mjs",
   transpile(patchedReceipt, "autonomous-development-receipt.ts"),
+);
+
+writeTmp(
+  "autonomous-development-objective-contract.mjs",
+  transpile(
+    objectiveContractSource,
+    "autonomous-development-objective-contract.ts",
+  ),
 );
 
 writeTmp(
