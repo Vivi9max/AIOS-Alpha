@@ -101,6 +101,34 @@ test(
 );
 
 test(
+  "objective length 16001 rejection reports the 16000 maximum and received 16001 count",
+  () => {
+    const objective =
+      "a".repeat(16001);
+
+    const error =
+      getObjectiveLengthError(objective);
+
+    assert.ok(
+      error,
+      "An objective exceeding 16000 characters must be rejected.",
+    );
+
+    assert.match(
+      String(error),
+      /16000/,
+      "Rejection message must report the 16000-character maximum.",
+    );
+
+    assert.match(
+      String(error),
+      /16001/,
+      "Rejection message must report the received count of 16001.",
+    );
+  },
+);
+
+test(
   "Chinese characters are counted as Unicode code points",
   () => {
     const objective =
