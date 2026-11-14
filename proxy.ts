@@ -44,6 +44,18 @@ const PUBLIC_PATHS = [
   "/api/founder/overview",
 
   /**
+   * C170.8
+   *
+   * Autonomous Development API.
+   *
+   * The route itself enforces Founder
+   * authentication through requireFounder().
+   * Passing the Alpha proxy does NOT grant
+   * access without a valid Founder credential.
+   */
+  "/api/founder/autonomous-development",
+
+  /**
    * C146.18.3
    *
    * Real media execution verification API.
