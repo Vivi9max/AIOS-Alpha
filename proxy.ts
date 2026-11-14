@@ -36,8 +36,12 @@ const PUBLIC_PATHS = [
 
   /**
    * Founder Console
+   *
+   * The Overview API must reach its own
+   * Founder authentication handler.
    */
   "/founder",
+  "/api/founder/overview",
 
   /**
    * C146.18.3
