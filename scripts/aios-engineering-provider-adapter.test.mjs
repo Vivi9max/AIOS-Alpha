@@ -290,11 +290,22 @@ test("rejects oversized repository context", async () => {
   );
 });
 
-test("rejects an oversized task", async () => {
+test("accepts a task at the 16000-character limit", async () => {
+  const result = await runEngineeringTask(
+    createArguments({
+      task: "x".repeat(16000),
+    }),
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.status, "PROPOSAL_READY");
+});
+
+test("rejects a task above the 16000-character limit", async () => {
   await assert.rejects(
     runEngineeringTask(
       createArguments({
-        task: "x".repeat(12001),
+        task: "x".repeat(16001),
       }),
     ),
     {
