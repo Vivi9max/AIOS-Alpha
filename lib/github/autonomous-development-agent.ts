@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  getObjectiveLengthError,
+} from "@/lib/autonomous-development-objective-contract";
+
 import { chat } from "@/lib/ai";
 import {
   listGitHubPath,
@@ -29,7 +33,6 @@ import {
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
 
-const MAX_OBJECTIVE_LENGTH = 4000;
 const MAX_DISCOVERY_ENTRIES = 220;
 const MAX_TARGET_FILES = 6;
 
@@ -1837,12 +1840,7 @@ export async function executeAutonomousDevelopmentAgent(
   },
 ): Promise<AutonomousDevelopmentAgentResult> {
   const objective =
-    input.objective
-      .trim()
-      .slice(
-        0,
-        MAX_OBJECTIVE_LENGTH,
-      );
+    input.objective.trim();
 
   const changedPaths: string[] =
     [];
@@ -1912,6 +1910,17 @@ export async function executeAutonomousDevelopmentAgent(
     if (!objective) {
       throw new Error(
         "Development objective is required.",
+      );
+    }
+
+    const objectiveError =
+      getObjectiveLengthError(
+        objective,
+      );
+
+    if (objectiveError) {
+      throw new Error(
+        objectiveError,
       );
     }
 
