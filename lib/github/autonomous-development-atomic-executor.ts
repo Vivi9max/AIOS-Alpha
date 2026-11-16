@@ -5,6 +5,11 @@ import {
   resolveGitHubBridgeAuth,
 } from "@/lib/github/bridge";
 
+export {
+  getGitHubBridgeConfig,
+  resolveGitHubBridgeAuth,
+};
+
 const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const DEFAULT_BASE_BRANCH = "main";
 const STAGING_PREFIX = "c169-8-ad-";
