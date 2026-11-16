@@ -186,6 +186,18 @@ function isTerminalStatus(
   );
 }
 
+function normalizeObjective(
+  value?: string | null,
+) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getTaskReceipt(
   task?: Task | null,
 ) {
