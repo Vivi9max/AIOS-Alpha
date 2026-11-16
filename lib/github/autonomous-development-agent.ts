@@ -189,6 +189,25 @@ type PatchOperation = {
   replace: string;
 };
 
+type CreateOperation = {
+  path: string;
+  operation: "create";
+  content: string;
+};
+
+type TargetClassification =
+  | "EXISTING"
+  | "NEW"
+  | "UNKNOWN";
+
+type ClassifiedTarget = {
+  path: string;
+  classification: TargetClassification;
+  content?: string;
+};
+
+const MAX_CREATE_CONTENT_CHARS = 200000;
+
 async function runBrain(
   prompt: string,
   systemPrompt: string,
@@ -525,6 +544,81 @@ async function discoverRepositoryPaths(
   );
 }
 
+function isConfirmedMissingFileError(
+  message: string,
+) {
+  const normalized =
+    message.toLowerCase();
+
+  return (
+    normalized.includes(
+      "not found",
+    ) ||
+    normalized.includes(
+      "404",
+    ) ||
+    normalized.includes(
+      "does not exist",
+    ) ||
+    normalized.includes(
+      "no such file",
+    )
+  );
+}
+
+async function classifyTargetPath(
+  path: string,
+  accessToken?: string,
+  ref: string = BRANCH,
+): Promise<ClassifiedTarget> {
+  const result =
+    await readGitHubFile({
+      repo: REPOSITORY,
+      path,
+      ref,
+      accessToken,
+    });
+
+  if (
+    result.success &&
+    result.data
+  ) {
+    return {
+      path,
+      classification:
+        "EXISTING",
+      content:
+        result.data.content,
+    };
+  }
+
+  const message =
+    "error" in result
+      ? String(
+          result.error || "",
+        )
+      : "";
+
+  if (
+    isConfirmedMissingFileError(
+      message,
+    )
+  ) {
+    return {
+      path,
+      classification:
+        "NEW",
+    };
+  }
+
+  throw new Error(
+    `AIOS_TARGET_CLASSIFICATION_UNKNOWN: ${path}: ${
+      message ||
+      "GitHub file read failed for a reason other than a confirmed 404."
+    }`,
+  );
+}
+
 async function readFile(
   path: string,
   accessToken?: string,
@@ -816,6 +910,7 @@ function parsePatchBlocks(
   content: string,
   expectedPath: string,
   delimiters: PatchDelimiters,
+  allowCreate: boolean = false,
 ) {
   if (
     content.length >
@@ -960,11 +1055,59 @@ function parsePatchBlocks(
 
     if (
       operation !==
-      "replace"
+        "replace" &&
+      operation !==
+        "create"
     ) {
       throw new Error(
         `AIOS_PATCH_OPERATION_REJECTED: ${operation}`,
       );
+    }
+
+    if (
+      operation ===
+      "create"
+    ) {
+      if (!allowCreate) {
+        throw new Error(
+          `AIOS_PATCH_OPERATION_REJECTED: ${operation}`,
+        );
+      }
+
+      if (
+        !replace.trim()
+      ) {
+        throw new Error(
+          "AIOS_PATCH_CREATE_CONTENT_EMPTY",
+        );
+      }
+
+      if (
+        replace.length >
+        MAX_CREATE_CONTENT_CHARS
+      ) {
+        throw new Error(
+          "AIOS_PATCH_CREATE_CONTENT_TOO_LARGE",
+        );
+      }
+
+      blocks.push({
+        path,
+        operation: "create",
+        search: "",
+        replace,
+      });
+
+      if (
+        blocks.length >
+        MAX_PATCH_OPERATIONS
+      ) {
+        throw new Error(
+          "AIOS_PATCH_OPERATION_LIMIT_EXCEEDED",
+        );
+      }
+
+      continue;
     }
 
     if (!search) {
@@ -1543,6 +1686,125 @@ function validateFinalSource(
   return normalized;
 }
 
+async function generateCreatePatch(
+  objective: string,
+  targetPath: string,
+  developmentPrompt: string,
+) {
+  let lastError =
+    "AIOS_PATCH_EMPTY";
+
+  for (
+    let attempt = 1;
+    attempt <=
+    MAX_PATCH_ATTEMPTS;
+    attempt += 1
+  ) {
+    const delimiters =
+      createPatchDelimiters();
+
+    const prompt =
+      [
+        developmentPrompt,
+        "",
+        "AUTONOMOUS DEVELOPMENT CREATE REQUEST",
+        `Repository: ${REPOSITORY}`,
+        `Branch: ${BRANCH}`,
+        `Target: ${targetPath}`,
+        "",
+        "USER OBJECTIVE:",
+        objective,
+        "",
+        "The target file does not exist in the base branch.",
+        "Generate a complete new file using OPERATION: create.",
+        "Provide the full final file content inside the replace delimiters.",
+        "Do not use SEARCH/REPLACE for creation.",
+        "Do not use TODO, placeholder, or ellipses.",
+        "Preserve existing architecture, imports, and API conventions.",
+        "",
+        "PATCH DELIMITERS FOR THIS ATTEMPT:",
+        delimiters.searchBegin,
+        delimiters.searchEnd,
+        delimiters.replaceBegin,
+        delimiters.replaceEnd,
+        "",
+        "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
+        attempt > 1
+          ? [
+              "",
+              "PREVIOUS CREATE ATTEMPT ERROR:",
+              lastError,
+              "",
+              "IMPORTANT:",
+              "Return exactly one OPERATION: create patch.",
+              "Do not output a complete file outside the patch block.",
+            ].join("\n")
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+    const response =
+      await runBrain(
+        prompt,
+        buildPatchSystemPrompt(
+          delimiters,
+        ),
+      );
+
+    if (
+      !response.success
+    ) {
+      lastError =
+        response.error ||
+        "AIOS create patch generation failed.";
+
+      continue;
+    }
+
+    try {
+      const operations =
+        parsePatchBlocks(
+          response.content,
+          targetPath,
+          delimiters,
+          true,
+        );
+
+      const createOperations =
+        operations.filter(
+          (operation) =>
+            operation.operation ===
+            "create",
+        );
+
+      if (
+        createOperations.length !==
+        1
+      ) {
+        throw new Error(
+          "AIOS_PATCH_CREATE_COUNT_INVALID",
+        );
+      }
+
+      return {
+        operation:
+          createOperations[0],
+        delimiters,
+      };
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error.message
+          : "AIOS create patch validation failed.";
+    }
+  }
+
+  throw new Error(
+    `AIOS_PATCH_GENERATION_FAILED: Failed to generate a valid CREATE patch for "${targetPath}" after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${lastError}`,
+  );
+}
+
 async function generatePatch(
   objective: string,
   targetPath: string,
@@ -2001,11 +2263,84 @@ export async function executeAutonomousDevelopmentAgent(
       },
     );
 
+    const classifiedTargets: ClassifiedTarget[] =
+      [];
+
     if (
       hasExplicitTargets
     ) {
+      const seenPaths =
+        new Set<string>();
+
+      const classifications =
+        new Map<
+          string,
+          TargetClassification
+        >();
+
+      for (
+        const explicitPath of explicitTargets
+      ) {
+        if (
+          seenPaths.has(
+            explicitPath,
+          )
+        ) {
+          throw new Error(
+            `AIOS_TARGET_DUPLICATE_PATH: ${explicitPath}`,
+          );
+        }
+
+        seenPaths.add(
+          explicitPath,
+        );
+
+        updateAutonomousDevelopmentTask(
+          taskId,
+          {
+            phase:
+              "READING",
+            reason:
+              `AIOS is classifying explicit target against the base branch: ${explicitPath}`,
+          },
+        );
+
+        const classified =
+          await classifyTargetPath(
+            explicitPath,
+            input.accessToken,
+          );
+
+        const previous =
+          classifications.get(
+            classified.path,
+          );
+
+        if (
+          previous &&
+          previous !==
+            classified.classification
+        ) {
+          throw new Error(
+            `AIOS_TARGET_CLASSIFICATION_CONFLICT: ${classified.path}`,
+          );
+        }
+
+        classifications.set(
+          classified.path,
+          classified.classification,
+        );
+
+        classifiedTargets.push(
+          classified,
+        );
+      }
+
       targetPaths =
-        explicitTargets;
+        classifiedTargets.map(
+          (target) =>
+            target.path,
+        );
 
       updateAutonomousDevelopmentTask(
         taskId,
@@ -2014,7 +2349,7 @@ export async function executeAutonomousDevelopmentAgent(
           phase:
             "READING",
           reason:
-            `AIOS skipped recursive discovery and planner because the objective explicitly identified ${targetPaths.length} repository target file(s).`,
+            `AIOS classified ${targetPaths.length} explicit target file(s) against the base branch.`,
         },
       );
     } else {
@@ -2149,9 +2484,100 @@ export async function executeAutonomousDevelopmentAgent(
       Record<string, string> =
       {};
 
+    const classifiedByPath =
+      new Map<
+        string,
+        ClassifiedTarget
+      >();
+
+    for (
+      const classified of classifiedTargets
+    ) {
+      classifiedByPath.set(
+        classified.path,
+        classified,
+      );
+    }
+
     for (
       const targetPath of targetPaths
     ) {
+      const classified =
+        classifiedByPath.get(
+          targetPath,
+        );
+
+      if (
+        classified &&
+        classified.classification ===
+          "UNKNOWN"
+      ) {
+        throw new Error(
+          `AIOS_TARGET_CLASSIFICATION_UNKNOWN: ${targetPath}`,
+        );
+      }
+
+      if (
+        classified &&
+        classified.classification ===
+          "NEW"
+      ) {
+        updateAutonomousDevelopmentTask(
+          taskId,
+          {
+            phase:
+              "GENERATING",
+            reason:
+              `AIOS is generating a complete new file from its Development Prompt for ${targetPath}.`,
+          },
+        );
+
+        const createGeneration =
+          await generateCreatePatch(
+            objective,
+            targetPath,
+            developmentPrompt,
+          );
+
+        const finalContent =
+          validateFinalSource(
+            targetPath,
+            createGeneration
+              .operation.replace,
+            createGeneration.delimiters,
+          );
+
+        if (
+          !finalContent.trim()
+        ) {
+          throw new Error(
+            `AIOS_PATCH_CREATE_CONTENT_EMPTY: ${targetPath}`,
+          );
+        }
+
+        const recheck =
+          await classifyTargetPath(
+            targetPath,
+            input.accessToken,
+          );
+
+        if (
+          recheck.classification !==
+          "NEW"
+        ) {
+          throw new Error(
+            `AIOS_CREATE_TARGET_COLLISION: ${targetPath}`,
+          );
+        }
+
+        patchedContents[
+          targetPath
+        ] =
+          finalContent;
+
+        continue;
+      }
+
       updateAutonomousDevelopmentTask(
         taskId,
         {
