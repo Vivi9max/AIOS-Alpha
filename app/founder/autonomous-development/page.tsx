@@ -186,6 +186,73 @@ function isTerminalStatus(
   );
 }
 
+function normalizeObjective(
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/[\s]+/g, " ")
+    .trim();
+}
+
+function isValidTaskId(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+}
+
+function getCreatedAtTimestamp(
+  task: Task,
+) {
+  const timestamp =
+    new Date(task.createdAt).getTime();
+
+  return Number.isFinite(timestamp)
+    ? timestamp
+    : 0;
+}
+
+function selectRecoveredTask(
+  candidates: Task[],
+  normalizedObjective: string,
+) {
+  const matching = candidates.filter(
+    (candidate) =>
+      isValidTaskId(candidate.id) &&
+      normalizeObjective(
+        candidate.objective,
+      ) === normalizedObjective,
+  );
+
+  if (matching.length === 0) {
+    return null;
+  }
+
+  const sorted = matching.slice().sort(
+    (a, b) =>
+      getCreatedAtTimestamp(b) -
+      getCreatedAtTimestamp(a),
+  );
+
+  const active = sorted.find(
+    (candidate) =>
+      candidate.status === "todo" ||
+      candidate.status === "running",
+  );
+
+  if (active) {
+    return active;
+  }
+
+  return sorted[0];
+}
+
 function getTaskReceipt(
   task?: Task | null,
 ) {
@@ -948,35 +1015,300 @@ export default function FounderAutonomousDevelopmentPage() {
 
       setResult(data);
 
-      const taskId =
+      const directTaskId =
         data.taskId ??
         data.task?.id ??
         data.tasks?.[0]?.id ??
         null;
 
-      if (!taskId) {
-        setRunning(false);
-        setError(
-          "AIOS returned a successful response but did not provide a task ID.",
+      if (isValidTaskId(directTaskId)) {
+        activeTaskIdRef.current =
+          directTaskId;
+
+        pollRoundsRef.current =
+          0;
+
+        schedulePoll(
+          key,
+          directTaskId,
+          500,
         );
+
+        scheduleHeartbeat(
+          key,
+          directTaskId,
+          1000,
+        );
+
+        return;
+      }
+
+      const normalizedObjective =
+        normalizeObjective(
+          requestObjective,
+        );
+
+      let recoveryData: Result | null =
+        null;
+
+      try {
+        const recoveryResponse =
+          await fetch(
+            `/api/founder/autonomous-development?objective=${encodeURIComponent(
+              requestObjective,
+            )}`,
+            {
+              method: "GET",
+              cache: "no-store",
+              headers: {
+                Accept:
+                  "application/json",
+                Authorization:
+                  `Bearer ${key}`,
+              },
+            },
+          );
+
+        try {
+          recoveryData =
+            (await recoveryResponse.json()) as Result;
+        } catch {
+          recoveryData = null;
+        }
+
+        if (!recoveryResponse.ok) {
+          if (
+            recoveryData?.code ===
+              "FOUNDER_UNAUTHORIZED" ||
+            recoveryData?.code ===
+              "FOUNDER_NOT_CONFIGURED"
+          ) {
+            clearFounderSession();
+          }
+
+          setRunning(false);
+
+          activeTaskIdRef.current =
+            null;
+
+          clearPolling();
+          clearHeartbeat();
+
+          setError(
+            recoveryData?.error ||
+              `AIOS task recovery request failed (${recoveryResponse.status}). The original objective has been preserved. No task ID was fabricated and no additional POST was sent.`,
+          );
+
+          return;
+        }
+      } catch (recoveryError) {
+        setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
+
+        clearPolling();
+        clearHeartbeat();
+
+        setError(
+          recoveryError instanceof
+            Error
+            ? `AIOS task recovery request failed: ${recoveryError.message}. The original objective has been preserved. No task ID was fabricated and no additional POST was sent.`
+            : "AIOS task recovery request failed. The original objective has been preserved. No task ID was fabricated and no additional POST was sent.",
+        );
+
+        return;
+      }
+
+      if (!recoveryData) {
+        setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
+
+        clearPolling();
+        clearHeartbeat();
+
+        setError(
+          "AIOS task recovery returned a malformed response. The original objective has been preserved. No task ID was fabricated and no additional POST was sent.",
+        );
+
+        return;
+      }
+
+      const candidates: Task[] = [];
+
+      if (Array.isArray(recoveryData.tasks)) {
+        for (const candidate of recoveryData.tasks) {
+          if (candidate && typeof candidate === "object") {
+            candidates.push(candidate);
+          }
+        }
+      }
+
+      if (
+        recoveryData.task &&
+        typeof recoveryData.task === "object"
+      ) {
+        const alreadyIncluded =
+          candidates.some(
+            (candidate) =>
+              isValidTaskId(candidate.id) &&
+              candidate.id ===
+                recoveryData?.task?.id,
+          );
+
+        if (!alreadyIncluded) {
+          candidates.push(recoveryData.task);
+        }
+      }
+
+      const recoveredTask =
+        selectRecoveredTask(
+          candidates,
+          normalizedObjective,
+        );
+
+      if (!recoveredTask) {
+        setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
+
+        clearPolling();
+        clearHeartbeat();
+
+        setError(
+          "AIOS accepted the request but no persisted task ID was returned, and no matching persisted task could be recovered. The original objective has been preserved. No task ID was fabricated and no additional POST was sent.",
+        );
+
+        return;
+      }
+
+      const recoveredReceipt =
+        getTaskReceipt(recoveredTask);
+
+      setResult({
+        ok:
+          recoveredTask.status ===
+          "completed",
+        success:
+          recoveredTask.status ===
+          "completed",
+        code:
+          recoveredTask.status ===
+          "completed"
+            ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+            : recoveredTask.status ===
+                "running" ||
+                recoveredTask.status ===
+                  "todo"
+              ? "AUTONOMOUS_DEVELOPMENT_RUNNING"
+              : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+        objective:
+          recoveredTask.objective,
+        repository:
+          recoveredTask.repository,
+        branch:
+          recoveredTask.branch,
+        taskId:
+          recoveredTask.id,
+        status:
+          recoveredTask.status,
+        tasks: [recoveredTask],
+        task: recoveredTask,
+        receipt:
+          recoveredTask.receipt,
+        receiptValid:
+          recoveredReceipt.receiptValid,
+        successfulReceipt:
+          recoveredReceipt.successfulReceipt,
+        resultCommitSha:
+          recoveredReceipt.resultCommitSha,
+        commitShaConsistent:
+          recoveredReceipt.commitShaConsistent,
+        missingEvidence:
+          recoveredReceipt.missingEvidence,
+      });
+
+      if (
+        isTerminalStatus(
+          recoveredTask.status,
+        )
+      ) {
+        setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
+
+        clearPolling();
+        clearHeartbeat();
+
+        if (
+          recoveredTask.status !==
+          "completed"
+        ) {
+          setError(
+            recoveredTask.reason ||
+              `AIOS Autonomous Development ${recoveredTask.status}.`,
+          );
+        } else if (
+          !recoveredReceipt.receiptValid ||
+          !recoveredReceipt.successfulReceipt
+        ) {
+          const missing = (
+            recoveredReceipt.missingEvidence ??
+            []
+          ).slice();
+
+          if (!recoveredReceipt.commitSha) {
+            missing.push("task.commitSha");
+          }
+
+          if (!recoveredReceipt.resultCommitSha) {
+            missing.push("result.commitSha");
+          }
+
+          if (!recoveredReceipt.commitShaConsistent) {
+            missing.push("commitShaConsistent");
+          }
+
+          if (!recoveredReceipt.readbackVerified) {
+            missing.push("readbackVerified");
+          }
+
+          if (!recoveredReceipt.verificationPassed) {
+            missing.push("verificationPassed");
+          }
+
+          const missingLabel =
+            missing.join(", ");
+
+          setError(
+            missingLabel
+              ? `AIOS recovered a terminal task, but the terminal receipt is invalid. Missing evidence: ${missingLabel}.`
+              : "AIOS recovered a terminal task, but the terminal receipt is invalid.",
+          );
+        }
+
         return;
       }
 
       activeTaskIdRef.current =
-        taskId;
+        recoveredTask.id;
 
       pollRoundsRef.current =
         0;
 
       schedulePoll(
         key,
-        taskId,
+        recoveredTask.id,
         500,
       );
 
       scheduleHeartbeat(
         key,
-        taskId,
+        recoveredTask.id,
         1000,
       );
     } catch (
