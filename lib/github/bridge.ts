@@ -494,16 +494,6 @@ export async function readGitHubFile(
     };
   }
 
-  if (!result.data) {
-    return {
-      success: false,
-      error:
-        "GitHub returned no file data.",
-      status:
-        result.status,
-    };
-  }
-
   let content =
     result.data.content ||
     "";
