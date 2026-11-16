@@ -948,35 +948,303 @@ export default function FounderAutonomousDevelopmentPage() {
 
       setResult(data);
 
-      const taskId =
+      const directTaskId =
         data.taskId ??
         data.task?.id ??
         data.tasks?.[0]?.id ??
         null;
 
-      if (!taskId) {
+      const isValidTaskId = (
+        value: unknown,
+      ): value is string =>
+        typeof value === "string" &&
+        value.trim().length > 0;
+
+      if (isValidTaskId(directTaskId)) {
+        activeTaskIdRef.current =
+          directTaskId;
+
+        pollRoundsRef.current =
+          0;
+
+        schedulePoll(
+          key,
+          directTaskId,
+          500,
+        );
+
+        scheduleHeartbeat(
+          key,
+          directTaskId,
+          1000,
+        );
+
+        return;
+      }
+
+      let recoveredTask: Task | null =
+        null;
+
+      let recoveredTasks: Task[] =
+        [];
+
+      try {
+        const recoveryResponse =
+          await fetch(
+            `/api/founder/autonomous-development?objective=${encodeURIComponent(
+              requestObjective,
+            )}`,
+            {
+              method: "GET",
+              cache: "no-store",
+              headers: {
+                Accept:
+                  "application/json",
+                Authorization:
+                  `Bearer ${key}`,
+              },
+            },
+          );
+
+        let recoveryData: Result =
+          {};
+
+        try {
+          recoveryData =
+            (await recoveryResponse.json()) as Result;
+        } catch {
+          recoveryData = {
+            ok: false,
+            success: false,
+            code:
+              "AUTONOMOUS_RECOVERY_RESPONSE_INVALID",
+            error:
+              "AIOS recovery response was invalid.",
+          };
+        }
+
+        if (!recoveryResponse.ok) {
+          if (
+            recoveryData.code ===
+              "FOUNDER_UNAUTHORIZED" ||
+            recoveryData.code ===
+              "FOUNDER_NOT_CONFIGURED"
+          ) {
+            clearFounderSession();
+          }
+
+          setRunning(false);
+          setError(
+            recoveryData.error ||
+              `Task recovery request failed (${recoveryResponse.status})`,
+          );
+          return;
+        }
+
+        const candidateTasks: Task[] =
+          Array.isArray(
+            recoveryData.tasks,
+          )
+            ? recoveryData.tasks
+            : recoveryData.task
+              ? [recoveryData.task]
+              : [];
+
+        recoveredTasks =
+          candidateTasks.filter(
+            (task) =>
+              isValidTaskId(task.id) &&
+              task.objective ===
+                requestObjective,
+          );
+
+        const activeTasks =
+          recoveredTasks.filter(
+            (task) =>
+              task.status === "todo" ||
+              task.status === "running",
+          );
+
+        const sortedActiveTasks =
+          activeTasks
+            .slice()
+            .sort(
+              (a, b) =>
+                new Date(
+                  b.createdAt,
+                ).getTime() -
+                new Date(
+                  a.createdAt,
+                ).getTime(),
+            );
+
+        if (
+          sortedActiveTasks.length >
+          0
+        ) {
+          recoveredTask =
+            sortedActiveTasks[0];
+        } else if (
+          recoveredTasks.length >
+          0
+        ) {
+          const sortedTerminalTasks =
+            recoveredTasks
+              .slice()
+              .sort(
+                (a, b) =>
+                  new Date(
+                    b.createdAt,
+                  ).getTime() -
+                  new Date(
+                    a.createdAt,
+                  ).getTime(),
+              );
+
+          recoveredTask =
+            sortedTerminalTasks[0];
+        }
+      } catch (
+        recoveryError
+      ) {
         setRunning(false);
         setError(
-          "AIOS returned a successful response but did not provide a task ID.",
+          recoveryError instanceof
+            Error
+            ? recoveryError.message
+            : "Task recovery request failed.",
         );
         return;
       }
 
+      if (
+        !recoveredTask ||
+        !isValidTaskId(recoveredTask.id)
+      ) {
+        setRunning(false);
+
+        activeTaskIdRef.current =
+          null;
+
+        clearHeartbeat();
+
+        setError(
+          "AIOS returned a successful POST response, but the response could not be matched to a persisted task. The objective and Founder session have been preserved. No automatic retry was performed.",
+        );
+
+        return;
+      }
+
       activeTaskIdRef.current =
-        taskId;
+        recoveredTask.id;
 
       pollRoundsRef.current =
         0;
 
+      if (
+        isTerminalStatus(
+          recoveredTask.status,
+        )
+      ) {
+        const recoveredReceipt =
+          getTaskReceipt(
+            recoveredTask,
+          );
+
+        const recoveredTerminalSuccess =
+          recoveredTask.status ===
+            "completed" &&
+          recoveredReceipt.receiptValid ===
+            true &&
+          recoveredReceipt.successfulReceipt ===
+            true;
+
+        setResult({
+          ok: recoveredTerminalSuccess,
+          success:
+            recoveredTerminalSuccess,
+          code:
+            recoveredTask.status ===
+            "completed"
+              ? "AUTONOMOUS_DEVELOPMENT_COMPLETED"
+              : "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+          objective:
+            recoveredTask.objective,
+          repository:
+            recoveredTask.repository,
+          branch:
+            recoveredTask.branch,
+          taskId:
+            recoveredTask.id,
+          status:
+            recoveredTask.status,
+          tasks: [
+            recoveredTask,
+          ],
+          task:
+            recoveredTask,
+          receipt:
+            recoveredTask.receipt,
+          receiptValid:
+            recoveredReceipt.receiptValid,
+          successfulReceipt:
+            recoveredReceipt.successfulReceipt,
+          resultCommitSha:
+            recoveredReceipt.resultCommitSha,
+          commitShaConsistent:
+            recoveredReceipt.commitShaConsistent,
+          missingEvidence:
+            recoveredReceipt.missingEvidence,
+        });
+
+        setRunning(false);
+
+        if (
+          recoveredTask.status !==
+          "completed"
+        ) {
+          setError(
+            recoveredTask.reason ||
+              `AIOS Autonomous Development ${recoveredTask.status}.`,
+          );
+        }
+
+        return;
+      }
+
+      setResult({
+        ok: true,
+        success: false,
+        code:
+          "AUTONOMOUS_DEVELOPMENT_RUNNING",
+        objective:
+          recoveredTask.objective,
+        repository:
+          recoveredTask.repository,
+        branch:
+          recoveredTask.branch,
+        taskId:
+          recoveredTask.id,
+        status:
+          recoveredTask.status,
+        tasks: [
+          recoveredTask,
+        ],
+        task:
+          recoveredTask,
+        receipt:
+          recoveredTask.receipt,
+      });
+
       schedulePoll(
         key,
-        taskId,
+        recoveredTask.id,
         500,
       );
 
       scheduleHeartbeat(
         key,
-        taskId,
+        recoveredTask.id,
         1000,
       );
     } catch (
