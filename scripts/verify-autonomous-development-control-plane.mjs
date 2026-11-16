@@ -177,6 +177,7 @@ const {
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
   persistAutonomousDevelopmentTasks,
+  executeAtomicStaging,
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
