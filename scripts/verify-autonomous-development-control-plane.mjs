@@ -74,6 +74,14 @@ const objectiveContractSource = fs.readFileSync(
   "utf8",
 );
 
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
@@ -100,6 +108,24 @@ const patchedReceipt = receiptSource.replace(
   /import\s+"server-only";/,
   'import "./server-only-stub.mjs";',
 );
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/github\/bridge"/g,
+    '"./bridge-stub.mjs"',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-receipt"/g,
+    '"./autonomous-development-receipt.mjs"',
+  )
+  .replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./autonomous-development-objective-contract.mjs"',
+  );
 
 // ---------------------------------------------------------------------------
 // Temporary module directory
@@ -138,6 +164,38 @@ writeTmp(
 writeTmp(
   "server-only-stub.mjs",
   "export {};\n",
+);
+
+writeTmp(
+  "atomic-executor.mjs",
+  transpile(patchedAtomicExecutor, "atomic-executor.ts"),
+);
+
+writeTmp(
+  "bridge-stub.mjs",
+  [
+    "const bridgeFixture = {",
+    "  token: \"fixture-value\",",
+    "  owner: \"Vivi9max\",",
+    "  repo: \"AIOS-Alpha\",",
+    "};",
+    "",
+    "export function getGitHubBridgeConfig() {",
+    "  return {",
+    "    owner: bridgeFixture.owner,",
+    "    repo: bridgeFixture.repo,",
+    "    baseBranch: \"main\",",
+    "  };",
+    "}",
+    "",
+    "export function resolveGitHubBridgeAuth() {",
+    "  return {",
+    "    token: bridgeFixture.token,",
+    "    mode: \"fixture\",",
+    "  };",
+    "}",
+    "",
+  ].join("\n"),
 );
 
 writeTmp(
@@ -180,6 +238,14 @@ const {
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
+  ).href
+);
+
+const {
+  executeAtomicStaging,
+} = await import(
+  pathToFileURL(
+    path.join(tmpDir, "atomic-executor.mjs"),
   ).href
 );
 
@@ -541,6 +607,503 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
     task.phase,
     "READBACK",
     "WRITING -> READBACK must be allowed",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Atomic staging executor fixtures
+// ---------------------------------------------------------------------------
+
+const BASE_SHA = "1111111111111111111111111111111111111111";
+const BASE_TREE_SHA = "2222222222222222222222222222222222222222";
+const BLOB_SHA_1 = "3333333333333333333333333333333333333333";
+const BLOB_SHA_2 = "4444444444444444444444444444444444444444";
+const NEW_TREE_SHA = "5555555555555555555555555555555555555555";
+const COMMIT_SHA = "6666666666666666666666666666666666666666";
+const STAGING_BRANCH = "c169-8-ad-ad-1794854487188-z8m134";
+
+const FIXTURE_FILE_1 = {
+  path: "lib/github/autonomous-development-atomic-executor.ts",
+  content: "export const a = 1;\n",
+};
+
+const FIXTURE_FILE_2 = {
+  path: "scripts/verify-autonomous-development-control-plane.mjs",
+  content: "console.log(\"fixture\");\n",
+};
+
+function toBase64Utf8(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function buildContentsBody(file, overrides = {}) {
+  return {
+    type: "file",
+    path: file.path,
+    encoding: "base64",
+    content: toBase64Utf8(file.content),
+    sha: BLOB_SHA_1,
+    ...overrides,
+  };
+}
+
+function jsonResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+    async text() {
+      return typeof body === "string"
+        ? body
+        : JSON.stringify(body);
+    },
+  };
+}
+
+function installFetchMock(handler) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input && input.url
+          ? input.url
+          : String(input);
+    const method =
+      (init && init.method) ||
+      (input && input.method) ||
+      "GET";
+    const call = { url, method, init };
+    calls.push(call);
+    return handler(call);
+  };
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+function defaultAtomicHandler(state) {
+  return async (call) => {
+    const { url, method } = call;
+
+    // Base branch SHA read
+    if (
+      method === "GET" &&
+      /\/git\/ref\/heads\/main$/.test(url)
+    ) {
+      return jsonResponse(200, {
+        ref: "refs/heads/main",
+        object: { sha: BASE_SHA, type: "commit" },
+      });
+    }
+
+    // Base commit read
+    if (
+      method === "GET" &&
+      /\/git\/commits\/[0-9a-f]{40}$/.test(url) &&
+      url.includes(BASE_SHA)
+    ) {
+      return jsonResponse(200, {
+        sha: BASE_SHA,
+        tree: { sha: BASE_TREE_SHA },
+      });
+    }
+
+    // Blob creation
+    if (method === "POST" && /\/git\/blobs$/.test(url)) {
+      const body =
+        call.init && call.init.body
+          ? JSON.parse(call.init.body)
+          : {};
+      const sha =
+        body.content ===
+        toBase64Utf8(FIXTURE_FILE_1.content)
+          ? BLOB_SHA_1
+          : BLOB_SHA_2;
+      return jsonResponse(201, { sha });
+    }
+
+    // Tree creation
+    if (method === "POST" && /\/git\/trees$/.test(url)) {
+      return jsonResponse(201, { sha: NEW_TREE_SHA });
+    }
+
+    // Commit creation
+    if (method === "POST" && /\/git\/commits$/.test(url)) {
+      return jsonResponse(201, { sha: COMMIT_SHA });
+    }
+
+    // Staging branch creation
+    if (method === "POST" && /\/git\/refs$/.test(url)) {
+      return jsonResponse(201, {
+        ref: `refs/heads/${STAGING_BRANCH}`,
+        object: { sha: COMMIT_SHA },
+      });
+    }
+
+    // Staging branch HEAD read
+    if (
+      method === "GET" &&
+      url.includes(
+        `/git/ref/heads/${STAGING_BRANCH}`,
+      )
+    ) {
+      return jsonResponse(200, {
+        ref: `refs/heads/${STAGING_BRANCH}`,
+        object: {
+          sha: state.stagingHead || COMMIT_SHA,
+          type: "commit",
+        },
+      });
+    }
+
+    // Contents API readback
+    if (method === "GET" && /\/contents\//.test(url)) {
+      const requestedPath = decodeURIComponent(
+        url.split("/contents/")[1].split("?")[0],
+      );
+      const file =
+        requestedPath === FIXTURE_FILE_1.path
+          ? FIXTURE_FILE_1
+          : requestedPath === FIXTURE_FILE_2.path
+            ? FIXTURE_FILE_2
+            : null;
+
+      if (!file) {
+        return jsonResponse(404, {
+          message: "Not Found",
+        });
+      }
+
+      if (state.contentsOverride) {
+        const overridden = state.contentsOverride(
+          file,
+          requestedPath,
+        );
+        if (overridden) {
+          return overridden;
+        }
+      }
+
+      return jsonResponse(200, buildContentsBody(file));
+    }
+
+    return jsonResponse(404, {
+      message: `Unhandled mock route: ${method} ${url}`,
+    });
+  };
+}
+
+function assertContentsUsesStagingSha(calls) {
+  const contentsCalls = calls.filter((call) =>
+    /\/contents\//.test(call.url),
+  );
+  assert.ok(
+    contentsCalls.length > 0,
+    "expected at least one Contents API call",
+  );
+  for (const call of contentsCalls) {
+    assert.ok(
+      call.url.includes(
+        `ref=${encodeURIComponent(COMMIT_SHA)}`,
+      ) ||
+        call.url.includes(`ref=${COMMIT_SHA}`),
+      `Contents API must use exact staging commit SHA: ${call.url}`,
+    );
+    assert.ok(
+      !call.url.includes("ref=main"),
+      `Contents API must not use mutable branch name: ${call.url}`,
+    );
+    assert.ok(
+      !call.url.includes(
+        `ref=${encodeURIComponent(STAGING_BRANCH)}`,
+      ) &&
+        !call.url.includes(`ref=${STAGING_BRANCH}`),
+      `Contents API must not use staging branch name: ${call.url}`,
+    );
+  }
+}
+
+function buildAtomicInput() {
+  return {
+    repository: "Vivi9max/AIOS-Alpha",
+    baseBranch: "main",
+    stagingBranch: STAGING_BRANCH,
+    commitMessage: "C170.8.8-B R8 atomic staging fixture",
+    files: [FIXTURE_FILE_1, FIXTURE_FILE_2],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TEST 5 — Atomic Executor Positive Case
+// ---------------------------------------------------------------------------
+
+await run("5 ATOMIC EXECUTOR POSITIVE", async () => {
+  const state = { stagingHead: COMMIT_SHA };
+  const mock = installFetchMock(defaultAtomicHandler(state));
+
+  try {
+    const result = await executeAtomicStaging(buildAtomicInput());
+
+    assert.ok(result, "result must be defined");
+    assert.equal(
+      result.ok,
+      true,
+      `positive case must succeed: ${JSON.stringify(result)}`,
+    );
+    assert.equal(
+      result.status,
+      "AIOS_ATOMIC_STAGING_READY",
+      "result must report AIOS_ATOMIC_STAGING_READY",
+    );
+    assert.equal(
+      result.stagingCommitSha,
+      COMMIT_SHA,
+      "result must report exact staging commit SHA",
+    );
+    assert.equal(
+      result.stagingBranch,
+      STAGING_BRANCH,
+      "result must report exact staging branch",
+    );
+    assert.deepEqual(
+      result.files.map((f) => f.path).sort(),
+      [FIXTURE_FILE_1.path, FIXTURE_FILE_2.path].sort(),
+      "result must report every submitted file",
+    );
+    assertContentsUsesStagingSha(mock.calls);
+  } finally {
+    mock.restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// TEST 6 — Atomic Executor Negative Cases
+// ---------------------------------------------------------------------------
+
+async function runNegative(name, mutateHandler, mutateState) {
+  await run(`6 NEGATIVE ${name}`, async () => {
+    const state = { stagingHead: COMMIT_SHA };
+    if (mutateState) {
+      mutateState(state);
+    }
+    const baseHandler = defaultAtomicHandler(state);
+    const mock = installFetchMock(mutateHandler(baseHandler, state));
+
+    try {
+      const result = await executeAtomicStaging(buildAtomicInput());
+      assert.ok(result, "result must be defined");
+      assert.notEqual(
+        result.ok,
+        true,
+        `negative case (${name}) must not report success`,
+      );
+      assert.notEqual(
+        result.status,
+        "AIOS_ATOMIC_STAGING_READY",
+        `negative case (${name}) must not report AIOS_ATOMIC_STAGING_READY`,
+      );
+    } finally {
+      mock.restore();
+    }
+  });
+}
+
+await runNegative(
+  "CONTENTS_404",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(404, { message: "Not Found" });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_INVALID_TYPE",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "directory",
+        path: FIXTURE_FILE_1.path,
+        encoding: "base64",
+        content: toBase64Utf8(FIXTURE_FILE_1.content),
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_PATH_MISMATCH",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "file",
+        path: "some/other/path.ts",
+        encoding: "base64",
+        content: toBase64Utf8(FIXTURE_FILE_1.content),
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_ENCODING_NOT_BASE64",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "file",
+        path: FIXTURE_FILE_1.path,
+        encoding: "utf-8",
+        content: FIXTURE_FILE_1.content,
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_BASE64_MALFORMED",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "file",
+        path: FIXTURE_FILE_1.path,
+        encoding: "base64",
+        content: "!!!not-base64!!!",
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_UTF8_INVALID",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "file",
+        path: FIXTURE_FILE_1.path,
+        encoding: "base64",
+        content: Buffer.from([0xff, 0xfe, 0xfd]).toString(
+          "base64",
+        ),
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "CONTENTS_DECODED_MISMATCH",
+  (handler) => async (call) => {
+    if (/\/contents\//.test(call.url)) {
+      return jsonResponse(200, {
+        type: "file",
+        path: FIXTURE_FILE_1.path,
+        encoding: "base64",
+        content: toBase64Utf8("tampered content\n"),
+        sha: BLOB_SHA_1,
+      });
+    }
+    return handler(call);
+  },
+);
+
+await runNegative(
+  "STAGING_HEAD_CHANGED_BEFORE_READBACK",
+  (handler, state) => async (call) => {
+    if (
+      call.method === "GET" &&
+      call.url.includes(
+        `/git/ref/heads/${STAGING_BRANCH}`,
+      )
+    ) {
+      const current = state.stagingHead;
+      state.stagingHead = "9999999999999999999999999999999999999999";
+      return jsonResponse(200, {
+        ref: `refs/heads/${STAGING_BRANCH}`,
+        object: { sha: state.stagingHead, type: "commit" },
+      });
+    }
+    return handler(call);
+  },
+  (state) => {
+    state.stagingHead = COMMIT_SHA;
+  },
+);
+
+await runNegative(
+  "STAGING_HEAD_CHANGED_AFTER_READBACK",
+  (handler, state) => {
+    let headReads = 0;
+    return async (call) => {
+      if (
+        call.method === "GET" &&
+        call.url.includes(
+          `/git/ref/heads/${STAGING_BRANCH}`,
+        )
+      ) {
+        headReads += 1;
+        const sha =
+          headReads >= 2
+            ? "9999999999999999999999999999999999999999"
+            : state.stagingHead;
+        return jsonResponse(200, {
+          ref: `refs/heads/${STAGING_BRANCH}`,
+          object: { sha, type: "commit" },
+        });
+      }
+      return handler(call);
+    };
+  },
+);
+
+await run("6 NEGATIVE INVALID_FILE_PATH", async () => {
+  const mock = installFetchMock(async () => {
+    throw new Error(
+      "fetch must not be called for invalid file paths",
+    );
+  });
+  try {
+    const result = await executeAtomicStaging({
+      repository: "Vivi9max/AIOS-Alpha",
+      baseBranch: "main",
+      stagingBranch: STAGING_BRANCH,
+      commitMessage: "invalid path fixture",
+      files: [
+        {
+          path: "../escape.ts",
+          content: "export const x = 1;\n",
+        },
+      ],
+    });
+    assert.ok(result, "result must be defined");
+    assert.notEqual(
+      result.ok,
+      true,
+      "invalid file path must not report success",
+    );
+  } finally {
+    mock.restore();
+  }
+  assert.equal(
+    mock.calls.length,
+    0,
+    "no GitHub API request may occur for invalid file paths",
   );
 });
 

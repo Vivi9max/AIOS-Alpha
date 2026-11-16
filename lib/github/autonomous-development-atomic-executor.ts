@@ -71,6 +71,92 @@ interface GitHubTreeResponse {
   sha?: string;
 }
 
+interface GitHubContentsResponse {
+  type?: string;
+  encoding?: string;
+  size?: number;
+  name?: string;
+  path?: string;
+  content?: string;
+  sha?: string;
+}
+
+const STRICT_BASE64_PATTERN =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function decodeBase64Strict(
+  value: string,
+): string {
+  const normalized =
+    value.replace(/\s+/g, "");
+
+  if (
+    !normalized ||
+    normalized.length % 4 !== 0 ||
+    !STRICT_BASE64_PATTERN.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_BASE64_INVALID",
+    );
+  }
+
+  const buffer =
+    Buffer.from(
+      normalized,
+      "base64",
+    );
+
+  const roundTrip =
+    buffer
+      .toString("base64")
+      .replace(/=+$/, "");
+
+  if (
+    roundTrip !==
+    normalized.replace(/=+$/, "")
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_BASE64_INVALID",
+    );
+  }
+
+  return buffer.toString(
+    "utf-8",
+  );
+}
+
+function decodeUtf8Strict(
+  value: string,
+): string {
+  const buffer =
+    Buffer.from(
+      value,
+      "utf-8",
+    );
+
+  const decoded =
+    buffer.toString("utf-8");
+
+  const reencoded =
+    Buffer.from(
+      decoded,
+      "utf-8",
+    );
+
+  if (
+    !buffer.equals(reencoded) ||
+    decoded.includes("\uFFFD")
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_UTF8_INVALID",
+    );
+  }
+
+  return decoded;
+}
+
 export interface AutonomousAtomicFile {
   path: string;
   content: string;
@@ -628,6 +714,142 @@ async function verifyStagingHead(
   }
 }
 
+async function readFileAtCommit(
+  repository: string,
+  path: string,
+  commitSha: string,
+  accessToken: string,
+): Promise<string> {
+  const encodedPath =
+    path
+      .split("/")
+      .map((segment) =>
+        encodeURIComponent(segment),
+      )
+      .join("/");
+
+  const result =
+    await githubRequest<GitHubContentsResponse>(
+      `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(
+        commitSha,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (
+    !result.success ||
+    !result.data
+  ) {
+    throw new Error(
+      result.error ||
+        `AIOS_ATOMIC_READBACK_REQUEST_FAILED: ${path}`,
+    );
+  }
+
+  const data =
+    result.data;
+
+  if (
+    data.type !== "file"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_TYPE_INVALID: ${path}`,
+    );
+  }
+
+  if (
+    data.path !== path
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_PATH_MISMATCH: ${path}`,
+    );
+  }
+
+  if (
+    data.encoding !== "base64"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_ENCODING_INVALID: ${path}`,
+    );
+  }
+
+  if (
+    typeof data.content !==
+    "string" ||
+    !data.content
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_CONTENT_MISSING: ${path}`,
+    );
+  }
+
+  if (
+    typeof data.sha !==
+    "string" ||
+    !data.sha
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_BLOB_SHA_MISSING: ${path}`,
+    );
+  }
+
+  const decodedBase64 =
+    decodeBase64Strict(
+      data.content,
+    );
+
+  const decodedContent =
+    decodeUtf8Strict(
+      decodedBase64,
+    );
+
+  return decodedContent;
+}
+
+async function verifyFileReadback(
+  repository: string,
+  branch: string,
+  commitSha: string,
+  files: AutonomousAtomicFile[],
+  accessToken: string,
+): Promise<void> {
+  await verifyStagingHead(
+    repository,
+    branch,
+    commitSha,
+    accessToken,
+  );
+
+  for (
+    const file of files
+  ) {
+    const remoteContent =
+      await readFileAtCommit(
+        repository,
+        file.path,
+        commitSha,
+        accessToken,
+      );
+
+    if (
+      remoteContent !==
+      file.content
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_READBACK_CONTENT_MISMATCH: ${file.path}`,
+      );
+    }
+  }
+
+  await verifyStagingHead(
+    repository,
+    branch,
+    commitSha,
+    accessToken,
+  );
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -734,10 +956,11 @@ export async function executeAtomicStaging(
       auth.accessToken,
     );
 
-    await verifyStagingHead(
+    await verifyFileReadback(
       repository,
       stagingBranch,
       stagingCommitSha,
+      files,
       auth.accessToken,
     );
 
