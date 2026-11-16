@@ -538,13 +538,13 @@ async function readFile(
       accessToken,
     });
 
-  if (!result.success) {
-    throw new Error(
-      `AIOS_TARGET_READ_FAILED: ${path}: ${result.error}`,
-    );
+  if (result.success) {
+    return result.data;
   }
 
-  return result.data;
+  throw new Error(
+    `AIOS_TARGET_READ_FAILED: ${path}: ${result.error}`,
+  );
 }
 
 function buildPlannerPrompt(
