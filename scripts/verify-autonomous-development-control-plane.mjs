@@ -545,11 +545,556 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Atomic staging executor — real production module
+// ---------------------------------------------------------------------------
+
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/server-storage"/g,
+    '"./server-storage-stub.mjs"',
+  );
+
+writeTmp(
+  "autonomous-development-atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
+  ),
+);
+
+const atomicExecutor = await import(
+  pathToFileURL(
+    path.join(
+      tmpDir,
+      "autonomous-development-atomic-executor.mjs",
+    ),
+  ).href
+);
+
+const executeAtomicStaging =
+  atomicExecutor.executeAtomicStaging;
+
+assert.equal(
+  typeof executeAtomicStaging,
+  "function",
+  "production executeAtomicStaging must be importable",
+);
+
+const BASE_SHA = "8558a632b7c122b9572822b18fc23494cc97f693";
+const BASE_TREE_SHA = "base-tree-sha-fixture";
+const STAGING_COMMIT_SHA = "staging-commit-sha-fixture";
+const STAGING_BRANCH = "aios/staging-r5-fixture";
+
+function encodeBase64Utf8(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function toBase64Url(text) {
+  return Buffer.from(text, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function buildBridgeStub() {
+  return [
+    "export async function getRepositoryBranchHeadSha() {",
+    "  return globalThis.__aiosBridge.getRepositoryBranchHeadSha();",
+    "}",
+    "export async function createBlob() {",
+    "  return globalThis.__aiosBridge.createBlob();",
+    "}",
+    "export async function createTree() {",
+    "  return globalThis.__aiosBridge.createTree();",
+    "}",
+    "export async function createCommit() {",
+    "  return globalThis.__aiosBridge.createCommit();",
+    "}",
+    "export async function createBranch() {",
+    "  return globalThis.__aiosBridge.createBranch();",
+    "}",
+    "export async function getGitCommit() {",
+    "  return globalThis.__aiosBridge.getGitCommit();",
+    "}",
+    "export async function getFileContents() {",
+    "  return globalThis.__aiosBridge.getFileContents();",
+    "}",
+    "",
+  ].join("\n");
+}
+
+writeTmp("bridge-stub.mjs", buildBridgeStub());
+
+const patchedAtomicExecutorWithBridge = patchedAtomicExecutor.replace(
+  /"@\/lib\/github\/autonomous-development-github-bridge"/g,
+  '"./bridge-stub.mjs"',
+);
+
+writeTmp(
+  "autonomous-development-atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutorWithBridge,
+    "autonomous-development-atomic-executor.ts",
+  ),
+);
+
+const atomicExecutor = await import(
+  pathToFileURL(
+    path.join(
+      tmpDir,
+      "autonomous-development-atomic-executor.mjs",
+    ),
+  ).href
+);
+
+const executeAtomicStaging =
+  atomicExecutor.executeAtomicStaging;
+
+assert.equal(
+  typeof executeAtomicStaging,
+  "function",
+  "production executeAtomicStaging must be importable",
+);
+
+// ---------------------------------------------------------------------------
+// Atomic staging harness
+// ---------------------------------------------------------------------------
+
+function createBridgeState(overrides = {}) {
+  const state = {
+    headSha: BASE_SHA,
+    blobs: [],
+    trees: [],
+    commits: [],
+    branches: [],
+    fileContents: [],
+    headCalls: 0,
+    getCommitCalls: [],
+    contentsCalls: [],
+    ...overrides,
+  };
+
+  state.bridge = {
+    async getRepositoryBranchHeadSha() {
+      state.headCalls += 1;
+      if (
+        state.headShaSequence &&
+        state.headShaSequence.length > 0
+      ) {
+        return state.headShaSequence.shift();
+      }
+      return state.headSha;
+    },
+    async createBlob(input) {
+      state.blobs.push(input);
+      return { sha: `blob-sha-${state.blobs.length}` };
+    },
+    async createTree(input) {
+      state.trees.push(input);
+      return { sha: `tree-sha-${state.trees.length}` };
+    },
+    async createCommit(input) {
+      state.commits.push(input);
+      return { sha: STAGING_COMMIT_SHA };
+    },
+    async createBranch(input) {
+      state.branches.push(input);
+      return { ok: true };
+    },
+    async getGitCommit(input) {
+      state.getCommitCalls.push(input);
+      return {
+        sha: input.sha,
+        tree: { sha: BASE_TREE_SHA },
+      };
+    },
+    async getFileContents(input) {
+      state.contentsCalls.push(input);
+      const match = state.fileContents.find(
+        (entry) => entry.path === input.path,
+      );
+      if (!match) {
+        const error = new Error(
+          `contents not found for ${input.path}`,
+        );
+        error.status = 404;
+        throw error;
+      }
+      if (match.error) {
+        throw match.error;
+      }
+      return {
+        type: "file",
+        encoding: match.encoding ?? "base64",
+        content: match.content,
+      };
+    },
+  };
+
+  return state;
+}
+
+async function withBridge(state, fn) {
+  globalThis.__aiosBridge = state.bridge;
+  try {
+    return await fn(state);
+  } finally {
+    delete globalThis.__aiosBridge;
+  }
+}
+
+function buildFiles() {
+  return [
+    {
+      path: "docs/notes/readme.md",
+      content: "# Hello\nUnicode: 你好, мир, 🚀\n",
+    },
+    {
+      path: "lib/github/atomic-fixture.ts",
+      content: "export const fixture = 1;\n",
+    },
+    {
+      path: "scripts/fixture-script.mjs",
+      content: "console.log('fixture');\n",
+    },
+  ];
+}
+
+function seedFileContents(state, files, transform) {
+  state.fileContents = files.map((file) => {
+    const base = {
+      path: file.path,
+      content: encodeBase64Utf8(file.content),
+      encoding: "base64",
+    };
+    return transform ? transform(base, file) : base;
+  });
+}
+
+function baseArgs(files, overrides = {}) {
+  return {
+    repository: "Vivi9max/AIOS-Alpha",
+    baseSha: BASE_SHA,
+    stagingBranch: STAGING_BRANCH,
+    objective: "C170.8.8-B-R5 atomic staging fixture",
+    files,
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Atomic staging — positive test
+// ---------------------------------------------------------------------------
+
+await run("5 ATOMIC STAGING POSITIVE", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files);
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, true, "positive staging must succeed");
+  assert.equal(result.baseSha, BASE_SHA);
+  assert.equal(result.stagingCommitSha, STAGING_COMMIT_SHA);
+  assert.equal(result.stagingBranch, STAGING_BRANCH);
+
+  assert.equal(state.commits.length, 1, "exactly one commit created");
+  const commit = state.commits[0];
+  assert.equal(commit.parentSha ?? commit.parent, BASE_SHA);
+  assert.equal(commit.treeSha ?? commit.tree, "tree-sha-1");
+  assert.equal(commit.message.includes("C170.8.8-B-R5"), true);
+
+  assert.equal(state.blobs.length, files.length);
+  files.forEach((file, index) => {
+    assert.equal(state.blobs[index].content, file.content);
+  });
+
+  assert.equal(state.trees.length, 1);
+  const tree = state.trees[0];
+  assert.equal(tree.baseTreeSha ?? tree.baseTree, BASE_TREE_SHA);
+  const treePaths = tree.paths.map((entry) => entry.path);
+  files.forEach((file) => {
+    assert.ok(
+      treePaths.includes(file.path),
+      `tree must include ${file.path}`,
+    );
+  });
+
+  assert.equal(state.branches.length, 1);
+  assert.equal(state.branches[0].branch, STAGING_BRANCH);
+  assert.equal(state.branches[0].commitSha, STAGING_COMMIT_SHA);
+
+  assert.equal(
+    state.contentsCalls.length,
+    files.length,
+    "one Contents API read per file",
+  );
+  state.contentsCalls.forEach((call) => {
+    assert.equal(call.ref, STAGING_COMMIT_SHA);
+    assert.equal(call.repository, "Vivi9max/AIOS-Alpha");
+  });
+  const callPaths = state.contentsCalls.map((c) => c.path);
+  files.forEach((file) => {
+    assert.ok(
+      callPaths.includes(file.path),
+      `Contents API must read ${file.path}`,
+    );
+  });
+
+  assert.ok(
+    state.headCalls >= 2,
+    "staging HEAD verified before and after readback",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Atomic staging — negative tests
+// ---------------------------------------------------------------------------
+
+await run("6 ATOMIC STAGING FILE 404", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "lib/github/atomic-fixture.ts") {
+      return { ...entry, missing: true };
+    }
+    return entry;
+  });
+  state.fileContents = state.fileContents.filter(
+    (entry) => !entry.missing,
+  );
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("lib/github/atomic-fixture.ts"),
+    "failure reason must include affected path",
+  );
+  assert.equal(
+    state.contentsCalls.length,
+    files.length,
+    "all files attempted before failure",
+  );
+});
+
+await run("7 ATOMIC STAGING MISSING CONTENT", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "docs/notes/readme.md") {
+      return { ...entry, content: undefined };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("docs/notes/readme.md"),
+  );
+});
+
+await run("8 ATOMIC STAGING MALFORMED BASE64", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "lib/github/atomic-fixture.ts") {
+      return { ...entry, content: "!!!not-base64!!!" };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("lib/github/atomic-fixture.ts"),
+  );
+});
+
+await run("9 ATOMIC STAGING UNSUPPORTED ENCODING", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "scripts/fixture-script.mjs") {
+      return { ...entry, encoding: "utf-16" };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("scripts/fixture-script.mjs"),
+  );
+});
+
+await run("10 ATOMIC STAGING INVALID UTF-8", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "docs/notes/readme.md") {
+      return {
+        ...entry,
+        content: Buffer.from([0xff, 0xfe, 0xfd]).toString("base64"),
+      };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("docs/notes/readme.md"),
+  );
+});
+
+await run("11 ATOMIC STAGING CONTENT MISMATCH", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "lib/github/atomic-fixture.ts") {
+      return {
+        ...entry,
+        content: encodeBase64Utf8("different content"),
+      };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("lib/github/atomic-fixture.ts"),
+  );
+});
+
+await run("12 ATOMIC STAGING HEAD MISMATCH", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, "unexpected-head-sha"],
+  });
+  seedFileContents(state, files);
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    state.contentsCalls.length,
+    0,
+    "Contents readback must not run when HEAD mismatches",
+  );
+});
+
+await run("13 ATOMIC STAGING GITHUB HTTP ERROR", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "lib/github/atomic-fixture.ts") {
+      const error = new Error("github 500");
+      error.status = 500;
+      return { ...entry, error };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("lib/github/atomic-fixture.ts"),
+  );
+});
+
+await run("14 ATOMIC STAGING MALFORMED JSON", async () => {
+  const files = buildFiles();
+  const state = createBridgeState({
+    headShaSequence: [BASE_SHA, STAGING_COMMIT_SHA],
+  });
+  seedFileContents(state, files, (entry, file) => {
+    if (file.path === "docs/notes/readme.md") {
+      return { ...entry, type: "directory" };
+    }
+    return entry;
+  });
+
+  const result = await withBridge(state, () =>
+    executeAtomicStaging(baseArgs(files)),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.ok(
+    String(result.reason).includes("docs/notes/readme.md"),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC169.8-D2.1 + C170.8.8-B-R5 INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {
