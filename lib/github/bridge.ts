@@ -16,12 +16,19 @@ export interface GitHubBridgeConfig {
   authMode: "oauth" | "token";
 }
 
-export interface GitHubBridgeResult<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  status?: number;
-}
+export type GitHubBridgeResult<T> =
+  | {
+      success: true;
+      data: T;
+      error?: undefined;
+      status?: number;
+    }
+  | {
+      success: false;
+      data?: undefined;
+      error: string;
+      status?: number;
+    };
 
 export interface GitHubReadFileSuccess {
   success: true;

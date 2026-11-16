@@ -538,16 +538,9 @@ async function readFile(
       accessToken,
     });
 
-  if (
-    !result.success ||
-    !result.data
-  ) {
+  if (!result.success) {
     throw new Error(
-      `AIOS_TARGET_READ_FAILED: ${path}: ${
-        "error" in result
-          ? result.error
-          : "GitHub file read failed."
-      }`,
+      `AIOS_TARGET_READ_FAILED: ${path}: ${result.error}`,
     );
   }
 
