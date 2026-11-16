@@ -741,6 +741,65 @@ export async function executeAtomicStaging(
       auth.accessToken,
     );
 
+    for (
+      const file of files
+    ) {
+      const readback =
+        await githubRequest<{
+          content?: string;
+          encoding?: string;
+          sha?: string;
+        }>(
+          `/repos/${repository}/contents/${file.path
+            .split("/")
+            .map((segment) =>
+              encodeURIComponent(segment),
+            )
+            .join("/")}?ref=${encodeURIComponent(
+            stagingCommitSha,
+          )}`,
+          {},
+          auth.accessToken,
+        );
+
+      if (!readback.success) {
+        throw new Error(
+          readback.error ||
+            `AIOS_ATOMIC_READBACK_FAILED: ${file.path}`,
+        );
+      }
+
+      const readbackData =
+        readback.data;
+
+      if (
+        !readbackData ||
+        typeof readbackData.content !==
+          "string" ||
+        readbackData.encoding !==
+          "base64"
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_READBACK_CONTENT_INVALID: ${file.path}`,
+        );
+      }
+
+      const decoded =
+        Buffer.from(
+          readbackData.content.replace(
+            /\s+/g,
+            "",
+          ),
+          "base64",
+        ).toString("utf-8");
+
+      if (decoded !== file.content) {
+        throw new Error(
+          `AIOS_ATOMIC_READBACK_MISMATCH: ${file.path}`,
+        );
+      }
+    }
+
     return {
       success: true,
       code:

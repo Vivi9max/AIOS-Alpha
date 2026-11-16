@@ -2274,7 +2274,6 @@ export async function executeAutonomousDevelopmentAgent(
       repository: REPOSITORY,
       baseBranch: BRANCH,
       accessToken: input.accessToken,
-      commitMessage: buildAutonomousCommitMessage(objective),
       files: targetPaths.map((path) => ({
         path,
         content: patchedContents[path],
