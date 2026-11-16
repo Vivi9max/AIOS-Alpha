@@ -545,11 +545,679 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Atomic Executor — real production module import
+// ---------------------------------------------------------------------------
+
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
+const bridgeSource = fs.readFileSync(
+  path.join(REPO_ROOT, "lib/github/bridge.ts"),
+  "utf8",
+);
+
+// The production executor must import the real bridge module exactly once.
+const bridgeImportPattern =
+  /from\s+"@\/lib\/github\/bridge"/g;
+const bridgeImportMatches =
+  atomicExecutorSource.match(bridgeImportPattern) ?? [];
+
+if (bridgeImportMatches.length !== 1) {
+  console.error(
+    `Atomic executor must import @/lib/github/bridge exactly once; found ${bridgeImportMatches.length}.`,
+  );
+  process.exit(1);
+}
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /from\s+"@\/lib\/github\/bridge"/g,
+    'from "./bridge-stub.mjs"',
+  );
+
+writeTmp(
+  "atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
+  ),
+);
+
+// Bridge stub — mirrors the actual exports consumed by the executor.
+// The executor uses its own githubRequest()/global fetch for GitHub REST
+// calls, so the bridge stub only needs to satisfy the import binding.
+writeTmp(
+  "bridge-stub.mjs",
+  [
+    "export const bridgeMarker = 'aios-bridge-stub';",
+    "",
+  ].join("\n"),
+);
+
+const { executeAtomicStaging } = await import(
+  pathToFileURL(
+    path.join(tmpDir, "atomic-executor.mjs"),
+  ).href
+);
+
+// ---------------------------------------------------------------------------
+// GitHub API mock harness
+// ---------------------------------------------------------------------------
+
+const BASE_SHA = "1111111111111111111111111111111111111111";
+const BASE_TREE_SHA = "2222222222222222222222222222222222222222";
+const STAGING_COMMIT_SHA = "3333333333333333333333333333333333333333";
+const STAGING_BRANCH_PREFIX = "c169-8-ad-";
+const FIXTURE_TOKEN = "fixture-token-deterministic";
+const FIXTURE_REPO = "Vivi9max/AIOS-Alpha";
+
+function makeJsonResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+    async text() {
+      return typeof body === "string" ? body : JSON.stringify(body);
+    },
+  };
+}
+
+function encodeBase64Utf8(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function createGitHubMock(options) {
+  const requests = [];
+  const contentsRequests = [];
+  const blobRequests = [];
+  const treeRequests = [];
+  const commitRequests = [];
+  const stagingRefRequests = [];
+  const branchRefRequests = [];
+
+  const state = {
+    contentsCallCount: 0,
+    preReadbackHeadChecks: 0,
+    postReadbackHeadChecks: 0,
+    contentsPhaseStarted: false,
+    contentsPhaseFinished: false,
+    mainRefModified: false,
+  };
+
+  const files = options.files;
+  const overrides = options.overrides ?? {};
+
+  async function mockFetch(input, init) {
+    const url =
+      typeof input === "string" ? input : input.url;
+    const method = (init?.method ?? "GET").toUpperCase();
+    const bodyText =
+      typeof init?.body === "string" ? init.body : undefined;
+
+    requests.push({ method, url });
+
+    // GET base branch ref
+    if (
+      method === "GET" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/ref/heads/main`
+    ) {
+      branchRefRequests.push({ method, url });
+      if (overrides.baseBranchRefError) {
+        return makeJsonResponse(
+          overrides.baseBranchRefError.status,
+          { message: "base ref error" },
+        );
+      }
+      return makeJsonResponse(200, {
+        ref: "refs/heads/main",
+        object: {
+          sha: BASE_SHA,
+          type: "commit",
+        },
+      });
+    }
+
+    // GET base commit object
+    if (
+      method === "GET" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/commits/${BASE_SHA}`
+    ) {
+      if (overrides.baseCommitError) {
+        return makeJsonResponse(
+          overrides.baseCommitError.status,
+          { message: "base commit error" },
+        );
+      }
+      return makeJsonResponse(200, {
+        sha: BASE_SHA,
+        tree: { sha: BASE_TREE_SHA },
+      });
+    }
+
+    // POST Git blob
+    if (
+      method === "POST" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/blobs`
+    ) {
+      blobRequests.push({ method, url, body: bodyText });
+      if (overrides.blobError) {
+        return makeJsonResponse(
+          overrides.blobError.status,
+          { message: "blob error" },
+        );
+      }
+      return makeJsonResponse(201, {
+        sha: "4444444444444444444444444444444444444444",
+      });
+    }
+
+    // POST Git tree
+    if (
+      method === "POST" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/trees`
+    ) {
+      treeRequests.push({ method, url, body: bodyText });
+      if (overrides.treeError) {
+        return makeJsonResponse(
+          overrides.treeError.status,
+          { message: "tree error" },
+        );
+      }
+      return makeJsonResponse(201, {
+        sha: "5555555555555555555555555555555555555555",
+      });
+    }
+
+    // POST Git commit
+    if (
+      method === "POST" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/commits`
+    ) {
+      commitRequests.push({ method, url, body: bodyText });
+      if (overrides.commitError) {
+        return makeJsonResponse(
+          overrides.commitError.status,
+          { message: "commit error" },
+        );
+      }
+      return makeJsonResponse(201, {
+        sha: STAGING_COMMIT_SHA,
+      });
+    }
+
+    // POST staging branch ref
+    if (
+      method === "POST" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/refs` &&
+      typeof bodyText === "string" &&
+      bodyText.includes(`"refs/heads/${STAGING_BRANCH_PREFIX}`)
+    ) {
+      stagingRefRequests.push({ method, url, body: bodyText });
+      if (overrides.stagingRefError) {
+        return makeJsonResponse(
+          overrides.stagingRefError.status,
+          { message: "staging ref error" },
+        );
+      }
+      return makeJsonResponse(201, {
+        ref: `refs/heads/${STAGING_BRANCH_PREFIX}fixture`,
+        object: { sha: STAGING_COMMIT_SHA },
+      });
+    }
+
+    // GET staging branch ref (pre/post readback HEAD checks)
+    if (
+      method === "GET" &&
+      url.startsWith(
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/ref/heads/${STAGING_BRANCH_PREFIX}`,
+      )
+    ) {
+      stagingRefRequests.push({ method, url });
+      if (state.contentsPhaseFinished) {
+        state.postReadbackHeadChecks += 1;
+        if (overrides.postReadbackHeadMismatch) {
+          return makeJsonResponse(200, {
+            ref: `refs/heads/${STAGING_BRANCH_PREFIX}fixture`,
+            object: {
+              sha: "9999999999999999999999999999999999999999",
+            },
+          });
+        }
+        return makeJsonResponse(200, {
+          ref: `refs/heads/${STAGING_BRANCH_PREFIX}fixture`,
+          object: { sha: STAGING_COMMIT_SHA },
+        });
+      }
+      state.preReadbackHeadChecks += 1;
+      if (overrides.preReadbackHeadMismatch) {
+        return makeJsonResponse(200, {
+          ref: `refs/heads/${STAGING_BRANCH_PREFIX}fixture`,
+          object: {
+            sha: "9999999999999999999999999999999999999999",
+          },
+        });
+      }
+      return makeJsonResponse(200, {
+        ref: `refs/heads/${STAGING_BRANCH_PREFIX}fixture`,
+        object: { sha: STAGING_COMMIT_SHA },
+      });
+    }
+
+    // GET Contents API
+    if (
+      method === "GET" &&
+      url.startsWith(
+        `https://api.github.com/repos/${FIXTURE_REPO}/contents/`,
+      )
+    ) {
+      state.contentsPhaseStarted = true;
+      const parsed = new URL(url);
+      const ref = parsed.searchParams.get("ref");
+      const pathPart = decodeURIComponent(
+        parsed.pathname.replace(
+          `/repos/${FIXTURE_REPO}/contents/`,
+          "",
+        ),
+      );
+      contentsRequests.push({
+        method,
+        url,
+        ref,
+        path: pathPart,
+      });
+      state.contentsCallCount += 1;
+
+      if (overrides.contentsHttpError) {
+        return makeJsonResponse(
+          overrides.contentsHttpError.status,
+          { message: "contents http error" },
+        );
+      }
+      if (overrides.contentsNotFound) {
+        return makeJsonResponse(404, {
+          message: "Not Found",
+        });
+      }
+
+      const submitted = files.find(
+        (file) => file.path === pathPart,
+      );
+      if (!submitted) {
+        return makeJsonResponse(404, {
+          message: "Not Found",
+        });
+      }
+
+      if (overrides.malformedContentsResponse) {
+        return makeJsonResponse(200, {
+          type: "file",
+          name: "not-an-object",
+        });
+      }
+
+      let content = encodeBase64Utf8(submitted.content);
+
+      if (overrides.missingContent) {
+        return makeJsonResponse(200, {
+          type: "file",
+          encoding: "base64",
+          name: pathPart,
+        });
+      }
+      if (overrides.unsupportedEncoding) {
+        return makeJsonResponse(200, {
+          type: "file",
+          encoding: "utf-8",
+          content,
+          name: pathPart,
+        });
+      }
+      if (overrides.malformedBase64) {
+        content = "!!!not-base64!!!";
+      }
+      if (overrides.invalidUtf8) {
+        // Base64 of bytes that are invalid UTF-8 (0xff 0xfe).
+        content = Buffer.from([0xff, 0xfe]).toString("base64");
+      }
+      if (overrides.contentMismatch) {
+        content = encodeBase64Utf8(
+          submitted.content + "::mismatch",
+        );
+      }
+
+      return makeJsonResponse(200, {
+        type: "file",
+        encoding: "base64",
+        name: pathPart,
+        path: pathPart,
+        content,
+      });
+    }
+
+    // Any POST to main ref would be a violation.
+    if (
+      method === "POST" &&
+      url ===
+        `https://api.github.com/repos/${FIXTURE_REPO}/git/refs/heads/main`
+    ) {
+      state.mainRefModified = true;
+      return makeJsonResponse(422, {
+        message: "main ref must not be modified",
+      });
+    }
+
+    return makeJsonResponse(404, {
+      message: `unexpected request: ${method} ${url}`,
+    });
+  }
+
+  return {
+    mockFetch,
+    requests,
+    contentsRequests,
+    blobRequests,
+    treeRequests,
+    commitRequests,
+    stagingRefRequests,
+    branchRefRequests,
+    state,
+  };
+}
+
+const FIXTURE_FILES = [
+  {
+    path: "docs/aios-verify-fixture.md",
+    content:
+      "AIOS fixture — 中文内容 — emoji 🚀🔒 — line2\n",
+  },
+  {
+    path: "lib/aios-verify-fixture.ts",
+    content:
+      "export const fixture = '中文 🚀';\n",
+  },
+  {
+    path: "scripts/aios-verify-fixture.mjs",
+    content:
+      "console.log('中文 🚀');\n",
+  },
+];
+
+function createAtomicFixtureInput(taskId) {
+  return {
+    objective: "C170.8.8-B-R6 atomic executor readback fixture",
+    taskId,
+    repository: FIXTURE_REPO,
+    baseBranch: "main",
+    files: FIXTURE_FILES.map((file) => ({
+      path: file.path,
+      content: file.content,
+    })),
+    accessToken: FIXTURE_TOKEN,
+  };
+}
+
+async function withMockedFetch(options, fn) {
+  const originalFetch = globalThis.fetch;
+  const mock = createGitHubMock(options);
+  globalThis.fetch = mock.mockFetch;
+  try {
+    const result = await fn(mock);
+    return { result, mock };
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Atomic Executor — Positive Test
+// ---------------------------------------------------------------------------
+
+await run("5 ATOMIC EXECUTOR POSITIVE READBACK", async () => {
+  const input = createAtomicFixtureInput(
+    "task-atomic-positive",
+  );
+
+  const { result, mock } = await withMockedFetch(
+    { files: FIXTURE_FILES },
+    async () => executeAtomicStaging(input),
+  );
+
+  assert.equal(
+    result.success,
+    true,
+    `atomic executor must succeed; got ${JSON.stringify(result)}`,
+  );
+
+  assert.ok(
+    typeof result.code === "string" && result.code.length > 0,
+    "result.code must be a non-empty string",
+  );
+
+  assert.ok(
+    result.snapshot,
+    "result.snapshot must be present",
+  );
+
+  assert.equal(
+    result.snapshot.baseSha,
+    BASE_SHA,
+    "snapshot.baseSha must equal mocked base SHA",
+  );
+
+  assert.equal(
+    result.snapshot.stagingCommitSha,
+    STAGING_COMMIT_SHA,
+    "snapshot.stagingCommitSha must equal mocked staging commit SHA",
+  );
+
+  assert.ok(
+    typeof result.snapshot.stagingBranch === "string" &&
+      result.snapshot.stagingBranch.startsWith(
+        STAGING_BRANCH_PREFIX,
+      ),
+    `snapshot.stagingBranch must start with ${STAGING_BRANCH_PREFIX}; got ${result.snapshot.stagingBranch}`,
+  );
+
+  assert.equal(
+    mock.blobRequests.length,
+    FIXTURE_FILES.length,
+    "one blob POST per submitted file",
+  );
+
+  assert.equal(
+    mock.treeRequests.length,
+    1,
+    "exactly one tree POST",
+  );
+
+  assert.equal(
+    mock.commitRequests.length,
+    1,
+    "exactly one commit POST",
+  );
+
+  assert.equal(
+    mock.stagingRefRequests.filter(
+      (r) => r.method === "POST",
+    ).length,
+    1,
+    "exactly one staging ref POST",
+  );
+
+  assert.equal(
+    mock.contentsRequests.length,
+    FIXTURE_FILES.length,
+    "exactly one Contents GET per submitted file",
+  );
+
+  for (const request of mock.contentsRequests) {
+    assert.equal(
+      request.ref,
+      STAGING_COMMIT_SHA,
+      "Contents GET must use the exact staging commit SHA as ref",
+    );
+  }
+
+  assert.equal(
+    mock.state.preReadbackHeadChecks,
+    1,
+    "staging HEAD must be checked once before readback",
+  );
+
+  assert.equal(
+    mock.state.postReadbackHeadChecks,
+    1,
+    "staging HEAD must be checked once after readback",
+  );
+
+  assert.equal(
+    mock.state.mainRefModified,
+    false,
+    "main ref must not be modified",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Atomic Executor — Negative Tests
+// ---------------------------------------------------------------------------
+
+async function runAtomicNegative(
+  name,
+  overrides,
+  expectedCodeFragment,
+) {
+  await run(name, async () => {
+    const input = createAtomicFixtureInput(
+      `task-atomic-${name.replace(/\s+/g, "-").toLowerCase()}`,
+    );
+
+    const { result, mock } = await withMockedFetch(
+      { files: FIXTURE_FILES, overrides },
+      async () => executeAtomicStaging(input),
+    );
+
+    assert.equal(
+      result.success,
+      false,
+      `expected failure; got ${JSON.stringify(result)}`,
+    );
+
+    assert.ok(
+      typeof result.code === "string" && result.code.length > 0,
+      "failure must include a code",
+    );
+
+    if (expectedCodeFragment) {
+      assert.ok(
+        result.code
+          .toLowerCase()
+          .includes(expectedCodeFragment.toLowerCase()),
+        `expected code containing ${expectedCodeFragment}; got ${result.code}`,
+      );
+    }
+
+    assert.ok(
+      typeof result.reason === "string" &&
+        result.reason.length > 0,
+      "failure must include a meaningful reason",
+    );
+
+    assert.ok(
+      mock.requests.length > 0,
+      "at least one mocked API request must have been reached",
+    );
+
+    assert.equal(
+      mock.state.mainRefModified,
+      false,
+      "main ref must not be modified",
+    );
+  });
+}
+
+await runAtomicNegative(
+  "6 CONTENTS API 404",
+  { contentsNotFound: true },
+  "contents",
+);
+
+await runAtomicNegative(
+  "7 CONTENTS MISSING CONTENT",
+  { missingContent: true },
+  "content",
+);
+
+await runAtomicNegative(
+  "8 CONTENTS UNSUPPORTED ENCODING",
+  { unsupportedEncoding: true },
+  "encoding",
+);
+
+await runAtomicNegative(
+  "9 CONTENTS MALFORMED BASE64",
+  { malformedBase64: true },
+  "base64",
+);
+
+await runAtomicNegative(
+  "10 CONTENTS INVALID UTF8",
+  { invalidUtf8: true },
+  "utf",
+);
+
+await runAtomicNegative(
+  "11 CONTENTS DECODED MISMATCH",
+  { contentMismatch: true },
+  "mismatch",
+);
+
+await runAtomicNegative(
+  "12 CONTENTS MALFORMED RESPONSE",
+  { malformedContentsResponse: true },
+  "contents",
+);
+
+await runAtomicNegative(
+  "13 CONTENTS HTTP ERROR",
+  { contentsHttpError: { status: 500 } },
+  "contents",
+);
+
+await runAtomicNegative(
+  "14 STAGING HEAD MISMATCH BEFORE READBACK",
+  { preReadbackHeadMismatch: true },
+  "head",
+);
+
+await runAtomicNegative(
+  "15 STAGING HEAD MISMATCH AFTER READBACK",
+  { postReadbackHeadMismatch: true },
+  "head",
+);
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC170.8.8-B-R6 INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {
