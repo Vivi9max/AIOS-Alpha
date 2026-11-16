@@ -628,6 +628,102 @@ async function verifyStagingHead(
   }
 }
 
+interface GitHubContentsResponse {
+  type?: string;
+  encoding?: string;
+  content?: string;
+  sha?: string;
+  path?: string;
+}
+
+async function readContentsAtCommit(
+  repository: string,
+  path: string,
+  commitSha: string,
+  accessToken: string,
+): Promise<string> {
+  const encodedPath =
+    path
+      .split("/")
+      .map((segment) =>
+        encodeURIComponent(
+          segment,
+        ),
+      )
+      .join("/");
+
+  const result =
+    await githubRequest<GitHubContentsResponse>(
+      `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(
+        commitSha,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (
+    !result.success
+  ) {
+    throw new Error(
+      result.error ||
+        `AIOS_ATOMIC_CONTENTS_READ_FAILED: ${path}`,
+    );
+  }
+
+  const data =
+    result.data;
+
+  if (
+    !data ||
+    typeof data !==
+      "object"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_CONTENTS_MALFORMED: ${path}`,
+    );
+  }
+
+  if (
+    data.encoding !==
+    "base64"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_CONTENTS_UNSUPPORTED_ENCODING: ${path}`,
+    );
+  }
+
+  if (
+    typeof data.content !==
+      "string" ||
+    !data.content
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_CONTENTS_MISSING: ${path}`,
+    );
+  }
+
+  let decoded: string;
+
+  try {
+    decoded =
+      Buffer.from(
+        data.content.replace(
+          /\s+/g,
+          "",
+        ),
+        "base64",
+      ).toString(
+        "utf8",
+      );
+  } catch {
+    throw new Error(
+      `AIOS_ATOMIC_CONTENTS_MALFORMED: ${path}`,
+    );
+  }
+
+  return decoded;
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -740,6 +836,43 @@ export async function executeAtomicStaging(
       stagingCommitSha,
       auth.accessToken,
     );
+
+    const readbackPaths: string[] =
+      [];
+
+    for (
+      const file of files
+    ) {
+      const readback =
+        await readContentsAtCommit(
+          repository,
+          file.path,
+          stagingCommitSha,
+          auth.accessToken,
+        );
+
+      if (
+        readback !==
+        file.content
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_READBACK_MISMATCH: ${file.path}`,
+        );
+      }
+
+      readbackPaths.push(
+        file.path,
+      );
+    }
+
+    if (
+      readbackPaths.length !==
+      files.length
+    ) {
+      throw new Error(
+        "AIOS_ATOMIC_READBACK_INCOMPLETE",
+      );
+    }
 
     return {
       success: true,

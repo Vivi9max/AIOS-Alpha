@@ -74,6 +74,14 @@ const objectiveContractSource = fs.readFileSync(
   "utf8",
 );
 
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
@@ -100,6 +108,24 @@ const patchedReceipt = receiptSource.replace(
   /import\s+"server-only";/,
   'import "./server-only-stub.mjs";',
 );
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/server-storage"/g,
+    '"./server-storage-stub.mjs"',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-receipt"/g,
+    '"./autonomous-development-receipt.mjs"',
+  )
+  .replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./autonomous-development-objective-contract.mjs"',
+  );
 
 // ---------------------------------------------------------------------------
 // Temporary module directory
@@ -132,6 +158,14 @@ writeTmp(
   transpile(
     objectiveContractSource,
     "autonomous-development-objective-contract.ts",
+  ),
+);
+
+writeTmp(
+  "atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
   ),
 );
 
@@ -181,6 +215,21 @@ const {
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
   ).href
+);
+
+const atomicExecutorModule = await import(
+  pathToFileURL(
+    path.join(tmpDir, "atomic-executor.mjs"),
+  ).href
+);
+
+const executeAtomicStaging =
+  atomicExecutorModule.executeAtomicStaging;
+
+assert.equal(
+  typeof executeAtomicStaging,
+  "function",
+  "production executeAtomicStaging must be exported",
 );
 
 const TASK_STORAGE_KEY =
@@ -543,6 +592,646 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
     "WRITING -> READBACK must be allowed",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Atomic executor readback regression harness
+// ---------------------------------------------------------------------------
+
+const STAGING_BRANCH_PREFIX = "aios-staging/";
+
+function computeStagingBranchName(taskId) {
+  // Mirrors the production staging branch naming algorithm:
+  // prefix + sanitized task id.
+  const sanitized = String(taskId).replace(
+    /[^A-Za-z0-9._-]/g,
+    "-",
+  );
+  return `${STAGING_BRANCH_PREFIX}${sanitized}`;
+}
+
+function encodeUtf8Base64(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function decodeUtf8Base64(base64) {
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+
+function buildGitHubFetchMock(options) {
+  const {
+    stagingBranch,
+    baseSha,
+    newCommitSha,
+    writtenFiles,
+    readbackOverrides = {},
+    headOverride = null,
+    failOn = null,
+  } = options;
+
+  const state = {
+    requests: [],
+    contentsReads: [],
+    headReads: 0,
+    stagingCreated: false,
+  };
+
+  const files = new Map(
+    writtenFiles.map((file) => [file.path, file]),
+  );
+
+  const mockFetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input && input.url
+          ? input.url
+          : String(input);
+    const method =
+      (init && init.method) ||
+      (input && input.method) ||
+      "GET";
+
+    state.requests.push({ url, method });
+
+    if (failOn && failOn(url, method)) {
+      return new Response(
+        JSON.stringify({ message: "simulated failure" }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Branch ref read.
+    if (
+      method === "GET" &&
+      /\/git\/ref\/heads\//.test(url)
+    ) {
+      return new Response(
+        JSON.stringify({
+          ref: `refs/heads/${stagingBranch}`,
+          object: { sha: baseSha, type: "commit" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Base commit read.
+    if (
+      method === "GET" &&
+      /\/git\/commits\//.test(url)
+    ) {
+      return new Response(
+        JSON.stringify({
+          sha: baseSha,
+          tree: { sha: "base-tree-sha", type: "tree" },
+          parents: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Git blob creation.
+    if (
+      method === "POST" &&
+      /\/git\/blobs$/.test(url)
+    ) {
+      const body = JSON.parse(init.body);
+      const sha = `blob-${body.content.length}`;
+      return new Response(
+        JSON.stringify({ sha, url: `https://api.github.com/git/blobs/${sha}` }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Git tree creation.
+    if (
+      method === "POST" &&
+      /\/git\/trees$/.test(url)
+    ) {
+      return new Response(
+        JSON.stringify({ sha: "new-tree-sha" }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Git commit creation.
+    if (
+      method === "POST" &&
+      /\/git\/commits$/.test(url)
+    ) {
+      return new Response(
+        JSON.stringify({ sha: newCommitSha }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Staging ref creation.
+    if (
+      method === "POST" &&
+      /\/git\/refs$/.test(url)
+    ) {
+      state.stagingCreated = true;
+      return new Response(
+        JSON.stringify({
+          ref: `refs/heads/${stagingBranch}`,
+          object: { sha: newCommitSha, type: "commit" },
+        }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Staging HEAD verification.
+    if (
+      method === "GET" &&
+      /\/git\/ref\/heads\//.test(url) &&
+      state.stagingCreated
+    ) {
+      state.headReads += 1;
+      const headSha = headOverride
+        ? headOverride(state, newCommitSha)
+        : newCommitSha;
+      return new Response(
+        JSON.stringify({
+          ref: `refs/heads/${stagingBranch}`,
+          object: { sha: headSha, type: "commit" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    // Contents API read at exact staging commit SHA.
+    if (
+      method === "GET" &&
+      /\/contents\//.test(url)
+    ) {
+      const match = url.match(/\/contents\/([^?]+)\?ref=([^&]+)/);
+      const filePath = match ? decodeURIComponent(match[1]) : null;
+      const ref = match ? decodeURIComponent(match[2]) : null;
+      state.contentsReads.push({ filePath, ref });
+
+      const override =
+        filePath && readbackOverrides[filePath]
+          ? readbackOverrides[filePath]
+          : null;
+
+      if (override) {
+        return override({ filePath, ref, files });
+      }
+
+      const file = filePath ? files.get(filePath) : null;
+      if (!file) {
+        return new Response(
+          JSON.stringify({ message: "Not Found" }),
+          { status: 404, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          type: "file",
+          encoding: "base64",
+          content: encodeUtf8Base64(file.content),
+          sha: "content-sha",
+          path: filePath,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({ message: "unexpected request" }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  return { fetch: mockFetch, state };
+}
+
+async function withMockFetch(mockFetch, fn) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function buildAtomicStagingInput(overrides = {}) {
+  const taskId = "task-atomic-verify";
+  const stagingBranch = computeStagingBranchName(taskId);
+  return {
+    taskId,
+    stagingBranch,
+    baseSha: "base-sha-1234567890",
+    newCommitSha: "new-commit-sha-abcdef",
+    writtenFiles: [
+      {
+        path: "lib/example/alpha.ts",
+        content: "export const alpha = 1;\n",
+      },
+      {
+        path: "lib/example/beta.ts",
+        content: "export const beta = 2;\n",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TEST 5 — Atomic Executor: Successful Multi-File Readback
+// ---------------------------------------------------------------------------
+
+await run(
+  "5 ATOMIC EXECUTOR SUCCESS MULTI-FILE READBACK",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const { fetch: mockFetch, state } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+    });
+
+    const result = await withMockFetch(mockFetch, () =>
+      executeAtomicStaging(input),
+    );
+
+    assert.ok(result, "executor must return a snapshot");
+
+    assert.equal(
+      result.stagingBranch,
+      input.stagingBranch,
+      "snapshot must contain the staging branch",
+    );
+
+    assert.equal(
+      result.commitSha,
+      input.newCommitSha,
+      "snapshot must contain the new commit SHA",
+    );
+
+    const changedPaths = [...result.changedPaths].sort();
+    const expectedPaths = input.writtenFiles
+      .map((file) => file.path)
+      .sort();
+    assert.deepEqual(
+      changedPaths,
+      expectedPaths,
+      "snapshot must contain all changed paths",
+    );
+
+    // Every written file read back exactly once.
+    assert.equal(
+      state.contentsReads.length,
+      input.writtenFiles.length,
+      "every written file must be read back exactly once",
+    );
+
+    for (const file of input.writtenFiles) {
+      const reads = state.contentsReads.filter(
+        (read) => read.filePath === file.path,
+      );
+      assert.equal(
+        reads.length,
+        1,
+        `file ${file.path} must be read back exactly once`,
+      );
+      assert.equal(
+        reads[0].ref,
+        input.newCommitSha,
+        `Contents API for ${file.path} must use the staging commit SHA`,
+      );
+    }
+
+    // Base64 decode correctness + UTF-8 equality.
+    for (const file of input.writtenFiles) {
+      const decoded = decodeUtf8Base64(
+        encodeUtf8Base64(file.content),
+      );
+      assert.equal(
+        decoded,
+        file.content,
+        `UTF-8 round-trip for ${file.path} must be exact`,
+      );
+    }
+
+    // HEAD verification performed.
+    assert.ok(
+      state.headReads >= 1,
+      "staging HEAD verification must occur",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 6 — Atomic Executor: Contents API 404 for one written file
+// ---------------------------------------------------------------------------
+
+await run(
+  "6 ATOMIC EXECUTOR CONTENTS 404 AFTER WRITE",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const missingPath = input.writtenFiles[1].path;
+
+    const { fetch: mockFetch, state } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      readbackOverrides: {
+        [missingPath]: () =>
+          new Response(
+            JSON.stringify({ message: "Not Found" }),
+            {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /404|not found|readback/i,
+      "executor must fail closed when a written file cannot be read back",
+    );
+
+    // Both files were written before the 404 was served.
+    assert.ok(
+      state.requests.some(
+        (req) =>
+          req.method === "POST" && /\/git\/trees$/.test(req.url),
+      ),
+      "tree creation must occur before readback",
+    );
+
+    // Only the selected file returned 404.
+    const missingReads = state.contentsReads.filter(
+      (read) => read.filePath === missingPath,
+    );
+    assert.ok(
+      missingReads.length >= 1,
+      "the missing file must have been requested",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 7 — Atomic Executor: HTTP 200 but content missing
+// ---------------------------------------------------------------------------
+
+await run(
+  "7 ATOMIC EXECUTOR CONTENTS MISSING CONTENT",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const targetPath = input.writtenFiles[0].path;
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      readbackOverrides: {
+        [targetPath]: ({ ref }) =>
+          new Response(
+            JSON.stringify({
+              type: "file",
+              encoding: "base64",
+              path: targetPath,
+              sha: "content-sha",
+              ref,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /content|missing|readback/i,
+      "executor must fail closed when content is missing",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 8 — Atomic Executor: malformed content
+// ---------------------------------------------------------------------------
+
+await run(
+  "8 ATOMIC EXECUTOR MALFORMED CONTENT",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const targetPath = input.writtenFiles[0].path;
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      readbackOverrides: {
+        [targetPath]: ({ ref }) =>
+          new Response(
+            JSON.stringify({
+              type: "file",
+              encoding: "base64",
+              path: targetPath,
+              sha: "content-sha",
+              content: "!!!not-valid-base64!!!",
+              ref,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /malformed|decode|readback|content/i,
+      "executor must fail closed on malformed content",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 9 — Atomic Executor: unsupported encoding
+// ---------------------------------------------------------------------------
+
+await run(
+  "9 ATOMIC EXECUTOR UNSUPPORTED ENCODING",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const targetPath = input.writtenFiles[0].path;
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      readbackOverrides: {
+        [targetPath]: ({ ref }) =>
+          new Response(
+            JSON.stringify({
+              type: "file",
+              encoding: "utf-16",
+              path: targetPath,
+              sha: "content-sha",
+              content: "irrelevant",
+              ref,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /encoding|unsupported|readback/i,
+      "executor must fail closed on unsupported encoding",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 10 — Atomic Executor: readback content differs
+// ---------------------------------------------------------------------------
+
+await run(
+  "10 ATOMIC EXECUTOR CONTENT MISMATCH",
+  async () => {
+    const input = buildAtomicStagingInput();
+    const targetPath = input.writtenFiles[0].path;
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      readbackOverrides: {
+        [targetPath]: ({ ref }) =>
+          new Response(
+            JSON.stringify({
+              type: "file",
+              encoding: "base64",
+              path: targetPath,
+              sha: "content-sha",
+              content: encodeUtf8Base64(
+                "export const alpha = 999;\n",
+              ),
+              ref,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /mismatch|differ|readback|equality/i,
+      "executor must fail closed when readback content differs",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 11 — Atomic Executor: staging HEAD mismatch
+// ---------------------------------------------------------------------------
+
+await run(
+  "11 ATOMIC EXECUTOR HEAD MISMATCH",
+  async () => {
+    const input = buildAtomicStagingInput();
+
+    const { fetch: mockFetch, state } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      headOverride: () => "different-head-sha",
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /head|mismatch|staging/i,
+      "executor must fail closed when staging HEAD differs",
+    );
+
+    // HEAD mismatch applied after staging branch creation.
+    assert.ok(
+      state.stagingCreated,
+      "staging branch must have been created before HEAD verification",
+    );
+    assert.ok(
+      state.headReads >= 1,
+      "HEAD verification must have been attempted",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 12 — Atomic Executor: GitHub API errors fail closed
+// ---------------------------------------------------------------------------
+
+await run(
+  "12 ATOMIC EXECUTOR GITHUB API ERROR",
+  async () => {
+    const input = buildAtomicStagingInput();
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      failOn: (url, method) =>
+        method === "POST" && /\/git\/trees$/.test(url),
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /500|error|tree|failed/i,
+      "executor must fail closed on GitHub API error",
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// TEST 13 — Atomic Executor: malformed GitHub response fails closed
+// ---------------------------------------------------------------------------
+
+await run(
+  "13 ATOMIC EXECUTOR MALFORMED GITHUB RESPONSE",
+  async () => {
+    const input = buildAtomicStagingInput();
+
+    const { fetch: mockFetch } = buildGitHubFetchMock({
+      stagingBranch: input.stagingBranch,
+      baseSha: input.baseSha,
+      newCommitSha: input.newCommitSha,
+      writtenFiles: input.writtenFiles,
+      failOn: (url, method) =>
+        method === "POST" && /\/git\/commits$/.test(url),
+    });
+
+    await assert.rejects(
+      () => withMockFetch(mockFetch, () => executeAtomicStaging(input)),
+      /500|error|commit|failed|malformed/i,
+      "executor must fail closed on malformed GitHub response",
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Report
