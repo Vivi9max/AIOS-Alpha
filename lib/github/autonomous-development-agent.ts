@@ -547,6 +547,44 @@ async function readFile(
   );
 }
 
+type TargetPathClassification =
+  | { kind: "EXISTING"; content: string }
+  | { kind: "NEW" }
+  | { kind: "UNKNOWN"; reason: string };
+
+async function classifyTargetPath(
+  path: string,
+  accessToken?: string,
+  ref: string = BRANCH,
+): Promise<TargetPathClassification> {
+  const result =
+    await readGitHubFile({
+      repo: REPOSITORY,
+      path,
+      ref,
+      accessToken,
+    });
+
+  if (result.success) {
+    return {
+      kind: "EXISTING",
+      content: result.data.content,
+    };
+  }
+
+  if (result.status === 404) {
+    return { kind: "NEW" };
+  }
+
+  return {
+    kind: "UNKNOWN",
+    reason:
+      typeof result.status === "number"
+        ? `GitHub read failed with status ${result.status}: ${result.error}`
+        : `GitHub read failed: ${result.error}`,
+  };
+}
+
 function buildPlannerPrompt(
   objective: string,
   discoveredPaths: string[],
