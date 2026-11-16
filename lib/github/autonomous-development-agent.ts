@@ -182,9 +182,13 @@ function buildRepairSystemPrompt(
   ].join("\n");
 }
 
+type TargetState = "EXISTING" | "NEW" | "UNKNOWN";
+
+const CREATE_SEARCH_SENTINEL = "AIOS_CREATE_SENTINEL";
+
 type PatchOperation = {
   path: string;
-  operation: "replace";
+  operation: "replace" | "create";
   search: string;
   replace: string;
 };
@@ -525,6 +529,33 @@ async function discoverRepositoryPaths(
   );
 }
 
+function classifyTargetRead(
+  result: Awaited<ReturnType<typeof readGitHubFile>>,
+): TargetState {
+  if (
+    result.success &&
+    result.data &&
+    typeof result.data.content === "string" &&
+    result.data.content.length > 0
+  ) {
+    return "EXISTING";
+  }
+
+  const status =
+    typeof (result as { status?: unknown }).status === "number"
+      ? ((result as { status?: number }).status as number)
+      : undefined;
+
+  if (
+    !result.success &&
+    status === 404
+  ) {
+    return "NEW";
+  }
+
+  return "UNKNOWN";
+}
+
 async function readFile(
   path: string,
   accessToken?: string,
@@ -552,6 +583,51 @@ async function readFile(
   }
 
   return result.data;
+}
+
+async function readTargetState(
+  path: string,
+  accessToken?: string,
+  ref: string = BRANCH,
+): Promise<{
+  state: TargetState;
+  content: string;
+  error?: string;
+}> {
+  const result =
+    await readGitHubFile({
+      repo: REPOSITORY,
+      path,
+      ref,
+      accessToken,
+    });
+
+  const state =
+    classifyTargetRead(result);
+
+  if (state === "EXISTING") {
+    return {
+      state,
+      content:
+        (result.data as { content: string }).content,
+    };
+  }
+
+  if (state === "NEW") {
+    return {
+      state,
+      content: "",
+    };
+  }
+
+  return {
+    state,
+    content: "",
+    error:
+      "error" in result && result.error
+        ? result.error
+        : "GitHub target state could not be determined.",
+  };
 }
 
 function buildPlannerPrompt(
@@ -960,11 +1036,85 @@ function parsePatchBlocks(
 
     if (
       operation !==
-      "replace"
+        "replace" &&
+      operation !==
+        "create"
     ) {
       throw new Error(
         `AIOS_PATCH_OPERATION_REJECTED: ${operation}`,
       );
+    }
+
+    if (
+      operation ===
+      "create"
+    ) {
+      if (
+        search.trim() !==
+        CREATE_SEARCH_SENTINEL
+      ) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_SEARCH_INVALID: ${path}`,
+        );
+      }
+
+      if (!replace.trim()) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_SOURCE_EMPTY: ${path}`,
+        );
+      }
+
+      if (
+        replace.length >
+        MAX_PATCH_CHARS
+      ) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_SOURCE_TOO_LARGE: ${path}`,
+        );
+      }
+
+      if (
+        blocks.some(
+          (block) =>
+            block.operation ===
+            "create",
+        )
+      ) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_DUPLICATE: ${path}`,
+        );
+      }
+
+      if (
+        blocks.some(
+          (block) =>
+            block.operation !==
+            "create",
+        )
+      ) {
+        throw new Error(
+          `AIOS_PATCH_OPERATION_CONFLICT: ${path}`,
+        );
+      }
+
+      blocks.push({
+        path,
+        operation: "create",
+        search:
+          CREATE_SEARCH_SENTINEL,
+        replace,
+      });
+
+      if (
+        blocks.length >
+        MAX_PATCH_OPERATIONS
+      ) {
+        throw new Error(
+          "AIOS_PATCH_OPERATION_LIMIT_EXCEEDED",
+        );
+      }
+
+      continue;
     }
 
     if (!search) {
@@ -979,6 +1129,18 @@ function parsePatchBlocks(
     ) {
       throw new Error(
         "AIOS_PATCH_SEARCH_TOO_LARGE",
+      );
+    }
+
+    if (
+      blocks.some(
+        (block) =>
+          block.operation ===
+          "create",
+      )
+    ) {
+      throw new Error(
+        `AIOS_PATCH_OPERATION_CONFLICT: ${path}`,
       );
     }
 
@@ -1017,6 +1179,19 @@ function validatePatchSearches(
   for (
     const operation of operations
   ) {
+    if (
+      operation.operation ===
+      "create"
+    ) {
+      if (original.trim()) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_TARGET_EXISTS: ${operation.path}`,
+        );
+      }
+
+      continue;
+    }
+
     const firstIndex =
       original.indexOf(
         operation.search,
@@ -1058,6 +1233,22 @@ function applyPatchOperations(
   for (
     const operation of operations
   ) {
+    if (
+      operation.operation ===
+      "create"
+    ) {
+      if (content.trim()) {
+        throw new Error(
+          `AIOS_PATCH_CREATE_TARGET_EXISTS: ${operation.path}`,
+        );
+      }
+
+      content =
+        operation.replace;
+
+      continue;
+    }
+
     const firstIndex =
       content.indexOf(
         operation.search,
@@ -1549,6 +1740,7 @@ async function generatePatch(
   currentContent: string,
   developmentPrompt: string,
   repairContext?: string,
+  targetState: TargetState = "EXISTING",
 ) {
   let lastError =
     "AIOS_PATCH_EMPTY";
@@ -2162,22 +2354,26 @@ export async function executeAutonomousDevelopmentAgent(
         },
       );
 
-      const current =
-        await readFile(
+      const targetRead =
+        await readTargetState(
           targetPath,
           input.accessToken,
         );
 
-      const currentContent =
-        current.content;
-
       if (
-        !currentContent.trim()
+        targetRead.state ===
+        "UNKNOWN"
       ) {
         throw new Error(
-          `AIOS_TARGET_FILE_EMPTY: ${targetPath}`,
+          `AIOS_TARGET_STATE_UNKNOWN: ${targetPath}: ${
+            targetRead.error ||
+            "GitHub target state could not be determined."
+          }`,
         );
       }
+
+      const currentContent =
+        targetRead.content;
 
       originalContents[
         targetPath
@@ -2190,7 +2386,7 @@ export async function executeAutonomousDevelopmentAgent(
           phase:
             "GENERATING",
           reason:
-            `AIOS is generating a minimal patch from its Development Prompt for ${targetPath}.`,
+            `AIOS is generating a minimal patch from its Development Prompt for ${targetPath} (${targetRead.state}).`,
         },
       );
 
@@ -2200,6 +2396,8 @@ export async function executeAutonomousDevelopmentAgent(
           targetPath,
           currentContent,
           developmentPrompt,
+          undefined,
+          targetRead.state,
         );
 
       const patchedContent =
@@ -2278,6 +2476,9 @@ export async function executeAutonomousDevelopmentAgent(
       files: targetPaths.map((path) => ({
         path,
         content: patchedContents[path],
+        operation: originalContents[path]
+          ? "replace"
+          : "create",
       })),
     });
 

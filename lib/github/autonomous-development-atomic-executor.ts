@@ -71,9 +71,19 @@ interface GitHubTreeResponse {
   sha?: string;
 }
 
+export type AutonomousAtomicFileOperation =
+  | "create"
+  | "replace";
+
 export interface AutonomousAtomicFile {
   path: string;
   content: string;
+  operation?: AutonomousAtomicFileOperation;
+}
+
+interface AutonomousAtomicResolvedFile
+  extends AutonomousAtomicFile {
+  operation: AutonomousAtomicFileOperation;
 }
 
 export interface AutonomousAtomicSnapshot {
@@ -153,9 +163,32 @@ function isAllowedPath(
   );
 }
 
+function normalizeOperation(
+  operation: AutonomousAtomicFileOperation | undefined,
+): AutonomousAtomicFileOperation {
+  if (
+    operation === undefined
+  ) {
+    return "replace";
+  }
+
+  if (
+    operation !== "create" &&
+    operation !== "replace"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_OPERATION_INVALID: ${String(
+        operation,
+      )}`,
+    );
+  }
+
+  return operation;
+}
+
 function validateFiles(
   files: AutonomousAtomicFile[],
-): AutonomousAtomicFile[] {
+): AutonomousAtomicResolvedFile[] {
   if (
     files.length === 0
   ) {
@@ -229,9 +262,136 @@ function validateFiles(
         path,
         content:
           file.content,
+        operation:
+          normalizeOperation(
+            file.operation,
+          ),
       };
     },
   );
+}
+
+interface TargetStateResult {
+  state:
+    | "EXISTING"
+    | "NEW"
+    | "UNKNOWN";
+  sha?: string;
+}
+
+async function readTargetState(
+  repository: string,
+  path: string,
+  ref: string,
+  accessToken: string,
+): Promise<TargetStateResult> {
+  const result =
+    await githubRequest<{
+      sha?: string;
+      content?: string;
+      encoding?: string;
+    }>(
+      `/repos/${repository}/contents/${path
+        .split("/")
+        .map(
+          (segment) =>
+            encodeURIComponent(
+              segment,
+            ),
+        )
+        .join("/")}?ref=${encodeURIComponent(
+        ref,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (
+    result.success
+  ) {
+    const sha =
+      result.data?.sha;
+
+    if (
+      typeof sha ===
+        "string" &&
+      sha.trim()
+    ) {
+      return {
+        state: "EXISTING",
+        sha,
+      };
+    }
+
+    return {
+      state: "UNKNOWN",
+    };
+  }
+
+  if (
+    result.status === 404
+  ) {
+    return {
+      state: "NEW",
+    };
+  }
+
+  return {
+    state: "UNKNOWN",
+  };
+}
+
+async function enforceTargetPreconditions(
+  repository: string,
+  baseSha: string,
+  files: AutonomousAtomicResolvedFile[],
+  accessToken: string,
+): Promise<void> {
+  for (
+    const file of files
+  ) {
+    const target =
+      await readTargetState(
+        repository,
+        file.path,
+        baseSha,
+        accessToken,
+      );
+
+    if (
+      target.state ===
+      "UNKNOWN"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_TARGET_STATE_UNKNOWN: ${file.path}`,
+      );
+    }
+
+    if (
+      file.operation ===
+      "create"
+    ) {
+      if (
+        target.state !==
+        "NEW"
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_CREATE_COLLISION: ${file.path}`,
+        );
+      }
+
+      continue;
+    }
+
+    if (
+      target.state !==
+      "EXISTING"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_TARGET_MISSING: ${file.path}`,
+      );
+    }
+  }
 }
 
 function buildStagingBranch(
@@ -455,7 +615,7 @@ async function createBlob(
 async function createTree(
   repository: string,
   baseTreeSha: string,
-  files: AutonomousAtomicFile[],
+  files: AutonomousAtomicResolvedFile[],
   accessToken: string,
 ): Promise<string> {
   const tree = [];
@@ -650,7 +810,7 @@ export async function executeAtomicStaging(
     );
 
   let files:
-    AutonomousAtomicFile[];
+    AutonomousAtomicResolvedFile[];
 
   try {
     files =
@@ -703,6 +863,13 @@ export async function executeAtomicStaging(
         baseSha,
         auth.accessToken,
       );
+
+    await enforceTargetPreconditions(
+      repository,
+      baseSha,
+      files,
+      auth.accessToken,
+    );
 
     const stagingBranch =
       buildStagingBranch(
