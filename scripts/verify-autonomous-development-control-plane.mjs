@@ -141,6 +141,31 @@ writeTmp(
 );
 
 writeTmp(
+  "bridge-stub.mjs",
+  [
+    "export const bridgeMarker = true;",
+    "",
+    "export function getGitHubBridgeConfig() {",
+    "  return {",
+    '    apiBaseUrl: "https://api.github.com",',
+    '    defaultRepo: "Vivi9max/AIOS-Alpha",',
+    '    defaultBranch: "main",',
+    '    authMode: "token",',
+    '    token: "aios-verifier-fixture-token",',
+    "  };",
+    "}",
+    "",
+    "export function resolveGitHubBridgeAuth() {",
+    "  return {",
+    '    accessToken: "aios-verifier-fixture-token",',
+    '    authMode: "token",',
+    "  };",
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeTmp(
   "server-storage-stub.mjs",
   [
     "const data = new Map();",
