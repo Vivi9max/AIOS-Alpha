@@ -600,11 +600,8 @@ async function classifyTargetPath(
   }
 
   const message =
-    "error" in result
-      ? String(
-          result.error || "",
-        )
-      : "";
+    result.error ||
+    "";
 
   if (
     isConfirmedMissingFileError(
@@ -645,9 +642,8 @@ async function readFile(
   ) {
     throw new Error(
       `AIOS_TARGET_READ_FAILED: ${path}: ${
-        "error" in result
-          ? result.error
-          : "GitHub file read failed."
+        result.error ||
+        "GitHub file read failed."
       }`,
     );
   }
