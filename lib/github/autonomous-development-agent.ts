@@ -195,6 +195,13 @@ type CreateOperation = {
   content: string;
 };
 
+type ParsedPatchBlock = {
+  path: string;
+  operation: "replace" | "create";
+  search: string;
+  replace: string;
+};
+
 type TargetClassification =
   | "EXISTING"
   | "NEW"
@@ -922,7 +929,7 @@ function parsePatchBlocks(
   }
 
   const blocks:
-    PatchOperation[] = [];
+    ParsedPatchBlock[] = [];
 
   const pattern =
     /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
@@ -1155,11 +1162,18 @@ function parsePatchBlocks(
 
 function validatePatchSearches(
   original: string,
-  operations: PatchOperation[],
+  operations: ParsedPatchBlock[],
 ) {
   for (
     const operation of operations
   ) {
+    if (
+      operation.operation !==
+      "replace"
+    ) {
+      continue;
+    }
+
     const firstIndex =
       original.indexOf(
         operation.search,
@@ -1193,7 +1207,7 @@ function validatePatchSearches(
 
 function applyPatchOperations(
   original: string,
-  operations: PatchOperation[],
+  operations: ParsedPatchBlock[],
 ) {
   let content =
     original;
@@ -1201,6 +1215,13 @@ function applyPatchOperations(
   for (
     const operation of operations
   ) {
+    if (
+      operation.operation !==
+      "replace"
+    ) {
+      continue;
+    }
+
     const firstIndex =
       content.indexOf(
         operation.search,
@@ -1787,9 +1808,23 @@ async function generateCreatePatch(
         );
       }
 
+      const createOperation =
+        createOperations[0];
+
+      if (
+        !createOperation
+      ) {
+        throw new Error(
+          "AIOS_PATCH_CREATE_COUNT_INVALID",
+        );
+      }
+
       return {
-        operation:
-          createOperations[0],
+        operation: {
+          path: createOperation.path,
+          operation: "create" as const,
+          content: createOperation.replace,
+        } satisfies CreateOperation,
         delimiters,
       };
     } catch (error) {
@@ -1898,13 +1933,45 @@ async function generatePatch(
           delimiters,
         );
 
+      const replaceOperations:
+        PatchOperation[] =
+        operations
+          .filter(
+            (
+              operation,
+            ): operation is ParsedPatchBlock & {
+              operation: "replace";
+            } =>
+              operation.operation ===
+              "replace",
+          )
+          .map((operation) => ({
+            path: operation.path,
+            operation:
+              "replace" as const,
+            search:
+              operation.search,
+            replace:
+              operation.replace,
+          }));
+
+      if (
+        replaceOperations.length ===
+        0
+      ) {
+        throw new Error(
+          "AIOS_PATCH_EMPTY",
+        );
+      }
+
       validatePatchSearches(
         currentContent,
-        operations,
+        replaceOperations,
       );
 
       return {
-        operations,
+        operations:
+          replaceOperations,
         delimiters,
       };
     } catch (error) {
