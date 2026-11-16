@@ -74,6 +74,14 @@ const objectiveContractSource = fs.readFileSync(
   "utf8",
 );
 
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
@@ -100,6 +108,24 @@ const patchedReceipt = receiptSource.replace(
   /import\s+"server-only";/,
   'import "./server-only-stub.mjs";',
 );
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/server-storage"/g,
+    '"./server-storage-stub.mjs"',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-receipt"/g,
+    '"./autonomous-development-receipt.mjs"',
+  )
+  .replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./autonomous-development-objective-contract.mjs"',
+  );
 
 // ---------------------------------------------------------------------------
 // Temporary module directory
@@ -132,6 +158,14 @@ writeTmp(
   transpile(
     objectiveContractSource,
     "autonomous-development-objective-contract.ts",
+  ),
+);
+
+writeTmp(
+  "atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
   ),
 );
 
@@ -180,6 +214,12 @@ const {
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
+  ).href
+);
+
+const { executeAtomicStaging } = await import(
+  pathToFileURL(
+    path.join(tmpDir, "atomic-executor.mjs"),
   ).href
 );
 
@@ -545,11 +585,398 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// C170.8.8-B — Exact GitHub File Readback Gate
+// ---------------------------------------------------------------------------
+
+const ATOMIC_REPOSITORY = "Vivi9max/AIOS-Alpha";
+const ATOMIC_BASE_BRANCH = "main";
+const ATOMIC_BASE_SHA = "8558a632b7c122b9572822b18fc23494cc97f693";
+const ATOMIC_TREE_SHA = "1111111111111111111111111111111111111111";
+const ATOMIC_COMMIT_SHA = "2222222222222222222222222222222222222222";
+const ATOMIC_STAGING_BRANCH = "aios-c170-8-8-b-staging";
+
+function encodeContent(content) {
+  return Buffer.from(content, "utf8").toString("base64");
+}
+
+function buildFile(pathname, content) {
+  return {
+    path: pathname,
+    content,
+    mode: "100644",
+  };
+}
+
+function makeJsonResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+function makeContentsResponse(pathname, content, encoding) {
+  const encoded = encoding === undefined ? "base64" : encoding;
+  const body = {
+    type: "file",
+    path: pathname,
+    sha: ATOMIC_COMMIT_SHA,
+  };
+  if (encoded !== null) {
+    body.encoding = encoded;
+  }
+  if (content !== null) {
+    body.content = content;
+  }
+  return makeJsonResponse(200, body);
+}
+
+function installFetchStub(handler) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : String(input);
+    calls.push({ url, init });
+    return handler(url, init, calls);
+  };
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+function installBridgeConfigStub() {
+  const key = "AIOS_GITHUB_BRIDGE_CONFIG";
+  const previous = globalThis[key];
+  globalThis[key] = {
+    token: "test-token",
+    owner: "Vivi9max",
+    repo: "AIOS-Alpha",
+    branch: ATOMIC_BASE_BRANCH,
+  };
+  return {
+    restore() {
+      if (previous === undefined) {
+        delete globalThis[key];
+      } else {
+        globalThis[key] = previous;
+      }
+    },
+  };
+}
+
+async function withAtomicHarness(fn) {
+  const bridgeStub = installBridgeConfigStub();
+  try {
+    await fn();
+  } finally {
+    bridgeStub.restore();
+  }
+}
+
+function baseHandler({ stagingHead, fileResponses }) {
+  return (url) => {
+    if (url.includes("/git/ref/heads/")) {
+      return makeJsonResponse(200, {
+        object: { sha: ATOMIC_BASE_SHA },
+      });
+    }
+    if (url.includes("/git/commits/")) {
+      return makeJsonResponse(200, {
+        sha: ATOMIC_BASE_SHA,
+        tree: { sha: ATOMIC_TREE_SHA },
+      });
+    }
+    if (url.includes("/git/trees")) {
+      return makeJsonResponse(200, {
+        sha: ATOMIC_TREE_SHA,
+      });
+    }
+    if (url.includes("/git/commits") && !url.includes("/git/commits/")) {
+      return makeJsonResponse(201, {
+        sha: ATOMIC_COMMIT_SHA,
+        tree: { sha: ATOMIC_TREE_SHA },
+      });
+    }
+    if (url.includes("/git/refs")) {
+      return makeJsonResponse(201, {
+        ref: `refs/heads/${ATOMIC_STAGING_BRANCH}`,
+        object: { sha: ATOMIC_COMMIT_SHA },
+      });
+    }
+    if (url.includes(`/git/ref/heads/${ATOMIC_STAGING_BRANCH}`)) {
+      return makeJsonResponse(200, {
+        object: { sha: stagingHead },
+      });
+    }
+    if (url.includes("/contents/")) {
+      const decoded = decodeURIComponent(
+        url.split("/contents/")[1].split("?")[0],
+      );
+      const response = fileResponses[decoded];
+      if (response) {
+        return response;
+      }
+      return makeJsonResponse(404, { message: "Not Found" });
+    }
+    return makeJsonResponse(400, { message: `unexpected url ${url}` });
+  };
+}
+
+await run("5 EXACT MULTI-FILE READBACK SUCCEEDS", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+      buildFile("lib/b.ts", "export const b = 2;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: ATOMIC_COMMIT_SHA,
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse(
+            "lib/a.ts",
+            encodeContent(files[0].content),
+          ),
+          "lib/b.ts": makeContentsResponse(
+            "lib/b.ts",
+            encodeContent(files[1].content),
+          ),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, true, "expected success");
+      assert.equal(result.stagingCommitSha, ATOMIC_COMMIT_SHA);
+      assert.ok(result.snapshot, "expected snapshot");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+await run("6 CONTENT MISMATCH BLOCKS OPERATION", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+      buildFile("lib/b.ts", "export const b = 2;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: ATOMIC_COMMIT_SHA,
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse(
+            "lib/a.ts",
+            encodeContent(files[0].content),
+          ),
+          "lib/b.ts": makeContentsResponse(
+            "lib/b.ts",
+            encodeContent("export const b = 999;\n"),
+          ),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, false, "expected failure");
+      assert.equal(result.snapshot, undefined, "no snapshot on failure");
+      assert.match(
+        String(result.reason || ""),
+        /lib\/b\.ts/,
+        "reason must reference affected path",
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+await run("7 MISSING FILE 404 BLOCKS OPERATION", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+      buildFile("lib/b.ts", "export const b = 2;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: ATOMIC_COMMIT_SHA,
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse(
+            "lib/a.ts",
+            encodeContent(files[0].content),
+          ),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, false, "expected failure");
+      assert.equal(result.snapshot, undefined, "no snapshot on failure");
+      assert.match(
+        String(result.reason || ""),
+        /lib\/b\.ts/,
+        "reason must reference affected path",
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+await run("8 MALFORMED RESPONSE BLOCKS OPERATION", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: ATOMIC_COMMIT_SHA,
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse("lib/a.ts", null),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, false, "expected failure");
+      assert.equal(result.snapshot, undefined, "no snapshot on failure");
+      assert.match(
+        String(result.reason || ""),
+        /lib\/a\.ts/,
+        "reason must reference affected path",
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+await run("9 STAGING HEAD MISMATCH BLOCKS OPERATION", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: "ffffffffffffffffffffffffffffffffffffffff",
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse(
+            "lib/a.ts",
+            encodeContent(files[0].content),
+          ),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, false, "expected failure");
+      assert.equal(result.snapshot, undefined, "no snapshot on failure");
+      assert.match(
+        String(result.reason || ""),
+        /HEAD|head|mismatch/i,
+        "reason must reference HEAD verification failure",
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+await run("10 EVERY CHANGED FILE IS INDEPENDENTLY REQUESTED", async () => {
+  await withAtomicHarness(async () => {
+    const files = [
+      buildFile("lib/a.ts", "export const a = 1;\n"),
+      buildFile("lib/b.ts", "export const b = 2;\n"),
+      buildFile("lib/c.ts", "export const c = 3;\n"),
+    ];
+    const stub = installFetchStub(
+      baseHandler({
+        stagingHead: ATOMIC_COMMIT_SHA,
+        fileResponses: {
+          "lib/a.ts": makeContentsResponse(
+            "lib/a.ts",
+            encodeContent(files[0].content),
+          ),
+          "lib/b.ts": makeContentsResponse(
+            "lib/b.ts",
+            encodeContent(files[1].content),
+          ),
+          "lib/c.ts": makeContentsResponse(
+            "lib/c.ts",
+            encodeContent(files[2].content),
+          ),
+        },
+      }),
+    );
+    try {
+      const result = await executeAtomicStaging({
+        repository: ATOMIC_REPOSITORY,
+        baseBranch: ATOMIC_BASE_BRANCH,
+        expectedBaseSha: ATOMIC_BASE_SHA,
+        stagingBranch: ATOMIC_STAGING_BRANCH,
+        files,
+      });
+      assert.equal(result.success, true, "expected success");
+      for (const file of files) {
+        const requested = stub.calls.some((call) =>
+          call.url.includes(
+            `/contents/${encodeURIComponent(file.path).replace(/%2F/g, "/")}`,
+          ),
+        );
+        assert.ok(
+          requested,
+          `expected independent readback for ${file.path}`,
+        );
+      }
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC170.8.8-B INDEPENDENT VERIFICATION\n",
 );
 
 for (const line of report) {

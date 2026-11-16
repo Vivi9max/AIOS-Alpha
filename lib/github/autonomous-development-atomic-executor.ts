@@ -67,6 +67,14 @@ interface GitHubBlobResponse {
   sha?: string;
 }
 
+interface GitHubContentFileResponse {
+  type?: string;
+  encoding?: string;
+  content?: string;
+  path?: string;
+  sha?: string;
+}
+
 interface GitHubTreeResponse {
   sha?: string;
 }
@@ -628,6 +636,154 @@ async function verifyStagingHead(
   }
 }
 
+function buildContentsPath(
+  path: string,
+): string {
+  const segments =
+    normalizePath(path)
+      .split("/")
+      .filter(
+        (segment) =>
+          segment.length > 0,
+      );
+
+  if (
+    segments.length === 0
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_PATH_INVALID",
+    );
+  }
+
+  return segments
+    .map(
+      (segment) =>
+        encodeURIComponent(
+          segment,
+        ),
+    )
+    .join("/");
+}
+
+async function readFileAtCommit(
+  repository: string,
+  file: AutonomousAtomicFile,
+  commitSha: string,
+  accessToken: string,
+): Promise<void> {
+  const contentsPath =
+    buildContentsPath(
+      file.path,
+    );
+
+  const result =
+    await githubRequest<GitHubContentFileResponse>(
+      `/repos/${repository}/contents/${contentsPath}?ref=${encodeURIComponent(
+        commitSha,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (
+    !result.success
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_REQUEST_FAILED: ${file.path}: ${
+        result.error ||
+        "GitHub content read failed."
+      }`,
+    );
+  }
+
+  if (
+    !result.data ||
+    typeof result.data !==
+      "object"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_MALFORMED: ${file.path}`,
+    );
+  }
+
+  if (
+    result.data.type !==
+    "file"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_NOT_FILE: ${file.path}`,
+    );
+  }
+
+  if (
+    result.data.encoding !==
+    "base64"
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_ENCODING_UNSUPPORTED: ${file.path}`,
+    );
+  }
+
+  if (
+    typeof result.data.content !==
+      "string" ||
+    !result.data.content
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_CONTENT_MISSING: ${file.path}`,
+    );
+  }
+
+  const compact =
+    result.data.content.replace(
+      /\s+/g,
+      "",
+    );
+
+  let decoded: string;
+
+  try {
+    decoded =
+      Buffer.from(
+        compact,
+        "base64",
+      ).toString(
+        "utf8",
+      );
+  } catch {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_DECODE_FAILED: ${file.path}`,
+    );
+  }
+
+  if (
+    decoded !==
+    file.content
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_READBACK_CONTENT_MISMATCH: ${file.path}`,
+    );
+  }
+}
+
+async function verifyStagingFiles(
+  repository: string,
+  files: AutonomousAtomicFile[],
+  commitSha: string,
+  accessToken: string,
+): Promise<void> {
+  for (
+    const file of files
+  ) {
+    await readFileAtCommit(
+      repository,
+      file,
+      commitSha,
+      accessToken,
+    );
+  }
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -741,12 +897,19 @@ export async function executeAtomicStaging(
       auth.accessToken,
     );
 
+    await verifyStagingFiles(
+      repository,
+      files,
+      stagingCommitSha,
+      auth.accessToken,
+    );
+
     return {
       success: true,
       code:
         "AIOS_ATOMIC_STAGING_READY",
       reason:
-        "AIOS created one atomic tree and one staging commit without modifying main.",
+        "AIOS created one atomic tree and one staging commit without modifying main, and verified every changed file at the exact staging commit.",
       snapshot: {
         repository,
         baseBranch,
