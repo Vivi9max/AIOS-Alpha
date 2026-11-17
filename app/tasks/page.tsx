@@ -68,6 +68,11 @@ export default function TasksPage() {
     setRetrying,
   ] = useState(false);
 
+  const [
+    loadAttempt,
+    setLoadAttempt,
+  ] = useState(0);
+
   const [saving, setSaving] =
     useState(false);
 
@@ -138,7 +143,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     void loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, loadAttempt]);
 
   async function handleRetryLoad() {
     if (retrying) {
@@ -151,6 +156,10 @@ export default function TasksPage() {
       await loadTasks();
     } finally {
       setRetrying(false);
+      setLoadAttempt(
+        (attempt) =>
+          attempt + 1,
+      );
     }
   }
 
