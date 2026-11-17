@@ -181,6 +181,10 @@ function validateBaseBranchInput(
     return "Base branch contains invalid Git ref characters.";
   }
 
+  if (branch.includes(" ")) {
+    return "Base branch must not contain whitespace.";
+  }
+
   if (
     branch.startsWith(".") ||
     branch.endsWith(".") ||
