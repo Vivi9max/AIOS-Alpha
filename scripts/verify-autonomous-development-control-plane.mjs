@@ -53,6 +53,53 @@ function transpile(source, fileName) {
 }
 
 // ---------------------------------------------------------------------------
+// Atomic executor fixture constants
+// ---------------------------------------------------------------------------
+
+const ATOMIC_REPOSITORY = "Vivi9max/AIOS-Alpha";
+const ATOMIC_BASE_BRANCH = "main";
+const ATOMIC_BASE_SHA = "0123456789abcdef0123456789abcdef01234567";
+const ATOMIC_BASE_TREE_SHA =
+  "1111111111111111111111111111111111111111";
+const ATOMIC_TREE_SHA =
+  "2222222222222222222222222222222222222222";
+const ATOMIC_STAGING_COMMIT_SHA =
+  "3333333333333333333333333333333333333333";
+const ATOMIC_FIXTURE_TOKEN = "fixture-access-token";
+const ATOMIC_TASK_ID = "r13-atomic-verification";
+const ATOMIC_STAGING_BRANCH =
+  `c169-8-ad-${ATOMIC_TASK_ID}`;
+
+const ATOMIC_FILES = [
+  {
+    path: "lib/github/r13-fixture-ascii.ts",
+    content:
+      'export const R13_FIXTURE_ASCII = "hello-r13";\n',
+  },
+  {
+    path: "lib/github/r13-fixture-utf8.ts",
+    content:
+      'export const R13_FIXTURE_UTF8 = "中文 emoji 🚀 r13";\n',
+  },
+];
+
+function buildAtomicInput(overrides = {}) {
+  return {
+    objective: "C170.8.8-B R13 atomic verification fixture",
+    taskId: ATOMIC_TASK_ID,
+    repository: ATOMIC_REPOSITORY,
+    baseBranch: ATOMIC_BASE_BRANCH,
+    files: ATOMIC_FILES.map((file) => ({
+      path: file.path,
+      content: file.content,
+    })),
+    accessToken: ATOMIC_FIXTURE_TOKEN,
+    commitMessage: "R13 atomic verification fixture",
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Read real production sources
 // ---------------------------------------------------------------------------
 
@@ -70,6 +117,14 @@ const objectiveContractSource = fs.readFileSync(
   path.join(
     REPO_ROOT,
     "lib/autonomous-development-objective-contract.ts",
+  ),
+  "utf8",
+);
+
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
   ),
   "utf8",
 );
@@ -100,6 +155,34 @@ const patchedReceipt = receiptSource.replace(
   /import\s+"server-only";/,
   'import "./server-only-stub.mjs";',
 );
+
+let patchedAtomicExecutor = atomicExecutorSource;
+
+patchedAtomicExecutor = patchedAtomicExecutor.replace(
+  /import\s+"server-only";/,
+  'import "./server-only-stub.mjs";',
+);
+
+patchedAtomicExecutor = patchedAtomicExecutor.replace(
+  /"@\/lib\/github\/bridge"/g,
+  '"./github-bridge-stub.mjs"',
+);
+
+if (
+  patchedAtomicExecutor.includes('"@/lib/github/bridge"')
+) {
+  console.error(
+    "FATAL: failed to redirect @/lib/github/bridge import in atomic executor.",
+  );
+  process.exit(1);
+}
+
+if (/import\s+"server-only";/.test(patchedAtomicExecutor)) {
+  console.error(
+    "FATAL: failed to redirect server-only import in atomic executor.",
+  );
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 // Temporary module directory
@@ -136,8 +219,36 @@ writeTmp(
 );
 
 writeTmp(
+  "autonomous-development-atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
+  ),
+);
+
+writeTmp(
   "server-only-stub.mjs",
   "export {};\n",
+);
+
+writeTmp(
+  "github-bridge-stub.mjs",
+  [
+    "export function getGitHubBridgeConfig() {",
+    "  return {",
+    '    apiBaseUrl: "https://api.github.com",',
+    '    token: "",',
+    "  };",
+    "}",
+    "",
+    "export function resolveGitHubBridgeAuth() {",
+    "  return {",
+    '    accessToken: "",',
+    '    authMode: "test",',
+    "  };",
+    "}",
+    "",
+  ].join("\n"),
 );
 
 writeTmp(
@@ -180,6 +291,15 @@ const {
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
+  ).href
+);
+
+const { executeAtomicStaging } = await import(
+  pathToFileURL(
+    path.join(
+      tmpDir,
+      "autonomous-development-atomic-executor.mjs",
+    ),
   ).href
 );
 
@@ -542,6 +662,518 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
     "READBACK",
     "WRITING -> READBACK must be allowed",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Atomic executor mock harness
+// ---------------------------------------------------------------------------
+
+function encodeBase64(value) {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+function createAtomicMockFetch(scenario) {
+  const state = {
+    blobRequests: 0,
+    treeRequests: 0,
+    commitRequests: 0,
+    refCreateRequests: 0,
+    stagingHeadRequests: 0,
+    contentsRequests: 0,
+    unexpectedRequests: [],
+    contentsRefs: [],
+    blobShas: new Map(),
+  };
+
+  const blobShaFor = (index) =>
+    `blob${String(index).padStart(36, "0")}`;
+
+  const jsonResponse = (body, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+    async text() {
+      return JSON.stringify(body);
+    },
+  });
+
+  const mockFetch = async (input, init = {}) => {
+    const rawUrl =
+      typeof input === "string"
+        ? input
+        : input && typeof input.url === "string"
+          ? input.url
+          : String(input);
+
+    const method = (
+      init.method ||
+      (input && typeof input.method === "string"
+        ? input.method
+        : "GET")
+    ).toUpperCase();
+
+    const url = new URL(rawUrl);
+    const pathname = url.pathname;
+    const search = url.searchParams;
+
+    const baseRefPath = `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${ATOMIC_BASE_BRANCH}`;
+    const stagingRefPath = `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${ATOMIC_STAGING_BRANCH}`;
+    const baseCommitPath = `/repos/${ATOMIC_REPOSITORY}/git/commits/${ATOMIC_BASE_SHA}`;
+    const blobPath = `/repos/${ATOMIC_REPOSITORY}/git/blobs`;
+    const treePath = `/repos/${ATOMIC_REPOSITORY}/git/trees`;
+    const commitPath = `/repos/${ATOMIC_REPOSITORY}/git/commits`;
+    const refsPath = `/repos/${ATOMIC_REPOSITORY}/git/refs`;
+    const contentsPrefix = `/repos/${ATOMIC_REPOSITORY}/contents/`;
+
+    // 1. GET base ref
+    if (
+      method === "GET" &&
+      pathname === baseRefPath
+    ) {
+      return jsonResponse({
+        object: {
+          sha: ATOMIC_BASE_SHA,
+          type: "commit",
+        },
+      });
+    }
+
+    // 2. GET base commit
+    if (
+      method === "GET" &&
+      pathname === baseCommitPath
+    ) {
+      return jsonResponse({
+        sha: ATOMIC_BASE_SHA,
+        tree: { sha: ATOMIC_BASE_TREE_SHA },
+      });
+    }
+
+    // 3. POST blobs
+    if (method === "POST" && pathname === blobPath) {
+      state.blobRequests += 1;
+      const index = state.blobRequests - 1;
+      const sha = blobShaFor(index);
+      state.blobShas.set(index, sha);
+      return jsonResponse({ sha }, 201);
+    }
+
+    // 4. POST tree
+    if (method === "POST" && pathname === treePath) {
+      state.treeRequests += 1;
+      return jsonResponse({ sha: ATOMIC_TREE_SHA }, 201);
+    }
+
+    // 5. POST commit
+    if (method === "POST" && pathname === commitPath) {
+      state.commitRequests += 1;
+      return jsonResponse(
+        { sha: ATOMIC_STAGING_COMMIT_SHA },
+        201,
+      );
+    }
+
+    // 6. POST refs (create staging branch)
+    if (method === "POST" && pathname === refsPath) {
+      state.refCreateRequests += 1;
+      return jsonResponse(
+        {
+          ref: `refs/heads/${ATOMIC_STAGING_BRANCH}`,
+          object: {
+            sha: ATOMIC_STAGING_COMMIT_SHA,
+            type: "commit",
+          },
+        },
+        201,
+      );
+    }
+
+    // 7 / 9. GET staging HEAD (before & after readback)
+    if (
+      method === "GET" &&
+      pathname === stagingRefPath
+    ) {
+      state.stagingHeadRequests += 1;
+      const index = state.stagingHeadRequests;
+
+      if (
+        scenario.headBeforeMismatch &&
+        index === 1
+      ) {
+        return jsonResponse({
+          object: {
+            sha: "ffffffffffffffffffffffffffffffffffffffff",
+            type: "commit",
+          },
+        });
+      }
+
+      if (
+        scenario.headAfterMismatch &&
+        index === 2
+      ) {
+        return jsonResponse({
+          object: {
+            sha: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            type: "commit",
+          },
+        });
+      }
+
+      return jsonResponse({
+        object: {
+          sha: ATOMIC_STAGING_COMMIT_SHA,
+          type: "commit",
+        },
+      });
+    }
+
+    // 8. GET contents
+    if (
+      method === "GET" &&
+      pathname.startsWith(contentsPrefix)
+    ) {
+      state.contentsRequests += 1;
+      state.contentsRefs.push(search.get("ref"));
+
+      const requestedPath = decodeURIComponent(
+        pathname.slice(contentsPrefix.length),
+      );
+
+      if (scenario.contentsNotFound) {
+        return jsonResponse(
+          { message: "Not Found" },
+          404,
+        );
+      }
+
+      const fileIndex = ATOMIC_FILES.findIndex(
+        (file) => file.path === requestedPath,
+      );
+
+      if (fileIndex === -1) {
+        state.unexpectedRequests.push(
+          `${method} ${pathname}`,
+        );
+        return jsonResponse(
+          { message: "Unexpected contents path" },
+          500,
+        );
+      }
+
+      const file = ATOMIC_FILES[fileIndex];
+      const blobSha =
+        state.blobShas.get(fileIndex) ??
+        blobShaFor(fileIndex);
+
+      const body = {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: encodeBase64(file.content),
+        sha: blobSha,
+      };
+
+      if (scenario.contentsType) {
+        body.type = scenario.contentsType;
+      }
+      if (scenario.contentsPath) {
+        body.path = scenario.contentsPath;
+      }
+      if (scenario.contentsEncoding) {
+        body.encoding = scenario.contentsEncoding;
+      }
+      if (scenario.contentsBase64) {
+        body.content = scenario.contentsBase64;
+      }
+      if (scenario.contentsContent !== undefined) {
+        body.content = scenario.contentsContent;
+      }
+      if (scenario.contentsMissingContent) {
+        delete body.content;
+      }
+      if (scenario.contentsMissingSha) {
+        delete body.sha;
+      }
+
+      if (scenario.contentsBlobShaOverride) {
+        body.sha = scenario.contentsBlobShaOverride;
+      }
+
+      return jsonResponse(body);
+    }
+
+    state.unexpectedRequests.push(
+      `${method} ${pathname}`,
+    );
+    throw new Error(
+      `Unexpected mock request: ${method} ${pathname}`,
+    );
+  };
+
+  return { mockFetch, state };
+}
+
+async function withMockFetch(mockFetch, fn) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TEST 5 — Positive Atomic Execution
+// ---------------------------------------------------------------------------
+
+await run("5 ATOMIC EXECUTION POSITIVE", async () => {
+  const scenario = {};
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicInput()),
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_READY");
+
+  const snapshot = result.snapshot;
+  assert.ok(snapshot, "snapshot must be present");
+
+  assert.equal(snapshot.repository, ATOMIC_REPOSITORY);
+  assert.equal(snapshot.baseBranch, ATOMIC_BASE_BRANCH);
+  assert.equal(snapshot.baseSha, ATOMIC_BASE_SHA);
+  assert.equal(
+    snapshot.stagingBranch,
+    ATOMIC_STAGING_BRANCH,
+  );
+  assert.equal(snapshot.treeSha, ATOMIC_TREE_SHA);
+  assert.equal(
+    snapshot.stagingCommitSha,
+    ATOMIC_STAGING_COMMIT_SHA,
+  );
+  assert.deepEqual(
+    snapshot.changedPaths,
+    ATOMIC_FILES.map((file) => file.path),
+  );
+
+  assert.equal(state.blobRequests, ATOMIC_FILES.length);
+  assert.equal(state.treeRequests, 1);
+  assert.equal(state.commitRequests, 1);
+  assert.equal(state.refCreateRequests, 1);
+  assert.equal(state.stagingHeadRequests, 2);
+  assert.equal(
+    state.contentsRequests,
+    ATOMIC_FILES.length,
+  );
+  for (const ref of state.contentsRefs) {
+    assert.equal(ref, ATOMIC_STAGING_COMMIT_SHA);
+  }
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+// ---------------------------------------------------------------------------
+// Negative atomic execution scenarios
+// ---------------------------------------------------------------------------
+
+async function runAtomicNegative(
+  label,
+  scenario,
+  expectedCode,
+  expectedReason,
+) {
+  await run(label, async () => {
+    const { mockFetch, state } =
+      createAtomicMockFetch(scenario);
+
+    const result = await withMockFetch(
+      mockFetch,
+      () => executeAtomicStaging(buildAtomicInput()),
+    );
+
+    assert.equal(result.success, false);
+    assert.equal(result.code, expectedCode);
+    assert.equal(result.reason, expectedReason);
+
+    if (scenario.expectedContentsRequests !== undefined) {
+      assert.equal(
+        state.contentsRequests,
+        scenario.expectedContentsRequests,
+      );
+    }
+    if (scenario.expectedStagingHeadRequests !== undefined) {
+      assert.equal(
+        state.stagingHeadRequests,
+        scenario.expectedStagingHeadRequests,
+      );
+    }
+    assert.deepEqual(state.unexpectedRequests, []);
+  });
+}
+
+await runAtomicNegative(
+  "6 ATOMIC NEGATIVE CONTENTS 404",
+  {
+    contentsNotFound: true,
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+);
+
+await runAtomicNegative(
+  "7 ATOMIC NEGATIVE CONTENTS TYPE",
+  {
+    contentsType: "dir",
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_TYPE_INVALID",
+);
+
+await runAtomicNegative(
+  "8 ATOMIC NEGATIVE CONTENTS PATH",
+  {
+    contentsPath: "lib/github/wrong-path.ts",
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_PATH_MISMATCH",
+);
+
+await runAtomicNegative(
+  "9 ATOMIC NEGATIVE CONTENTS ENCODING",
+  {
+    contentsEncoding: "utf-8",
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_ENCODING_INVALID",
+);
+
+await runAtomicNegative(
+  "10 ATOMIC NEGATIVE CONTENTS BASE64",
+  {
+    contentsBase64: "not-valid-base64-@@@",
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_BASE64_INVALID",
+);
+
+await runAtomicNegative(
+  "11 ATOMIC NEGATIVE CONTENTS UTF8",
+  {
+    contentsContent: Buffer.from([
+      0xff, 0xfe, 0xfd,
+    ]).toString("base64"),
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_UTF8_INVALID",
+);
+
+await runAtomicNegative(
+  "12 ATOMIC NEGATIVE CONTENTS MISMATCH",
+  {
+    contentsContent: encodeBase64("mismatched-content"),
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_CONTENT_MISMATCH",
+);
+
+await runAtomicNegative(
+  "13 ATOMIC NEGATIVE CONTENTS MISSING",
+  {
+    contentsMissingContent: true,
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_CONTENT_MISSING",
+);
+
+await runAtomicNegative(
+  "14 ATOMIC NEGATIVE BLOB SHA MISSING",
+  {
+    contentsMissingSha: true,
+    expectedContentsRequests: 1,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_CONTENTS_BLOB_SHA_MISSING",
+);
+
+await runAtomicNegative(
+  "15 ATOMIC NEGATIVE HEAD BEFORE",
+  {
+    headBeforeMismatch: true,
+    expectedContentsRequests: 0,
+    expectedStagingHeadRequests: 1,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_STAGING_HEAD_BEFORE_CONTENTS_FAILED",
+);
+
+await runAtomicNegative(
+  "16 ATOMIC NEGATIVE HEAD AFTER",
+  {
+    headAfterMismatch: true,
+    expectedContentsRequests: ATOMIC_FILES.length,
+    expectedStagingHeadRequests: 2,
+  },
+  "AIOS_ATOMIC_STAGING_FAILED",
+  "AIOS_ATOMIC_STAGING_HEAD_AFTER_CONTENTS_FAILED",
+);
+
+await run("17 ATOMIC NEGATIVE INVALID PATH", async () => {
+  const scenario = {};
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicInput({
+          files: [
+            {
+              path: "../escape.ts",
+              content: "export const x = 1;\n",
+            },
+          ],
+        }),
+      ),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_INPUT_REJECTED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_PATH_REJECTED: ../escape.ts",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.equal(state.stagingHeadRequests, 0);
+  assert.equal(state.contentsRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
 });
 
 // ---------------------------------------------------------------------------
