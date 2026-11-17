@@ -82,6 +82,8 @@ const messages = {
     "tasks.list": "Task list",
     "tasks.loading": "Loading tasks…",
     "tasks.empty": "No tasks yet. Create your first task.",
+    "tasks.loadFailed": "Unable to load tasks.",
+    "tasks.retry": "Retry",
     "tasks.deleteConfirm": "Delete this task?",
 
     "runtime.title": "Runtime Control Center",
@@ -244,6 +246,8 @@ const messages = {
     "tasks.list": "任务列表",
     "tasks.loading": "正在读取任务……",
     "tasks.empty": "还没有任务，先创建第一项任务。",
+    "tasks.loadFailed": "任务读取失败，请重试。",
+    "tasks.retry": "重试",
     "tasks.deleteConfirm": "确定删除这项任务吗？",
 
     "runtime.title": "运行控制中心",
@@ -406,6 +410,8 @@ const messages = {
     "tasks.list": "タスク一覧",
     "tasks.loading": "タスクを読み込み中…",
     "tasks.empty": "タスクはまだありません。最初のタスクを作成しましょう。",
+    "tasks.loadFailed": "タスクを読み込めませんでした。もう一度お試しください。",
+    "tasks.retry": "再試行",
     "tasks.deleteConfirm": "このタスクを削除しますか？",
 
     "runtime.title": "ランタイム管理センター",
