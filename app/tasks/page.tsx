@@ -63,6 +63,11 @@ export default function TasksPage() {
   const [loading, setLoading] =
     useState(true);
 
+  const [
+    retrying,
+    setRetrying,
+  ] = useState(false);
+
   const [saving, setSaving] =
     useState(false);
 
@@ -134,6 +139,20 @@ export default function TasksPage() {
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
+
+  async function handleRetryLoad() {
+    if (retrying) {
+      return;
+    }
+
+    setRetrying(true);
+
+    try {
+      await loadTasks();
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   async function handleCreateTask() {
     const cleanTitle =
@@ -1020,9 +1039,9 @@ export default function TasksPage() {
               <button
                 type="button"
                 onClick={() => {
-                  void loadTasks();
+                  void handleRetryLoad();
                 }}
-                disabled={loading}
+                disabled={retrying}
                 style={{
                   minHeight: 40,
                   marginTop: 14,
@@ -1031,7 +1050,7 @@ export default function TasksPage() {
                   border: 0,
                   borderRadius: 10,
                   background:
-                    loading
+                    retrying
                       ? "#d1d5db"
                       : "#b91c1c",
                   color:
@@ -1039,12 +1058,12 @@ export default function TasksPage() {
                   fontSize: 13,
                   fontWeight: 800,
                   cursor:
-                    loading
+                    retrying
                       ? "not-allowed"
                       : "pointer",
                 }}
               >
-                {loading
+                {retrying
                   ? t(
                       "tasks.loading",
                     )
