@@ -1016,10 +1016,10 @@ function parsePatchBlocks(
 
     if (
       blocks.length >
-      MAX_PATCH_OPERATIONS
+      MAX_PATCH_OPERATIONS_PER_BATCH
     ) {
       throw new Error(
-        "AIOS_PATCH_OPERATION_LIMIT_EXCEEDED",
+        "AIOS_PATCH_BATCH_OPERATION_LIMIT_EXCEEDED",
       );
     }
   }
