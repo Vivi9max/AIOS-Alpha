@@ -1177,11 +1177,955 @@ await run("17 ATOMIC NEGATIVE INVALID PATH", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Adaptive Patch Engine — real production module harness
+// ---------------------------------------------------------------------------
+
+const adaptiveAgentSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-agent.ts",
+  ),
+  "utf8",
+);
+
+const adaptiveTmpDir = fs.mkdtempSync(
+  path.join(os.tmpdir(), "aios-r3-adaptive-verify-"),
+);
+
+function writeAdaptiveTmp(name, content) {
+  fs.writeFileSync(
+    path.join(adaptiveTmpDir, name),
+    content,
+    "utf8",
+  );
+}
+
+function redirectAdaptiveImports(source) {
+  let out = source;
+  out = out.replace(
+    /import\s+"server-only";/g,
+    'import "./server-only-stub.mjs";',
+  );
+  out = out.replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./objective-contract-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/ai"/g,
+    '"./ai-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/bridge"/g,
+    '"./github-bridge-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/autonomous-development-control-plane"/g,
+    '"./control-plane-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/autonomous-development-atomic-executor"/g,
+    '"./atomic-executor-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/autonomous-build-verification"/g,
+    '"./build-verification-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/autonomous-development-prompt"/g,
+    '"./development-prompt-stub.mjs"',
+  );
+  out = out.replace(
+    /"@\/lib\/github\/autonomous-development-safety-gate"/g,
+    '"./safety-gate-stub.mjs"',
+  );
+  return out;
+}
+
+const patchedAdaptiveAgent = redirectAdaptiveImports(
+  adaptiveAgentSource,
+);
+
+if (/import\s+"server-only";/.test(patchedAdaptiveAgent)) {
+  console.error(
+    "FATAL: failed to redirect server-only import in autonomous development agent.",
+  );
+  process.exit(1);
+}
+
+for (const spec of [
+  '"@/lib/autonomous-development-objective-contract"',
+  '"@/lib/ai"',
+  '"@/lib/github/bridge"',
+  '"@/lib/github/autonomous-development-control-plane"',
+  '"@/lib/github/autonomous-development-atomic-executor"',
+  '"@/lib/github/autonomous-build-verification"',
+  '"@/lib/github/autonomous-development-prompt"',
+  '"@/lib/github/autonomous-development-safety-gate"',
+]) {
+  if (patchedAdaptiveAgent.includes(spec)) {
+    console.error(
+      `FATAL: failed to redirect ${spec} import in autonomous development agent.`,
+    );
+    process.exit(1);
+  }
+}
+
+writeAdaptiveTmp(
+  "adaptive-agent.mjs",
+  transpile(
+    patchedAdaptiveAgent,
+    "autonomous-development-agent.ts",
+  ),
+);
+
+writeAdaptiveTmp(
+  "server-only-stub.mjs",
+  "export {};\n",
+);
+
+writeAdaptiveTmp(
+  "objective-contract-stub.mjs",
+  [
+    "export function validateAutonomousDevelopmentObjectiveContract(objective) {",
+    "  return { ok: true, objective };",
+    "}",
+    "",
+    "export function buildAutonomousDevelopmentObjectiveContract(objective) {",
+    "  return { objective };",
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "ai-stub.mjs",
+  [
+    "export async function generateText() {",
+    '  throw new Error("AI stub must not be invoked directly in verification.");',
+    "}",
+    "",
+    "export async function generateObject() {",
+    '  throw new Error("AI stub must not be invoked directly in verification.");',
+    "}",
+    "",
+    "export function getModel() {",
+    '  throw new Error("AI stub must not be invoked directly in verification.");',
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "github-bridge-stub.mjs",
+  [
+    "export function getGitHubBridgeConfig() {",
+    "  return {",
+    '    apiBaseUrl: "https://api.github.com",',
+    '    token: "",',
+    "  };",
+    "}",
+    "",
+    "export function resolveGitHubBridgeAuth() {",
+    "  return {",
+    '    accessToken: "",',
+    '    authMode: "test",',
+    "  };",
+    "}",
+    "",
+    "export async function readGitHubFile() {",
+    '  throw new Error("GitHub bridge stub must not perform real reads.");',
+    "}",
+    "",
+    "export async function writeGitHubFile() {",
+    '  throw new Error("GitHub bridge stub must not perform real writes.");',
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "control-plane-stub.mjs",
+  [
+    "export function createAutonomousDevelopmentTask(input) {",
+    "  return { id: 'stub-task', ...input };",
+    "}",
+    "",
+    "export function claimAutonomousDevelopmentTask() {}",
+    "",
+    "export function heartbeatAutonomousDevelopmentTask() {}",
+    "",
+    "export function updateAutonomousDevelopmentTask() {}",
+    "",
+    "export async function listPersistentAutonomousDevelopmentTasks() {",
+    "  return [];",
+    "}",
+    "",
+    "export async function persistAutonomousDevelopmentTasks() {}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "atomic-executor-stub.mjs",
+  [
+    "export async function executeAtomicStaging() {",
+    '  throw new Error("Atomic executor stub must not perform real writes.");',
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "build-verification-stub.mjs",
+  [
+    "export async function verifyAutonomousBuild() {",
+    "  return { ok: true };",
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "development-prompt-stub.mjs",
+  [
+    "export function buildAutonomousDevelopmentPrompt() {",
+    '  return "stub-prompt";',
+    "}",
+    "",
+  ].join("\n"),
+);
+
+writeAdaptiveTmp(
+  "safety-gate-stub.mjs",
+  [
+    "export function evaluateAutonomousDevelopmentSafetyGate() {",
+    "  return { ok: true };",
+    "}",
+    "",
+  ].join("\n"),
+);
+
+const adaptiveAgentModule = await import(
+  pathToFileURL(
+    path.join(adaptiveTmpDir, "adaptive-agent.mjs"),
+  ).href
+);
+
+const adaptiveTest = adaptiveAgentModule.__test;
+
+if (!adaptiveTest) {
+  console.error(
+    "FATAL: autonomous-development-agent.ts must export __test for adaptive engine verification.",
+  );
+  process.exit(1);
+}
+
+const {
+  MAX_PATCH_CHARS,
+  MAX_PATCH_BATCHES,
+  MAX_PATCH_OPERATIONS_PER_BATCH,
+  MAX_PATCH_OPERATIONS_TOTAL,
+  MAX_PATCH_ATTEMPTS,
+  AIOS_PATCH_BATCH_CONTINUE,
+  AIOS_PATCH_BATCH_COMPLETE,
+  executeAdaptivePatchEngine,
+} = adaptiveTest;
+
+assert.equal(MAX_PATCH_CHARS, 30000);
+assert.equal(MAX_PATCH_BATCHES, 4);
+assert.equal(MAX_PATCH_OPERATIONS_PER_BATCH, 8);
+assert.equal(MAX_PATCH_OPERATIONS_TOTAL, 32);
+assert.equal(MAX_PATCH_ATTEMPTS, 3);
+assert.equal(AIOS_PATCH_BATCH_CONTINUE, "AIOS_PATCH_BATCH_CONTINUE");
+assert.equal(AIOS_PATCH_BATCH_COMPLETE, "AIOS_PATCH_BATCH_COMPLETE");
+
+const AD_BASE_SOURCE = [
+  "export const A = 'alpha';",
+  "export const B = 'beta';",
+  "export const C = 'gamma';",
+  "export const D = 'delta';",
+  "export const E = 'epsilon';",
+  "export const F = 'zeta';",
+  "export const G = 'eta';",
+  "export const H = 'theta';",
+  "",
+].join("\n");
+
+function buildPatchBlock(search, replace) {
+  return [
+    "AIOS_PATCH_BEGIN",
+    "PATH: lib/github/fixture.ts",
+    "OPERATION: replace",
+    "AIOS_SB_TEST",
+    search,
+    "AIOS_SE_TEST",
+    "AIOS_RB_TEST",
+    replace,
+    "AIOS_RE_TEST",
+    "AIOS_PATCH_END",
+  ].join("\n");
+}
+
+function buildResponse(marker, blocks) {
+  const parts = [];
+  for (const block of blocks) {
+    parts.push(block);
+  }
+  parts.push(marker);
+  return parts.join("\n\n");
+}
+
+function singleOpResponse(marker, search, replace) {
+  return buildResponse(marker, [buildPatchBlock(search, replace)]);
+}
+
+function buildEmptyResponse(marker) {
+  return marker;
+}
+
+function makeResponder(responses) {
+  const calls = [];
+  let index = 0;
+  const responder = async (context) => {
+    calls.push(context);
+    if (index >= responses.length) {
+      throw new Error(
+        `Unexpected extra batch call at index ${index}.`,
+      );
+    }
+    const entry = responses[index];
+    index += 1;
+    if (typeof entry === "function") {
+      return entry(context);
+    }
+    return entry;
+  };
+  responder.calls = calls;
+  return responder;
+}
+
+async function runAdaptive(name, fn) {
+  await run(name, fn);
+}
+
+// 1. Single batch, single operation success
+await runAdaptive("18 ADAPTIVE SINGLE OP SUCCESS", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const A = 'alpha';",
+      "export const A = 'ALPHA';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.ok(result.content.includes("export const A = 'ALPHA';"));
+  assert.equal(result.batchCount, 1);
+  assert.equal(result.operationCount, 1);
+  assert.equal(responder.calls.length, 1);
+});
+
+// 2. Single batch, eight operations success
+await runAdaptive("19 ADAPTIVE EIGHT OPS SUCCESS", async () => {
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const blocks = letters.map((letter) =>
+    buildPatchBlock(
+      `export const ${letter} = `,
+      `export const ${letter}_X = `,
+    ),
+  );
+  const responder = makeResponder([
+    buildResponse(AIOS_PATCH_BATCH_COMPLETE, blocks),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  for (const letter of letters) {
+    assert.ok(
+      result.content.includes(`export const ${letter}_X = `),
+    );
+  }
+  assert.equal(result.batchCount, 1);
+  assert.equal(result.operationCount, 8);
+});
+
+// 3. Two batches sequential success
+await runAdaptive("20 ADAPTIVE TWO BATCHES SUCCESS", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'ALPHA';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const B = 'beta';",
+      "export const B = 'BETA';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.ok(result.content.includes("export const A = 'ALPHA';"));
+  assert.ok(result.content.includes("export const B = 'BETA';"));
+  assert.equal(result.batchCount, 2);
+  assert.equal(result.operationCount, 2);
+});
+
+// 4. Second batch receives first batch's mutated source
+await runAdaptive("21 ADAPTIVE SECOND BATCH RECEIVES UPDATED SOURCE", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'ALPHA';",
+    ),
+    async (context) => {
+      assert.ok(
+        context.currentSource.includes("export const A = 'ALPHA';"),
+        "second batch must observe first batch mutation",
+      );
+      assert.ok(
+        !context.currentSource.includes("export const A = 'alpha';"),
+        "second batch must not observe pre-mutation source",
+      );
+      return singleOpResponse(
+        AIOS_PATCH_BATCH_COMPLETE,
+        "export const B = 'beta';",
+        "export const B = 'BETA';",
+      );
+    },
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 2);
+});
+
+// 5. Four batches success
+await runAdaptive("22 ADAPTIVE FOUR BATCHES SUCCESS", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const B = 'beta';",
+      "export const B = 'B1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const C = 'gamma';",
+      "export const C = 'C1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const D = 'delta';",
+      "export const D = 'D1';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 4);
+  assert.equal(result.operationCount, 4);
+});
+
+// 6. Fewer than 8 ops but CONTINUE continues
+await runAdaptive("23 ADAPTIVE CONTINUE WITH FEW OPS", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const B = 'beta';",
+      "export const B = 'B1';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 2);
+});
+
+// 7. First batch COMPLETE ends correctly
+await runAdaptive("24 ADAPTIVE FIRST BATCH COMPLETE ENDS", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 1);
+  assert.equal(responder.calls.length, 1);
+});
+
+// 8. COMPLETE-only allowed after prior changes
+await runAdaptive("25 ADAPTIVE COMPLETE ONLY AFTER PRIOR CHANGES", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+    buildEmptyResponse(AIOS_PATCH_BATCH_COMPLETE),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 2);
+  assert.equal(result.operationCount, 1);
+});
+
+// 9. First batch zero ops COMPLETE rejected
+await runAdaptive("26 ADAPTIVE ZERO OP COMPLETE REJECTED", async () => {
+  const responder = makeResponder([
+    buildEmptyResponse(AIOS_PATCH_BATCH_COMPLETE),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_NO_CHANGE/,
+  );
+});
+
+// 10. Zero ops CONTINUE rejected
+await runAdaptive("27 ADAPTIVE ZERO OP CONTINUE REJECTED", async () => {
+  const responder = makeResponder([
+    buildEmptyResponse(AIOS_PATCH_BATCH_CONTINUE),
+    buildEmptyResponse(AIOS_PATCH_BATCH_CONTINUE),
+    buildEmptyResponse(AIOS_PATCH_BATCH_CONTINUE),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_(NO_CHANGE|BATCH_INVALID)/,
+  );
+});
+
+// 11. Missing marker rejected
+await runAdaptive("28 ADAPTIVE MISSING MARKER REJECTED", async () => {
+  const responder = makeResponder([
+    buildPatchBlock(
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_MARKER/,
+  );
+});
+
+// 12. Duplicate marker rejected
+await runAdaptive("29 ADAPTIVE DUPLICATE MARKER REJECTED", async () => {
+  const block = buildPatchBlock(
+    "export const A = 'alpha';",
+    "export const A = 'A1';",
+  );
+  const responder = makeResponder([
+    `${block}\n\n${AIOS_PATCH_BATCH_CONTINUE}\n\n${AIOS_PATCH_BATCH_CONTINUE}`,
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_MARKER/,
+  );
+});
+
+// 13. Unknown marker rejected
+await runAdaptive("30 ADAPTIVE UNKNOWN MARKER REJECTED", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      "AIOS_PATCH_BATCH_UNKNOWN",
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_MARKER/,
+  );
+});
+
+// 14. Marker inside patch block rejected
+await runAdaptive("31 ADAPTIVE MARKER INSIDE BLOCK REJECTED", async () => {
+  const block = [
+    "AIOS_PATCH_BEGIN",
+    "PATH: lib/github/fixture.ts",
+    "OPERATION: replace",
+    "AIOS_SB_TEST",
+    "export const A = 'alpha';",
+    "AIOS_SE_TEST",
+    "AIOS_RB_TEST",
+    "export const A = 'A1';",
+    AIOS_PATCH_BATCH_CONTINUE,
+    "AIOS_RE_TEST",
+    "AIOS_PATCH_END",
+  ].join("\n");
+  const responder = makeResponder([block]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_MARKER/,
+  );
+});
+
+// 15. Marker inside replacement source rejected
+await runAdaptive("32 ADAPTIVE MARKER IN REPLACE REJECTED", async () => {
+  const block = buildPatchBlock(
+    "export const A = 'alpha';",
+    `export const A = 'A1';\n${AIOS_PATCH_BATCH_COMPLETE}`,
+  );
+  const responder = makeResponder([
+    `${block}\n\n${AIOS_PATCH_BATCH_COMPLETE}`,
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_MARKER/,
+  );
+});
+
+// 16. Single batch over eight ops rejected
+await runAdaptive("33 ADAPTIVE SINGLE BATCH OVER LIMIT REJECTED", async () => {
+  const blocks = [];
+  for (let i = 0; i < 9; i += 1) {
+    blocks.push(
+      buildPatchBlock(
+        `export const A = 'alpha';`,
+        `export const A = 'A${i}';`,
+      ),
+    );
+  }
+  const responder = makeResponder([
+    buildResponse(AIOS_PATCH_BATCH_COMPLETE, blocks),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_(OPERATION_LIMIT|BATCH_OPERATION_LIMIT|BATCH_INVALID)/,
+  );
+});
+
+// 17. Cumulative 32 ops success
+await runAdaptive("34 ADAPTIVE CUMULATIVE 32 OPS SUCCESS", async () => {
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const batches = [];
+  for (let b = 0; b < 4; b += 1) {
+    const blocks = letters.map((letter) =>
+      buildPatchBlock(
+        `export const ${letter} = `,
+        `export const ${letter}${b}_X = `,
+      ),
+    );
+    const marker =
+      b === 3
+        ? AIOS_PATCH_BATCH_COMPLETE
+        : AIOS_PATCH_BATCH_CONTINUE;
+    batches.push(buildResponse(marker, blocks));
+  }
+  const responder = makeResponder(batches);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.equal(result.batchCount, 4);
+  assert.equal(result.operationCount, 32);
+});
+
+// 18. Cumulative over 32 ops rejected
+await runAdaptive("35 ADAPTIVE CUMULATIVE OVER 32 REJECTED", async () => {
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const responder = makeResponder([
+    buildResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      letters.map((letter) =>
+        buildPatchBlock(
+          `export const ${letter} = `,
+          `export const ${letter}1_X = `,
+        ),
+      ),
+    ),
+    buildResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      letters.map((letter) =>
+        buildPatchBlock(
+          `export const ${letter}1_X = `,
+          `export const ${letter}2_X = `,
+        ),
+      ),
+    ),
+    buildResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      letters.map((letter) =>
+        buildPatchBlock(
+          `export const ${letter}2_X = `,
+          `export const ${letter}3_X = `,
+        ),
+      ),
+    ),
+    buildResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      letters.map((letter) =>
+        buildPatchBlock(
+          `export const ${letter}3_X = `,
+          `export const ${letter}4_X = `,
+        ),
+      ),
+    ),
+    buildResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      letters.map((letter) =>
+        buildPatchBlock(
+          `export const ${letter}4_X = `,
+          `export const ${letter}5_X = `,
+        ),
+      ),
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_(OPERATION_LIMIT|BATCH_LIMIT_EXCEEDED|BATCH_INVALID)/,
+  );
+});
+
+// 19. Four CONTINUE batches trigger batch limit error
+await runAdaptive("36 ADAPTIVE BATCH LIMIT EXCEEDED", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const B = 'beta';",
+      "export const B = 'B1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const C = 'gamma';",
+      "export const C = 'C1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_CONTINUE,
+      "export const D = 'delta';",
+      "export const D = 'D1';",
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_BATCH_LIMIT_EXCEEDED/,
+  );
+});
+
+// 20. Missing SEARCH rejected
+await runAdaptive("37 ADAPTIVE MISSING SEARCH REJECTED", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const Z = 'never';",
+      "export const Z = 'Z1';",
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_SEARCH/,
+  );
+});
+
+// 21. Non-unique SEARCH rejected
+await runAdaptive("38 ADAPTIVE NON UNIQUE SEARCH REJECTED", async () => {
+  const duplicated = [
+    "export const A = 'alpha';",
+    "export const A = 'alpha';",
+    "",
+  ].join("\n");
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+  ]);
+  await assert.rejects(
+    () =>
+      executeAdaptivePatchEngine({
+        baseSource: duplicated,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      }),
+    /AIOS_PATCH_SEARCH/,
+  );
+});
+
+// 22. Second SEARCH depends on first operation's mutation
+await runAdaptive("39 ADAPTIVE SEQUENTIAL SEARCH DEPENDENCY", async () => {
+  const responder = makeResponder([
+    buildResponse(AIOS_PATCH_BATCH_COMPLETE, [
+      buildPatchBlock(
+        "export const A = 'alpha';",
+        "export const A = 'ALPHA_NEW';",
+      ),
+      buildPatchBlock(
+        "export const A = 'ALPHA_NEW';",
+        "export const A = 'ALPHA_FINAL';",
+      ),
+    ]),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.ok(
+    result.content.includes("export const A = 'ALPHA_FINAL';"),
+  );
+  assert.equal(result.operationCount, 2);
+});
+
+// 23. Failed attempt does not pollute; successful retry yields correct result
+await runAdaptive("40 ADAPTIVE RETRY RECOVERS WORKING SOURCE", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const Z = 'never';",
+      "export const Z = 'Z1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const A = 'alpha';",
+      "export const A = 'A1';",
+    ),
+  ]);
+  const result = await executeAdaptivePatchEngine({
+    baseSource: AD_BASE_SOURCE,
+    targetPath: "lib/github/fixture.ts",
+    respond: responder,
+  });
+  assert.ok(result.content.includes("export const A = 'A1';"));
+  assert.ok(!result.content.includes("export const Z = 'Z1';"));
+  assert.equal(result.batchCount, 1);
+  assert.equal(result.operationCount, 1);
+});
+
+// 24. Three failed retries block the whole file
+await runAdaptive("41 ADAPTIVE THREE FAILED RETRIES BLOCK", async () => {
+  const responder = makeResponder([
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const Z = 'never';",
+      "export const Z = 'Z1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const Z = 'never';",
+      "export const Z = 'Z1';",
+    ),
+    singleOpResponse(
+      AIOS_PATCH_BATCH_COMPLETE,
+      "export const Z = 'never';",
+      "export const Z = 'Z1';",
+    ),
+  ]);
+  let captured;
+  await assert.rejects(
+    async () => {
+      captured = await executeAdaptivePatchEngine({
+        baseSource: AD_BASE_SOURCE,
+        targetPath: "lib/github/fixture.ts",
+        respond: responder,
+      });
+    },
+    /AIOS_PATCH_SEARCH/,
+  );
+  assert.equal(captured, undefined);
+  assert.equal(responder.calls.length, 3);
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC171.0.2-R3 ADAPTIVE PATCH ENGINE VERIFICATION\n",
 );
 
 for (const line of report) {
@@ -1197,6 +2141,15 @@ console.log(
 
 try {
   fs.rmSync(tmpDir, {
+    recursive: true,
+    force: true,
+  });
+} catch {
+  // Best-effort cleanup only.
+}
+
+try {
+  fs.rmSync(adaptiveTmpDir, {
     recursive: true,
     force: true,
   });
