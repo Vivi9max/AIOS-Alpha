@@ -342,6 +342,32 @@ function buildAuditPrompt(
   ].join("\n");
 }
 
+function buildAuditPrompt(
+  objective: string,
+  path: string,
+  existingContent: string,
+): string {
+  return [
+    "READ-ONLY AUDIT REQUEST",
+    "",
+    `Repository: ${ALLOWED_REPOSITORY}`,
+    `Branch: ${ALLOWED_BRANCH}`,
+    `Target Path: ${path}`,
+    "",
+    "Audit Objective:",
+    objective,
+    "",
+    "CURRENT FILE CONTENT START",
+    existingContent,
+    "CURRENT FILE CONTENT END",
+    "",
+    "Produce a complete read-only audit report for the target file.",
+    "Do not propose writes as performed actions. Do not fabricate commit or verification evidence.",
+    "",
+    "Return only the audit report text.",
+  ].join("\n");
+}
+
 export function buildAuditOnlyResult(
   params: {
     auditState: AutonomousDevelopmentAuditState;
