@@ -537,8 +537,7 @@ function getLatestPhaseHistoryTimestamp(
       task.phaseHistory.length - 1
     ];
 
-  if (!latest) 
-{
+  if (!latest) {
     return null;
   }
 
