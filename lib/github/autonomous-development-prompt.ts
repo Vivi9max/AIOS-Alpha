@@ -379,5 +379,13 @@ export function buildAutonomousDevelopmentPrompt(
     "Do not declare success because a GitHub commit exists.",
     "Do not declare success because a deployment exists.",
     "Declare success only after the requested development outcome has been implemented, the written source has been read back successfully, and the final commit has passed the existing production verification.",
+    "",
+    "READ-ONLY AUDIT LIFECYCLE CONTRACT",
+    "A task whose execution mode is READ_ONLY_AUDIT must not be required to produce a Git commit, GitHub readback, build, or production verification in order to complete.",
+    "A READ_ONLY_AUDIT task may complete only when it produces a non-empty, Founder-readable audit report and its audit status is COMPLETE.",
+    "Audit completion must never invoke the GitHub write, commit, push, staging, or merge path.",
+    "An incomplete or failed audit result must remain a non-successful terminal state.",
+    "A product-development task must continue to satisfy the full existing completion evidence: valid Commit SHA, GitHub readback, final verification, and commit consistency.",
+    "The audit report must be returned to the Founder and must survive task persistence and hydration.",
   ].join("\n");
 }

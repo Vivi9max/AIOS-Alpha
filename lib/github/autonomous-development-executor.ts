@@ -211,6 +211,8 @@ export interface AutonomousDevelopmentExecutionResult {
 
   path: string;
 
+  executionMode?: string;
+
   commitSha?: string;
 
   readbackVerified: boolean;
@@ -218,6 +220,12 @@ export interface AutonomousDevelopmentExecutionResult {
   verificationPassed: boolean;
 
   generatedContentLength?: number;
+
+  auditReport?: string;
+
+  auditStatus?: string;
+
+  auditCompletedAt?: string;
 
   reason?: string;
 }
@@ -340,6 +348,13 @@ export async function executeClaimedAutonomousDevelopmentTask(
     normalizePath(
       task.targetPaths[0] ?? "",
     );
+
+  const executionMode =
+    (task as { executionMode?: string })
+      .executionMode ===
+    "READ_ONLY_AUDIT"
+      ? "READ_ONLY_AUDIT"
+      : "PRODUCT_DEVELOPMENT";
 
   if (
     !isSafeTargetPath(path)
@@ -505,6 +520,110 @@ export async function executeClaimedAutonomousDevelopmentTask(
       );
 
     /*
+     * READ-ONLY AUDIT COMPLETION
+     *
+     * A READ_ONLY_AUDIT task produces a Founder-
+     * readable audit report and completes without
+     * any GitHub write, commit, push, staging,
+     * merge, readback, build, or production
+     * verification.
+     *
+     * The audit report is the generated content.
+     * Completion requires a non-empty report and
+     * an explicit COMPLETE audit status.
+     */
+    if (
+      executionMode ===
+      "READ_ONLY_AUDIT"
+    ) {
+      const auditReport =
+        generatedContent.trim();
+
+      if (!auditReport) {
+        const reason =
+          "READ_ONLY_AUDIT requires a non-empty Founder-readable audit report.";
+
+        blockAutonomousDevelopmentTask(
+          task.id,
+          reason,
+        );
+
+        return {
+          success: false,
+          code:
+            "AUTONOMOUS_DEVELOPMENT_BLOCKED",
+          taskId: task.id,
+          repository:
+            ALLOWED_REPOSITORY,
+          branch:
+            ALLOWED_BRANCH,
+          path,
+          executionMode,
+          readbackVerified:
+            false,
+          verificationPassed:
+            false,
+          auditStatus:
+            "INCOMPLETE",
+          reason,
+        };
+      }
+
+      const receipt =
+        completeAutonomousDevelopmentTask(
+          task.id,
+          {
+            executionMode,
+            auditReport,
+            auditStatus:
+              "COMPLETE",
+            auditCompletedAt:
+              new Date().toISOString(),
+            readbackVerified:
+              false,
+            verificationPassed:
+              false,
+          },
+        );
+
+      return {
+        success:
+          receipt.status ===
+          "completed",
+        code:
+          receipt.status ===
+          "completed"
+            ? "AUTONOMOUS_DEVELOPMENT_EXECUTED"
+            : "AUTONOMOUS_DEVELOPMENT_FAILED",
+        taskId:
+          task.id,
+        repository:
+          ALLOWED_REPOSITORY,
+        branch:
+          ALLOWED_BRANCH,
+        path,
+        executionMode,
+        readbackVerified:
+          false,
+        verificationPassed:
+          false,
+        generatedContentLength:
+          auditReport.length,
+        auditReport,
+        auditStatus:
+          "COMPLETE",
+        auditCompletedAt:
+          (
+            receipt as {
+              auditCompletedAt?: string;
+            }
+          ).auditCompletedAt,
+        reason:
+          receipt.reason,
+      };
+    }
+
+    /*
      * WRITE + COMMIT + READBACK + VERIFY
      *
      * All GitHub writes continue to pass through
@@ -630,6 +749,7 @@ export async function executeClaimedAutonomousDevelopmentTask(
       branch:
         ALLOWED_BRANCH,
       path,
+      executionMode,
       commitSha,
       readbackVerified,
       verificationPassed,

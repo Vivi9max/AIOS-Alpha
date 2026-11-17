@@ -1,5 +1,16 @@
 import "server-only";
 
+export type AutonomousDevelopmentExecutionMode =
+  | "PRODUCT_DEVELOPMENT"
+  | "READ_ONLY_AUDIT";
+
+export type AutonomousDevelopmentAuditStatus =
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "COMPLETE"
+  | "INCOMPLETE"
+  | "FAILED";
+
 export type AutonomousDevelopmentReceiptInput = {
   status:
     | "todo"
@@ -7,21 +18,27 @@ export type AutonomousDevelopmentReceiptInput = {
     | "completed"
     | "failed"
     | "blocked";
+  executionMode?: AutonomousDevelopmentExecutionMode;
   commitSha?: string;
   resultCommitSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
+  auditReport?: string;
+  auditStatus?: AutonomousDevelopmentAuditStatus;
 };
 
 export type AutonomousDevelopmentReceipt = {
   terminal: boolean;
   successful: boolean;
   valid: boolean;
+  executionMode: AutonomousDevelopmentExecutionMode;
   commitSha?: string;
   resultCommitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   commitShaConsistent: boolean;
+  auditReport?: string;
+  auditStatus?: AutonomousDevelopmentAuditStatus;
   missingEvidence: string[];
 };
 
@@ -65,11 +82,35 @@ export function isValidAutonomousDevelopmentCommitSha(
   );
 }
 
+function normalizeAuditReport(
+  value?: string,
+) {
+  const report =
+    value?.trim() ?? "";
+
+  return report || undefined;
+}
+
+/**
+ * Read-only audits are deliberately excluded from
+ * the commit / readback / verification contract.
+ * A read-only audit must never be treated as a
+ * product-development completion.
+ */
+export function isReadOnlyAuditExecutionMode(
+  executionMode?: AutonomousDevelopmentExecutionMode,
+) {
+  return (
+    executionMode ===
+    "READ_ONLY_AUDIT"
+  );
+}
+
 /**
  * Builds the authoritative evidence state for
  * an autonomous development execution.
  *
- * Successful completion requires:
+ * Product development completion requires:
  *
  * 1. status = completed
  * 2. a real 40-character Git commit SHA
@@ -77,10 +118,27 @@ export function isValidAutonomousDevelopmentCommitSha(
  * 4. final verification/build verification
  * 5. task-level and result-level commit evidence,
  *    when both are present, must identify the same commit
+ *
+ * Read-only audit completion requires:
+ *
+ * 1. status = completed
+ * 2. executionMode = READ_ONLY_AUDIT
+ * 3. auditStatus = COMPLETE
+ * 4. a non-empty, Founder-readable audit report
+ *
+ * Read-only audit completion must not require a
+ * Git commit, GitHub readback, build, or production
+ * verification, and must not claim any of them.
  */
 export function buildAutonomousDevelopmentReceipt(
   input: AutonomousDevelopmentReceiptInput,
 ): AutonomousDevelopmentReceipt {
+  const executionMode =
+    input.executionMode ===
+    "READ_ONLY_AUDIT"
+      ? "READ_ONLY_AUDIT"
+      : "PRODUCT_DEVELOPMENT";
+
   const commitSha =
     normalizeCommitSha(
       input.commitSha,
@@ -91,13 +149,30 @@ export function buildAutonomousDevelopmentReceipt(
       input.resultCommitSha,
     );
 
+  const auditReport =
+    normalizeAuditReport(
+      input.auditReport,
+    );
+
+  const auditStatus =
+    input.auditStatus;
+
+  const isAudit =
+    isReadOnlyAuditExecutionMode(
+      executionMode,
+    );
+
   const readbackVerified =
-    input.readbackVerified ===
-    true;
+    isAudit
+      ? false
+      : input.readbackVerified ===
+        true;
 
   const verificationPassed =
-    input.verificationPassed ===
-    true;
+    isAudit
+      ? false
+      : input.verificationPassed ===
+        true;
 
   const terminal =
     isAutonomousDevelopmentTerminalStatus(
@@ -115,44 +190,57 @@ export function buildAutonomousDevelopmentReceipt(
 
   if (
     input.status ===
-      "completed" &&
-    !isValidAutonomousDevelopmentCommitSha(
-      commitSha,
-    )
+    "completed" &&
+    isAudit
   ) {
-    missingEvidence.push(
-      "commitSha",
-    );
+    if (
+      auditStatus !==
+      "COMPLETE"
+    ) {
+      missingEvidence.push(
+        "auditStatus",
+      );
+    }
+
+    if (!auditReport) {
+      missingEvidence.push(
+        "auditReport",
+      );
+    }
   }
 
   if (
     input.status ===
       "completed" &&
-    !readbackVerified
+    !isAudit
   ) {
-    missingEvidence.push(
-      "readbackVerified",
-    );
-  }
+    if (
+      !isValidAutonomousDevelopmentCommitSha(
+        commitSha,
+      )
+    ) {
+      missingEvidence.push(
+        "commitSha",
+      );
+    }
 
-  if (
-    input.status ===
-      "completed" &&
-    !verificationPassed
-  ) {
-    missingEvidence.push(
-      "verificationPassed",
-    );
-  }
+    if (!readbackVerified) {
+      missingEvidence.push(
+        "readbackVerified",
+      );
+    }
 
-  if (
-    input.status ===
-      "completed" &&
-    !commitShaConsistent
-  ) {
-    missingEvidence.push(
-      "commitShaConsistency",
-    );
+    if (!verificationPassed) {
+      missingEvidence.push(
+        "verificationPassed",
+      );
+    }
+
+    if (!commitShaConsistent) {
+      missingEvidence.push(
+        "commitShaConsistency",
+      );
+    }
   }
 
   const successful =
@@ -169,11 +257,14 @@ export function buildAutonomousDevelopmentReceipt(
       (input.status !==
         "completed" ||
         successful),
+    executionMode,
     commitSha,
     resultCommitSha,
     readbackVerified,
     verificationPassed,
     commitShaConsistent,
+    auditReport,
+    auditStatus,
     missingEvidence,
   };
 }

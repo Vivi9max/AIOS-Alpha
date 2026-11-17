@@ -93,6 +93,110 @@ export interface AutonomousAtomicExecutionResult {
   snapshot?: AutonomousAtomicSnapshot;
 }
 
+export type AutonomousAtomicExecutionMode =
+  | "PRODUCT_DEVELOPMENT"
+  | "READ_ONLY_AUDIT";
+
+export type AutonomousAtomicAuditStatus =
+  | "COMPLETE"
+  | "INCOMPLETE"
+  | "FAILED";
+
+export interface AutonomousAtomicAuditResult {
+  executionMode: "READ_ONLY_AUDIT";
+  auditReport: string;
+  auditStatus: AutonomousAtomicAuditStatus;
+  auditCompletedAt: string | null;
+  requiresCommit: false;
+  requiresReadback: false;
+  requiresVerification: false;
+}
+
+export interface AutonomousAtomicAuditCompletionResult {
+  success: boolean;
+  code: string;
+  reason: string;
+  audit?: AutonomousAtomicAuditResult;
+}
+
+const AUDIT_EXECUTION_MODE: AutonomousAtomicExecutionMode =
+  "READ_ONLY_AUDIT";
+
+const PRODUCT_EXECUTION_MODE: AutonomousAtomicExecutionMode =
+  "PRODUCT_DEVELOPMENT";
+
+export function classifyAtomicExecutionMode(
+  executionMode?: string | null,
+): AutonomousAtomicExecutionMode {
+  const normalized =
+    (executionMode || "").trim().toUpperCase();
+
+  if (normalized === "READ_ONLY_AUDIT") {
+    return AUDIT_EXECUTION_MODE;
+  }
+
+  return PRODUCT_EXECUTION_MODE;
+}
+
+export async function completeAtomicReadOnlyAudit(
+  input: {
+    taskId: string;
+    auditReport?: string | null;
+    auditStatus?: string | null;
+  },
+): Promise<AutonomousAtomicAuditCompletionResult> {
+  const report =
+    typeof input.auditReport === "string"
+      ? input.auditReport
+      : "";
+
+  const normalizedStatus =
+    (input.auditStatus || "").trim().toUpperCase();
+
+  if (!report.trim()) {
+    return {
+      success: false,
+      code: "AIOS_ATOMIC_AUDIT_REPORT_MISSING",
+      reason:
+        "Read-only audit cannot complete without a non-empty audit report.",
+    };
+  }
+
+  if (normalizedStatus === "FAILED") {
+    return {
+      success: false,
+      code: "AIOS_ATOMIC_AUDIT_FAILED",
+      reason:
+        "Read-only audit is in a failed terminal state and cannot complete.",
+    };
+  }
+
+  if (normalizedStatus !== "COMPLETE") {
+    return {
+      success: false,
+      code: "AIOS_ATOMIC_AUDIT_INCOMPLETE",
+      reason:
+        "Read-only audit cannot complete unless auditStatus is COMPLETE.",
+    };
+  }
+
+  return {
+    success: true,
+    code: "AIOS_ATOMIC_AUDIT_COMPLETE",
+    reason:
+      "Read-only audit completed without Git commit, readback, or production verification.",
+    audit: {
+      executionMode: AUDIT_EXECUTION_MODE,
+      auditReport: report,
+      auditStatus: "COMPLETE",
+      auditCompletedAt: new Date().toISOString(),
+      requiresCommit: false,
+      requiresReadback: false,
+      requiresVerification: false,
+    },
+  };
+}
+
 function normalizeRepository(
   repository?: string,
 ): string {

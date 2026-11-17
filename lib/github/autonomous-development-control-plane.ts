@@ -38,11 +38,25 @@ export type AutonomousDevelopmentPhaseEvent = {
   reason?: string;
 };
 
+export type AutonomousDevelopmentExecutionMode =
+  | "PRODUCT_DEVELOPMENT"
+  | "READ_ONLY_AUDIT";
+
+export type AutonomousDevelopmentAuditStatus =
+  | "PENDING"
+  | "COMPLETE"
+  | "INCOMPLETE"
+  | "FAILED";
+
 export type AutonomousDevelopmentTaskResult = {
   commitSha?: string;
   readbackVerified: boolean;
   verificationPassed: boolean;
   reason?: string;
+  executionMode?: AutonomousDevelopmentExecutionMode;
+  auditReport?: string;
+  auditStatus?: AutonomousDevelopmentAuditStatus;
+  auditCompletedAt?: string;
 };
 
 export type AutonomousDevelopmentTask = {
@@ -399,6 +413,42 @@ function normalizeTask(
                 typeof candidate.result.reason ===
                 "string"
                   ? candidate.result.reason
+                  : undefined,
+
+              executionMode:
+                candidate.result.executionMode ===
+                  "READ_ONLY_AUDIT" ||
+                candidate.result.executionMode ===
+                  "PRODUCT_DEVELOPMENT"
+                  ? candidate.result
+                      .executionMode
+                  : undefined,
+
+              auditReport:
+                typeof candidate.result.auditReport ===
+                "string"
+                  ? candidate.result.auditReport
+                  : undefined,
+
+              auditStatus:
+                candidate.result.auditStatus ===
+                  "PENDING" ||
+                candidate.result.auditStatus ===
+                  "COMPLETE" ||
+                candidate.result.auditStatus ===
+                  "INCOMPLETE" ||
+                candidate.result.auditStatus ===
+                  "FAILED"
+                  ? candidate.result
+                      .auditStatus
+                  : undefined,
+
+              auditCompletedAt:
+                typeof candidate.result
+                  .auditCompletedAt ===
+                "string"
+                  ? candidate.result
+                      .auditCompletedAt
                   : undefined,
             }
           : undefined,
@@ -1737,6 +1787,136 @@ export async function heartbeatPersistentAutonomousDevelopmentTask(
   );
 }
 
+export async function completePersistentReadOnlyAuditTask(
+  taskId: string,
+  result: {
+    auditReport: string;
+    auditStatus: AutonomousDevelopmentAuditStatus;
+    reason?: string;
+  },
+): Promise<AutonomousDevelopmentReceipt> {
+  await hydratePersistentTasks();
+
+  const task =
+    tasks.get(
+      taskId,
+    );
+
+  if (!task) {
+    throw new Error(
+      "Development task not found.",
+    );
+  }
+
+  if (
+    TERMINAL_STATUSES.has(
+      task.status,
+    )
+  ) {
+    return createReceipt(
+      task,
+    );
+  }
+
+  if (
+    task.status !==
+    "running"
+  ) {
+    throw new Error(
+      `Task cannot complete from status: ${task.status}`,
+    );
+  }
+
+  const auditReport =
+    typeof result.auditReport ===
+    "string"
+      ? result.auditReport.trim()
+      : "";
+
+  const passed =
+    Boolean(auditReport) &&
+    result.auditStatus ===
+      "COMPLETE";
+
+  if (!passed) {
+    const blocked =
+      blockAutonomousDevelopmentTask(
+        taskId,
+        result.reason ||
+          "Read-only audit did not produce a complete Founder-readable report.",
+      );
+
+    await persistTasksAwaited();
+
+    return blocked.receipt;
+  }
+
+  assertPhaseTransition(
+    task.phase,
+    "COMPLETED",
+  );
+
+  const timestamp =
+    now();
+
+  task.status =
+    "completed";
+
+  task.phase =
+    "COMPLETED";
+
+  task.reason =
+    result.reason;
+
+  task.result = {
+    readbackVerified:
+      false,
+
+    verificationPassed:
+      false,
+
+    reason:
+      result.reason,
+
+    executionMode:
+      "READ_ONLY_AUDIT",
+
+    auditReport,
+
+    auditStatus:
+      "COMPLETE",
+
+    auditCompletedAt:
+      timestamp,
+  };
+
+  task.completedAt =
+    timestamp;
+
+  task.updatedAt =
+    timestamp;
+
+  task.lastHeartbeatAt =
+    timestamp;
+
+  appendPhaseEvent(
+    task,
+    "COMPLETED",
+    result.reason,
+  );
+
+  tasks.set(
+    taskId,
+    task,
+  );
+
+  await persistTasksAwaited();
+
+  return createReceipt(
+    task,
+  );
+}
+
 export async function completePersistentAutonomousDevelopmentTask(
   taskId: string,
   result: {
@@ -1835,6 +2015,9 @@ export async function completePersistentAutonomousDevelopmentTask(
 
     reason:
       result.reason,
+
+    executionMode:
+      "PRODUCT_DEVELOPMENT",
   };
 
   task.completedAt =
@@ -1952,6 +2135,9 @@ export function completeAutonomousDevelopmentTask(
 
     reason:
       result.reason,
+
+    executionMode:
+      "PRODUCT_DEVELOPMENT",
   };
 
   task.completedAt =
