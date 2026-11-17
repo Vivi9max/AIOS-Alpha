@@ -14,6 +14,7 @@ type SafetyGateChecks = {
   patchChange: boolean;
   i18nContracts: boolean;
   dangerousMarkers: boolean;
+  readOnlyAudit: boolean;
 };
 export type AutonomousDevelopmentSafetyGateResult = {
   passed: boolean;
@@ -851,6 +852,51 @@ function validateObjective(
 
   return null;
 }
+function isReadOnlyAuditObjective(
+  objective: string,
+): boolean {
+  const normalized =
+    objective.toLowerCase();
+  const hasReadOnlySignal =
+    normalized.includes(
+      "read-only",
+    ) ||
+    normalized.includes(
+      "read only",
+    ) ||
+    normalized.includes(
+      "audit only",
+    ) ||
+    normalized.includes(
+      "audit-only",
+    );
+  const hasAuditSignal =
+    normalized.includes("audit") ||
+    normalized.includes(
+      "engineering audit",
+    );
+  const hasNoChangeSignal =
+    normalized.includes(
+      "do not modify",
+    ) ||
+    normalized.includes(
+      "do not create",
+    ) ||
+    normalized.includes(
+      "do not delete",
+    ) ||
+    normalized.includes(
+      "do not overwrite",
+    ) ||
+    normalized.includes(
+      "no repository changes",
+    );
+  return (
+    hasAuditSignal &&
+    (hasReadOnlySignal ||
+      hasNoChangeSignal)
+  );
+}
 function buildChecks(
   pathResult: {
     passed: boolean;
@@ -864,6 +910,7 @@ function buildChecks(
     passed: boolean;
     errors: string[];
   },
+  readOnlyAudit: boolean,
 ): SafetyGateChecks {
   return {
     paths:
@@ -881,6 +928,7 @@ function buildChecks(
             "AIOS_SAFETY_DANGEROUS_MARKER",
           ),
       ),
+    readOnlyAudit,
   };
 }
 export function runAutonomousDevelopmentSafetyGate(
@@ -893,6 +941,36 @@ export function runAutonomousDevelopmentSafetyGate(
     );
   if (objectiveError) {
     errors.push(objectiveError);
+  }
+  const readOnlyAudit =
+    isReadOnlyAuditObjective(
+      input.objective,
+    );
+  if (readOnlyAudit) {
+    const changedPaths: string[] =
+      [];
+    for (
+      const rawPath of input.targetPaths
+    ) {
+      const path =
+        normalizePath(rawPath);
+      const original =
+        input.originalContents[path];
+      const patched =
+        input.patchedContents[path];
+      if (
+        typeof original === "string" &&
+        typeof patched === "string" &&
+        original !== patched
+      ) {
+        changedPaths.push(path);
+      }
+    }
+    if (changedPaths.length > 0) {
+      errors.push(
+        `AIOS_SAFETY_READ_ONLY_AUDIT_VIOLATION: ${changedPaths.join(", ")}`,
+      );
+    }
   }
   const pathResult =
     validatePaths(
@@ -924,6 +1002,7 @@ export function runAutonomousDevelopmentSafetyGate(
       pathResult,
       sourceResult,
       i18nResult,
+      readOnlyAudit,
     );
   const passed =
     errors.length === 0;

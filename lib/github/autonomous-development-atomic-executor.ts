@@ -7,6 +7,7 @@ import {
 
 const DEFAULT_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const DEFAULT_BASE_BRANCH = "main";
+const AUDIT_ONLY_PATTERN = /read-only\s+audit|audit[- ]only|do not modify|no repository changes/i;
 const STAGING_PREFIX = "c169-8-ad-";
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = 200_000;
@@ -786,6 +787,19 @@ export async function executeAtomicStaging(
     commitMessage?: string;
   },
 ): Promise<AutonomousAtomicExecutionResult> {
+  if (
+    typeof input.objective === "string" &&
+    AUDIT_ONLY_PATTERN.test(input.objective)
+  ) {
+    return {
+      success: false,
+      code:
+        "AIOS_ATOMIC_AUDIT_READ_ONLY_REJECTED",
+      reason:
+        "Atomic staging refused because the objective is a read-only audit and no repository writes are permitted.",
+    };
+  }
+
   const repository =
     normalizeRepository(
       input.repository,

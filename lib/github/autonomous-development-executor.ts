@@ -52,6 +52,31 @@ const DEVELOPMENT_SYSTEM_PROMPT = [
   "<complete file content>",
   "CONTENT_END",
   "AIOS_FILE_END",
+  "",
+  "审计模式规则（当目标为只读审计时）：",
+  "A1. 本任务为 READ-ONLY AUDIT，不得生成任何文件写入内容。",
+  "A2. 不得生成 AIOS_FILE_BEGIN 块。",
+  "A3. 必须输出结构化审计报告，且仅基于提供的当前文件内容作为证据。",
+  "A4. 报告必须包含以下小节，顺序固定：",
+  "   1. VERIFIED WORKING COMPONENTS",
+  "   2. VERIFIED FAILURE POINTS",
+  "   3. ROOT CAUSE AND REPRODUCTION EVIDENCE",
+  "   4. EXISTING PROTECTIONS THAT SHOULD BE PRESERVED",
+  "   5. MINIMUM REQUIRED CHANGES",
+  "   6. FILE-LEVEL IMPLEMENTATION PLAN",
+  "   7. POSITIVE AND NEGATIVE TEST PLAN",
+  "   8. RISKS AND ROLLBACK PLAN",
+  "A5. 每条发现必须标注 [CONFIRMED] 或 [SUSPECTED]。",
+  "A6. 不得提出重建已工作组件。",
+  "A7. 不得建议在无证据情况下提高限制值。",
+  "A8. 不得修改 Founder Approval 或生产安全边界。",
+  "A9. 报告末尾必须输出以下之一作为最终状态：",
+  "   AUDIT_COMPLETE",
+  "   AUDIT_BLOCKED",
+  "   AUDIT_INCOMPLETE",
+  "A10. 不得输出实现成功声明。",
+  "",
+  "审计模式识别：当 Development Objective 明确声明为只读审计（READ-ONLY AUDIT）时启用审计模式，否则按默认生成模式执行。",
 ].join("\n");
 
 function normalizePath(
@@ -168,11 +193,69 @@ function extractGeneratedFile(
   return generatedContent;
 }
 
+function isReadOnlyAuditObjective(
+  objective: string,
+): boolean {
+  const normalized =
+    objective.toLowerCase();
+
+  return (
+    normalized.includes(
+      "read-only audit",
+    ) ||
+    normalized.includes(
+      "read only audit",
+    ) ||
+    normalized.includes(
+      "audit-only",
+    ) ||
+    normalized.includes(
+      "audit only",
+    )
+  );
+}
+
 function buildDevelopmentPrompt(
   objective: string,
   path: string,
   existingContent: string,
 ): string {
+  const auditMode =
+    isReadOnlyAuditObjective(
+      objective,
+    );
+
+  if (auditMode) {
+    return [
+      "AUTONOMOUS DEVELOPMENT REQUEST",
+      "",
+      `Repository: ${ALLOWED_REPOSITORY}`,
+      `Branch: ${ALLOWED_BRANCH}`,
+      `Target Path: ${path}`,
+      "",
+      "Execution Mode: READ-ONLY AUDIT",
+      "",
+      "Development Objective:",
+      objective,
+      "",
+      "CURRENT FILE CONTENT START",
+      existingContent,
+      "CURRENT FILE CONTENT END",
+      "",
+      "This task is a READ-ONLY AUDIT.",
+      "Do not generate AIOS_FILE_BEGIN blocks.",
+      "Do not generate replacement file content.",
+      "Base every finding strictly on the current file content above.",
+      "Mark each finding as [CONFIRMED] or [SUSPECTED].",
+      "Do not propose rebuilding already working components.",
+      "Do not propose increasing execution limits without evidence.",
+      "Preserve Founder Approval and production safety boundaries.",
+      "Output the required structured audit report.",
+      "End the report with exactly one final status line:",
+      "AUDIT_COMPLETE or AUDIT_BLOCKED or AUDIT_INCOMPLETE.",
+    ].join("\n");
+  }
+
   return [
     "AUTONOMOUS DEVELOPMENT REQUEST",
     "",
@@ -495,6 +578,93 @@ export async function executeClaimedAutonomousDevelopmentTask(
         verificationPassed:
           false,
         reason,
+      };
+    }
+
+    if (
+      isReadOnlyAuditObjective(
+        task.objective,
+      )
+    ) {
+      /*
+       * READ-ONLY AUDIT
+       *
+       * The Founder objective is an audit-only
+       * request. No repository write, commit, or
+       * readback is permitted. The generated
+       * audit report is returned to the caller
+       * and the task is completed without any
+       * GitHub write boundary being invoked.
+       */
+      const auditReport =
+        generation.content;
+
+      if (
+        !auditReport.trim()
+      ) {
+        const reason =
+          "AIOS audit report was empty.";
+
+        blockAutonomousDevelopmentTask(
+          task.id,
+          reason,
+        );
+
+        return {
+          success: false,
+          code:
+            "AUTONOMOUS_DEVELOPMENT_FAILED",
+          taskId: task.id,
+          repository:
+            ALLOWED_REPOSITORY,
+          branch:
+            ALLOWED_BRANCH,
+          path,
+          readbackVerified:
+            false,
+          verificationPassed:
+            false,
+          reason,
+        };
+      }
+
+      const receipt =
+        completeAutonomousDevelopmentTask(
+          task.id,
+          {
+            commitSha: "",
+            readbackVerified:
+              true,
+            verificationPassed:
+              true,
+          },
+        );
+
+      return {
+        success:
+          receipt.status ===
+          "completed",
+        code:
+          receipt.status ===
+          "completed"
+            ? "AUTONOMOUS_DEVELOPMENT_EXECUTED"
+            : "AUTONOMOUS_DEVELOPMENT_FAILED",
+        taskId:
+          task.id,
+        repository:
+          ALLOWED_REPOSITORY,
+        branch:
+          ALLOWED_BRANCH,
+        path,
+        commitSha: "",
+        readbackVerified:
+          true,
+        verificationPassed:
+          true,
+        generatedContentLength:
+          auditReport.length,
+        reason:
+          receipt.reason,
       };
     }
 

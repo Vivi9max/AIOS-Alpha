@@ -16,6 +16,17 @@ export type AutonomousDevelopmentPromptInput = {
 
 const MAX_TARGET_PATHS = 6;
 
+const READ_ONLY_AUDIT_PATTERN =
+  /\b(?:read[- ]only|audit[- ]only|no (?:repository )?changes|do not (?:modify|create|delete|overwrite|change|commit)|do not create (?:commits|branches|pull requests)|do not change (?:existing )?(?:execution )?limits|do not initiate (?:autonomous )?repair)\b/i;
+
+function isReadOnlyAuditObjective(
+  objective: string,
+) {
+  return READ_ONLY_AUDIT_PATTERN.test(
+    objective,
+  );
+}
+
 function normalizePath(value: string) {
   return value
     .trim()
@@ -247,6 +258,28 @@ function buildProgressPolicy() {
   ].join("\n");
 }
 
+function buildAuditExecutionRules() {
+  return [
+    "READ-ONLY AUDIT MODE",
+    "",
+    "The Founder Objective is an audit-only request.",
+    "Do not modify, create, delete, or overwrite any repository files.",
+    "Do not create commits, branches, or pull requests.",
+    "Do not change existing execution limits or configuration values.",
+    "Do not initiate autonomous repair.",
+    "Do not expand the audit into unrelated refactoring.",
+    "Inspect the actual repository implementation. Do not assume previous architectural descriptions are accurate.",
+    "All findings must be supported by actual repository evidence.",
+    "Distinguish confirmed defects from suspected risks.",
+    "Do not propose rebuilding already working components.",
+    "Do not introduce duplicate execution controls.",
+    "Do not recommend increasing limits without evidence.",
+    "Preserve existing Founder Approval and production safety boundaries.",
+    "Do not report implementation success because this task is audit-only.",
+    "Final status must be one of: AUDIT_COMPLETE, AUDIT_BLOCKED, AUDIT_INCOMPLETE.",
+  ].join("\n");
+}
+
 function buildTargetResolutionRules(
   mode: AutonomousDevelopmentPromptMode,
 ) {
@@ -305,6 +338,11 @@ export function buildAutonomousDevelopmentPrompt(
       input.mode,
     );
 
+  const readOnlyAudit =
+    isReadOnlyAuditObjective(
+      objective,
+    );
+
   return [
     "AIOS DEVELOPMENT PROMPT",
     "",
@@ -332,6 +370,12 @@ export function buildAutonomousDevelopmentPrompt(
     "TARGET RESOLUTION RULES",
     targetResolutionRules,
     "",
+    ...(readOnlyAudit
+      ? [
+          buildAuditExecutionRules(),
+          "",
+        ]
+      : []),
     buildExecutionLoop(),
     "",
     buildProgressPolicy(),
@@ -358,13 +402,22 @@ export function buildAutonomousDevelopmentPrompt(
     "19. Stop and block instead of inventing files, APIs, credentials, permissions, or unsupported capabilities.",
     "",
     "PATCH CONTRACT",
-    "The code-generation stage must return only AIOS_PATCH_BEGIN / AIOS_PATCH_END blocks.",
-    "Do not return a complete file.",
-    "Do not return a Markdown diff.",
-    "Do not return placeholders, TODOs, ellipses, or omitted sections.",
-    "SEARCH must be copied exactly from the current real source.",
-    "SEARCH must occur exactly once.",
-    "REPLACE must be complete, syntactically valid source for the replaced region.",
+    ...(readOnlyAudit
+      ? [
+          "This task is audit-only. Do not generate AIOS_PATCH_BEGIN / AIOS_PATCH_END blocks.",
+          "Produce the prioritized audit report described in the Founder Objective.",
+          "Do not return a complete file.",
+          "Do not return a Markdown diff.",
+        ]
+      : [
+          "The code-generation stage must return only AIOS_PATCH_BEGIN / AIOS_PATCH_END blocks.",
+          "Do not return a complete file.",
+          "Do not return a Markdown diff.",
+          "Do not return placeholders, TODOs, ellipses, or omitted sections.",
+          "SEARCH must be copied exactly from the current real source.",
+          "SEARCH must occur exactly once.",
+          "REPLACE must be complete, syntactically valid source for the replaced region.",
+        ]),
     "",
     "SAFETY CONTRACT",
     "All GitHub writes remain inside the Founder-authorized repository and main branch.",
@@ -375,9 +428,18 @@ export function buildAutonomousDevelopmentPrompt(
     "Real GitHub source -> intent interpretation -> repository inspection -> target planning -> minimal patch -> source validation -> safety gate -> AIOS GitHub write -> GitHub readback -> Vercel production verification -> repair if necessary -> completion.",
     "",
     "COMPLETION CONTRACT",
-    "Do not declare success because code generation succeeded.",
-    "Do not declare success because a GitHub commit exists.",
-    "Do not declare success because a deployment exists.",
-    "Declare success only after the requested development outcome has been implemented, the written source has been read back successfully, and the final commit has passed the existing production verification.",
+    ...(readOnlyAudit
+      ? [
+          "Do not declare success because a report was produced.",
+          "Do not declare success because an audit was completed.",
+          "Do not report implementation success because this task is audit-only.",
+          "Report the final audit status as one of: AUDIT_COMPLETE, AUDIT_BLOCKED, AUDIT_INCOMPLETE.",
+        ]
+      : [
+          "Do not declare success because code generation succeeded.",
+          "Do not declare success because a GitHub commit exists.",
+          "Do not declare success because a deployment exists.",
+          "Declare success only after the requested development outcome has been implemented, the written source has been read back successfully, and the final commit has passed the existing production verification.",
+        ]),
   ].join("\n");
 }

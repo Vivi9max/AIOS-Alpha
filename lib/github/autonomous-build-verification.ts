@@ -146,7 +146,16 @@ function deploymentMatchesCommit(
     )
     .filter(Boolean);
 
-  return candidates.some((value) => value === target);
+  if (!candidates.length) {
+    return false;
+  }
+
+  return candidates.some(
+    (value) =>
+      value === target ||
+      value.startsWith(target) ||
+      target.startsWith(value),
+  );
 }
 
 function deploymentId(
@@ -319,12 +328,19 @@ export async function verifyVercelBuildForCommit(input: {
         config,
       );
 
-      deployment = deployments.find((item) =>
+      const matches = deployments.filter((item) =>
         deploymentMatchesCommit(
           item,
           input.commitSha,
         ),
       );
+
+      matches.sort(
+        (a, b) =>
+          (b.createdAt ?? 0) - (a.createdAt ?? 0),
+      );
+
+      deployment = matches[0];
 
       if (deployment) {
         const id = deploymentId(deployment);
