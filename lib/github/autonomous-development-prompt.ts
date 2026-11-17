@@ -8,10 +8,20 @@ export type AutonomousDevelopmentPromptMode =
   | "EXPLICIT_TARGET_PATCH"
   | "PLANNED_PATCH";
 
+export type AutonomousDevelopmentOperation =
+  | "CREATE"
+  | "REPLACE";
+
+export type AutonomousDevelopmentTargetOperation = {
+  path: string;
+  operation: AutonomousDevelopmentOperation;
+};
+
 export type AutonomousDevelopmentPromptInput = {
   objective: string;
   targetPaths: string[];
   mode: AutonomousDevelopmentPromptMode;
+  targetOperations?: AutonomousDevelopmentTargetOperation[];
 };
 
 const MAX_TARGET_PATHS = 6;
@@ -31,6 +41,81 @@ function uniquePaths(paths: string[]) {
         .filter(Boolean),
     ),
   ).slice(0, MAX_TARGET_PATHS);
+}
+
+function isAutonomousDevelopmentOperation(
+  value: unknown,
+): value is AutonomousDevelopmentOperation {
+  return value === "CREATE" || value === "REPLACE";
+}
+
+function normalizeTargetOperations(
+  operations:
+    | AutonomousDevelopmentTargetOperation[]
+    | undefined,
+): AutonomousDevelopmentTargetOperation[] {
+  if (!Array.isArray(operations)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: AutonomousDevelopmentTargetOperation[] = [];
+
+  for (const entry of operations) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const rawPath =
+      typeof entry.path === "string"
+        ? entry.path
+        : "";
+
+    const path = normalizePath(rawPath);
+
+    if (!path) {
+      continue;
+    }
+
+    if (seen.has(path)) {
+      continue;
+    }
+
+    if (
+      !isAutonomousDevelopmentOperation(
+        entry.operation,
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(path);
+    normalized.push({
+      path,
+      operation: entry.operation,
+    });
+
+    if (normalized.length >= MAX_TARGET_PATHS) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function buildTargetOperationText(
+  operations: AutonomousDevelopmentTargetOperation[],
+) {
+  if (operations.length === 0) {
+    return "";
+  }
+
+  return operations
+    .map(
+      (entry) =>
+        `${entry.operation} ${entry.path}`,
+    )
+    .join("\n");
 }
 
 function normalizeObjective(value: string) {
@@ -282,6 +367,132 @@ export function extractExplicitRepositoryPaths(
   );
 }
 
+export function extractExplicitTargetOperations(
+  objective: string,
+): AutonomousDevelopmentTargetOperation[] {
+  const paths =
+    extractExplicitRepositoryPaths(
+      objective,
+    );
+
+  if (paths.length === 0) {
+    return [];
+  }
+
+  const normalizedObjective =
+    objective.replace(
+      /[`"'“”‘’]/g,
+      " ",
+    );
+
+  const operationAtPath =
+    new Map<
+      string,
+      AutonomousDevelopmentOperation
+    >();
+
+  for (const path of paths) {
+    const escaped =
+      path.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+
+    const pattern =
+      new RegExp(
+        `(?:^|[^A-Za-z0-9_])(${escaped})(?![A-Za-z0-9_./-])`,
+        "g",
+      );
+
+    let match:
+      | RegExpExecArray
+      | null = null;
+
+    while (
+      (match =
+        pattern.exec(
+          normalizedObjective,
+        )) !== null
+    ) {
+      const contextStart =
+        Math.max(
+          0,
+          match.index - 180,
+        );
+
+      const context =
+        normalizedObjective
+          .slice(
+            contextStart,
+            match.index,
+          )
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim();
+
+      if (!context) {
+        continue;
+      }
+
+      const boundaryIndex =
+        Math.max(
+          context.lastIndexOf("."),
+          context.lastIndexOf(":"),
+          context.lastIndexOf(";"),
+        );
+
+      const recent =
+        context.slice(
+          boundaryIndex + 1,
+        );
+
+      const createPattern =
+        /\b(?:create|add|new file|create file|新建|新增|创建)\b/i;
+
+      const replacePattern =
+        /\b(?:replace|update|modify|edit|change|repair|fix|替换|修改|更新|修复)\b/i;
+
+      const hasCreate =
+        createPattern.test(recent);
+
+      const hasReplace =
+        replacePattern.test(recent);
+
+      if (hasCreate && hasReplace) {
+        continue;
+      }
+
+      if (hasCreate) {
+        operationAtPath.set(path, "CREATE");
+        break;
+      }
+
+      if (hasReplace) {
+        operationAtPath.set(path, "REPLACE");
+        break;
+      }
+    }
+  }
+
+  const operations: AutonomousDevelopmentTargetOperation[] = [];
+
+  for (const path of paths) {
+    const operation =
+      operationAtPath.get(path);
+
+    if (!operation) {
+      continue;
+    }
+
+    operations.push({
+      path,
+      operation,
+    });
+  }
+
+  return operations;
+}
+
 export function buildAutonomousDevelopmentPrompt(
   input: AutonomousDevelopmentPromptInput,
 ) {
@@ -295,10 +506,20 @@ export function buildAutonomousDevelopmentPrompt(
       input.targetPaths,
     );
 
+  const targetOperations =
+    normalizeTargetOperations(
+      input.targetOperations,
+    );
+
   const targetText =
     targetPaths.length > 0
       ? targetPaths.join(", ")
       : "AIOS must determine the smallest valid target files from the real repository.";
+
+  const targetOperationText =
+    buildTargetOperationText(
+      targetOperations,
+    );
 
   const targetResolutionRules =
     buildTargetResolutionRules(
@@ -323,6 +544,18 @@ export function buildAutonomousDevelopmentPrompt(
     "TARGET PATHS",
     targetText,
     "",
+    ...(targetOperationText
+      ? [
+          "TARGET OPERATIONS",
+          targetOperationText,
+          "",
+          "Each TARGET OPERATIONS entry declares the required CREATE or REPLACE contract for that exact path.",
+          "CREATE targets must represent genuinely absent files and must not rely on expected original source.",
+          "REPLACE targets must represent existing files and must provide the exact expected original source required by the production executor.",
+          "Do not let a CREATE fixture serve as the input to a REPLACE negative test, and do not let a REPLACE fixture serve as the input to a CREATE negative test.",
+          "",
+        ]
+      : []),
     "INTENT INTERPRETATION",
     buildIntentRules(),
     "",

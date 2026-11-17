@@ -83,20 +83,57 @@ const ATOMIC_FILES = [
   },
 ];
 
-function buildAtomicInput(overrides = {}) {
+// CREATE fixtures describe genuinely absent paths. The mock Contents API
+// must return a real HTTP 404 for these paths.
+const ATOMIC_CREATE_FILES = ATOMIC_FILES.map((file) => ({
+  path: file.path,
+  content: file.content,
+}));
+
+// REPLACE fixtures describe existing paths. The production executor
+// requires `expectedOriginalSource` for REPLACE operations, so every
+// REPLACE fixture must carry the exact current source of the target file.
+const ATOMIC_REPLACE_FILES = ATOMIC_FILES.map((file) => ({
+  path: file.path,
+  content: `${file.content}// r13 replace fixture\n`,
+  expectedOriginalSource: file.content,
+}));
+
+function buildAtomicCreateInput(overrides = {}) {
   return {
-    objective: "C170.8.8-B R13 atomic verification fixture",
+    objective: "C170.8.8-B R13 atomic verification CREATE fixture",
     taskId: ATOMIC_TASK_ID,
     repository: ATOMIC_REPOSITORY,
     baseBranch: ATOMIC_BASE_BRANCH,
-    files: ATOMIC_FILES.map((file) => ({
+    files: ATOMIC_CREATE_FILES.map((file) => ({
       path: file.path,
       content: file.content,
     })),
     accessToken: ATOMIC_FIXTURE_TOKEN,
-    commitMessage: "R13 atomic verification fixture",
+    commitMessage: "R13 atomic verification CREATE fixture",
     ...overrides,
   };
+}
+
+function buildAtomicReplaceInput(overrides = {}) {
+  return {
+    objective: "C170.8.8-B R13 atomic verification REPLACE fixture",
+    taskId: ATOMIC_TASK_ID,
+    repository: ATOMIC_REPOSITORY,
+    baseBranch: ATOMIC_BASE_BRANCH,
+    files: ATOMIC_REPLACE_FILES.map((file) => ({
+      path: file.path,
+      content: file.content,
+      expectedOriginalSource: file.expectedOriginalSource,
+    })),
+    accessToken: ATOMIC_FIXTURE_TOKEN,
+    commitMessage: "R13 atomic verification REPLACE fixture",
+    ...overrides,
+  };
+}
+
+function buildAtomicInput(overrides = {}) {
+  return buildAtomicCreateInput(overrides);
 }
 
 // ---------------------------------------------------------------------------
@@ -699,6 +736,14 @@ function createAtomicMockFetch(scenario) {
     },
   });
 
+  // Resolve the fixture set the scenario is modelling. CREATE scenarios
+  // model genuinely absent paths (404). REPLACE scenarios model existing
+  // paths with the exact original source captured in the fixture.
+  const fixtureFiles =
+    scenario.fixtureOperation === "replace"
+      ? ATOMIC_REPLACE_FILES
+      : ATOMIC_CREATE_FILES;
+
   const mockFetch = async (input, init = {}) => {
     const rawUrl =
       typeof input === "string"
@@ -842,18 +887,56 @@ function createAtomicMockFetch(scenario) {
         pathname.slice(contentsPrefix.length),
       );
 
-      if (scenario.contentsNotFound) {
+      if (scenario.contentsAuthFailure) {
         return jsonResponse(
-          { message: "Not Found" },
-          404,
+          { message: "Bad credentials" },
+          401,
         );
       }
 
-      const fileIndex = ATOMIC_FILES.findIndex(
+      if (scenario.contentsRateLimit) {
+        return jsonResponse(
+          { message: "API rate limit exceeded" },
+          403,
+        );
+      }
+
+      if (scenario.contentsServerError) {
+        return jsonResponse(
+          { message: "Server Error" },
+          500,
+        );
+      }
+
+      if (scenario.contentsMalformed) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return "not-an-object";
+          },
+          async text() {
+            return "not-an-object";
+          },
+        };
+      }
+
+      const fileIndex = fixtureFiles.findIndex(
         (file) => file.path === requestedPath,
       );
 
+      // CREATE fixtures model genuinely absent paths. If the scenario
+      // is a CREATE scenario and the path is not in the fixture set,
+      // return a real HTTP 404 so production preflight can distinguish
+      // "missing" from error conditions.
       if (fileIndex === -1) {
+        if (scenario.fixtureOperation !== "replace") {
+          return jsonResponse(
+            { message: "Not Found" },
+            404,
+          );
+        }
+
         state.unexpectedRequests.push(
           `${method} ${pathname}`,
         );
@@ -863,7 +946,14 @@ function createAtomicMockFetch(scenario) {
         );
       }
 
-      const file = ATOMIC_FILES[fileIndex];
+      if (scenario.contentsNotFound) {
+        return jsonResponse(
+          { message: "Not Found" },
+          404,
+        );
+      }
+
+      const file = fixtureFiles[fileIndex];
       const blobSha =
         state.blobShas.get(fileIndex) ??
         blobShaFor(fileIndex);
@@ -1018,9 +1108,9 @@ async function runAtomicNegative(
 }
 
 await runAtomicNegative(
-  "6 ATOMIC NEGATIVE CONTENTS 404",
+  "6 ATOMIC NEGATIVE REPLACE MISSING FILE",
   {
-    contentsNotFound: true,
+    fixtureOperation: "replace",
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
   },
@@ -1031,6 +1121,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "7 ATOMIC NEGATIVE CONTENTS TYPE",
   {
+    fixtureOperation: "replace",
     contentsType: "dir",
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
@@ -1064,6 +1155,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "10 ATOMIC NEGATIVE CONTENTS BASE64",
   {
+    fixtureOperation: "replace",
     contentsBase64: "not-valid-base64-@@@",
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
@@ -1075,6 +1167,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "11 ATOMIC NEGATIVE CONTENTS UTF8",
   {
+    fixtureOperation: "replace",
     contentsContent: Buffer.from([
       0xff, 0xfe, 0xfd,
     ]).toString("base64"),
@@ -1088,6 +1181,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "12 ATOMIC NEGATIVE CONTENTS MISMATCH",
   {
+    fixtureOperation: "replace",
     contentsContent: encodeBase64("mismatched-content"),
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
@@ -1099,6 +1193,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "13 ATOMIC NEGATIVE CONTENTS MISSING",
   {
+    fixtureOperation: "replace",
     contentsMissingContent: true,
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
@@ -1110,6 +1205,7 @@ await runAtomicNegative(
 await runAtomicNegative(
   "14 ATOMIC NEGATIVE BLOB SHA MISSING",
   {
+    fixtureOperation: "replace",
     contentsMissingSha: true,
     expectedContentsRequests: 1,
     expectedStagingHeadRequests: 1,
@@ -1149,7 +1245,7 @@ await run("17 ATOMIC NEGATIVE INVALID PATH", async () => {
     mockFetch,
     () =>
       executeAtomicStaging(
-        buildAtomicInput({
+        buildAtomicCreateInput({
           files: [
             {
               path: "../escape.ts",
@@ -1173,6 +1269,310 @@ await run("17 ATOMIC NEGATIVE INVALID PATH", async () => {
   assert.equal(state.refCreateRequests, 0);
   assert.equal(state.stagingHeadRequests, 0);
   assert.equal(state.contentsRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("18 ATOMIC NEGATIVE CREATE EXISTING FILE", async () => {
+  const scenario = { fixtureOperation: "replace" };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicCreateInput()),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CREATE_TARGET_EXISTS",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("19 ATOMIC NEGATIVE REPLACE STALE SOURCE", async () => {
+  const scenario = { fixtureOperation: "replace" };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicReplaceInput({
+          files: ATOMIC_REPLACE_FILES.map((file) => ({
+            path: file.path,
+            content: file.content,
+            expectedOriginalSource:
+              "stale-original-source-not-in-repo\n",
+          })),
+        }),
+      ),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_REPLACE_ORIGINAL_MISMATCH",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("20 ATOMIC NEGATIVE AUTH FAILURE", async () => {
+  const scenario = {
+    fixtureOperation: "replace",
+    contentsAuthFailure: true,
+  };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicReplaceInput()),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("21 ATOMIC NEGATIVE RATE LIMIT", async () => {
+  const scenario = {
+    fixtureOperation: "replace",
+    contentsRateLimit: true,
+  };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicReplaceInput()),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("22 ATOMIC NEGATIVE SERVER ERROR", async () => {
+  const scenario = {
+    fixtureOperation: "replace",
+    contentsServerError: true,
+  };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicReplaceInput()),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("23 ATOMIC NEGATIVE MALFORMED RESPONSE", async () => {
+  const scenario = {
+    fixtureOperation: "replace",
+    contentsMalformed: true,
+  };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () => executeAtomicStaging(buildAtomicReplaceInput()),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_FAILED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("24 ATOMIC NEGATIVE EMPTY CONTENT", async () => {
+  const scenario = {};
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicCreateInput({
+          files: [
+            {
+              path: "lib/github/r13-empty.ts",
+              content: "",
+            },
+          ],
+        }),
+      ),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_INPUT_REJECTED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_CONTENT_EMPTY: lib/github/r13-empty.ts",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("25 ATOMIC NEGATIVE INVALID OPERATION", async () => {
+  const scenario = {};
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicCreateInput({
+          files: [
+            {
+              path: "lib/github/r13-invalid-op.ts",
+              content: "export const x = 1;\n",
+              operation: "DELETE",
+            },
+          ],
+        }),
+      ),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_INPUT_REJECTED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_OPERATION_INVALID: DELETE",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("26 ATOMIC NEGATIVE DUPLICATE PATHS", async () => {
+  const scenario = {};
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicCreateInput({
+          files: [
+            {
+              path: "lib/github/r13-dup.ts",
+              content: "export const x = 1;\n",
+            },
+            {
+              path: "lib/github/r13-dup.ts",
+              content: "export const y = 2;\n",
+            },
+          ],
+        }),
+      ),
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, "AIOS_ATOMIC_INPUT_REJECTED");
+  assert.equal(
+    result.reason,
+    "AIOS_ATOMIC_PATH_DUPLICATE: lib/github/r13-dup.ts",
+  );
+
+  assert.equal(state.blobRequests, 0);
+  assert.equal(state.treeRequests, 0);
+  assert.equal(state.commitRequests, 0);
+  assert.equal(state.refCreateRequests, 0);
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+await run("27 ATOMIC MIXED CREATE AND REPLACE", async () => {
+  const scenario = { fixtureOperation: "replace" };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicReplaceInput({
+          files: [
+            {
+              path: ATOMIC_REPLACE_FILES[0].path,
+              content: ATOMIC_REPLACE_FILES[0].content,
+              expectedOriginalSource:
+                ATOMIC_REPLACE_FILES[0]
+                  .expectedOriginalSource,
+            },
+          ],
+        }),
+      ),
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_READY");
+  assert.equal(state.treeRequests, 1);
+  assert.equal(state.commitRequests, 1);
+  assert.equal(state.refCreateRequests, 1);
   assert.deepEqual(state.unexpectedRequests, []);
 });
 
