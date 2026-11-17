@@ -31,6 +31,8 @@ const BLOCKED_PATHS = [
   "vercel.json",
 ];
 
+const CONTENTS_API_REF_PREFIX = "ref=";
+
 interface GitHubResponse<T> {
   success: boolean;
   data?: T;
@@ -628,6 +630,224 @@ async function verifyStagingHead(
   }
 }
 
+interface GitHubContentsResponse {
+  type?: string;
+  encoding?: string;
+  content?: string;
+  path?: string;
+  sha?: string;
+  size?: number;
+}
+
+const STRICT_BASE64_PATTERN =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function decodeStrictBase64(
+  encoded: string,
+): string {
+  const normalized =
+    encoded.replace(/\r?\n/g, "");
+
+  if (
+    normalized.length === 0 ||
+    normalized.length % 4 !== 0 ||
+    !STRICT_BASE64_PATTERN.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_BASE64_INVALID",
+    );
+  }
+
+  const buffer =
+    Buffer.from(
+      normalized,
+      "base64",
+    );
+
+  if (
+    buffer.length === 0
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_BASE64_INVALID",
+    );
+  }
+
+  return buffer.toString(
+    "utf-8",
+  );
+}
+
+function decodeStrictUtf8(
+  value: string,
+): string {
+  const encoded =
+    Buffer.from(
+      value,
+      "utf-8",
+    );
+
+  const decoded =
+    encoded.toString(
+      "utf-8",
+    );
+
+  if (
+    decoded !== value ||
+    decoded.includes("\uFFFD")
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_UTF8_INVALID",
+    );
+  }
+
+  return decoded;
+}
+
+async function readFileFromContentsApi(
+  repository: string,
+  path: string,
+  commitSha: string,
+  accessToken: string,
+): Promise<string> {
+  const result =
+    await githubRequest<GitHubContentsResponse>(
+      `/repos/${repository}/contents/${path
+        .split("/")
+        .map((segment) =>
+          encodeURIComponent(segment),
+        )
+        .join("/")}?${CONTENTS_API_REF_PREFIX}${encodeURIComponent(
+        commitSha,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (
+    !result.success
+  ) {
+    throw new Error(
+      result.error ||
+        "AIOS_ATOMIC_READBACK_CONTENTS_API_FAILED",
+    );
+  }
+
+  const data =
+    result.data;
+
+  if (
+    !data ||
+    typeof data !==
+      "object"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_RESPONSE_INVALID",
+    );
+  }
+
+  if (
+    data.type !==
+    "file"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_TYPE_INVALID",
+    );
+  }
+
+  if (
+    typeof data.path !==
+      "string" ||
+    data.path !==
+      path
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_PATH_MISMATCH",
+    );
+  }
+
+  if (
+    data.encoding !==
+    "base64"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_ENCODING_INVALID",
+    );
+  }
+
+  if (
+    typeof data.content !==
+    "string"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_CONTENT_INVALID",
+    );
+  }
+
+  if (
+    typeof data.sha !==
+      "string" ||
+    !data.sha
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_READBACK_BLOB_SHA_MISSING",
+    );
+  }
+
+  const decoded =
+    decodeStrictBase64(
+      data.content,
+    );
+
+  return decodeStrictUtf8(
+    decoded,
+  );
+}
+
+async function verifyStagingReadback(
+  repository: string,
+  branch: string,
+  commitSha: string,
+  files: AutonomousAtomicFile[],
+  accessToken: string,
+): Promise<void> {
+  await verifyStagingHead(
+    repository,
+    branch,
+    commitSha,
+    accessToken,
+  );
+
+  for (
+    const file of files
+  ) {
+    const decoded =
+      await readFileFromContentsApi(
+        repository,
+        file.path,
+        commitSha,
+        accessToken,
+      );
+
+    if (
+      decoded !==
+      file.content
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_READBACK_CONTENT_MISMATCH: ${file.path}`,
+      );
+    }
+  }
+
+  await verifyStagingHead(
+    repository,
+    branch,
+    commitSha,
+    accessToken,
+  );
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -734,10 +954,11 @@ export async function executeAtomicStaging(
       auth.accessToken,
     );
 
-    await verifyStagingHead(
+    await verifyStagingReadback(
       repository,
       stagingBranch,
       stagingCommitSha,
+      files,
       auth.accessToken,
     );
 
