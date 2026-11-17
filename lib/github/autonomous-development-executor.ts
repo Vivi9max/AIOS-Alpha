@@ -222,6 +222,37 @@ export interface AutonomousDevelopmentExecutionResult {
   reason?: string;
 }
 
+export interface AutonomousAuditExecutionResult {
+  success: boolean;
+
+  code:
+    | "AUDIT_COMPLETE"
+    | "AUDIT_BLOCKED"
+    | "AUDIT_INCOMPLETE";
+
+  taskId: string;
+
+  repository: string;
+
+  branch: string;
+
+  report: string;
+
+  reportLength: number;
+
+  commitSha?: string;
+
+  readbackVerified: false;
+
+  verificationPassed: false;
+
+  reason?: string;
+}
+
+export type AutonomousDevelopmentTaskResult =
+  | AutonomousDevelopmentExecutionResult
+  | AutonomousAuditExecutionResult;
+
 export async function executeClaimedAutonomousDevelopmentTask(
   taskId: string,
 ): Promise<AutonomousDevelopmentExecutionResult> {

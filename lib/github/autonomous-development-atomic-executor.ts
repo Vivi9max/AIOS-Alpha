@@ -775,6 +775,93 @@ async function verifyContentsReadback(
   }
 }
 
+export function isReadOnlyAuditObjective(
+  objective: string,
+): boolean {
+  const normalized =
+    objective
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  const auditSignals = [
+    "read-only audit",
+    "read only audit",
+    "readonly audit",
+    "engineering audit",
+    "audit objective",
+    "audit the",
+    "audit report",
+    "code audit",
+    "security audit",
+    "repository audit",
+    "inspect and report",
+    "inspection only",
+    "no code changes",
+    "no repository writes",
+  ];
+
+  return auditSignals.some(
+    (signal) =>
+      normalized.includes(signal),
+  );
+}
+
+export interface AutonomousAuditExecutionResult {
+  success: boolean;
+  code: string;
+  reason: string;
+  auditState:
+    | "AUDIT_COMPLETE"
+    | "AUDIT_BLOCKED"
+    | "AUDIT_INCOMPLETE";
+  report?: string;
+  generatedContentLength?: number;
+}
+
+export function buildAuditOnlyResult(
+  input: {
+    report?: string;
+    reason?: string;
+  },
+): AutonomousAuditExecutionResult {
+  const report =
+    typeof input.report === "string"
+      ? input.report
+      : "";
+
+  if (!report.trim()) {
+    return {
+      success: false,
+      code:
+        "AIOS_AUDIT_REPORT_EMPTY",
+      reason:
+        input.reason?.trim() ||
+        "AIOS read-only audit produced no report content.",
+      auditState:
+        "AUDIT_INCOMPLETE",
+    };
+  }
+
+  return {
+    success: true,
+    code:
+      "AIOS_AUDIT_COMPLETE",
+    reason:
+      input.reason?.trim() ||
+      "AIOS completed a read-only audit without any repository writes.",
+    auditState:
+      "AUDIT_COMPLETE",
+    report,
+    generatedContentLength:
+      report.length,
+  };
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -786,6 +873,20 @@ export async function executeAtomicStaging(
     commitMessage?: string;
   },
 ): Promise<AutonomousAtomicExecutionResult> {
+  if (
+    isReadOnlyAuditObjective(
+      input.objective,
+    )
+  ) {
+    return {
+      success: false,
+      code:
+        "AIOS_ATOMIC_READ_ONLY_AUDIT_REJECTED",
+      reason:
+        "AIOS read-only audit objectives must never enter the atomic product write pipeline. Use the audit execution path instead.",
+    };
+  }
+
   const repository =
     normalizeRepository(
       input.repository,

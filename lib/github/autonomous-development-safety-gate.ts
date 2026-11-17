@@ -940,3 +940,75 @@ export function runAutonomousDevelopmentSafetyGate(
     errors,
   };
 }
+function normalizeExecutionMode(
+  value: string,
+): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+}
+function isReadOnlyAuditObjective(
+  objective: string,
+): boolean {
+  const normalized =
+    normalizeExecutionMode(
+      objective,
+    );
+  if (!normalized) {
+    return false;
+  }
+  const auditMarkers = [
+    "READ_ONLY_AUDIT",
+    "READ_ONLY",
+    "AUDIT_ONLY",
+    "AUDIT-TASK",
+    "AUDIT_TASK",
+    "ENGINEERING_AUDIT",
+  ];
+  return auditMarkers.some((marker) =>
+    normalized.includes(marker),
+  );
+}
+export function classifyAutonomousDevelopmentExecutionMode(
+  objective: string,
+): "AUDIT" | "PRODUCT" {
+  return isReadOnlyAuditObjective(
+    objective,
+  )
+    ? "AUDIT"
+    : "PRODUCT";
+}
+export type AutonomousDevelopmentAuditGateResult = {
+  passed: boolean;
+  code:
+    | "AUTONOMOUS_AUDIT_GATE_PASS"
+    | "AUTONOMOUS_AUDIT_GATE_BLOCKED";
+  reason: string;
+  errors: string[];
+};
+export function runAutonomousDevelopmentAuditGate(
+  objective: string,
+): AutonomousDevelopmentAuditGateResult {
+  const errors: string[] = [];
+  const objectiveError =
+    validateObjective(
+      objective,
+    );
+  if (objectiveError) {
+    errors.push(objectiveError);
+  }
+  const passed =
+    errors.length === 0;
+  return {
+    passed,
+    code: passed
+      ? "AUTONOMOUS_AUDIT_GATE_PASS"
+      : "AUTONOMOUS_AUDIT_GATE_BLOCKED",
+    reason: passed
+      ? "Read-only audit objective accepted. No repository write will be performed."
+      : errors[0] ||
+        "Read-only audit objective rejected.",
+    errors,
+  };
+}
