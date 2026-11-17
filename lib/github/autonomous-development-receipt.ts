@@ -1,22 +1,30 @@
 import "server-only";
 
+export type AutonomousDevelopmentExecutionMode =
+  | "READ_ONLY_AUDIT"
+  | "PRODUCT_DEVELOPMENT";
+
 export type AutonomousDevelopmentReceiptInput = {
   status:
     | "todo"
     | "running"
     | "completed"
     | "failed"
-    | "blocked";
+    | "blocked"
+    | "incomplete";
+  executionMode?: AutonomousDevelopmentExecutionMode;
   commitSha?: string;
   resultCommitSha?: string;
   readbackVerified?: boolean;
   verificationPassed?: boolean;
+  auditReport?: string;
 };
 
 export type AutonomousDevelopmentReceipt = {
   terminal: boolean;
   successful: boolean;
   valid: boolean;
+  executionMode: AutonomousDevelopmentExecutionMode;
   commitSha?: string;
   resultCommitSha?: string;
   readbackVerified: boolean;
@@ -30,6 +38,7 @@ const TERMINAL_STATUSES =
     "completed",
     "failed",
     "blocked",
+    "incomplete",
   ]);
 
 function normalizeCommitSha(
@@ -81,6 +90,13 @@ export function isValidAutonomousDevelopmentCommitSha(
 export function buildAutonomousDevelopmentReceipt(
   input: AutonomousDevelopmentReceiptInput,
 ): AutonomousDevelopmentReceipt {
+  const executionMode:
+    AutonomousDevelopmentExecutionMode =
+    input.executionMode ===
+    "READ_ONLY_AUDIT"
+      ? "READ_ONLY_AUDIT"
+      : "PRODUCT_DEVELOPMENT";
+
   const commitSha =
     normalizeCommitSha(
       input.commitSha,
@@ -112,6 +128,59 @@ export function buildAutonomousDevelopmentReceipt(
 
   const missingEvidence: string[] =
     [];
+
+  if (
+    executionMode ===
+      "READ_ONLY_AUDIT"
+  ) {
+    if (
+      input.status ===
+        "completed" &&
+      !(
+        typeof input.auditReport ===
+          "string" &&
+        input.auditReport.trim()
+          .length > 0
+      )
+    ) {
+      missingEvidence.push(
+        "auditReport",
+      );
+    }
+
+    if (
+      input.status ===
+        "completed" &&
+      commitSha
+    ) {
+      missingEvidence.push(
+        "auditUnexpectedCommit",
+      );
+    }
+
+    const successful =
+      input.status ===
+        "completed" &&
+      missingEvidence.length ===
+        0;
+
+    return {
+      terminal,
+      successful,
+      valid:
+        terminal &&
+        (input.status !==
+          "completed" ||
+          successful),
+      executionMode,
+      commitSha,
+      resultCommitSha,
+      readbackVerified,
+      verificationPassed,
+      commitShaConsistent,
+      missingEvidence,
+    };
+  }
 
   if (
     input.status ===
@@ -169,6 +238,7 @@ export function buildAutonomousDevelopmentReceipt(
       (input.status !==
         "completed" ||
         successful),
+    executionMode,
     commitSha,
     resultCommitSha,
     readbackVerified,

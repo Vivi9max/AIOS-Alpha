@@ -6,7 +6,8 @@ import {
 
 export type AutonomousDevelopmentPromptMode =
   | "EXPLICIT_TARGET_PATCH"
-  | "PLANNED_PATCH";
+  | "PLANNED_PATCH"
+  | "READ_ONLY_AUDIT";
 
 export type AutonomousDevelopmentPromptInput = {
   objective: string;
@@ -263,6 +264,21 @@ function buildTargetResolutionRules(
     ].join("\n");
   }
 
+  if (
+    mode ===
+    "READ_ONLY_AUDIT"
+  ) {
+    return [
+      "The Founder Objective is a read-only audit request.",
+      "Do not modify, write, commit, or push any repository source during this execution.",
+      "Read the real GitHub repository source for the files relevant to the audit scope.",
+      "Generate a Founder-visible audit report using the current real file content.",
+      "The report must contain readable audit findings, not only a character count or summary length.",
+      "If the audit cannot be completed, mark the audit state explicitly as incomplete or failed.",
+      "Never report readbackVerified, verificationPassed, or build verification as passed unless those checks were independently executed.",
+    ].join("\n");
+  }
+
   return [
     "The Founder Objective does not contain a complete explicit target path.",
     "Use the real repository index and the existing Planner to determine the smallest valid target set.",
@@ -305,6 +321,46 @@ export function buildAutonomousDevelopmentPrompt(
       input.mode,
     );
 
+  const isReadOnlyAudit =
+    input.mode ===
+    "READ_ONLY_AUDIT";
+
+  const executionModeSection =
+    isReadOnlyAudit
+      ? [
+          "EXECUTION MODE",
+          "READ_ONLY_AUDIT",
+          "",
+          "This is a read-only audit execution.",
+          "Do not perform any GitHub write, commit, or source modification.",
+          "Produce a Founder-visible audit report from the current real file content.",
+          "If the audit is incomplete, mark it explicitly as incomplete or failed.",
+        ].join("\n")
+      : [
+          "EXECUTION MODE",
+          input.mode,
+        ].join("\n");
+
+  const completionContractSection =
+    isReadOnlyAudit
+      ? [
+          "COMPLETION CONTRACT",
+          "This execution is a read-only audit.",
+          "Do not declare success because code generation succeeded.",
+          "Do not declare success because a GitHub commit exists.",
+          "Do not declare success because a deployment exists.",
+          "Declare success only after the audit report has been generated from the current real source and is Founder-visible.",
+          "If the audit is incomplete or failed, report the explicit incomplete or failed state instead of completion.",
+          "Do not report readbackVerified or verificationPassed for a read-only audit.",
+        ].join("\n")
+      : [
+          "COMPLETION CONTRACT",
+          "Do not declare success because code generation succeeded.",
+          "Do not declare success because a GitHub commit exists.",
+          "Do not declare success because a deployment exists.",
+          "Declare success only after the requested development outcome has been implemented, the written source has been read back successfully, and the final commit has passed the existing production verification.",
+        ].join("\n");
+
   return [
     "AIOS DEVELOPMENT PROMPT",
     "",
@@ -317,8 +373,7 @@ export function buildAutonomousDevelopmentPrompt(
     "FOUNDER OBJECTIVE",
     objective,
     "",
-    "EXECUTION MODE",
-    input.mode,
+    executionModeSection,
     "",
     "TARGET PATHS",
     targetText,
@@ -374,10 +429,6 @@ export function buildAutonomousDevelopmentPrompt(
     "VERIFICATION CONTRACT",
     "Real GitHub source -> intent interpretation -> repository inspection -> target planning -> minimal patch -> source validation -> safety gate -> AIOS GitHub write -> GitHub readback -> Vercel production verification -> repair if necessary -> completion.",
     "",
-    "COMPLETION CONTRACT",
-    "Do not declare success because code generation succeeded.",
-    "Do not declare success because a GitHub commit exists.",
-    "Do not declare success because a deployment exists.",
-    "Declare success only after the requested development outcome has been implemented, the written source has been read back successfully, and the final commit has passed the existing production verification.",
+    completionContractSection,
   ].join("\n");
 }

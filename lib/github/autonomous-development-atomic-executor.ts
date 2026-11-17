@@ -86,11 +86,35 @@ export interface AutonomousAtomicSnapshot {
   changedPaths: string[];
 }
 
+export type AutonomousExecutionMode =
+  | "READ_ONLY_AUDIT"
+  | "PRODUCT_DEVELOPMENT";
+
+export interface AutonomousAuditReport {
+  mode: "READ_ONLY_AUDIT";
+  objective: string;
+  repository: string;
+  baseBranch: string;
+  baseSha: string;
+  inspectedPaths: string[];
+  fileContents: Array<{
+    path: string;
+    content: string;
+  }>;
+  summary: string;
+  findings: string[];
+  completed: boolean;
+  failed: boolean;
+  failureReason?: string;
+}
+
 export interface AutonomousAtomicExecutionResult {
   success: boolean;
   code: string;
   reason: string;
+  mode?: AutonomousExecutionMode;
   snapshot?: AutonomousAtomicSnapshot;
+  audit?: AutonomousAuditReport;
 }
 
 function normalizeRepository(
@@ -670,6 +694,139 @@ function decodeUtf8Strict(
   }
 }
 
+const AUDIT_OBJECTIVE_PATTERNS = [
+  /\bread[\s-]?only\b/i,
+  /\baudit\b/i,
+  /\binspect\b/i,
+  /\breview\b/i,
+  /\banaly[sz]e\b/i,
+  /\bdiagnos/i,
+  /\bassess\b/i,
+  /\bevaluat/i,
+  /\breport\b/i,
+  /\bno\s+(?:github\s+)?writes?\b/i,
+  /\bdo\s+not\s+(?:write|modify|commit|change)\b/i,
+];
+
+const DEVELOPMENT_OBJECTIVE_PATTERNS = [
+  /\bimplement\b/i,
+  /\bbuild\b/i,
+  /\badd\b/i,
+  /\bcreate\b/i,
+  /\brestore\b/i,
+  /\brefactor\b/i,
+  /\bfix\b/i,
+  /\bupdate\b/i,
+  /\bmodify\b/i,
+  /\bcommit\b/i,
+  /\bpatch\b/i,
+  /\bdevelop\b/i,
+];
+
+export function classifyAutonomousExecutionMode(
+  objective: string,
+): AutonomousExecutionMode {
+  const normalized =
+    objective
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!normalized) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  const auditScore =
+    AUDIT_OBJECTIVE_PATTERNS.reduce(
+      (score, pattern) =>
+        pattern.test(normalized)
+          ? score + 1
+          : score,
+      0,
+    );
+
+  const developmentScore =
+    DEVELOPMENT_OBJECTIVE_PATTERNS.reduce(
+      (score, pattern) =>
+        pattern.test(normalized)
+          ? score + 1
+          : score,
+      0,
+    );
+
+  if (auditScore === 0) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  if (
+    auditScore > developmentScore
+  ) {
+    return "READ_ONLY_AUDIT";
+  }
+
+  return "PRODUCT_DEVELOPMENT";
+}
+
+async function readContentsFile(
+  repository: string,
+  path: string,
+  ref: string,
+  accessToken: string,
+): Promise<AutonomousAtomicFile> {
+  const result =
+    await githubRequest<GitHubContentsResponse>(
+      `/repos/${repository}/contents/${path
+        .split("/")
+        .map((segment) =>
+          encodeURIComponent(segment),
+        )
+        .join("/")}?ref=${encodeURIComponent(
+        ref,
+      )}`,
+      {},
+      accessToken,
+    );
+
+  if (!result.success) {
+    throw new Error(
+      `AIOS_ATOMIC_AUDIT_READ_FAILED: ${path}: ${
+        result.error || "unknown"
+      }`,
+    );
+  }
+
+  const data =
+    result.data;
+
+  if (
+    !data ||
+    typeof data !== "object" ||
+    data.type !== "file" ||
+    data.path !== path ||
+    data.encoding !== "base64" ||
+    typeof data.content !== "string" ||
+    !data.content
+  ) {
+    throw new Error(
+      `AIOS_ATOMIC_AUDIT_READ_INVALID: ${path}`,
+    );
+  }
+
+  const bytes =
+    decodeBase64Strict(
+      data.content,
+    );
+
+  const decoded =
+    decodeUtf8Strict(
+      bytes,
+    );
+
+  return {
+    path,
+    content: decoded,
+  };
+}
+
 async function verifyContentsReadback(
   repository: string,
   stagingCommitSha: string,
@@ -772,6 +929,242 @@ async function verifyContentsReadback(
         "AIOS_ATOMIC_CONTENTS_CONTENT_MISMATCH",
       );
     }
+  }
+}
+
+export async function executeAtomicReadOnlyAudit(
+  input: {
+    objective: string;
+    taskId: string;
+    repository?: string;
+    baseBranch?: string;
+    paths: string[];
+    accessToken?: string;
+  },
+): Promise<AutonomousAtomicExecutionResult> {
+  const repository =
+    normalizeRepository(
+      input.repository,
+    );
+
+  const baseBranch =
+    normalizeBranch(
+      input.baseBranch,
+    );
+
+  const uniquePaths =
+    Array.from(
+      new Set(
+        input.paths
+          .map((path) =>
+            normalizePath(path),
+          )
+          .filter((path) =>
+            Boolean(path),
+          ),
+      ),
+    );
+
+  if (uniquePaths.length === 0) {
+    return {
+      success: false,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        "AIOS_ATOMIC_AUDIT_NO_PATHS",
+      reason:
+        "Read-only audit requires at least one path to inspect.",
+      audit: {
+        mode: "READ_ONLY_AUDIT",
+        objective: input.objective,
+        repository,
+        baseBranch,
+        baseSha: "",
+        inspectedPaths: [],
+        fileContents: [],
+        summary: "",
+        findings: [],
+        completed: false,
+        failed: true,
+        failureReason:
+          "AIOS_ATOMIC_AUDIT_NO_PATHS",
+      },
+    };
+  }
+
+  if (uniquePaths.length > MAX_FILES) {
+    return {
+      success: false,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        "AIOS_ATOMIC_AUDIT_PATH_LIMIT_EXCEEDED",
+      reason:
+        "Read-only audit path limit exceeded.",
+      audit: {
+        mode: "READ_ONLY_AUDIT",
+        objective: input.objective,
+        repository,
+        baseBranch,
+        baseSha: "",
+        inspectedPaths: uniquePaths,
+        fileContents: [],
+        summary: "",
+        findings: [],
+        completed: false,
+        failed: true,
+        failureReason:
+          "AIOS_ATOMIC_AUDIT_PATH_LIMIT_EXCEEDED",
+      },
+    };
+  }
+
+  const auth =
+    input.accessToken
+      ? {
+          accessToken:
+            input.accessToken,
+        }
+      : await resolveGitHubBridgeAuth();
+
+  if (!auth.accessToken) {
+    return {
+      success: false,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        "AIOS_ATOMIC_AUTH_UNAVAILABLE",
+      reason:
+        "AIOS does not have an authenticated GitHub execution context.",
+      audit: {
+        mode: "READ_ONLY_AUDIT",
+        objective: input.objective,
+        repository,
+        baseBranch,
+        baseSha: "",
+        inspectedPaths: uniquePaths,
+        fileContents: [],
+        summary: "",
+        findings: [],
+        completed: false,
+        failed: true,
+        failureReason:
+          "AIOS_ATOMIC_AUTH_UNAVAILABLE",
+      },
+    };
+  }
+
+  try {
+    const baseSha =
+      await getBranchSha(
+        repository,
+        baseBranch,
+        auth.accessToken,
+      );
+
+    const fileContents:
+      AutonomousAtomicFile[] = [];
+
+    for (const path of uniquePaths) {
+      const file =
+        await readContentsFile(
+          repository,
+          path,
+          baseSha,
+          auth.accessToken,
+        );
+
+      fileContents.push(file);
+    }
+
+    const findings =
+      fileContents.map((file) => {
+        const lineCount =
+          file.content.split("\n").length;
+
+        return `${file.path}: ${lineCount} lines, ${file.content.length} characters`;
+      });
+
+    const summary =
+      fileContents
+        .map(
+          (file) =>
+            `=== ${file.path} ===\n${file.content}`,
+        )
+        .join("\n\n");
+
+    if (!summary.trim()) {
+      return {
+        success: false,
+        mode: "READ_ONLY_AUDIT",
+        code:
+          "AIOS_ATOMIC_AUDIT_EMPTY_REPORT",
+        reason:
+          "Read-only audit produced no report content.",
+        audit: {
+          mode: "READ_ONLY_AUDIT",
+          objective: input.objective,
+          repository,
+          baseBranch,
+          baseSha,
+          inspectedPaths: uniquePaths,
+          fileContents: [],
+          summary: "",
+          findings: [],
+          completed: false,
+          failed: true,
+          failureReason:
+            "AIOS_ATOMIC_AUDIT_EMPTY_REPORT",
+        },
+      };
+    }
+
+    return {
+      success: true,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        "AIOS_ATOMIC_AUDIT_COMPLETED",
+      reason:
+        "Read-only audit inspected the requested files without performing any GitHub writes.",
+      audit: {
+        mode: "READ_ONLY_AUDIT",
+        objective: input.objective,
+        repository,
+        baseBranch,
+        baseSha,
+        inspectedPaths: uniquePaths,
+        fileContents,
+        summary,
+        findings,
+        completed: true,
+        failed: false,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        "AIOS_ATOMIC_AUDIT_FAILED",
+      reason:
+        error instanceof Error
+          ? error.message
+          : "Read-only audit execution failed.",
+      audit: {
+        mode: "READ_ONLY_AUDIT",
+        objective: input.objective,
+        repository,
+        baseBranch,
+        baseSha: "",
+        inspectedPaths: uniquePaths,
+        fileContents: [],
+        summary: "",
+        findings: [],
+        completed: false,
+        failed: true,
+        failureReason:
+          error instanceof Error
+            ? error.message
+            : "AIOS_ATOMIC_AUDIT_FAILED",
+      },
+    };
   }
 }
 
