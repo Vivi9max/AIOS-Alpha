@@ -74,6 +74,14 @@ const objectiveContractSource = fs.readFileSync(
   "utf8",
 );
 
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
@@ -100,6 +108,24 @@ const patchedReceipt = receiptSource.replace(
   /import\s+"server-only";/,
   'import "./server-only-stub.mjs";',
 );
+
+const patchedAtomicExecutor = atomicExecutorSource
+  .replace(
+    /import\s+"server-only";/,
+    'import "./server-only-stub.mjs";',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-control-plane"/g,
+    '"./control-plane.mjs"',
+  )
+  .replace(
+    /"@\/lib\/github\/autonomous-development-receipt"/g,
+    '"./autonomous-development-receipt.mjs"',
+  )
+  .replace(
+    /"@\/lib\/autonomous-development-objective-contract"/g,
+    '"./autonomous-development-objective-contract.mjs"',
+  );
 
 // ---------------------------------------------------------------------------
 // Temporary module directory
@@ -132,6 +158,14 @@ writeTmp(
   transpile(
     objectiveContractSource,
     "autonomous-development-objective-contract.ts",
+  ),
+);
+
+writeTmp(
+  "atomic-executor.mjs",
+  transpile(
+    patchedAtomicExecutor,
+    "autonomous-development-atomic-executor.ts",
   ),
 );
 
@@ -180,6 +214,14 @@ const {
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
+  ).href
+);
+
+const {
+  executeAtomicStaging,
+} = await import(
+  pathToFileURL(
+    path.join(tmpDir, "atomic-executor.mjs"),
   ).href
 );
 
@@ -541,6 +583,835 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
     task.phase,
     "READBACK",
     "WRITING -> READBACK must be allowed",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Atomic staging harness
+// ---------------------------------------------------------------------------
+
+const BASE_SHA =
+  "8558a632b7c122b9572822b18fc23494cc97f693";
+const REPOSITORY = "Vivi9max/AIOS-Alpha";
+const BASE_BRANCH = "main";
+const STAGING_BRANCH =
+  "c169-8-ad-ad-1794918114384-7lr16s";
+const TREE_SHA =
+  "1111111111111111111111111111111111111111";
+const STAGING_COMMIT_SHA =
+  "2222222222222222222222222222222222222222";
+
+function encodeBase64(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function decodeBase64Strict(value) {
+  return Buffer.from(value, "base64").toString("utf8");
+}
+
+function createMockFetch(handlers) {
+  const calls = [];
+  const unexpected = [];
+
+  async function mockFetch(url, init) {
+    const method = (init && init.method) || "GET";
+    const entry = { url: String(url), method, init };
+    calls.push(entry);
+
+    for (const handler of handlers) {
+      if (handler.match(entry)) {
+        return handler.respond(entry);
+      }
+    }
+
+    unexpected.push(entry);
+    throw new Error(
+      `Unexpected mock request: ${method} ${url}`,
+    );
+  }
+
+  return {
+    fetch: mockFetch,
+    calls,
+    unexpected,
+    count(method, urlPredicate) {
+      return calls.filter(
+        (c) =>
+          c.method === method &&
+          urlPredicate(c.url),
+      ).length;
+    },
+  };
+}
+
+function jsonResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+function textResponse(status, text) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return JSON.parse(text);
+    },
+    async text() {
+      return text;
+    },
+  };
+}
+
+const FIXTURE_FILES = [
+  {
+    path: "app/example/page.tsx",
+    content: "export default function Page() {\n  return <div>Hello</div>;\n}\n",
+  },
+  {
+    path: "lib/example/unicode.ts",
+    content: "export const greeting = \"héllo wörld 你好 🌍\";\n",
+  },
+];
+
+function buildHappyHandlers() {
+  return [
+    {
+      match: (c) =>
+        c.method === "GET" &&
+        c.url.includes(`/git/ref/heads/${BASE_BRANCH}`),
+      respond: () =>
+        jsonResponse(200, {
+          object: { sha: BASE_SHA },
+        }),
+    },
+    {
+      match: (c) =>
+        c.method === "GET" &&
+        c.url.includes(`/git/ref/heads/${STAGING_BRANCH}`),
+      respond: () =>
+        textResponse(404, "Not Found"),
+    },
+    {
+      match: (c) =>
+        c.method === "POST" &&
+        c.url.endsWith("/git/refs"),
+      respond: () =>
+        jsonResponse(201, {
+          ref: `refs/heads/${STAGING_BRANCH}`,
+          object: { sha: BASE_SHA },
+        }),
+    },
+    {
+      match: (c) =>
+        c.method === "GET" &&
+        c.url.includes(`/git/commit/${BASE_SHA}`),
+      respond: () =>
+        jsonResponse(200, {
+          sha: BASE_SHA,
+          tree: { sha: "3333333333333333333333333333333333333333" },
+        }),
+    },
+    {
+      match: (c) =>
+        c.method === "POST" &&
+        c.url.endsWith("/git/trees"),
+      respond: () =>
+        jsonResponse(201, { sha: TREE_SHA }),
+    },
+    {
+      match: (c) =>
+        c.method === "POST" &&
+        c.url.endsWith("/git/commits"),
+      respond: () =>
+        jsonResponse(201, { sha: STAGING_COMMIT_SHA }),
+    },
+    {
+      match: (c) =>
+        c.method === "PATCH" &&
+        c.url.includes(`/git/refs/heads/${STAGING_BRANCH}`),
+      respond: () =>
+        jsonResponse(200, {
+          object: { sha: STAGING_COMMIT_SHA },
+        }),
+    },
+    {
+      match: (c) =>
+        c.method === "GET" &&
+        c.url.includes("/contents/") &&
+        c.url.includes(`ref=${STAGING_COMMIT_SHA}`),
+      respond: (c) => {
+        const decoded = decodeURIComponent(
+          c.url.split("/contents/")[1].split("?")[0],
+        );
+        const file = FIXTURE_FILES.find(
+          (f) => f.path === decoded,
+        );
+        if (!file) {
+          return textResponse(404, "Not Found");
+        }
+        return jsonResponse(200, {
+          type: "file",
+          path: file.path,
+          encoding: "base64",
+          content: encodeBase64(file.content),
+          sha: "4444444444444444444444444444444444444444",
+        });
+      },
+    },
+    {
+      match: (c) =>
+        c.method === "GET" &&
+        c.url.includes(`/git/ref/heads/${STAGING_BRANCH}`),
+      respond: () =>
+        jsonResponse(200, {
+          object: { sha: STAGING_COMMIT_SHA },
+        }),
+    },
+  ];
+}
+
+function countContentsRequests(mock) {
+  return mock.calls.filter(
+    (c) =>
+      c.method === "GET" &&
+      c.url.includes("/contents/"),
+  ).length;
+}
+
+function countStagingHeadRequests(mock) {
+  return mock.calls.filter(
+    (c) =>
+      c.method === "GET" &&
+      c.url.includes(
+        `/git/ref/heads/${STAGING_BRANCH}`,
+      ),
+  ).length;
+}
+
+function assertAtomicFailure(
+  result,
+  expected,
+) {
+  assert.equal(
+    result.success,
+    false,
+    `expected success=false, got ${JSON.stringify(result)}`,
+  );
+  assert.equal(
+    result.code,
+    expected.code,
+    `expected code=${expected.code}, got ${result.code}`,
+  );
+  assert.equal(
+    result.reason,
+    expected.reason,
+    `expected reason=${expected.reason}, got ${result.reason}`,
+  );
+}
+
+function buildRequest() {
+  return {
+    repository: REPOSITORY,
+    baseBranch: BASE_BRANCH,
+    baseSha: BASE_SHA,
+    stagingBranch: STAGING_BRANCH,
+    files: FIXTURE_FILES.map((f) => ({
+      path: f.path,
+      content: f.content,
+    })),
+    commitMessage: "C170.8.8-B R12 atomic staging verification",
+  };
+}
+
+function cloneHandlers() {
+  return buildHappyHandlers();
+}
+
+function overrideHandler(handlers, matchPredicate, respondFn) {
+  const next = handlers.map((h) =>
+    matchPredicate(h) ? { ...h, respond: respondFn } : h,
+  );
+  return next;
+}
+
+async function executeWithMock(handlers) {
+  const mock = createMockFetch(handlers);
+  const result = await executeAtomicStaging(
+    buildRequest(),
+    { fetch: mock.fetch },
+  );
+  return { result, mock };
+}
+
+// ---------------------------------------------------------------------------
+// TEST 5 — Positive Atomic Staging (real production function)
+// ---------------------------------------------------------------------------
+
+await run("5 ATOMIC STAGING POSITIVE", async () => {
+  await resetStorage();
+
+  const { result, mock } = await executeWithMock(
+    cloneHandlers(),
+  );
+
+  assert.equal(
+    mock.unexpected.length,
+    0,
+    `unexpected mock requests: ${JSON.stringify(
+      mock.unexpected.map((u) => `${u.method} ${u.url}`),
+    )}`,
+  );
+
+  assert.equal(
+    result.success,
+    true,
+    `expected success=true, got ${JSON.stringify(result)}`,
+  );
+  assert.equal(result.code, "AIOS_ATOMIC_STAGING_READY");
+  assert.equal(result.repository, REPOSITORY);
+  assert.equal(result.baseBranch, BASE_BRANCH);
+  assert.equal(result.baseSha, BASE_SHA);
+  assert.equal(result.stagingBranch, STAGING_BRANCH);
+  assert.equal(result.treeSha, TREE_SHA);
+  assert.equal(result.stagingCommitSha, STAGING_COMMIT_SHA);
+  assert.deepEqual(
+    result.changedPaths,
+    FIXTURE_FILES.map((f) => f.path),
+  );
+
+  assert.equal(
+    countContentsRequests(mock),
+    FIXTURE_FILES.length,
+    "one Contents read per submitted file",
+  );
+
+  const contentsRefs = mock.calls
+    .filter(
+      (c) =>
+        c.method === "GET" &&
+        c.url.includes("/contents/"),
+    )
+    .map((c) => {
+      const q = c.url.split("?")[1] || "";
+      const params = new URLSearchParams(q);
+      return params.get("ref");
+    });
+
+  for (const ref of contentsRefs) {
+    assert.equal(
+      ref,
+      STAGING_COMMIT_SHA,
+      "every Contents request must use ref=stagingCommitSha",
+    );
+  }
+
+  assert.equal(
+    countStagingHeadRequests(mock),
+    2,
+    "staging HEAD must be checked exactly twice",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Negative tests (A–L)
+// ---------------------------------------------------------------------------
+
+async function runNegative(
+  name,
+  handlers,
+  expected,
+  extraAssertions,
+) {
+  await run(name, async () => {
+    await resetStorage();
+    const { result, mock } = await executeWithMock(
+      handlers,
+    );
+    assertAtomicFailure(result, expected);
+    if (extraAssertions) {
+      extraAssertions(result, mock);
+    }
+  });
+}
+
+// A. Contents 404
+await runNegative(
+  "6A CONTENTS 404",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    () => textResponse(404, "Not Found"),
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// B. Wrong file type
+await runNegative(
+  "6B WRONG FILE TYPE",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "dir",
+        path: file.path,
+        encoding: "base64",
+        content: encodeBase64(file.content),
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_TYPE_INVALID",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// C. Path mismatch
+await runNegative(
+  "6C PATH MISMATCH",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: `${file.path}.mismatch`,
+        encoding: "base64",
+        content: encodeBase64(file.content),
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_PATH_MISMATCH",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// D. Wrong encoding
+await runNegative(
+  "6D WRONG ENCODING",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "utf-8",
+        content: file.content,
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_ENCODING_INVALID",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// E. Malformed Base64
+await runNegative(
+  "6E MALFORMED BASE64",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: "!!!not-base64!!!",
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_BASE64_INVALID",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// F. Invalid UTF-8
+await runNegative(
+  "6F INVALID UTF8",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      // \xff\xfe is not valid UTF-8.
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: Buffer.from([
+          0xff, 0xfe, 0xfd,
+        ]).toString("base64"),
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_CONTENTS_UTF8_INVALID",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// G. Content mismatch
+await runNegative(
+  "6G CONTENT MISMATCH",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: encodeBase64(
+          `${file.content} // tampered`,
+        ),
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason:
+      "AIOS_ATOMIC_CONTENTS_CONTENT_MISMATCH",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// H. Missing content
+await runNegative(
+  "6H MISSING CONTENT",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: "",
+        sha: "4444444444444444444444444444444444444444",
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason:
+      "AIOS_ATOMIC_CONTENTS_CONTENT_MISSING",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// I. Missing blob SHA
+await runNegative(
+  "6I MISSING BLOB SHA",
+  overrideHandler(
+    cloneHandlers(),
+    (h) =>
+      h.match({
+        url: "/contents/",
+        method: "GET",
+        init: {},
+      }),
+    (c) => {
+      const decoded = decodeURIComponent(
+        c.url.split("/contents/")[1].split("?")[0],
+      );
+      const file = FIXTURE_FILES.find(
+        (f) => f.path === decoded,
+      );
+      return jsonResponse(200, {
+        type: "file",
+        path: file.path,
+        encoding: "base64",
+        content: encodeBase64(file.content),
+      });
+    },
+  ),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason:
+      "AIOS_ATOMIC_CONTENTS_BLOB_SHA_MISSING",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      1,
+      "exactly one Contents request before failure",
+    );
+  },
+);
+
+// J. HEAD mismatch before readback
+await runNegative(
+  "6J HEAD MISMATCH BEFORE READBACK",
+  cloneHandlers().map((h) => {
+    if (
+      h.match({
+        url: `/git/ref/heads/${STAGING_BRANCH}`,
+        method: "GET",
+        init: {},
+      })
+    ) {
+      return {
+        ...h,
+        respond: () =>
+          jsonResponse(200, {
+            object: {
+              sha: "9999999999999999999999999999999999999999",
+            },
+          }),
+      };
+    }
+    return h;
+  }),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason:
+      "AIOS_ATOMIC_STAGING_HEAD_BEFORE_CONTENTS_FAILED",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      0,
+      "no Contents request before HEAD mismatch",
+    );
+  },
+);
+
+// K. HEAD mismatch after readback
+await runNegative(
+  "6K HEAD MISMATCH AFTER READBACK",
+  (() => {
+    const handlers = cloneHandlers();
+    let headCount = 0;
+    return handlers.map((h) => {
+      if (
+        h.match({
+          url: `/git/ref/heads/${STAGING_BRANCH}`,
+          method: "GET",
+          init: {},
+        })
+      ) {
+        return {
+          ...h,
+          respond: () => {
+            headCount += 1;
+            if (headCount === 1) {
+              return jsonResponse(200, {
+                object: { sha: STAGING_COMMIT_SHA },
+              });
+            }
+            return jsonResponse(200, {
+              object: {
+                sha: "9999999999999999999999999999999999999999",
+              },
+            });
+          },
+        };
+      }
+      return h;
+    });
+  })(),
+  {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason:
+      "AIOS_ATOMIC_STAGING_HEAD_AFTER_CONTENTS_FAILED",
+  },
+  (result, mock) => {
+    assert.equal(
+      countContentsRequests(mock),
+      FIXTURE_FILES.length,
+      "all Contents reads occur before post-readback HEAD check",
+    );
+    assert.equal(
+      countStagingHeadRequests(mock),
+      2,
+      "staging HEAD checked twice",
+    );
+  },
+);
+
+// L. Invalid path rejected before network access
+await run("6L INVALID PATH BEFORE NETWORK", async () => {
+  await resetStorage();
+
+  const mock = createMockFetch(cloneHandlers());
+  const badRequest = buildRequest();
+  badRequest.files = [
+    {
+      path: "../escape.ts",
+      content: "export const x = 1;\n",
+    },
+  ];
+
+  const result = await executeAtomicStaging(
+    badRequest,
+    { fetch: mock.fetch },
+  );
+
+  assertAtomicFailure(result, {
+    code: "AIOS_ATOMIC_STAGING_FAILED",
+    reason: "AIOS_ATOMIC_PATH_INVALID",
+  });
+
+  assert.equal(
+    mock.calls.length,
+    0,
+    "no GitHub API request before path rejection",
   );
 });
 
