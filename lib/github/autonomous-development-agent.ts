@@ -182,12 +182,29 @@ function buildRepairSystemPrompt(
   ].join("\n");
 }
 
+type TargetOperation = "create" | "replace";
+
+type ResolvedTarget = {
+  path: string;
+  operation: TargetOperation;
+};
+
 type PatchOperation = {
   path: string;
   operation: "replace";
   search: string;
   replace: string;
 };
+
+type CreateOperation = {
+  path: string;
+  operation: "create";
+  source: string;
+};
+
+type GeneratedOperation =
+  | PatchOperation
+  | CreateOperation;
 
 async function runBrain(
   prompt: string,
@@ -772,6 +789,47 @@ function parsePlannerResult(
   return unique;
 }
 
+function buildCreatePrompt(
+  objective: string,
+  targetPath: string,
+  developmentPrompt: string,
+  delimiters: PatchDelimiters,
+) {
+  return [
+    developmentPrompt,
+    "",
+    "AUTONOMOUS DEVELOPMENT CREATE REQUEST",
+    `Repository: ${REPOSITORY}`,
+    `Branch: ${BRANCH}`,
+    `Target: ${targetPath}`,
+    "OPERATION: create",
+    "",
+    "USER OBJECTIVE:",
+    objective,
+    "",
+    "This target is a genuinely new file. It does not exist in the repository yet.",
+    "Generate the complete source for this new file.",
+    "Do not return a partial patch.",
+    "Do not return a SEARCH section.",
+    "",
+    "必须严格使用以下格式，只返回一个 CREATE patch：",
+    "",
+    "AIOS_PATCH_BEGIN",
+    `PATH: ${targetPath}`,
+    "OPERATION: create",
+    delimiters.replaceBegin,
+    "complete file source",
+    delimiters.replaceEnd,
+    "AIOS_PATCH_END",
+    "",
+    "必须逐字使用上述定界符，不得改写或省略。",
+    "禁止返回 Markdown code fence。",
+    "禁止返回解释。",
+    "禁止使用 TODO、placeholder、省略号。",
+    "生成的源码必须是完整、可编译、语法闭合的完整文件。",
+  ].join("\n");
+}
+
 function buildPatchPrompt(
   objective: string,
   targetPath: string,
@@ -1008,6 +1066,174 @@ function parsePatchBlocks(
   }
 
   return blocks;
+}
+
+function parseCreateBlock(
+  content: string,
+  expectedPath: string,
+  delimiters: PatchDelimiters,
+): CreateOperation {
+  if (
+    content.length >
+    MAX_PATCH_CHARS
+  ) {
+    throw new Error(
+      "AIOS_PATCH_RESPONSE_TOO_LARGE",
+    );
+  }
+
+  const pattern =
+    /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
+
+  const escapeRegExp =
+    (value: string) =>
+      value.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+
+  const replacePattern =
+    new RegExp(
+      `${escapeRegExp(delimiters.replaceBegin)}\\s*\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(delimiters.replaceEnd)}`,
+      "i",
+    );
+
+  const residualProtocolPattern =
+    new RegExp(
+      `(?:^|\\r?\\n)[ \\t]*(?:${escapeRegExp(delimiters.searchBegin)}|${escapeRegExp(delimiters.searchEnd)}|${escapeRegExp(delimiters.replaceBegin)}|${escapeRegExp(delimiters.replaceEnd)})[ \\t]*(?=\\r?\\n|$)`,
+    );
+
+  let match:
+    | RegExpExecArray
+    | null = null;
+
+  let result:
+    | CreateOperation
+    | null = null;
+
+  while (
+    (match =
+      pattern.exec(
+        content,
+      )) !== null
+  ) {
+    const block =
+      match[1] || "";
+
+    const pathMatch =
+      block.match(
+        /PATH:\s*([^\r\n]+)/i,
+      );
+
+    const operationMatch =
+      block.match(
+        /OPERATION:\s*([^\r\n]+)/i,
+      );
+
+    const replaceMatch =
+      block.match(
+        replacePattern,
+      );
+
+    if (
+      !pathMatch ||
+      !operationMatch ||
+      !replaceMatch
+    ) {
+      throw new Error(
+        "AIOS_PATCH_FORMAT_INVALID",
+      );
+    }
+
+    const path =
+      normalizePath(
+        pathMatch[1] || "",
+      );
+
+    const operation =
+      (
+        operationMatch[1] ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+
+    const source =
+      replaceMatch[1] || "";
+
+    if (
+      path !==
+      normalizePath(
+        expectedPath,
+      )
+    ) {
+      throw new Error(
+        `AIOS_PATCH_PATH_REJECTED: ${path}`,
+      );
+    }
+
+    if (
+      !isSafePath(path)
+    ) {
+      throw new Error(
+        `AIOS_PATCH_UNSAFE_PATH: ${path}`,
+      );
+    }
+
+    if (
+      operation !==
+      "create"
+    ) {
+      throw new Error(
+        `AIOS_PATCH_OPERATION_REJECTED: ${operation}`,
+      );
+    }
+
+    if (
+      residualProtocolPattern.test(
+        source,
+      )
+    ) {
+      throw new Error(
+        "AIOS_PATCH_PROTOCOL_DELIMITER_LEAKED",
+      );
+    }
+
+    if (!source.trim()) {
+      throw new Error(
+        "AIOS_PATCH_SOURCE_EMPTY",
+      );
+    }
+
+    if (
+      source.length >
+      MAX_PATCH_CHARS
+    ) {
+      throw new Error(
+        "AIOS_PATCH_SOURCE_TOO_LARGE",
+      );
+    }
+
+    if (result) {
+      throw new Error(
+        "AIOS_PATCH_OPERATION_LIMIT_EXCEEDED",
+      );
+    }
+
+    result = {
+      path,
+      operation: "create",
+      source,
+    };
+  }
+
+  if (!result) {
+    throw new Error(
+      "AIOS_PATCH_EMPTY",
+    );
+  }
+
+  return result;
 }
 
 function validatePatchSearches(
@@ -1541,6 +1767,111 @@ function validateFinalSource(
   }
 
   return normalized;
+}
+
+async function generateCreate(
+  objective: string,
+  targetPath: string,
+  developmentPrompt: string,
+) {
+  let lastError =
+    "AIOS_PATCH_EMPTY";
+
+  for (
+    let attempt = 1;
+    attempt <=
+    MAX_PATCH_ATTEMPTS;
+    attempt += 1
+  ) {
+    const delimiters =
+      createPatchDelimiters();
+
+    const prompt =
+      [
+        buildCreatePrompt(
+          objective,
+          targetPath,
+          developmentPrompt,
+          delimiters,
+        ),
+        [
+          "",
+          "PATCH DELIMITERS FOR THIS ATTEMPT:",
+          delimiters.searchBegin,
+          delimiters.searchEnd,
+          delimiters.replaceBegin,
+          delimiters.replaceEnd,
+          "",
+          "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
+        ].join("\n"),
+        attempt > 1
+          ? [
+              "",
+              "PREVIOUS CREATE ATTEMPT ERROR:",
+              lastError,
+              "",
+              "IMPORTANT:",
+              "The previous CREATE patch was rejected.",
+              "Fix the exact reported error.",
+              "Return a complete file source for the new file only.",
+            ].join("\n")
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+    const response =
+      await runBrain(
+        prompt,
+        buildPatchSystemPrompt(
+          delimiters,
+        ),
+      );
+
+    if (
+      !response.success
+    ) {
+      lastError =
+        response.error ||
+        "AIOS create generation failed.";
+
+      continue;
+    }
+
+    try {
+      const operation =
+        parseCreateBlock(
+          response.content,
+          targetPath,
+          delimiters,
+        );
+
+      const finalContent =
+        validateFinalSource(
+          targetPath,
+          operation.source,
+          delimiters,
+        );
+
+      return {
+        operation: {
+          path: operation.path,
+          operation: "create" as const,
+          source: finalContent,
+        },
+        delimiters,
+      };
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error.message
+          : "AIOS create validation failed.";
+    }
+  }
+
+  throw new Error(
+    `AIOS_CREATE_GENERATION_FAILED: Failed to generate a valid CREATE source for "${targetPath}" after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${lastError}`,
+  );
 }
 
 async function generatePatch(

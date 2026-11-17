@@ -75,11 +75,13 @@ const ATOMIC_FILES = [
     path: "lib/github/r13-fixture-ascii.ts",
     content:
       'export const R13_FIXTURE_ASCII = "hello-r13";\n',
+    operation: "replace",
   },
   {
     path: "lib/github/r13-fixture-utf8.ts",
     content:
       'export const R13_FIXTURE_UTF8 = "中文 emoji 🚀 r13";\n',
+    operation: "replace",
   },
 ];
 
@@ -92,6 +94,8 @@ function buildAtomicInput(overrides = {}) {
     files: ATOMIC_FILES.map((file) => ({
       path: file.path,
       content: file.content,
+      operation: file.operation,
+      expectedSource: file.content,
     })),
     accessToken: ATOMIC_FIXTURE_TOKEN,
     commitMessage: "R13 atomic verification fixture",

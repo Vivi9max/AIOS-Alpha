@@ -8,10 +8,20 @@ export type AutonomousDevelopmentPromptMode =
   | "EXPLICIT_TARGET_PATCH"
   | "PLANNED_PATCH";
 
+export type AutonomousDevelopmentTargetOperation =
+  | "CREATE"
+  | "REPLACE";
+
+export type AutonomousDevelopmentTarget = {
+  path: string;
+  operation: AutonomousDevelopmentTargetOperation;
+};
+
 export type AutonomousDevelopmentPromptInput = {
   objective: string;
   targetPaths: string[];
   mode: AutonomousDevelopmentPromptMode;
+  targetOperations?: AutonomousDevelopmentTargetOperation[];
 };
 
 const MAX_TARGET_PATHS = 6;
@@ -31,6 +41,174 @@ function uniquePaths(paths: string[]) {
         .filter(Boolean),
     ),
   ).slice(0, MAX_TARGET_PATHS);
+}
+
+const CREATE_INTENT_PATTERN =
+  /\b(?:create|creating|add|adding|introduce|introducing|new file|new module|scaffold|scaffolding|generate)\b|(?:创建|新建|新增|添加|建立|生成)/i;
+
+const REPLACE_INTENT_PATTERN =
+  /\b(?:modify|modifying|update|updating|edit|editing|change|changing|replace|replacing|refactor|refactoring|patch|patching|fix|fixing|extend|extending|existing file|existing module)\b|(?:修改|更新|编辑|替换|重构|调整|扩展现有|现有文件|现有模块)/i;
+
+function classifyPathOperation(
+  objective: string,
+  path: string,
+): AutonomousDevelopmentTargetOperation | null {
+  const escapedPath =
+    path.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+
+  const pattern =
+    new RegExp(
+      escapedPath,
+      "g",
+    );
+
+  const operations =
+    new Set<AutonomousDevelopmentTargetOperation>();
+
+  let match:
+    | RegExpExecArray
+    | null = null;
+
+  while (
+    (match =
+      pattern.exec(
+        objective,
+      )) !== null
+  ) {
+    if (
+      isNegatedExplicitPath(
+        objective,
+        match.index,
+      )
+    ) {
+      continue;
+    }
+
+    const contextStart =
+      Math.max(
+        0,
+        match.index - 160,
+      );
+
+    const contextEnd =
+      Math.min(
+        objective.length,
+        match.index + path.length + 160,
+      );
+
+    const context =
+      objective.slice(
+        contextStart,
+        contextEnd,
+      );
+
+    const hasCreate =
+      CREATE_INTENT_PATTERN.test(
+        context,
+      );
+
+    const hasReplace =
+      REPLACE_INTENT_PATTERN.test(
+        context,
+      );
+
+    if (hasCreate && !hasReplace) {
+      operations.add("CREATE");
+    } else if (hasReplace && !hasCreate) {
+      operations.add("REPLACE");
+    } else if (hasCreate && hasReplace) {
+      operations.add("CREATE");
+      operations.add("REPLACE");
+    }
+  }
+
+  if (operations.size === 0) {
+    return null;
+  }
+
+  if (operations.size > 1) {
+    throw new Error(
+      `Ambiguous target operation for path: ${path}. The objective classifies this path as both CREATE and REPLACE.`,
+    );
+  }
+
+  return Array.from(
+    operations,
+  )[0];
+}
+
+function resolveTargetOperations(
+  objective: string,
+  targetPaths: string[],
+  explicitOperations?:
+    | AutonomousDevelopmentTargetOperation[]
+    | undefined,
+): AutonomousDevelopmentTarget[] {
+  if (
+    explicitOperations &&
+    explicitOperations.length > 0 &&
+    explicitOperations.length !==
+      targetPaths.length
+  ) {
+    throw new Error(
+      "Target operation count does not match target path count.",
+    );
+  }
+
+  const seenPaths =
+    new Set<string>();
+
+  return targetPaths.map(
+    (path, index) => {
+      if (seenPaths.has(path)) {
+        throw new Error(
+          `Duplicate target path: ${path}`,
+        );
+      }
+
+      seenPaths.add(path);
+
+      const explicit =
+        explicitOperations?.[index];
+
+      if (explicit) {
+        if (
+          explicit !== "CREATE" &&
+          explicit !== "REPLACE"
+        ) {
+          throw new Error(
+            `Invalid target operation: ${String(explicit)}`,
+          );
+        }
+
+        return {
+          path,
+          operation: explicit,
+        };
+      }
+
+      const inferred =
+        classifyPathOperation(
+          objective,
+          path,
+        );
+
+      if (!inferred) {
+        return {
+          path,
+          operation: "REPLACE",
+        };
+      }
+
+      return {
+        path,
+        operation: inferred,
+      };
+    },
+  );
 }
 
 function normalizeObjective(value: string) {
@@ -282,6 +460,22 @@ export function extractExplicitRepositoryPaths(
   );
 }
 
+export function extractExplicitRepositoryTargets(
+  objective: string,
+): AutonomousDevelopmentTarget[] {
+  const paths =
+    uniquePaths(
+      extractRepositoryPathMatches(
+        objective,
+      ),
+    );
+
+  return resolveTargetOperations(
+    objective,
+    paths,
+  );
+}
+
 export function buildAutonomousDevelopmentPrompt(
   input: AutonomousDevelopmentPromptInput,
 ) {
@@ -295,9 +489,23 @@ export function buildAutonomousDevelopmentPrompt(
       input.targetPaths,
     );
 
-  const targetText =
+  const resolvedTargets =
     targetPaths.length > 0
-      ? targetPaths.join(", ")
+      ? resolveTargetOperations(
+          objective,
+          targetPaths,
+          input.targetOperations,
+        )
+      : [];
+
+  const targetText =
+    resolvedTargets.length > 0
+      ? resolvedTargets
+          .map(
+            (target) =>
+              `${target.operation}: ${target.path}`,
+          )
+          .join(", ")
       : "AIOS must determine the smallest valid target files from the real repository.";
 
   const targetResolutionRules =
@@ -342,6 +550,8 @@ export function buildAutonomousDevelopmentPrompt(
     "3. Never regenerate an entire large source file when a precise patch is sufficient.",
     "4. Generate minimal SEARCH/REPLACE operations against the exact current source.",
     "5. SEARCH text must come from the current real file and must be unique.",
+    "5a. For CREATE targets, generate a complete source file without reading a nonexistent file.",
+    "5b. For REPLACE targets, read the complete real source before generating the patch.",
     "6. Preserve existing APIs, data interfaces, types, routes, state logic, permissions, and unrelated functionality.",
     "7. Do not modify files outside the resolved target set.",
     "8. Do not add dependencies unless the Founder Objective explicitly requires them and the existing architecture cannot satisfy the objective.",
@@ -359,12 +569,27 @@ export function buildAutonomousDevelopmentPrompt(
     "",
     "PATCH CONTRACT",
     "The code-generation stage must return only AIOS_PATCH_BEGIN / AIOS_PATCH_END blocks.",
-    "Do not return a complete file.",
     "Do not return a Markdown diff.",
     "Do not return placeholders, TODOs, ellipses, or omitted sections.",
+    "",
+    "REPLACE operation:",
+    "The target file must already exist in the real repository.",
     "SEARCH must be copied exactly from the current real source.",
     "SEARCH must occur exactly once.",
+    "SEARCH must not be empty.",
+    "REPLACE must contain the complete intended replacement region.",
     "REPLACE must be complete, syntactically valid source for the replaced region.",
+    "",
+    "CREATE operation:",
+    "The target path must be explicitly classified as a new file.",
+    "The target file must not already exist in the real repository.",
+    "Do not provide SEARCH text for a CREATE operation.",
+    "REPLACE must contain the complete intended file source, not a partial patch.",
+    "The source must be complete, syntactically valid, and free of protocol delimiters.",
+    "Never overwrite an existing file through CREATE.",
+    "Never treat a missing REPLACE target as CREATE.",
+    "",
+    "The parser validates the operation against the resolved target type, not merely the model-generated operation label.",
     "",
     "SAFETY CONTRACT",
     "All GitHub writes remain inside the Founder-authorized repository and main branch.",
