@@ -1910,12 +1910,6 @@ async function generateAdaptivePatch(
   let operationsApplied = 0;
   let batchesApplied = 0;
 
-  let lastDelimiters:
-    | PatchDelimiters
-    | null = null;
-
-  void lastDelimiters;
-
   for (
     let batchIndex = 1;
     batchIndex <=
@@ -1932,11 +1926,6 @@ async function generateAdaptivePatch(
         operationsApplied,
         repairContext,
       );
-
-    lastDelimiters =
-      batch.delimiters;
-
-    void lastDelimiters;
 
     operationsApplied +=
       batch.operations.length;
