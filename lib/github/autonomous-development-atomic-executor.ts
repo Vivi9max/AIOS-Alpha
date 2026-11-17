@@ -93,6 +93,148 @@ export interface AutonomousAtomicExecutionResult {
   snapshot?: AutonomousAtomicSnapshot;
 }
 
+export type AutonomousExecutionMode =
+  | "PRODUCT_DEVELOPMENT"
+  | "READ_ONLY_AUDIT";
+
+export type AutonomousAuditState =
+  | "AUDIT_COMPLETE"
+  | "AUDIT_BLOCKED"
+  | "AUDIT_INCOMPLETE";
+
+export interface AutonomousAuditResult {
+  success: boolean;
+  mode: "READ_ONLY_AUDIT";
+  code: string;
+  reason: string;
+  auditState: AutonomousAuditState;
+  report: string;
+  reportLength: number;
+  readbackVerified: false;
+  verificationPassed: false;
+  commitSha?: string;
+}
+
+const READ_ONLY_AUDIT_PATTERNS: RegExp[] = [
+  /\bread[- ]?only audit\b/i,
+  /\bperform (?:a |an )?(?:read[- ]?only )?audit\b/i,
+  /\brun (?:a |an )?(?:read[- ]?only )?audit\b/i,
+  /\baudit (?:the |this )?repo(?:sitory)?\b/i,
+  /\binspect (?:the |this )?repo(?:sitory)?\b/i,
+  /\breview (?:the |this )?repo(?:sitory)?\b/i,
+  /\baudit only\b/i,
+  /\bread[- ]?only inspection\b/i,
+  /\bno[- ]write audit\b/i,
+];
+
+const PRODUCT_DEVELOPMENT_OVERRIDE_PATTERNS: RegExp[] = [
+  /\bimplement\b/i,
+  /\badd\b/i,
+  /\bbuild\b/i,
+  /\bcreate\b/i,
+  /\bfix\b/i,
+  /\brefactor\b/i,
+  /\bupdate\b/i,
+  /\bmodify\b/i,
+  /\bmigrate\b/i,
+  /\bwire (?:up|in)\b/i,
+  /\bintegrate\b/i,
+  /\bau(?:dit)? (?:feature|mode|system|runtime|support|capability)\b/i,
+];
+
+export function classifyExecutionMode(
+  objective: string,
+): AutonomousExecutionMode {
+  const normalized =
+    (objective || "").trim();
+
+  if (!normalized) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  const hasReadOnlyIntent =
+    READ_ONLY_AUDIT_PATTERNS.some(
+      (pattern) =>
+        pattern.test(normalized),
+    );
+
+  if (!hasReadOnlyIntent) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  const hasProductDevelopmentIntent =
+    PRODUCT_DEVELOPMENT_OVERRIDE_PATTERNS.some(
+      (pattern) =>
+        pattern.test(normalized),
+    );
+
+  if (hasProductDevelopmentIntent) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  return "READ_ONLY_AUDIT";
+}
+
+export function buildAuditOnlyResult(
+  input: {
+    auditState: AutonomousAuditState;
+    report: string;
+    reason?: string;
+    code?: string;
+  },
+): AutonomousAuditResult {
+  const report =
+    typeof input.report === "string"
+      ? input.report
+      : "";
+
+  if (!report.trim()) {
+    return {
+      success: false,
+      mode: "READ_ONLY_AUDIT",
+      code:
+        input.code ||
+        "AIOS_AUDIT_REPORT_EMPTY",
+      reason:
+        input.reason ||
+        "Read-only audit produced an empty report.",
+      auditState: "AUDIT_INCOMPLETE",
+      report: "",
+      reportLength: 0,
+      readbackVerified: false,
+      verificationPassed: false,
+    };
+  }
+
+  const auditState =
+    input.auditState;
+
+  return {
+    success:
+      auditState === "AUDIT_COMPLETE",
+    mode: "READ_ONLY_AUDIT",
+    code:
+      input.code ||
+      (auditState === "AUDIT_COMPLETE"
+        ? "AIOS_AUDIT_COMPLETE"
+        : auditState === "AUDIT_BLOCKED"
+          ? "AIOS_AUDIT_BLOCKED"
+          : "AIOS_AUDIT_INCOMPLETE"),
+    reason:
+      input.reason ||
+      (auditState === "AUDIT_COMPLETE"
+        ? "Read-only audit completed without any GitHub write."
+        : auditState === "AUDIT_BLOCKED"
+          ? "Read-only audit was blocked before producing a complete report."
+          : "Read-only audit did not produce a complete report."),
+    auditState,
+    report,
+    reportLength: report.length,
+    readbackVerified: false,
+    verificationPassed: false,
+  };
+}
+
 function normalizeRepository(
   repository?: string,
 ): string {

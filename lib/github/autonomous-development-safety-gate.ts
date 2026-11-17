@@ -2,7 +2,12 @@ import "server-only";
 import {
   getObjectiveLengthError,
 } from "@/lib/autonomous-development-objective-contract";
+import {
+  classifyExecutionMode,
+  type ExecutionMode,
+} from "@/lib/autonomous-development/execution-mode-classifier";
 type SafetyGateInput = {
+  executionMode?: ExecutionMode;
   objective: string;
   targetPaths: string[];
   originalContents: Record<string, string>;

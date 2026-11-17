@@ -8,6 +8,65 @@ export type AutonomousDevelopmentPromptMode =
   | "EXPLICIT_TARGET_PATCH"
   | "PLANNED_PATCH";
 
+export type AutonomousDevelopmentExecutionMode =
+  | "READ_ONLY_AUDIT"
+  | "PRODUCT_DEVELOPMENT";
+
+const EXPLICIT_READ_ONLY_AUDIT_PATTERN =
+  /\b(?:read[- ]only|audit[- ]only|inspection[- ]only|no[- ]write|without (?:any )?(?:writes?|modifications?|changes?|commits?)|do not (?:write|modify|change|commit)|don't (?:write|modify|change|commit)|never (?:write|modify|commit)|must not (?:write|modify|commit)|do not (?:make|create) (?:any )?(?:writes?|commits?|changes?))\b/i;
+
+const EXPLICIT_READ_ONLY_AUDIT_INTENT_PATTERN =
+  /\b(?:read[- ]only audit|audit[- ]only|read[- ]only inspection|repository inspection only|inspect only|inspection only|report only|read[- ]only report|read[- ]only mode)\b/i;
+
+const PRODUCT_DEVELOPMENT_AUDIT_MENTION_PATTERN =
+  /\b(?:implement|add|build|create|introduce|wire|integrate|connect|complete|finish|support|enable|expose|render|display|show|ui|console|page|component|route|api|endpoint|feature|functionality|integration|runtime|mode|classifier|classification|types?|helpers?|builder|result|results|tests?)\b/i;
+
+export function classifyAutonomousDevelopmentExecutionMode(
+  objective: string,
+): AutonomousDevelopmentExecutionMode {
+  const normalized =
+    objective
+      .replace(/[`"'“”‘’]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!normalized) {
+    return "PRODUCT_DEVELOPMENT";
+  }
+
+  const hasReadOnlyIntent =
+    EXPLICIT_READ_ONLY_AUDIT_INTENT_PATTERN.test(
+      normalized,
+    );
+
+  const hasReadOnlyConstraint =
+    EXPLICIT_READ_ONLY_AUDIT_PATTERN.test(
+      normalized,
+    );
+
+  const hasProductDevelopmentSignal =
+    PRODUCT_DEVELOPMENT_AUDIT_MENTION_PATTERN.test(
+      normalized,
+    );
+
+  if (
+    hasReadOnlyIntent &&
+    !hasProductDevelopmentSignal
+  ) {
+    return "READ_ONLY_AUDIT";
+  }
+
+  if (
+    hasReadOnlyIntent &&
+    hasReadOnlyConstraint &&
+    !hasProductDevelopmentSignal
+  ) {
+    return "READ_ONLY_AUDIT";
+  }
+
+  return "PRODUCT_DEVELOPMENT";
+}
+
 export type AutonomousDevelopmentPromptInput = {
   objective: string;
   targetPaths: string[];

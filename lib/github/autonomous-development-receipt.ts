@@ -23,7 +23,98 @@ export type AutonomousDevelopmentReceipt = {
   verificationPassed: boolean;
   commitShaConsistent: boolean;
   missingEvidence: string[];
+  auditState?: AutonomousDevelopmentAuditState;
+  report?: string;
+  reportLength?: number;
 };
+
+export type AutonomousDevelopmentAuditState =
+  | "AUDIT_COMPLETE"
+  | "AUDIT_BLOCKED"
+  | "AUDIT_INCOMPLETE";
+
+export type AutonomousDevelopmentAuditResultInput = {
+  auditState: AutonomousDevelopmentAuditState;
+  report: string;
+};
+
+export type AutonomousDevelopmentAuditResult = {
+  terminal: boolean;
+  successful: boolean;
+  valid: boolean;
+  auditState: AutonomousDevelopmentAuditState;
+  report: string;
+  reportLength: number;
+  readbackVerified: false;
+  verificationPassed: false;
+  commitShaConsistent: true;
+  missingEvidence: string[];
+};
+
+function isNonEmptyAuditReport(
+  value: string,
+) {
+  return value.trim().length > 0;
+}
+
+/**
+ * Builds the authoritative result for a
+ * READ_ONLY_AUDIT execution.
+ *
+ * Audit executions never produce a Git commit,
+ * never produce GitHub readback evidence, and
+ * never produce build verification evidence.
+ * They must not impersonate a product-development
+ * terminal receipt.
+ */
+export function buildAuditOnlyResult(
+  input: AutonomousDevelopmentAuditResultInput,
+): AutonomousDevelopmentAuditResult {
+  const report =
+    typeof input.report === "string"
+      ? input.report
+      : "";
+
+  const reportLength =
+    report.length;
+
+  const hasReport =
+    isNonEmptyAuditReport(
+      report,
+    );
+
+  const missingEvidence: string[] =
+    [];
+
+  if (!hasReport) {
+    missingEvidence.push(
+      "report",
+    );
+  }
+
+  const auditState: AutonomousDevelopmentAuditState =
+    hasReport
+      ? input.auditState
+      : "AUDIT_INCOMPLETE";
+
+  const successful =
+    auditState ===
+      "AUDIT_COMPLETE" &&
+    hasReport;
+
+  return {
+    terminal: true,
+    successful,
+    valid: hasReport,
+    auditState,
+    report,
+    reportLength,
+    readbackVerified: false,
+    verificationPassed: false,
+    commitShaConsistent: true,
+    missingEvidence,
+  };
+}
 
 const TERMINAL_STATUSES =
   new Set([
