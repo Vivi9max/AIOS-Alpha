@@ -71,6 +71,16 @@ interface GitHubTreeResponse {
   sha?: string;
 }
 
+interface GitHubContentsResponse {
+  type?: string;
+  path?: string;
+  encoding?: string;
+  content?: string;
+  sha?: string;
+  size?: number;
+  name?: string;
+}
+
 export interface AutonomousAtomicFile {
   path: string;
   content: string;
@@ -610,6 +620,7 @@ async function verifyStagingHead(
   branch: string,
   expectedSha: string,
   accessToken: string,
+  failurePrefix: string = "AIOS_ATOMIC_STAGING_READBACK_FAILED",
 ): Promise<void> {
   const actualSha =
     await getBranchSha(
@@ -623,7 +634,220 @@ async function verifyStagingHead(
     expectedSha
   ) {
     throw new Error(
-      "AIOS_ATOMIC_STAGING_READBACK_FAILED",
+      failurePrefix,
+    );
+  }
+}
+
+function decodeBase64Strict(
+  value: string,
+): Uint8Array {
+  const normalized =
+    value.replace(
+      /\s+/g,
+      "",
+    );
+
+  if (
+    normalized.length === 0 ||
+    normalized.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_BASE64_INVALID",
+    );
+  }
+
+  let binary: string;
+
+  try {
+    binary =
+      atob(
+        normalized,
+      );
+  } catch {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_BASE64_INVALID",
+    );
+  }
+
+  const bytes =
+    new Uint8Array(
+      binary.length,
+    );
+
+  for (
+    let index = 0;
+    index < binary.length;
+    index += 1
+  ) {
+    bytes[index] =
+      binary.charCodeAt(
+        index,
+      );
+  }
+
+  return bytes;
+}
+
+function decodeUtf8Strict(
+  bytes: Uint8Array,
+): string {
+  let decoded: string;
+
+  try {
+    decoded =
+      new TextDecoder(
+        "utf-8",
+        {
+          fatal: true,
+          ignoreBOM: false,
+        },
+      ).decode(
+        bytes,
+      );
+  } catch {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_UTF8_INVALID",
+    );
+  }
+
+  return decoded;
+}
+
+function validateContentsFile(
+  repository: string,
+  expected: AutonomousAtomicFile,
+  response: GitHubResponse<GitHubContentsResponse>,
+  stagingCommitSha: string,
+): void {
+  if (
+    !response.success
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+    );
+  }
+
+  const data =
+    response.data;
+
+  if (
+    !data ||
+    typeof data !==
+      "object"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_READ_FAILED",
+    );
+  }
+
+  if (
+    data.type !==
+    "file"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_TYPE_INVALID",
+    );
+  }
+
+  if (
+    data.path !==
+    expected.path
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_PATH_MISMATCH",
+    );
+  }
+
+  if (
+    data.encoding !==
+    "base64"
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_ENCODING_INVALID",
+    );
+  }
+
+  if (
+    typeof data.content !==
+      "string" ||
+    data.content.length === 0
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_CONTENT_MISSING",
+    );
+  }
+
+  if (
+    typeof data.sha !==
+      "string" ||
+    data.sha.trim().length === 0
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_BLOB_SHA_MISSING",
+    );
+  }
+
+  const bytes =
+    decodeBase64Strict(
+      data.content,
+    );
+
+  const decoded =
+    decodeUtf8Strict(
+      bytes,
+    );
+
+  if (
+    decoded !==
+    expected.content
+  ) {
+    throw new Error(
+      "AIOS_ATOMIC_CONTENTS_CONTENT_MISMATCH",
+    );
+  }
+
+  void repository;
+  void stagingCommitSha;
+}
+
+async function readStagingContents(
+  repository: string,
+  files: AutonomousAtomicFile[],
+  stagingCommitSha: string,
+  accessToken: string,
+): Promise<void> {
+  for (
+    const file of files
+  ) {
+    const encodedPath =
+      file.path
+        .split("/")
+        .map(
+          (segment) =>
+            encodeURIComponent(
+              segment,
+            ),
+        )
+        .join("/");
+
+    const result =
+      await githubRequest<GitHubContentsResponse>(
+        `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(
+          stagingCommitSha,
+        )}`,
+        {},
+        accessToken,
+      );
+
+    validateContentsFile(
+      repository,
+      file,
+      result,
+      stagingCommitSha,
     );
   }
 }
@@ -739,6 +963,22 @@ export async function executeAtomicStaging(
       stagingBranch,
       stagingCommitSha,
       auth.accessToken,
+      "AIOS_ATOMIC_STAGING_HEAD_BEFORE_CONTENTS_FAILED",
+    );
+
+    await readStagingContents(
+      repository,
+      files,
+      stagingCommitSha,
+      auth.accessToken,
+    );
+
+    await verifyStagingHead(
+      repository,
+      stagingBranch,
+      stagingCommitSha,
+      auth.accessToken,
+      "AIOS_ATOMIC_STAGING_HEAD_AFTER_CONTENTS_FAILED",
     );
 
     return {
