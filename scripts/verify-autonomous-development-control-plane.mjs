@@ -74,6 +74,14 @@ const objectiveContractSource = fs.readFileSync(
   "utf8",
 );
 
+const atomicExecutorSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-atomic-executor.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------

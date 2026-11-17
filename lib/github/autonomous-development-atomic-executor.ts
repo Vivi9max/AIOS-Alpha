@@ -628,6 +628,162 @@ async function verifyStagingHead(
   }
 }
 
+interface GitHubContentsResponse {
+  type?: string;
+  encoding?: string;
+  content?: string;
+  path?: string;
+  sha?: string;
+}
+
+function decodeBase64Strict(
+  value: string,
+): string | null {
+  const normalized =
+    value.replace(/\s+/g, "");
+
+  if (
+    !normalized ||
+    normalized.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)
+  ) {
+    return null;
+  }
+
+  try {
+    const buffer =
+      Buffer.from(normalized, "base64");
+
+    const decoded =
+      buffer.toString("utf8");
+
+    const roundTrip =
+      buffer.toString("base64")
+        .replace(/=+$/, "");
+
+    if (
+      roundTrip !==
+      normalized.replace(/=+$/, "")
+    ) {
+      return null;
+    }
+
+    if (
+      Buffer.from(decoded, "utf8")
+        .toString("base64")
+        .replace(/=+$/, "") !==
+      roundTrip
+    ) {
+      return null;
+    }
+
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyContentsReadback(
+  repository: string,
+  stagingCommitSha: string,
+  files: AutonomousAtomicFile[],
+  accessToken: string,
+): Promise<void> {
+  for (
+    const file of files
+  ) {
+    const result =
+      await githubRequest<GitHubContentsResponse>(
+        `/repos/${repository}/contents/${file.path
+          .split("/")
+          .map(
+            (segment) =>
+              encodeURIComponent(segment),
+          )
+          .join("/")}?ref=${encodeURIComponent(
+          stagingCommitSha,
+        )}`,
+        {},
+        accessToken,
+      );
+
+    if (
+      !result.success ||
+      !result.data
+    ) {
+      throw new Error(
+        result.error ||
+          `AIOS_ATOMIC_CONTENTS_READ_FAILED: ${file.path}`,
+      );
+    }
+
+    const data =
+      result.data;
+
+    if (
+      data.type !== "file"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_TYPE_INVALID: ${file.path}`,
+      );
+    }
+
+    if (
+      data.path !== file.path
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_PATH_MISMATCH: ${file.path}`,
+      );
+    }
+
+    if (
+      data.encoding !== "base64"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_ENCODING_INVALID: ${file.path}`,
+      );
+    }
+
+    if (
+      typeof data.content !== "string"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_CONTENT_MISSING: ${file.path}`,
+      );
+    }
+
+    if (
+      typeof data.sha !== "string" ||
+      !data.sha
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_BLOB_SHA_MISSING: ${file.path}`,
+      );
+    }
+
+    const decoded =
+      decodeBase64Strict(
+        data.content,
+      );
+
+    if (
+      decoded === null
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_BASE64_INVALID: ${file.path}`,
+      );
+    }
+
+    if (
+      decoded !== file.content
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_CONTENTS_CONTENT_MISMATCH: ${file.path}`,
+      );
+    }
+  }
+}
+
 export async function executeAtomicStaging(
   input: {
     objective: string;
@@ -731,6 +887,20 @@ export async function executeAtomicStaging(
       repository,
       stagingBranch,
       stagingCommitSha,
+      auth.accessToken,
+    );
+
+    await verifyStagingHead(
+      repository,
+      stagingBranch,
+      stagingCommitSha,
+      auth.accessToken,
+    );
+
+    await verifyContentsReadback(
+      repository,
+      stagingCommitSha,
+      files,
       auth.accessToken,
     );
 
