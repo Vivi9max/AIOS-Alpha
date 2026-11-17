@@ -94,8 +94,21 @@ const tasks = new Map<
 const ALLOWED_REPOSITORY =
   "Vivi9max/AIOS-Alpha";
 
-const ALLOWED_BRANCH =
+const DEFAULT_BASE_BRANCH =
   "main";
+
+const MAX_BASE_BRANCH_LENGTH =
+  200;
+
+const GIT_REF_INVALID_CHARACTERS =
+  /[\u0000-\u001f\u007f ~^:?*[\\]/;
+
+const GIT_REF_INVALID_SEQUENCES =
+  [
+    "..",
+    "@{",
+    "//",
+  ];
 
 const MAX_TARGET_PATHS =
   6;
@@ -767,6 +780,83 @@ async function hydratePersistentTasks(): Promise<
   return merged;
 }
 
+function normalizeBaseBranch(
+  branch: string | undefined,
+): string {
+  if (
+    branch === undefined ||
+    branch === null
+  ) {
+    return DEFAULT_BASE_BRANCH;
+  }
+
+  return branch.trim();
+}
+
+function assertSafeBaseBranch(
+  branch: string,
+): string {
+  const normalized =
+    normalizeBaseBranch(
+      branch,
+    );
+
+  if (!normalized) {
+    throw new Error(
+      "AUTONOMOUS_DEVELOPMENT_BASE_BRANCH_INVALID: base branch must not be empty.",
+    );
+  }
+
+  if (
+    normalized.length >
+    MAX_BASE_BRANCH_LENGTH
+  ) {
+    throw new Error(
+      `AUTONOMOUS_DEVELOPMENT_BASE_BRANCH_INVALID: base branch must not exceed ${MAX_BASE_BRANCH_LENGTH} characters.`,
+    );
+  }
+
+  if (
+    GIT_REF_INVALID_CHARACTERS.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      "AUTONOMOUS_DEVELOPMENT_BASE_BRANCH_INVALID: base branch contains invalid characters.",
+    );
+  }
+
+  for (
+    const sequence of
+    GIT_REF_INVALID_SEQUENCES
+  ) {
+    if (
+      normalized.includes(
+        sequence,
+      )
+    ) {
+      throw new Error(
+        `AUTONOMOUS_DEVELOPMENT_BASE_BRANCH_INVALID: base branch contains invalid sequence "${sequence}".`,
+      );
+    }
+  }
+
+  if (
+    normalized.startsWith("/") ||
+    normalized.endsWith("/") ||
+    normalized.startsWith(".") ||
+    normalized.endsWith(".") ||
+    normalized.startsWith("-") ||
+    normalized.endsWith(".lock")
+  ) {
+    throw new Error(
+      "AUTONOMOUS_DEVELOPMENT_BASE_BRANCH_INVALID: base branch has an invalid boundary.",
+    );
+  }
+
+  return normalized;
+}
+
 function assertSafeRepository(
   task: AutonomousDevelopmentTask,
 ): void {
@@ -779,14 +869,10 @@ function assertSafeRepository(
     );
   }
 
-  if (
-    task.branch !==
-    ALLOWED_BRANCH
-  ) {
-    throw new Error(
-      "Branch is outside the Founder development boundary.",
+  task.branch =
+    assertSafeBaseBranch(
+      task.branch,
     );
-  }
 }
 
 function assertSafeObjective(
@@ -1191,6 +1277,7 @@ export function createAutonomousDevelopmentTask(
   input: {
     objective: string;
     targetPaths?: string[];
+    baseBranch?: string;
   },
 ): AutonomousDevelopmentTask {
   const timestamp =
@@ -1199,6 +1286,13 @@ export function createAutonomousDevelopmentTask(
   const objective =
     assertSafeObjective(
       input.objective,
+    );
+
+  const baseBranch =
+    assertSafeBaseBranch(
+      normalizeBaseBranch(
+        input.baseBranch,
+      ),
     );
 
   const targetPaths =
@@ -1218,7 +1312,7 @@ export function createAutonomousDevelopmentTask(
         ALLOWED_REPOSITORY,
 
       branch:
-        ALLOWED_BRANCH,
+        baseBranch,
 
       targetPaths,
 

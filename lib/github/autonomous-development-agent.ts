@@ -33,6 +33,15 @@ import {
 const REPOSITORY = "Vivi9max/AIOS-Alpha";
 const BRANCH = "main";
 
+function resolveBaseBranch(value?: string) {
+  const candidate =
+    typeof value === "string"
+      ? value.trim()
+      : "";
+
+  return candidate || BRANCH;
+}
+
 const MAX_DISCOVERY_ENTRIES = 220;
 const MAX_TARGET_FILES = 6;
 
@@ -321,6 +330,7 @@ type DiscoveryEntry = {
 async function discoverPath(
   node: DiscoveryNode,
   accessToken?: string,
+  ref: string = BRANCH,
 ): Promise<{
   node: DiscoveryNode;
   entries: DiscoveryEntry[];
@@ -329,7 +339,7 @@ async function discoverPath(
     await listGitHubPath({
       repo: REPOSITORY,
       path: node.path,
-      ref: BRANCH,
+      ref,
       accessToken,
     });
 
@@ -353,6 +363,7 @@ async function discoverPath(
 async function discoverRepositoryPaths(
   objective: string,
   accessToken?: string,
+  ref: string = BRANCH,
 ) {
   const roots = [
     "app",
@@ -406,7 +417,7 @@ async function discoverRepositoryPaths(
       const results =
         await Promise.all(
           batch.map(
-            (node) => discoverPath(node, accessToken),
+            (node) => discoverPath(node, accessToken, ref),
           ),
         );
 
@@ -558,6 +569,7 @@ function buildPlannerPrompt(
   objective: string,
   discoveredPaths: string[],
   developmentPrompt: string,
+  baseBranch: string = BRANCH,
 ) {
   const context =
     discoveredPaths.join(
@@ -569,7 +581,7 @@ function buildPlannerPrompt(
     "",
     "AUTONOMOUS DEVELOPMENT REQUEST",
     `Repository: ${REPOSITORY}`,
-    `Branch: ${BRANCH}`,
+    `Branch: ${baseBranch}`,
     "",
     "USER OBJECTIVE:",
     objective,
@@ -777,6 +789,7 @@ function buildPatchPrompt(
   targetPath: string,
   targetContent: string,
   developmentPrompt: string,
+  baseBranch: string = BRANCH,
 ) {
   const boundedContent =
     targetContent.slice(
@@ -789,7 +802,7 @@ function buildPatchPrompt(
     "",
     "AUTONOMOUS DEVELOPMENT PATCH REQUEST",
     `Repository: ${REPOSITORY}`,
-    `Branch: ${BRANCH}`,
+    `Branch: ${baseBranch}`,
     `Target: ${targetPath}`,
     "",
     "USER OBJECTIVE:",
@@ -1549,6 +1562,7 @@ async function generatePatch(
   currentContent: string,
   developmentPrompt: string,
   repairContext?: string,
+  baseBranch: string = BRANCH,
 ) {
   let lastError =
     "AIOS_PATCH_EMPTY";
@@ -1569,6 +1583,7 @@ async function generatePatch(
           targetPath,
           currentContent,
           developmentPrompt,
+          baseBranch,
         ),
         [
           "",

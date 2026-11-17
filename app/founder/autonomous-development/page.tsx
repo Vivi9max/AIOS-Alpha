@@ -119,6 +119,90 @@ type Result = {
 const DEFAULT_OBJECTIVE =
   "例如：把 /cn 页面做成正常用户可用的 AIOS CN 工作区，并保持现有 API 与 Founder 权限边界不变。";
 
+const DEFAULT_BASE_BRANCH = "main";
+
+const FIXED_REPOSITORY =
+  "Vivi9max/AIOS-Alpha";
+
+const MAX_BASE_BRANCH_LENGTH = 200;
+
+function validateBaseBranchInput(
+  value: string,
+): string | null {
+  const branch = value.trim();
+
+  if (!branch) {
+    return "Base branch is required.";
+  }
+
+  if (
+    branch.length >
+    MAX_BASE_BRANCH_LENGTH
+  ) {
+    return "Base branch is too long.";
+  }
+
+  if (
+    /[\u0000-\u001f\u007f]/.test(
+      branch,
+    )
+  ) {
+    return "Base branch contains control characters.";
+  }
+
+  if (/\s/.test(branch)) {
+    return "Base branch must not contain whitespace.";
+  }
+
+  if (
+    branch.startsWith("/") ||
+    branch.endsWith("/")
+  ) {
+    return "Base branch must not start or end with a slash.";
+  }
+
+  if (
+    branch.includes("..") ||
+    branch.includes("//")
+  ) {
+    return "Base branch contains an invalid Git ref sequence.";
+  }
+
+  if (
+    branch.includes("@{") ||
+    branch === "@"
+  ) {
+    return "Base branch contains an invalid Git ref sequence.";
+  }
+
+  if (
+    /[~^:?*[\\]/.test(branch)
+  ) {
+    return "Base branch contains invalid Git ref characters.";
+  }
+
+  if (
+    branch.startsWith(".") ||
+    branch.endsWith(".") ||
+    branch.endsWith(".lock")
+  ) {
+    return "Base branch contains an invalid Git ref segment.";
+  }
+
+  if (
+    branch.split("/").some(
+      (segment) =>
+        !segment ||
+        segment.startsWith(".") ||
+        segment.endsWith(".lock"),
+    )
+  ) {
+    return "Base branch contains an invalid Git ref segment.";
+  }
+
+  return null;
+}
+
 const PHASE_LABELS: Record<
   TaskPhase,
   string
@@ -274,6 +358,9 @@ export default function FounderAutonomousDevelopmentPage() {
 
   const [objective, setObjective] =
     useState("");
+
+  const [baseBranch, setBaseBranch] =
+    useState(DEFAULT_BASE_BRANCH);
 
   const [running, setRunning] =
     useState(false);
@@ -864,6 +951,20 @@ export default function FounderAutonomousDevelopmentPage() {
       return;
     }
 
+    const requestBaseBranch =
+      baseBranch.trim() ||
+      DEFAULT_BASE_BRANCH;
+
+    const baseBranchError =
+      validateBaseBranchInput(
+        requestBaseBranch,
+      );
+
+    if (baseBranchError) {
+      setError(baseBranchError);
+      return;
+    }
+
     clearPolling();
     clearHeartbeat();
 
@@ -907,6 +1008,10 @@ export default function FounderAutonomousDevelopmentPage() {
                 "autonomous",
               objective:
                 requestObjective,
+              baseBranch:
+                requestBaseBranch,
+              repository:
+                FIXED_REPOSITORY,
             }),
           },
         );
@@ -1197,6 +1302,110 @@ export default function FounderAutonomousDevelopmentPage() {
 
           <div
             style={{
+              marginTop: 11,
+              padding: 10,
+              borderRadius: 10,
+              background: "#f8fafc",
+              border:
+                "1px solid #e2e8f0",
+            }}
+          >
+            <div
+              style={{
+                color: "#64748b",
+                fontSize: 10,
+                fontWeight: 850,
+                letterSpacing:
+                  "0.08em",
+              }}
+            >
+              BASE BRANCH
+            </div>
+
+            <input
+              value={baseBranch}
+              onChange={(event) =>
+                setBaseBranch(
+                  event.target.value,
+                )
+              }
+              disabled={running}
+              placeholder={
+                DEFAULT_BASE_BRANCH
+              }
+              style={{
+                width: "100%",
+                marginTop: 7,
+                padding:
+                  "10px 11px",
+                boxSizing:
+                  "border-box",
+                borderRadius: 9,
+                border:
+                  "1px solid #cbd5e1",
+                background:
+                  running
+                    ? "#f8fafc"
+                    : "#ffffff",
+                color: "#111827",
+                fontSize: 11,
+                fontFamily:
+                  "monospace",
+                outline: "none",
+              }}
+            />
+
+            <div
+              style={{
+                marginTop: 6,
+                color: "#64748b",
+                fontSize: 10,
+                lineHeight: 1.5,
+              }}
+            >
+              Repository:{" "}
+              <span
+                style={{
+                  color: "#334155",
+                  fontFamily:
+                    "monospace",
+                }}
+              >
+                {FIXED_REPOSITORY}
+              </span>
+              {" · "}
+              Base branch:{" "}
+              <span
+                style={{
+                  color: "#334155",
+                  fontFamily:
+                    "monospace",
+                  fontWeight: 850,
+                }}
+              >
+                {baseBranch.trim() ||
+                  DEFAULT_BASE_BRANCH}
+              </span>
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                color: "#94a3b8",
+                fontSize: 9,
+                lineHeight: 1.5,
+              }}
+            >
+              AIOS reads and stages from this
+              branch. Changes are written to a
+              separate staging branch; the
+              selected base branch is never
+              written to directly.
+            </div>
+          </div>
+
+          <div
+            style={{
               display: "flex",
               gap: 8,
               alignItems:
@@ -1456,7 +1665,7 @@ export default function FounderAutonomousDevelopmentPage() {
                         850,
                     }}
                   >
-                    BRANCH
+                    BASE BRANCH
                   </div>
 
                   <div
@@ -1465,6 +1674,10 @@ export default function FounderAutonomousDevelopmentPage() {
                       color:
                         "#334155",
                       fontSize: 10,
+                      fontFamily:
+                        "monospace",
+                      overflowWrap:
+                        "anywhere",
                     }}
                   >
                     {

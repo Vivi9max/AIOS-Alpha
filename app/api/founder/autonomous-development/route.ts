@@ -17,6 +17,7 @@ import {
   findPersistentActiveAutonomousDevelopmentTask,
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
+  normalizeAutonomousDevelopmentBranch,
 } from "@/lib/github/autonomous-development-control-plane";
 import {
   heartbeatAutonomousDevelopmentExecution,
@@ -386,6 +387,7 @@ async function executeWithHeartbeatWatchdog(
   taskId: string,
   objective: string,
   accessToken?: string,
+  baseBranch: string = DEFAULT_BRANCH,
 ) {
   const intervalMs =
     getAutonomousDevelopmentHeartbeatInterval();
@@ -456,6 +458,7 @@ async function executeWithHeartbeatWatchdog(
         objective,
         taskId,
         accessToken,
+        baseBranch,
       },
     );
   } finally {
@@ -619,6 +622,31 @@ export async function POST(
       );
     }
 
+    let baseBranch: string;
+
+    try {
+      baseBranch =
+        normalizeAutonomousDevelopmentBranch(
+          body?.branch,
+        );
+    } catch (
+      branchError
+    ) {
+      return json(
+        {
+          ok: false,
+          code:
+            "AUTONOMOUS_BRANCH_INVALID",
+          error:
+            branchError instanceof
+            Error
+              ? branchError.message
+              : "Invalid base branch.",
+        },
+        400,
+      );
+    }
+
     const existingTask =
       await findPersistentActiveAutonomousDevelopmentTask(
         objective,
@@ -662,6 +690,8 @@ export async function POST(
         {
           objective,
           targetPaths: [],
+          branch:
+            baseBranch,
         },
       );
 
@@ -702,6 +732,7 @@ export async function POST(
             claimedTask.id,
             objective,
             githubAuth.accessToken,
+            baseBranch,
           );
 
           /*

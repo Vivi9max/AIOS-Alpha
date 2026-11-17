@@ -58,6 +58,10 @@ function transpile(source, fileName) {
 
 const ATOMIC_REPOSITORY = "Vivi9max/AIOS-Alpha";
 const ATOMIC_BASE_BRANCH = "main";
+const C171_R2_BRANCH =
+  "c169-8-ad-ad-1794927195662-durujf-repair-1";
+const C171_R2_BRANCH_HEAD =
+  "946d4d281998100130494b30d837e20c94491398";
 const ATOMIC_BASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const ATOMIC_BASE_TREE_SHA =
   "1111111111111111111111111111111111111111";
@@ -288,6 +292,7 @@ const {
   updateAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
   persistAutonomousDevelopmentTasks,
+  validateAutonomousDevelopmentBranch,
 } = await import(
   pathToFileURL(
     path.join(tmpDir, "control-plane.mjs"),
@@ -665,6 +670,168 @@ await run("4 PHASE TRANSITION SAFETY", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// TEST 4B — Base Branch Selection (C171.0.1)
+// ---------------------------------------------------------------------------
+
+await run("4B BASE BRANCH VALIDATION", async () => {
+  await resetStorage();
+
+  // Default branch remains main when omitted.
+  const defaultTask =
+    createAutonomousDevelopmentTask({
+      objective:
+        "C171.0.1 base branch default fixture",
+    });
+
+  assert.equal(
+    defaultTask.branch,
+    "main",
+    "omitted branch must default to main",
+  );
+
+  // A valid non-main branch is preserved.
+  const customTask =
+    createAutonomousDevelopmentTask({
+      objective:
+        "C171.0.1 base branch custom fixture",
+      branch: "feature/example-work",
+    });
+
+  assert.equal(
+    customTask.branch,
+    "feature/example-work",
+    "valid non-main branch must be preserved",
+  );
+
+  // The R2 staging branch name must be accepted as a base.
+  const r2Task = createAutonomousDevelopmentTask({
+    objective:
+      "C171.0.1 base branch R2 fixture",
+    branch: C171_R2_BRANCH,
+  });
+
+  assert.equal(
+    r2Task.branch,
+    C171_R2_BRANCH,
+    "R2 branch name must be accepted as a base branch",
+  );
+
+  // Repository allowlist remains enforced.
+  assert.throws(
+    () =>
+      createAutonomousDevelopmentTask({
+        objective:
+          "C171.0.1 repository allowlist fixture",
+        repository: "evil/other-repo",
+      }),
+    /repository/i,
+    "repository allowlist must remain enforced",
+  );
+
+  // Branch selection is persisted and returned correctly.
+  await persistAutonomousDevelopmentTasks();
+  storage.__clear();
+
+  const hydrated =
+    await listPersistentAutonomousDevelopmentTasks();
+
+  const persistedR2 = hydrated.find(
+    (task) => task.id === r2Task.id,
+  );
+
+  assert.ok(
+    persistedR2,
+    "persisted R2 task must survive hydration",
+  );
+
+  assert.equal(
+    persistedR2.branch,
+    C171_R2_BRANCH,
+    "persisted branch selection must be returned intact",
+  );
+
+  const persistedCustom = hydrated.find(
+    (task) => task.id === customTask.id,
+  );
+
+  assert.ok(
+    persistedCustom,
+    "persisted custom task must survive hydration",
+  );
+
+  assert.equal(
+    persistedCustom.branch,
+    "feature/example-work",
+    "persisted custom branch must be returned intact",
+  );
+});
+
+await run("4C BASE BRANCH REJECTION", async () => {
+  await resetStorage();
+
+  const invalidBranches = [
+    "",
+    " ",
+    "   ",
+    "main ",
+    " main",
+    "-leading-dash",
+    "trailing-slash/",
+    "/leading-slash",
+    "double//separator",
+    "trailing.dot.",
+    "has space",
+    "has\tcontrol",
+    "has\nnewline",
+    "has~tilde",
+    "has^caret",
+    "has:colon",
+    "has?question",
+    "has*star",
+    "has[bracket",
+    "has\\backslash",
+    "has..sequence",
+    "has@{sequence",
+    "ends.lock",
+    "a".repeat(300),
+  ];
+
+  for (const branch of invalidBranches) {
+    assert.throws(
+      () =>
+        validateAutonomousDevelopmentBranch(branch),
+      /branch/i,
+      `invalid branch must be rejected: ${JSON.stringify(branch)}`,
+    );
+
+    assert.throws(
+      () =>
+        createAutonomousDevelopmentTask({
+          objective:
+            "C171.0.1 invalid branch fixture",
+          branch,
+        }),
+      /branch/i,
+      `task creation must reject invalid branch: ${JSON.stringify(branch)}`,
+    );
+  }
+
+  // Valid branches must pass validation.
+  for (const branch of [
+    "main",
+    "feature/example-work",
+    "release/v1.2.3",
+    C171_R2_BRANCH,
+  ]) {
+    assert.doesNotThrow(
+      () =>
+        validateAutonomousDevelopmentBranch(branch),
+      `valid branch must be accepted: ${branch}`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Atomic executor mock harness
 // ---------------------------------------------------------------------------
 
@@ -673,6 +840,11 @@ function encodeBase64(value) {
 }
 
 function createAtomicMockFetch(scenario) {
+  const baseBranch =
+    scenario.baseBranch ?? ATOMIC_BASE_BRANCH;
+  const baseRefPath =
+    `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${baseBranch}`;
+
   const state = {
     blobRequests: 0,
     treeRequests: 0,
@@ -683,6 +855,10 @@ function createAtomicMockFetch(scenario) {
     unexpectedRequests: [],
     contentsRefs: [],
     blobShas: new Map(),
+    baseRefRequests: 0,
+    baseRefPath,
+    baseBranch,
+    directBaseWrites: 0,
   };
 
   const blobShaFor = (index) =>
@@ -718,7 +894,6 @@ function createAtomicMockFetch(scenario) {
     const pathname = url.pathname;
     const search = url.searchParams;
 
-    const baseRefPath = `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${ATOMIC_BASE_BRANCH}`;
     const stagingRefPath = `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${ATOMIC_STAGING_BRANCH}`;
     const baseCommitPath = `/repos/${ATOMIC_REPOSITORY}/git/commits/${ATOMIC_BASE_SHA}`;
     const blobPath = `/repos/${ATOMIC_REPOSITORY}/git/blobs`;
@@ -732,12 +907,40 @@ function createAtomicMockFetch(scenario) {
       method === "GET" &&
       pathname === baseRefPath
     ) {
+      state.baseRefRequests += 1;
       return jsonResponse({
         object: {
           sha: ATOMIC_BASE_SHA,
           type: "commit",
         },
       });
+    }
+
+    // Guard: no direct writes to the selected base branch.
+    if (
+      method !== "GET" &&
+      (pathname === baseRefPath ||
+        pathname === `/repos/${ATOMIC_REPOSITORY}/git/refs/heads/${baseBranch}` ||
+        pathname.startsWith(
+          `/repos/${ATOMIC_REPOSITORY}/contents/`,
+        ))
+    ) {
+      if (pathname.startsWith(
+        `/repos/${ATOMIC_REPOSITORY}/contents/`,
+      )) {
+        const ref = search.get("ref") ?? search.get("branch");
+        if (ref === baseBranch) {
+          state.directBaseWrites += 1;
+          throw new Error(
+            `Direct base-branch write attempted: ${method} ${pathname}`,
+          );
+        }
+      } else {
+        state.directBaseWrites += 1;
+        throw new Error(
+          `Direct base-branch write attempted: ${method} ${pathname}`,
+        );
+      }
     }
 
     // 2. GET base commit
@@ -975,6 +1178,85 @@ await run("5 ATOMIC EXECUTION POSITIVE", async () => {
   for (const ref of state.contentsRefs) {
     assert.equal(ref, ATOMIC_STAGING_COMMIT_SHA);
   }
+  assert.equal(
+    state.baseRefRequests,
+    1,
+    "base ref must be read from the selected base branch",
+  );
+  assert.equal(
+    state.directBaseWrites,
+    0,
+    "no write may target the selected base branch",
+  );
+  assert.deepEqual(state.unexpectedRequests, []);
+});
+
+// ---------------------------------------------------------------------------
+// TEST 5B — Atomic Execution With Non-Main Base Branch (C171.0.1)
+// ---------------------------------------------------------------------------
+
+await run("5B ATOMIC EXECUTION NON-MAIN BASE", async () => {
+  const scenario = { baseBranch: C171_R2_BRANCH };
+  const { mockFetch, state } =
+    createAtomicMockFetch(scenario);
+
+  const result = await withMockFetch(
+    mockFetch,
+    () =>
+      executeAtomicStaging(
+        buildAtomicInput({
+          baseBranch: C171_R2_BRANCH,
+        }),
+      ),
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(
+    result.code,
+    "AIOS_ATOMIC_STAGING_READY",
+  );
+
+  const snapshot = result.snapshot;
+  assert.ok(snapshot, "snapshot must be present");
+
+  assert.equal(snapshot.repository, ATOMIC_REPOSITORY);
+  assert.equal(
+    snapshot.baseBranch,
+    C171_R2_BRANCH,
+    "atomic staging must use the selected base branch",
+  );
+  assert.equal(snapshot.baseSha, ATOMIC_BASE_SHA);
+  assert.equal(
+    snapshot.stagingBranch,
+    ATOMIC_STAGING_BRANCH,
+    "staging branch must remain distinct from base branch",
+  );
+  assert.notEqual(
+    snapshot.stagingBranch,
+    snapshot.baseBranch,
+    "staging branch must not equal base branch",
+  );
+  assert.equal(
+    snapshot.stagingCommitSha,
+    ATOMIC_STAGING_COMMIT_SHA,
+  );
+
+  assert.equal(
+    state.baseRefRequests,
+    1,
+    "base ref must be read from the selected non-main branch",
+  );
+  assert.equal(
+    state.baseRefPath,
+    `/repos/${ATOMIC_REPOSITORY}/git/ref/heads/${C171_R2_BRANCH}`,
+    "base ref path must target the selected branch",
+  );
+  assert.equal(
+    state.directBaseWrites,
+    0,
+    "no write may target the selected base branch",
+  );
+  assert.equal(state.refCreateRequests, 1);
   assert.deepEqual(state.unexpectedRequests, []);
 });
 
@@ -1181,7 +1463,7 @@ await run("17 ATOMIC NEGATIVE INVALID PATH", async () => {
 // ---------------------------------------------------------------------------
 
 console.log(
-  "\nC169.8-D2.1 INDEPENDENT VERIFICATION\n",
+  "\nC171.0.1 BASE BRANCH SELECTION VERIFICATION\n",
 );
 
 for (const line of report) {
