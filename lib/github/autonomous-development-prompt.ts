@@ -293,6 +293,8 @@ const REPLACE_INTENT_PATTERN =
 const REPLACE_INTENT_PATTERN_ZH =
   /(?:修改|更新|编辑|调整|修复|修补|替换|重写|重构|扩展|增强|改进|完善|集成|接入|连接|实现|纠正|改名|重命名|移动|删除|移除|迁移|升级|降级|回滚|保留|保持)/;
 
+const CLASSIFICATION_CONTEXT_WINDOW = 220;
+
 type IntentClassification =
   | "CREATE"
   | "REPLACE"
