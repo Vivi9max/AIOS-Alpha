@@ -40,11 +40,18 @@ const MAX_PLANNER_CONTEXT_CHARS = 24000;
 const MAX_TARGET_CONTEXT_CHARS = 200000;
 
 const MAX_PATCH_CHARS = 30000;
-const MAX_PATCH_OPERATIONS = 32;
+const MAX_PATCH_BATCHES = 4;
+const MAX_PATCH_OPERATIONS_PER_BATCH = 8;
+const MAX_PATCH_OPERATIONS_TOTAL = 32;
+const MAX_PATCH_ATTEMPTS = 3;
 
 const MAX_PLAN_ATTEMPTS = 2;
-const MAX_PATCH_ATTEMPTS = 3;
 const MAX_REPAIR_ROUNDS = 2;
+
+const PATCH_BATCH_MARKER_CONTINUE =
+  "AIOS_PATCH_BATCH_CONTINUE";
+const PATCH_BATCH_MARKER_COMPLETE =
+  "AIOS_PATCH_BATCH_COMPLETE";
 
 /*
  * Hard ceiling on the total number of autonomous GitHub writes that a
@@ -131,7 +138,7 @@ function buildPatchSystemPrompt(
     "SEARCH 必须足够独特，不能产生多个匹配。",
     "REPLACE 是最终希望写入的源码。",
     "如果只需要修改一个小区域，只返回一个 patch。",
-    "最多返回 8 个 patch。",
+    "每批最多返回 8 个 patch。",
     "每个 patch 必须严格使用以下本次生成专属的定界符：",
     "",
     "AIOS_PATCH_BEGIN",
@@ -148,6 +155,15 @@ function buildPatchSystemPrompt(
     "必须逐字使用上述定界符，不得改写或省略。",
     "优先修改最小必要范围。",
     "保持现有 API、数据接口、类型和其他模块不变。",
+    "",
+    "ADAPTIVE BATCH PROTOCOL:",
+    "每次响应必须且只能包含一个批次状态标记，并放在所有 patch 之外：",
+    PATCH_BATCH_MARKER_CONTINUE,
+    PATCH_BATCH_MARKER_COMPLETE,
+    "",
+    `${PATCH_BATCH_MARKER_CONTINUE} 表示仍有后续批次。`,
+    `${PATCH_BATCH_MARKER_COMPLETE} 表示整个目标文件补丁工作完成。`,
+    "不得通过操作数量推断完成，必须显式声明状态标记。",
   ].join("\n");
 }
 
@@ -164,7 +180,7 @@ function buildRepairSystemPrompt(
     "不要输出解释。",
     "SEARCH 必须精确来自当前真实源码。",
     "REPLACE 必须是完整可编译源码片段。",
-    "最多 8 个 patch。",
+    "每批最多 8 个 patch。",
     "",
     "格式：",
     "AIOS_PATCH_BEGIN",
@@ -179,6 +195,15 @@ function buildRepairSystemPrompt(
     "AIOS_PATCH_END",
     "",
     "必须逐字使用上述定界符，不得改写或省略。",
+    "",
+    "ADAPTIVE BATCH PROTOCOL:",
+    "每次响应必须且只能包含一个批次状态标记，并放在所有 patch 之外：",
+    PATCH_BATCH_MARKER_CONTINUE,
+    PATCH_BATCH_MARKER_COMPLETE,
+    "",
+    `${PATCH_BATCH_MARKER_CONTINUE} 表示仍有后续批次。`,
+    `${PATCH_BATCH_MARKER_COMPLETE} 表示整个目标文件补丁工作完成。`,
+    "不得通过操作数量推断完成，必须显式声明状态标记。",
   ].join("\n");
 }
 
@@ -999,15 +1024,337 @@ function parsePatchBlocks(
     }
   }
 
-  if (
-    blocks.length === 0
-  ) {
+  return blocks;
+}
+
+type PatchBatchMarker =
+  | "CONTINUE"
+  | "COMPLETE";
+
+function parsePatchBatchMarker(
+  content: string,
+): PatchBatchMarker {
+  const continueCount =
+    content.split(
+      PATCH_BATCH_MARKER_CONTINUE,
+    ).length - 1;
+
+  const completeCount =
+    content.split(
+      PATCH_BATCH_MARKER_COMPLETE,
+    ).length - 1;
+
+  const total =
+    continueCount +
+    completeCount;
+
+  if (total === 0) {
     throw new Error(
-      "AIOS_PATCH_EMPTY",
+      "AIOS_PATCH_BATCH_MARKER_INVALID: missing batch status marker.",
     );
   }
 
-  return blocks;
+  if (total > 1) {
+    throw new Error(
+      "AIOS_PATCH_BATCH_MARKER_INVALID: multiple batch status markers.",
+    );
+  }
+
+  if (continueCount === 1) {
+    return "CONTINUE";
+  }
+
+  if (completeCount === 1) {
+    return "COMPLETE";
+  }
+
+  throw new Error(
+    "AIOS_PATCH_BATCH_MARKER_INVALID: unknown batch status marker.",
+  );
+}
+
+function stripPatchBatchMarkers(
+  content: string,
+) {
+  return content
+    .replace(
+      new RegExp(
+        `(?:^|\\r?\\n)[ \\t]*${PATCH_BATCH_MARKER_CONTINUE}[ \\t]*(?=\\r?\\n|$)`,
+        "g",
+      ),
+      "",
+    )
+    .replace(
+      new RegExp(
+        `(?:^|\\r?\\n)[ \\t]*${PATCH_BATCH_MARKER_COMPLETE}[ \\t]*(?=\\r?\\n|$)`,
+        "g",
+      ),
+      "",
+    );
+}
+
+type PatchBatchResult = {
+  content: string;
+  delimiters: PatchDelimiters;
+  batchCount: number;
+  operationCount: number;
+};
+
+type PatchBatchRunOptions = {
+  objective: string;
+  targetPath: string;
+  currentContent: string;
+  developmentPrompt: string;
+  repairContext?: string;
+  runBrainImpl?: typeof runBrain;
+};
+
+async function runAdaptivePatchBatches(
+  options: PatchBatchRunOptions,
+): Promise<PatchBatchResult> {
+  const runBrainImpl =
+    options.runBrainImpl || runBrain;
+
+  const isRepair =
+    Boolean(options.repairContext);
+
+  let workingContent =
+    options.currentContent;
+
+  let lastDelimiters =
+    createPatchDelimiters();
+
+  let successfulBatches = 0;
+  let successfulOperations = 0;
+
+  for (
+    let batchIndex = 1;
+    batchIndex <= MAX_PATCH_BATCHES;
+    batchIndex += 1
+  ) {
+    const batchSource =
+      workingContent;
+
+    let batchError =
+      "AIOS_PATCH_BATCH_GENERATION_FAILED";
+
+    let batchSucceeded = false;
+
+    for (
+      let attempt = 1;
+      attempt <= MAX_PATCH_ATTEMPTS;
+      attempt += 1
+    ) {
+      const delimiters =
+        createPatchDelimiters();
+
+      lastDelimiters =
+        delimiters;
+
+      const prompt =
+        [
+          buildPatchPrompt(
+            options.objective,
+            options.targetPath,
+            batchSource,
+            options.developmentPrompt,
+          ),
+          [
+            "",
+            `ADAPTIVE BATCH: ${batchIndex} of ${MAX_PATCH_BATCHES}`,
+            `Already applied operations: ${successfulOperations}`,
+            `Remaining operation budget: ${
+              MAX_PATCH_OPERATIONS_TOTAL -
+              successfulOperations
+            }`,
+            "",
+            "PATCH DELIMITERS FOR THIS ATTEMPT:",
+            delimiters.searchBegin,
+            delimiters.searchEnd,
+            delimiters.replaceBegin,
+            delimiters.replaceEnd,
+            "",
+            "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
+            "",
+            "ADAPTIVE BATCH PROTOCOL:",
+            `每批最多 ${MAX_PATCH_OPERATIONS_PER_BATCH} 个 SEARCH/REPLACE 操作。`,
+            "每次响应必须且只能包含一个批次状态标记，并放在所有 patch 之外：",
+            PATCH_BATCH_MARKER_CONTINUE,
+            PATCH_BATCH_MARKER_COMPLETE,
+            "",
+            `${PATCH_BATCH_MARKER_CONTINUE} 表示仍有后续批次。`,
+            `${PATCH_BATCH_MARKER_COMPLETE} 表示整个目标文件补丁工作完成。`,
+            "不得通过操作数量推断完成，必须显式声明状态标记。",
+            "SEARCH 必须来自当前提供的源码，包括此前批次已经生成的修改。",
+          ].join("\n"),
+          options.repairContext
+            ? [
+                "",
+                "PREVIOUS PATCH FAILURE:",
+                options.repairContext,
+                "",
+                "Regenerate a smaller exact patch.",
+              ].join("\n")
+            : "",
+          attempt > 1
+            ? [
+                "",
+                "PREVIOUS PATCH ATTEMPT ERROR:",
+                batchError,
+                "",
+                "IMPORTANT:",
+                "The previous patch was rejected.",
+                "Fix the exact reported patch error.",
+                "Do not output a complete file.",
+                "Return only exact SEARCH/REPLACE operations.",
+              ].join("\n")
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+      const response =
+        await runBrainImpl(
+          prompt,
+          isRepair
+            ? buildRepairSystemPrompt(
+                delimiters,
+              )
+            : buildPatchSystemPrompt(
+                delimiters,
+              ),
+        );
+
+      if (
+        !response.success
+      ) {
+        batchError =
+          response.error ||
+          "AIOS patch generation failed.";
+
+        continue;
+      }
+
+      try {
+        const marker =
+          parsePatchBatchMarker(
+            response.content,
+          );
+
+        const stripped =
+          stripPatchBatchMarkers(
+            response.content,
+          );
+
+        const operations =
+          parsePatchBlocks(
+            stripped,
+            options.targetPath,
+            delimiters,
+          );
+
+        if (
+          operations.length >
+          MAX_PATCH_OPERATIONS_PER_BATCH
+        ) {
+          throw new Error(
+            `AIOS_PATCH_BATCH_OPERATION_LIMIT_EXCEEDED: ${operations.length} operations in batch ${batchIndex}.`,
+          );
+        }
+
+        if (
+          successfulOperations +
+            operations.length >
+          MAX_PATCH_OPERATIONS_TOTAL
+        ) {
+          throw new Error(
+            `AIOS_PATCH_BATCH_LIMIT_EXCEEDED: total operation limit ${MAX_PATCH_OPERATIONS_TOTAL} exceeded.`,
+          );
+        }
+
+        if (
+          operations.length === 0
+        ) {
+          if (marker === "CONTINUE") {
+            throw new Error(
+              "AIOS_PATCH_BATCH_EMPTY: zero operations with CONTINUE marker.",
+            );
+          }
+
+          if (successfulBatches === 0) {
+            throw new Error(
+              "AIOS_PATCH_BATCH_EMPTY: first batch produced zero operations.",
+            );
+          }
+
+          return {
+            content: workingContent,
+            delimiters,
+            batchCount: successfulBatches,
+            operationCount: successfulOperations,
+          };
+        }
+
+        validatePatchSearches(
+          batchSource,
+          operations,
+        );
+
+        const nextContent =
+          applyPatchOperations(
+            batchSource,
+            operations,
+          );
+
+        const validated =
+          validateFinalSource(
+            options.targetPath,
+            nextContent,
+            delimiters,
+          );
+
+        workingContent =
+          validated;
+
+        successfulBatches +=
+          1;
+
+        successfulOperations +=
+          operations.length;
+
+        batchSucceeded =
+          true;
+
+        if (
+          marker === "COMPLETE"
+        ) {
+          return {
+            content: workingContent,
+            delimiters,
+            batchCount: successfulBatches,
+            operationCount: successfulOperations,
+          };
+        }
+
+        break;
+      } catch (error) {
+        batchError =
+          error instanceof Error
+            ? error.message
+            : "AIOS patch validation failed.";
+      }
+    }
+
+    if (!batchSucceeded) {
+      throw new Error(
+        `AIOS_PATCH_BATCH_GENERATION_FAILED: batch ${batchIndex} failed after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${batchError}`,
+      );
+    }
+  }
+
+  throw new Error(
+    `AIOS_PATCH_BATCH_LIMIT_EXCEEDED: reached ${MAX_PATCH_BATCHES} batches without a COMPLETE marker.`,
+  );
 }
 
 function validatePatchSearches(
@@ -1549,112 +1896,17 @@ async function generatePatch(
   currentContent: string,
   developmentPrompt: string,
   repairContext?: string,
+  runBrainImpl?: typeof runBrain,
 ) {
-  let lastError =
-    "AIOS_PATCH_EMPTY";
-
-  for (
-    let attempt = 1;
-    attempt <=
-    MAX_PATCH_ATTEMPTS;
-    attempt += 1
-  ) {
-    const delimiters =
-      createPatchDelimiters();
-
-    const prompt =
-      [
-        buildPatchPrompt(
-          objective,
-          targetPath,
-          currentContent,
-          developmentPrompt,
-        ),
-        [
-          "",
-          "PATCH DELIMITERS FOR THIS ATTEMPT:",
-          delimiters.searchBegin,
-          delimiters.searchEnd,
-          delimiters.replaceBegin,
-          delimiters.replaceEnd,
-          "",
-          "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
-        ].join("\n"),
-        repairContext
-          ? [
-              "",
-              "PREVIOUS PATCH FAILURE:",
-              repairContext,
-              "",
-              "Regenerate a smaller exact patch.",
-            ].join("\n")
-          : "",
-        attempt > 1
-          ? [
-              "",
-              "PREVIOUS PATCH ATTEMPT ERROR:",
-              lastError,
-              "",
-              "IMPORTANT:",
-              "The previous patch was rejected.",
-              "Fix the exact reported patch error.",
-              "Do not output a complete file.",
-              "Return only exact SEARCH/REPLACE operations.",
-            ].join("\n")
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-    const response =
-      await runBrain(
-        prompt,
-        repairContext
-          ? buildRepairSystemPrompt(
-              delimiters,
-            )
-          : buildPatchSystemPrompt(
-              delimiters,
-            ),
-      );
-
-    if (
-      !response.success
-    ) {
-      lastError =
-        response.error ||
-        "AIOS patch generation failed.";
-
-      continue;
-    }
-
-    try {
-      const operations =
-        parsePatchBlocks(
-          response.content,
-          targetPath,
-          delimiters,
-        );
-
-      validatePatchSearches(
-        currentContent,
-        operations,
-      );
-
-      return {
-        operations,
-        delimiters,
-      };
-    } catch (error) {
-      lastError =
-        error instanceof Error
-          ? error.message
-          : "AIOS patch validation failed.";
-    }
-  }
-
-  throw new Error(
-    `AIOS_PATCH_GENERATION_FAILED: Failed to generate a valid SEARCH/REPLACE patch for "${targetPath}" after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${lastError}`,
+  return runAdaptivePatchBatches(
+    {
+      objective,
+      targetPath,
+      currentContent,
+      developmentPrompt,
+      repairContext,
+      runBrainImpl,
+    },
   );
 }
 
@@ -1806,6 +2058,20 @@ function selectRepairTarget(
     null
   );
 }
+
+export const __aiosAdaptivePatchTestHooks = {
+  runAdaptivePatchBatches,
+  parsePatchBatchMarker,
+  stripPatchBatchMarkers,
+  createPatchDelimiters,
+  validateFinalSource,
+  PATCH_BATCH_MARKER_CONTINUE,
+  PATCH_BATCH_MARKER_COMPLETE,
+  MAX_PATCH_BATCHES,
+  MAX_PATCH_OPERATIONS_PER_BATCH,
+  MAX_PATCH_OPERATIONS_TOTAL,
+  MAX_PATCH_ATTEMPTS,
+};
 
 export interface AutonomousDevelopmentAgentResult {
   success: boolean;
@@ -2202,18 +2468,8 @@ export async function executeAutonomousDevelopmentAgent(
           developmentPrompt,
         );
 
-      const patchedContent =
-        applyPatchOperations(
-          currentContent,
-          patchGeneration.operations,
-        );
-
       const finalContent =
-        validateFinalSource(
-          targetPath,
-          patchedContent,
-          patchGeneration.delimiters,
-        );
+        patchGeneration.content;
 
       if (
         finalContent ===
@@ -2406,18 +2662,8 @@ export async function executeAutonomousDevelopmentAgent(
           repairContext,
         );
 
-      const patchedContent =
-        applyPatchOperations(
-          current.content,
-          patchGeneration.operations,
-        );
-
       const finalContent =
-        validateFinalSource(
-          repairTarget,
-          patchedContent,
-          patchGeneration.delimiters,
-        );
+        patchGeneration.content;
 
       if (
         finalContent ===
