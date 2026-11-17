@@ -1914,6 +1914,8 @@ async function generateAdaptivePatch(
     | PatchDelimiters
     | null = null;
 
+  void lastDelimiters;
+
   for (
     let batchIndex = 1;
     batchIndex <=
@@ -1933,6 +1935,8 @@ async function generateAdaptivePatch(
 
     lastDelimiters =
       batch.delimiters;
+
+    void lastDelimiters;
 
     operationsApplied +=
       batch.operations.length;
@@ -1970,11 +1974,7 @@ async function generateAdaptivePatch(
    * COMPLETE marker the batch limit has been exceeded.
    */
   throw new Error(
-    `AIOS_PATCH_BATCH_LIMIT_EXCEEDED: Last delimiters ${
-      lastDelimiters
-        ? lastDelimiters.searchBegin
-        : "unknown"
-    }`,
+    "AIOS_PATCH_BATCH_LIMIT_EXCEEDED",
   );
 }
 
