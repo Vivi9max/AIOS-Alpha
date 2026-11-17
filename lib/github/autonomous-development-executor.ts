@@ -698,17 +698,8 @@ export async function executeClaimedAutonomousDevelopmentTask(
         completeAutonomousDevelopmentTask(
           task.id,
           {
-            commitSha: undefined,
             readbackVerified: false,
             verificationPassed: false,
-            auditState:
-              auditResult.auditState,
-            report:
-              auditResult.report,
-            reportLength:
-              auditResult.reportLength,
-            executionMode:
-              "READ_ONLY_AUDIT",
           },
         );
 
