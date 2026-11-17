@@ -1080,6 +1080,86 @@ function createReceipt(
   const result =
     task.result;
 
+  const isReadOnlyAudit =
+    result?.executionMode ===
+      "READ_ONLY_AUDIT" &&
+    result.auditStatus ===
+      "COMPLETE" &&
+    Boolean(
+      result.auditReport &&
+        result.auditReport.trim(),
+    );
+
+  if (isReadOnlyAudit) {
+    const completedAt =
+      task.completedAt ||
+      task.updatedAt;
+
+    return {
+      taskId:
+        task.id,
+
+      status:
+        task.status,
+
+      repository:
+        task.repository,
+
+      branch:
+        task.branch,
+
+      targetPaths:
+        [
+          ...task.targetPaths,
+        ],
+
+      phases:
+        task.phaseHistory.map(
+          (event) =>
+            event.phase,
+        ),
+
+      commitSha:
+        undefined,
+
+      resultCommitSha:
+        undefined,
+
+      readbackVerified:
+        false,
+
+      verificationPassed:
+        false,
+
+      commitShaConsistent:
+        true,
+
+      missingEvidence:
+        [],
+
+      terminal:
+        TERMINAL_STATUSES.has(
+          task.status,
+        ),
+
+      successful:
+        task.status ===
+        "completed",
+
+      valid:
+        true,
+
+      reason:
+        result?.reason ||
+        task.reason,
+
+      startedAt:
+        task.startedAt,
+
+      completedAt,
+    };
+  }
+
   const canonical =
     buildAutonomousDevelopmentReceipt({
       status:
