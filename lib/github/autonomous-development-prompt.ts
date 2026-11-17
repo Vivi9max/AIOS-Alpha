@@ -272,6 +272,213 @@ function buildTargetResolutionRules(
   ].join("\n");
 }
 
+export type AutonomousDevelopmentTargetOperation =
+  | "CREATE"
+  | "REPLACE";
+
+export type AutonomousDevelopmentTarget = {
+  path: string;
+  operation: AutonomousDevelopmentTargetOperation;
+};
+
+const CREATE_INTENT_PATTERN =
+  /\b(?:create|add|introduce|generate|scaffold|write|new file|new module|new component|new route|new page|new script|new test|new fixture|new helper|new utility|new service|new hook|new type|new schema|new config|new migration|new stylesheet|new style|new document|new doc)\b/i;
+
+const CREATE_INTENT_PATTERN_ZH =
+  /(?:创建|新建|新增|添加|生成|写入|写出|起草|搭建|初始化|引入|建立|构造|编写)/;
+
+const REPLACE_INTENT_PATTERN =
+  /\b(?:modify|update|edit|change|adjust|refine|fix|patch|repair|replace|rewrite|refactor|extend|enhance|improve|integrate|wire|connect|hook up|implement|correct|tweak|rename|move|delete|remove|drop|deprecate|migrate|upgrade|downgrade|revert)\b/i;
+
+const REPLACE_INTENT_PATTERN_ZH =
+  /(?:修改|更新|编辑|调整|修复|修补|替换|重写|重构|扩展|增强|改进|完善|集成|接入|连接|实现|纠正|改名|重命名|移动|删除|移除|迁移|升级|降级|回滚|保留|保持)/;
+
+type IntentClassification =
+  | "CREATE"
+  | "REPLACE"
+  | "AMBIGUOUS"
+  | "NONE";
+
+function classifyPathIntent(
+  objective: string,
+  matchStart: number,
+  matchEnd: number,
+): IntentClassification {
+  const contextStart =
+    Math.max(0, matchStart - 220);
+
+  const contextEnd =
+    Math.min(
+      objective.length,
+      matchEnd + 220,
+    );
+
+  const context =
+    objective
+      .slice(
+        contextStart,
+        contextEnd,
+      )
+      .replace(
+        /[`"'“”‘’]/g,
+        " ",
+      )
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!context) {
+    return "NONE";
+  }
+
+  const hasCreate =
+    CREATE_INTENT_PATTERN.test(context) ||
+    CREATE_INTENT_PATTERN_ZH.test(context);
+
+  const hasReplace =
+    REPLACE_INTENT_PATTERN.test(context) ||
+    REPLACE_INTENT_PATTERN_ZH.test(context);
+
+  if (hasCreate && hasReplace) {
+    return "AMBIGUOUS";
+  }
+
+  if (hasCreate) {
+    return "CREATE";
+  }
+
+  if (hasReplace) {
+    return "REPLACE";
+  }
+
+  return "NONE";
+}
+
+function collectExplicitPathMatches(
+  objective: string,
+) {
+  const normalizedObjective =
+    objective
+      .replace(
+        /[`"'“”‘’]/g,
+        " ",
+      );
+
+  const pattern =
+    /\b(?:app|components|docs|lib|scripts|tests|test|public|styles)\/[A-Za-z0-9_@+./-]+\.[A-Za-z0-9]+\b/g;
+
+  const results: Array<{
+    path: string;
+    index: number;
+    end: number;
+  }> = [];
+
+  let match:
+    | RegExpExecArray
+    | null = null;
+
+  while (
+    (match =
+      pattern.exec(
+        normalizedObjective,
+      )) !== null
+  ) {
+    const rawValue =
+      match[0] || "";
+
+    if (
+      isNegatedExplicitPath(
+        normalizedObjective,
+        match.index,
+      )
+    ) {
+      continue;
+    }
+
+    const normalizedValue =
+      rawValue.replace(
+        /[.,;:!?)}\]]+$/,
+        "",
+      );
+
+    if (!normalizedValue) {
+      continue;
+    }
+
+    results.push({
+      path: normalizePath(
+        normalizedValue,
+      ),
+      index: match.index,
+      end:
+        match.index +
+        rawValue.length,
+    });
+  }
+
+  return results;
+}
+
+export function resolveAutonomousDevelopmentTargets(
+  objective: string,
+): AutonomousDevelopmentTarget[] {
+  const normalizedObjective =
+    objective.trim();
+
+  const matches =
+    collectExplicitPathMatches(
+      normalizedObjective,
+    );
+
+  if (matches.length === 0) {
+    return [];
+  }
+
+  const seenPaths = new Set<string>();
+
+  const targets: AutonomousDevelopmentTarget[] =
+    [];
+
+  for (const match of matches) {
+    if (seenPaths.has(match.path)) {
+      throw new Error(
+        `Duplicate target path detected in objective: ${match.path}`,
+      );
+    }
+
+    seenPaths.add(match.path);
+
+    const classification =
+      classifyPathIntent(
+        normalizedObjective,
+        match.index,
+        match.end,
+      );
+
+    if (classification === "AMBIGUOUS") {
+      throw new Error(
+        `Ambiguous CREATE/REPLACE intent for target path: ${match.path}`,
+      );
+    }
+
+    if (classification === "NONE") {
+      throw new Error(
+        `Unable to determine CREATE or REPLACE intent for target path: ${match.path}`,
+      );
+    }
+
+    targets.push({
+      path: match.path,
+      operation: classification,
+    });
+
+    if (targets.length >= MAX_TARGET_PATHS) {
+      break;
+    }
+  }
+
+  return targets;
+}
+
 export function extractExplicitRepositoryPaths(
   objective: string,
 ) {

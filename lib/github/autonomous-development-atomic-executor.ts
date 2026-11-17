@@ -71,9 +71,15 @@ interface GitHubTreeResponse {
   sha?: string;
 }
 
+export type AutonomousAtomicOperation =
+  | "CREATE"
+  | "REPLACE";
+
 export interface AutonomousAtomicFile {
   path: string;
+  operation: AutonomousAtomicOperation;
   content: string;
+  expectedOriginalSource?: string;
 }
 
 export interface AutonomousAtomicSnapshot {
@@ -225,10 +231,58 @@ function validateFiles(
         );
       }
 
+      const operation =
+        file.operation;
+
+      if (
+        operation !== "CREATE" &&
+        operation !== "REPLACE"
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_OPERATION_INVALID: ${path}`,
+        );
+      }
+
+      if (
+        operation === "REPLACE"
+      ) {
+        if (
+          typeof file.expectedOriginalSource !==
+          "string"
+        ) {
+          throw new Error(
+            `AIOS_ATOMIC_EXPECTED_SOURCE_MISSING: ${path}`,
+          );
+        }
+
+        if (
+          file.expectedOriginalSource.length >
+          MAX_FILE_SIZE
+        ) {
+          throw new Error(
+            `AIOS_ATOMIC_EXPECTED_SOURCE_TOO_LARGE: ${path}`,
+          );
+        }
+      } else if (
+        file.expectedOriginalSource !==
+          undefined &&
+        file.expectedOriginalSource !==
+          ""
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_EXPECTED_SOURCE_UNEXPECTED: ${path}`,
+        );
+      }
+
       return {
         path,
+        operation,
         content:
           file.content,
+        expectedOriginalSource:
+          operation === "REPLACE"
+            ? file.expectedOriginalSource
+            : undefined,
       };
     },
   );
@@ -637,6 +691,242 @@ interface GitHubContentsResponse {
   sha?: string;
 }
 
+interface GitHubContentsPreflightResult {
+  status: number;
+  ok: boolean;
+  data?: GitHubContentsResponse;
+  error?: string;
+}
+
+async function fetchContentsAtCommit(
+  repository: string,
+  path: string,
+  commitSha: string,
+  accessToken: string,
+): Promise<GitHubContentsPreflightResult> {
+  const config =
+    getGitHubBridgeConfig();
+
+  const encodedPath =
+    path
+      .split("/")
+      .map((segment) =>
+        encodeURIComponent(segment),
+      )
+      .join("/");
+
+  const response =
+    await fetch(
+      `${config.apiBaseUrl}/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(
+        commitSha,
+      )}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Accept:
+            "application/vnd.github+json",
+          Authorization:
+            `Bearer ${accessToken}`,
+          "X-GitHub-Api-Version":
+            "2022-11-28",
+        },
+      },
+    );
+
+  const body =
+    await response.text();
+
+  let data: unknown;
+
+  if (body) {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      data = body;
+    }
+  }
+
+  if (!response.ok) {
+    let message =
+      `GitHub Contents API request failed with ${response.status}.`;
+
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "message" in data &&
+      typeof (
+        data as {
+          message?: unknown;
+        }
+      ).message === "string"
+    ) {
+      message =
+        (
+          data as {
+            message: string;
+          }
+        ).message;
+    }
+
+    return {
+      status: response.status,
+      ok: false,
+      error: message,
+    };
+  }
+
+  return {
+    status: response.status,
+    ok: true,
+    data:
+      data as GitHubContentsResponse,
+  };
+}
+
+async function preflightTargets(
+  repository: string,
+  baseCommitSha: string,
+  files: AutonomousAtomicFile[],
+  accessToken: string,
+): Promise<void> {
+  for (
+    const file of files
+  ) {
+    let result: GitHubContentsPreflightResult;
+
+    try {
+      result =
+        await fetchContentsAtCommit(
+          repository,
+          file.path,
+          baseCommitSha,
+          accessToken,
+        );
+    } catch {
+      throw new Error(
+        `AIOS_ATOMIC_PREFLIGHT_NETWORK_FAILED: ${file.path}`,
+      );
+    }
+
+    if (
+      result.status === 401 ||
+      result.status === 403 ||
+      result.status === 429 ||
+      result.status === 500 ||
+      result.status === 502 ||
+      result.status === 503 ||
+      result.status === 504
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_PREFLIGHT_UNCERTAIN: ${file.path}`,
+      );
+    }
+
+    if (
+      file.operation === "CREATE"
+    ) {
+      if (
+        result.status === 404
+      ) {
+        continue;
+      }
+
+      if (
+        result.ok
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_CREATE_TARGET_EXISTS: ${file.path}`,
+        );
+      }
+
+      throw new Error(
+        `AIOS_ATOMIC_PREFLIGHT_UNCERTAIN: ${file.path}`,
+      );
+    }
+
+    if (
+      !result.ok ||
+      !result.data
+    ) {
+      if (
+        result.status === 404
+      ) {
+        throw new Error(
+          `AIOS_ATOMIC_REPLACE_TARGET_MISSING: ${file.path}`,
+        );
+      }
+
+      throw new Error(
+        `AIOS_ATOMIC_PREFLIGHT_UNCERTAIN: ${file.path}`,
+      );
+    }
+
+    const data =
+      result.data;
+
+    if (
+      data.type !== "file"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_TARGET_TYPE_INVALID: ${file.path}`,
+      );
+    }
+
+    if (
+      data.path !== file.path
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_TARGET_PATH_MISMATCH: ${file.path}`,
+      );
+    }
+
+    if (
+      data.encoding !== "base64"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_TARGET_ENCODING_INVALID: ${file.path}`,
+      );
+    }
+
+    if (
+      typeof data.content !== "string"
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_TARGET_CONTENT_MISSING: ${file.path}`,
+      );
+    }
+
+    let decoded: string;
+
+    try {
+      decoded =
+        decodeUtf8Strict(
+          decodeBase64Strict(
+            data.content,
+          ),
+        );
+    } catch (
+      error
+    ) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : `AIOS_ATOMIC_REPLACE_TARGET_DECODE_FAILED: ${file.path}`,
+      );
+    }
+
+    if (
+      decoded !==
+      file.expectedOriginalSource
+    ) {
+      throw new Error(
+        `AIOS_ATOMIC_REPLACE_SOURCE_STALE: ${file.path}`,
+      );
+    }
+  }
+}
+
 function decodeBase64Strict(
   value: string,
 ): Buffer {
@@ -843,6 +1133,13 @@ export async function executeAtomicStaging(
         baseBranch,
         auth.accessToken,
       );
+
+    await preflightTargets(
+      repository,
+      baseSha,
+      files,
+      auth.accessToken,
+    );
 
     const baseTreeSha =
       await getCommitTreeSha(

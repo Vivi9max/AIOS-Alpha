@@ -24,7 +24,8 @@ import {
 } from "@/lib/github/autonomous-build-verification";
 import {
   buildAutonomousDevelopmentPrompt,
-  extractExplicitRepositoryPaths,
+  resolveExplicitRepositoryTargets,
+  type AutonomousDevelopmentTarget,
 } from "@/lib/github/autonomous-development-prompt";
 import {
   runAutonomousDevelopmentSafetyGate,
@@ -187,6 +188,15 @@ type PatchOperation = {
   operation: "replace";
   search: string;
   replace: string;
+};
+
+type TargetOperation =
+  | "CREATE"
+  | "REPLACE";
+
+type ResolvedTarget = {
+  path: string;
+  operation: TargetOperation;
 };
 
 async function runBrain(
@@ -810,6 +820,110 @@ function buildPatchPrompt(
     "If an import is required, include it through a separate small patch.",
     "Return only AIOS_PATCH_BEGIN / AIOS_PATCH_END.",
   ].join("\n");
+}
+
+function parseCreateBlock(
+  content: string,
+  expectedPath: string,
+  delimiters: PatchDelimiters,
+) {
+  if (content.length > MAX_PATCH_CHARS) {
+    throw new Error(
+      "AIOS_CREATE_RESPONSE_TOO_LARGE",
+    );
+  }
+
+  const escapeRegExp = (value: string) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const blockPattern =
+    /AIOS_PATCH_BEGIN\s*\r?\n([\s\S]*?)\r?\nAIOS_PATCH_END/gi;
+
+  const searchPattern = new RegExp(
+    `${escapeRegExp(delimiters.searchBegin)}\\s*\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(delimiters.searchEnd)}`,
+    "i",
+  );
+
+  const replacePattern = new RegExp(
+    `${escapeRegExp(delimiters.replaceBegin)}\\s*\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(delimiters.replaceEnd)}`,
+    "i",
+  );
+
+  const residualProtocolPattern = new RegExp(
+    `(?:^|\\r?\\n)[ \\t]*(?:${escapeRegExp(delimiters.searchBegin)}|${escapeRegExp(delimiters.searchEnd)}|${escapeRegExp(delimiters.replaceBegin)}|${escapeRegExp(delimiters.replaceEnd)})[ \\t]*(?=\\r?\\n|$)`,
+  );
+
+  const blocks: string[] = [];
+
+  let match: RegExpExecArray | null = null;
+
+  while ((match = blockPattern.exec(content)) !== null) {
+    const block = match[1] || "";
+
+    const pathMatch = block.match(/PATH:\s*([^\r\n]+)/i);
+    const operationMatch = block.match(/OPERATION:\s*([^\r\n]+)/i);
+    const searchMatch = block.match(searchPattern);
+    const replaceMatch = block.match(replacePattern);
+
+    if (
+      !pathMatch ||
+      !operationMatch ||
+      !searchMatch ||
+      !replaceMatch
+    ) {
+      throw new Error("AIOS_CREATE_PATCH_FORMAT_INVALID");
+    }
+
+    if (
+      residualProtocolPattern.test(searchMatch[1] || "") ||
+      residualProtocolPattern.test(replaceMatch[1] || "")
+    ) {
+      throw new Error("AIOS_CREATE_PATCH_PROTOCOL_DELIMITER_LEAKED");
+    }
+
+    const path = normalizePath(pathMatch[1] || "");
+    const operation = (operationMatch[1] || "").trim().toLowerCase();
+
+    if (path !== normalizePath(expectedPath)) {
+      throw new Error(`AIOS_CREATE_PATCH_PATH_REJECTED: ${path}`);
+    }
+
+    if (!isSafePath(path)) {
+      throw new Error(`AIOS_CREATE_PATCH_UNSAFE_PATH: ${path}`);
+    }
+
+    if (operation !== "create") {
+      throw new Error(
+        `AIOS_CREATE_PATCH_OPERATION_REJECTED: ${operation}`,
+      );
+    }
+
+    if ((searchMatch[1] || "").trim().length !== 0) {
+      throw new Error("AIOS_CREATE_PATCH_SEARCH_MUST_BE_EMPTY");
+    }
+
+    const fullSource = replaceMatch[1] || "";
+
+    if (!fullSource.trim()) {
+      throw new Error("AIOS_CREATE_PATCH_SOURCE_EMPTY");
+    }
+
+    if (fullSource.length > MAX_PATCH_CHARS) {
+      throw new Error("AIOS_CREATE_PATCH_SOURCE_TOO_LARGE");
+    }
+
+    blocks.push(fullSource);
+
+    if (blocks.length > 1) {
+      throw new Error("AIOS_CREATE_PATCH_MULTIPLE_BLOCKS");
+    }
+  }
+
+  if (blocks.length === 0) {
+    throw new Error("AIOS_CREATE_PATCH_EMPTY");
+  }
+
+  return blocks[0];
 }
 
 function parsePatchBlocks(
@@ -1658,6 +1772,104 @@ async function generatePatch(
   );
 }
 
+async function generateCreateSource(
+  objective: string,
+  targetPath: string,
+  developmentPrompt: string,
+): Promise<{
+  content: string;
+  delimiters: PatchDelimiters;
+}> {
+  let lastError = "AIOS_CREATE_PATCH_EMPTY";
+
+  for (
+    let attempt = 1;
+    attempt <= MAX_PATCH_ATTEMPTS;
+    attempt += 1
+  ) {
+    const delimiters = createPatchDelimiters();
+
+    const prompt = [
+      developmentPrompt,
+      "",
+      "AUTONOMOUS DEVELOPMENT CREATE REQUEST",
+      `Repository: ${REPOSITORY}`,
+      `Branch: ${BRANCH}`,
+      `Target: ${targetPath}`,
+      `Operation: CREATE`,
+      "",
+      "USER OBJECTIVE:",
+      objective,
+      "",
+      "This is a CREATE operation. The target file does not exist yet.",
+      "Generate one complete, syntactically valid source file.",
+      "Do not include SEARCH content: the SEARCH section must be empty.",
+      "Place the entire new file source inside the REPLACE section.",
+      "Do not use ellipses, placeholders, TODOs, or truncation markers.",
+      "Preserve all existing APIs and types referenced by other modules.",
+      "",
+      "PATCH DELIMITERS FOR THIS ATTEMPT:",
+      delimiters.searchBegin,
+      delimiters.searchEnd,
+      delimiters.replaceBegin,
+      delimiters.replaceEnd,
+      "",
+      "Use these exact delimiters. Do not use SEARCH_BEGIN, SEARCH_END, REPLACE_BEGIN, or REPLACE_END.",
+      attempt > 1
+        ? [
+            "",
+            "PREVIOUS CREATE ATTEMPT ERROR:",
+            lastError,
+            "",
+            "Regenerate a complete valid source file.",
+          ].join("\n")
+        : "",
+      "Return only AIOS_PATCH_BEGIN / AIOS_PATCH_END.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const response = await runBrain(
+      prompt,
+      buildPatchSystemPrompt(delimiters),
+    );
+
+    if (!response.success) {
+      lastError =
+        response.error || "AIOS create generation failed.";
+      continue;
+    }
+
+    try {
+      const rawSource = parseCreateBlock(
+        response.content,
+        targetPath,
+        delimiters,
+      );
+
+      const finalContent = validateFinalSource(
+        targetPath,
+        rawSource,
+        delimiters,
+      );
+
+      return {
+        content: finalContent,
+        delimiters,
+      };
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error.message
+          : "AIOS create validation failed.";
+    }
+  }
+
+  throw new Error(
+    `AIOS_CREATE_GENERATION_FAILED: Failed to generate a valid CREATE source for "${targetPath}" after ${MAX_PATCH_ATTEMPTS} attempt(s). Last error: ${lastError}`,
+  );
+}
+
 function buildAutonomousCommitMessage(
   objective: string,
   repairRound?: number,
@@ -1962,61 +2174,67 @@ export async function executeAutonomousDevelopmentAgent(
       );
     }
 
-    const explicitTargets =
-      extractExplicitRepositoryPaths(
-        objective,
-      )
-        .filter(isSafePath)
-        .slice(
-          0,
-          MAX_TARGET_FILES,
-        );
+    let resolvedTargets: AutonomousDevelopmentTarget[] = [];
 
-    const hasExplicitTargets =
-      explicitTargets.length >
-      0;
+    try {
+      resolvedTargets =
+        resolveExplicitRepositoryTargets(objective);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "AIOS_TARGET_RESOLUTION_FAILED";
 
-    developmentPrompt =
-      buildAutonomousDevelopmentPrompt(
-        {
-          objective,
-          targetPaths:
-            explicitTargets,
-          mode:
-            hasExplicitTargets
-              ? "EXPLICIT_TARGET_PATCH"
-              : "PLANNED_PATCH",
-        },
-      );
+      updateAutonomousDevelopmentTask(taskId, {
+        phase: "BLOCKED",
+        reason: message,
+      });
 
-    updateAutonomousDevelopmentTask(
-      taskId,
-      {
-        targetPaths:
-          explicitTargets,
-        reason:
-          hasExplicitTargets
-            ? `AIOS generated its Development Prompt and resolved ${explicitTargets.length} explicit target file(s).`
-            : "AIOS generated its Development Prompt and will resolve targets from the real repository.",
-      },
+      throw new Error(message);
+    }
+
+    const explicitTargets = resolvedTargets
+      .filter((target) => isSafePath(target.path))
+      .slice(0, MAX_TARGET_FILES);
+
+    const explicitTargetPaths = explicitTargets.map(
+      (target) => target.path,
     );
 
-    if (
-      hasExplicitTargets
-    ) {
-      targetPaths =
-        explicitTargets;
+    const hasExplicitTargets = explicitTargets.length > 0;
 
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          targetPaths,
-          phase:
-            "READING",
-          reason:
-            `AIOS skipped recursive discovery and planner because the objective explicitly identified ${targetPaths.length} repository target file(s).`,
-        },
-      );
+    developmentPrompt = buildAutonomousDevelopmentPrompt({
+      objective,
+      targetPaths: explicitTargetPaths,
+      mode: hasExplicitTargets
+        ? "EXPLICIT_TARGET_PATCH"
+        : "PLANNED_PATCH",
+    });
+
+    updateAutonomousDevelopmentTask(taskId, {
+      targetPaths: explicitTargetPaths,
+      reason: hasExplicitTargets
+        ? `AIOS generated its Development Prompt and resolved ${explicitTargets.length} explicit target file(s).`
+        : "AIOS generated its Development Prompt and will resolve targets from the real repository.",
+    });
+
+    const resolvedTargetMap = new Map<string, ResolvedTarget>();
+
+    for (const target of explicitTargets) {
+      resolvedTargetMap.set(target.path, {
+        path: target.path,
+        operation: target.operation,
+      });
+    }
+
+    if (hasExplicitTargets) {
+      targetPaths = explicitTargetPaths;
+
+      updateAutonomousDevelopmentTask(taskId, {
+        targetPaths,
+        phase: "READING",
+        reason: `AIOS skipped recursive discovery and planner because the objective explicitly identified ${targetPaths.length} repository target file(s).`,
+      });
     } else {
       updateAutonomousDevelopmentTask(
         taskId,
@@ -2149,85 +2367,84 @@ export async function executeAutonomousDevelopmentAgent(
       Record<string, string> =
       {};
 
-    for (
-      const targetPath of targetPaths
-    ) {
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          phase:
-            "READING",
-          reason:
-            `Reading the complete current file: ${targetPath}`,
-        },
-      );
+    for (const targetPath of targetPaths) {
+      const resolvedTarget = resolvedTargetMap.get(targetPath);
 
-      const current =
-        await readFile(
-          targetPath,
-          input.accessToken,
-        );
-
-      const currentContent =
-        current.content;
-
-      if (
-        !currentContent.trim()
-      ) {
+      if (!resolvedTarget) {
         throw new Error(
-          `AIOS_TARGET_FILE_EMPTY: ${targetPath}`,
+          `AIOS_TARGET_OPERATION_UNRESOLVED: ${targetPath}`,
         );
       }
 
-      originalContents[
-        targetPath
-      ] =
-        currentContent;
+      if (resolvedTarget.operation === "CREATE") {
+        updateAutonomousDevelopmentTask(taskId, {
+          phase: "GENERATING",
+          reason: `AIOS is generating a new file from its Development Prompt for ${targetPath}.`,
+        });
 
-      updateAutonomousDevelopmentTask(
-        taskId,
-        {
-          phase:
-            "GENERATING",
-          reason:
-            `AIOS is generating a minimal patch from its Development Prompt for ${targetPath}.`,
-        },
-      );
-
-      const patchGeneration =
-        await generatePatch(
+        const createGeneration = await generateCreateSource(
           objective,
           targetPath,
-          currentContent,
           developmentPrompt,
         );
 
-      const patchedContent =
-        applyPatchOperations(
-          currentContent,
-          patchGeneration.operations,
-        );
+        const finalContent = createGeneration.content;
 
-      const finalContent =
-        validateFinalSource(
-          targetPath,
-          patchedContent,
-          patchGeneration.delimiters,
-        );
+        if (!finalContent.trim()) {
+          throw new Error(
+            `AIOS_CREATE_FINAL_SOURCE_EMPTY: ${targetPath}`,
+          );
+        }
 
-      if (
-        finalContent ===
-        currentContent
-      ) {
-        throw new Error(
-          `AIOS_PATCH_NO_CHANGE: ${targetPath}`,
-        );
+        originalContents[targetPath] = "";
+        patchedContents[targetPath] = finalContent;
+
+        continue;
       }
 
-      patchedContents[
-        targetPath
-      ] =
-        finalContent;
+      updateAutonomousDevelopmentTask(taskId, {
+        phase: "READING",
+        reason: `Reading the complete current file: ${targetPath}`,
+      });
+
+      const current = await readFile(targetPath, input.accessToken);
+
+      const currentContent = current.content;
+
+      if (!currentContent.trim()) {
+        throw new Error(`AIOS_TARGET_FILE_EMPTY: ${targetPath}`);
+      }
+
+      originalContents[targetPath] = currentContent;
+
+      updateAutonomousDevelopmentTask(taskId, {
+        phase: "GENERATING",
+        reason: `AIOS is generating a minimal patch from its Development Prompt for ${targetPath}.`,
+      });
+
+      const patchGeneration = await generatePatch(
+        objective,
+        targetPath,
+        currentContent,
+        developmentPrompt,
+      );
+
+      const patchedContent = applyPatchOperations(
+        currentContent,
+        patchGeneration.operations,
+      );
+
+      const finalContent = validateFinalSource(
+        targetPath,
+        patchedContent,
+        patchGeneration.delimiters,
+      );
+
+      if (finalContent === currentContent) {
+        throw new Error(`AIOS_PATCH_NO_CHANGE: ${targetPath}`);
+      }
+
+      patchedContents[targetPath] = finalContent;
     }
 
     await loadSafetyGateRepositoryContext(
@@ -2275,10 +2492,46 @@ export async function executeAutonomousDevelopmentAgent(
       baseBranch: BRANCH,
       accessToken: input.accessToken,
       commitMessage: buildAutonomousCommitMessage(objective),
-      files: targetPaths.map((path) => ({
-        path,
-        content: patchedContents[path],
-      })),
+      files: targetPaths.map((path) => {
+        const resolvedTarget = resolvedTargetMap.get(path);
+
+        if (!resolvedTarget) {
+          throw new Error(
+            `AIOS_TARGET_OPERATION_UNRESOLVED: ${path}`,
+          );
+        }
+
+        const finalContent = patchedContents[path];
+
+        if (typeof finalContent !== "string" || !finalContent.trim()) {
+          throw new Error(
+            `AIOS_FINAL_SOURCE_EMPTY: ${path}`,
+          );
+        }
+
+        if (resolvedTarget.operation === "CREATE") {
+          return {
+            path,
+            operation: "CREATE" as const,
+            content: finalContent,
+          };
+        }
+
+        const expectedOriginal = originalContents[path];
+
+        if (typeof expectedOriginal !== "string") {
+          throw new Error(
+            `AIOS_REPLACE_ORIGINAL_SOURCE_MISSING: ${path}`,
+          );
+        }
+
+        return {
+          path,
+          operation: "REPLACE" as const,
+          content: finalContent,
+          expectedOriginalSource: expectedOriginal,
+        };
+      }),
     });
 
     if (!atomicResult.success || !atomicResult.snapshot) {
@@ -2486,7 +2739,14 @@ export async function executeAutonomousDevelopmentAgent(
         baseBranch: stagingBranch || BRANCH,
         accessToken: input.accessToken,
         commitMessage: buildAutonomousCommitMessage(objective, repairRounds),
-        files: [{ path: repairTarget, content: finalContent }],
+        files: [
+          {
+            path: repairTarget,
+            operation: "REPLACE" as const,
+            content: finalContent,
+            expectedOriginalSource: current.content,
+          },
+        ],
       });
 
       if (!repairAtomicResult.success || !repairAtomicResult.snapshot) {
