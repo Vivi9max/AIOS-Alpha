@@ -17,7 +17,6 @@ import {
   findPersistentActiveAutonomousDevelopmentTask,
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
-  normalizeAutonomousDevelopmentBranch,
 } from "@/lib/github/autonomous-development-control-plane";
 import {
   heartbeatAutonomousDevelopmentExecution,
@@ -622,30 +621,8 @@ export async function POST(
       );
     }
 
-    let baseBranch: string;
-
-    try {
-      baseBranch =
-        normalizeAutonomousDevelopmentBranch(
-          body?.branch,
-        );
-    } catch (
-      branchError
-    ) {
-      return json(
-        {
-          ok: false,
-          code:
-            "AUTONOMOUS_BRANCH_INVALID",
-          error:
-            branchError instanceof
-            Error
-              ? branchError.message
-              : "Invalid base branch.",
-        },
-        400,
-      );
-    }
+    const baseBranch =
+      DEFAULT_BRANCH;
 
     const existingTask =
       await findPersistentActiveAutonomousDevelopmentTask(
