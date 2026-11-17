@@ -195,6 +195,32 @@ function buildDevelopmentPrompt(
   ].join("\n");
 }
 
+function buildAuditPrompt(
+  objective: string,
+  path: string,
+  existingContent: string,
+): string {
+  return [
+    "AUTONOMOUS AUDIT REQUEST",
+    "",
+    `Repository: ${ALLOWED_REPOSITORY}`,
+    `Branch: ${ALLOWED_BRANCH}`,
+    `Target Path: ${path}`,
+    "",
+    "Audit Objective:",
+    objective,
+    "",
+    "CURRENT FILE CONTENT START",
+    existingContent,
+    "CURRENT FILE CONTENT END",
+    "",
+    "Analyze the exact target file against the audit objective.",
+    "Report findings only. Do not modify files.",
+    "",
+    "Return only the required AIOS_FILE_BEGIN format.",
+  ].join("\n");
+}
+
 export interface AutonomousDevelopmentExecutionResult {
   success: boolean;
 
