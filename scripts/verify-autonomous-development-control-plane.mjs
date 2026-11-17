@@ -129,6 +129,14 @@ const atomicExecutorSource = fs.readFileSync(
   "utf8",
 );
 
+const agentSource = fs.readFileSync(
+  path.join(
+    REPO_ROOT,
+    "lib/github/autonomous-development-agent.ts",
+  ),
+  "utf8",
+);
+
 // ---------------------------------------------------------------------------
 // Redirect imports to stubs inside the temporary directory
 // ---------------------------------------------------------------------------
