@@ -69,10 +69,16 @@ export default function TasksPage() {
   const [error, setError] =
     useState("");
 
+  const [
+    loadFailed,
+    setLoadFailed,
+  ] = useState(false);
+
   const loadTasks =
     useCallback(async () => {
       setLoading(true);
       setError("");
+      setLoadFailed(false);
 
       try {
         const response =
@@ -113,6 +119,7 @@ export default function TasksPage() {
       } catch (
         loadError
       ) {
+        setLoadFailed(true);
         setError(
           loadError instanceof
             Error
@@ -968,6 +975,69 @@ export default function TasksPage() {
               {t(
                 "tasks.loading",
               )}
+            </div>
+          ) : loadFailed ? (
+            <div
+              role="alert"
+              style={{
+                padding:
+                  "42px 18px",
+                border:
+                  "1px solid #fecaca",
+                borderRadius: 16,
+                background:
+                  "#fff7f7",
+                textAlign:
+                  "center",
+                color:
+                  "#b91c1c",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 750,
+                  color:
+                    "#b91c1c",
+                }}
+              >
+                {t(
+                  "tasks.loadFailed",
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void loadTasks();
+                }}
+                disabled={loading}
+                style={{
+                  minHeight: 40,
+                  marginTop: 14,
+                  padding:
+                    "0 18px",
+                  border:
+                    "1px solid #fecaca",
+                  borderRadius: 10,
+                  background:
+                    loading
+                      ? "#fca5a5"
+                      : "#b91c1c",
+                  color:
+                    "#ffffff",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor:
+                    loading
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {t(
+                  "tasks.retry",
+                )}
+              </button>
             </div>
           ) : tasks.length ===
             0 ? (
