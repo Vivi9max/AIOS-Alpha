@@ -55,6 +55,48 @@ function getRedisResponsePreview(
   );
 }
 
+function getRedisHostname(): string {
+  try {
+    return new URL(redisURL).hostname;
+  } catch {
+    return "(invalid Redis REST URL)";
+  }
+}
+
+function getRedisOperation(
+  command: string[],
+): string {
+  const operation =
+    command[0]?.toUpperCase() ?? "UNKNOWN";
+
+  return [
+    "GET",
+    "SET",
+    "DEL",
+    "EVAL",
+    "PING",
+  ].includes(operation)
+    ? operation
+    : "OTHER";
+}
+
+function buildRedisRequestDiagnostics(
+  command: string[],
+  authorization: string,
+  encodedPath: string,
+  durationMs?: number,
+): string[] {
+  return [
+    `Operation: ${getRedisOperation(command)}.`,
+    `Hostname: ${getRedisHostname()}.`,
+    `Authorization header bytes: ${new TextEncoder().encode(authorization).length}.`,
+    `Encoded path length: ${encodedPath.length}.`,
+    ...(typeof durationMs === "number"
+      ? [`Request duration: ${durationMs}ms.`]
+      : []),
+  ];
+}
+
 async function executeRedis<T>(
   command: string[],
 ): Promise<T> {
@@ -67,14 +109,55 @@ async function executeRedis<T>(
   const path =
     command.map(encodeCommandPart).join("/");
 
-  const response =
-    await fetch(`${redisURL}/${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${redisToken}`,
-      },
-      cache: "no-store",
-    });
+  const authorization =
+    `Bearer ${redisToken}`;
+
+  const diagnostics =
+    buildRedisRequestDiagnostics(
+      command,
+      authorization,
+      path,
+    );
+
+  const startedAt =
+    Date.now();
+
+  let response: Response;
+
+  try {
+    response =
+      await fetch(`${redisURL}/${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+        },
+        cache: "no-store",
+      });
+  } catch (error) {
+    const durationMs =
+      Date.now() - startedAt;
+
+    const errorName =
+      error instanceof Error
+        ? error.name
+        : "UnknownError";
+
+    throw new Error(
+      [
+        "Redis REST request failed before receiving an HTTP response.",
+        ...buildRedisRequestDiagnostics(
+          command,
+          authorization,
+          path,
+          durationMs,
+        ),
+        `Fetch error type: ${sanitizeRedisDiagnostic(errorName)}.`,
+      ].join(" "),
+    );
+  }
+
+  const durationMs =
+    Date.now() - startedAt;
 
   const contentType =
     response.headers.get("content-type") ?? "unknown";
@@ -97,10 +180,15 @@ async function executeRedis<T>(
     throw new Error(
       [
         "Redis REST returned a non-JSON response.",
+        ...buildRedisRequestDiagnostics(
+          command,
+          authorization,
+          path,
+          durationMs,
+        ),
         `HTTP status: ${response.status}.`,
         `Content-Type: ${safeContentType}.`,
         `Response preview: ${preview}.`,
-        "Check the configured Redis REST endpoint and service response.",
       ].join(" "),
     );
   }
@@ -113,6 +201,12 @@ async function executeRedis<T>(
     throw new Error(
       [
         "Redis REST returned an invalid JSON response.",
+        ...buildRedisRequestDiagnostics(
+          command,
+          authorization,
+          path,
+          durationMs,
+        ),
         `HTTP status: ${response.status}.`,
         `Content-Type: ${sanitizeRedisDiagnostic(contentType)}.`,
       ].join(" "),
@@ -128,6 +222,12 @@ async function executeRedis<T>(
     throw new Error(
       [
         "Redis REST request failed.",
+        ...buildRedisRequestDiagnostics(
+          command,
+          authorization,
+          path,
+          durationMs,
+        ),
         `HTTP status: ${response.status}.`,
         errorMessage,
       ].join(" "),
