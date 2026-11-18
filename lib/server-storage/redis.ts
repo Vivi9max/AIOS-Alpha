@@ -1,41 +1,149 @@
 import type {
   StorageAdapter,
 } from "./types";
+
 interface RedisResponse<T> {
   result?: T;
   error?: string;
 }
+
 const redisURL =
   process.env.UPSTASH_REDIS_REST_URL?.trim() ?? "";
+
 const redisToken =
   process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ?? "";
+
 function encodeCommandPart(value: string): string {
   return encodeURIComponent(value);
 }
-async function executeRedis<T>(command: string[]): Promise<T> {
+
+function sanitizeRedisDiagnostic(
+  value: string,
+): string {
+  let sanitized = value;
+
+  if (redisToken) {
+    sanitized = sanitized.split(redisToken).join("[REDACTED]");
+  }
+
+  if (redisURL) {
+    sanitized = sanitized.split(redisURL).join("[REDIS_URL_REDACTED]");
+  }
+
+  sanitized = sanitized
+    .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(
+      /(token|authorization|password|secret)\s*[:=]\s*["']?[^"'\s,}]+/gi,
+      "$1=[REDACTED]",
+    );
+
+  return sanitized.slice(0, 240);
+}
+
+function getRedisResponsePreview(
+  body: string,
+): string {
+  const normalized =
+    body.replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return "(empty response body)";
+  }
+
+  return sanitizeRedisDiagnostic(
+    normalized.slice(0, 160),
+  );
+}
+
+async function executeRedis<T>(
+  command: string[],
+): Promise<T> {
   if (!redisURL || !redisToken) {
-    throw new Error("Redis environment variables are missing.");
+    throw new Error(
+      "Redis environment variables are missing.",
+    );
   }
-  const path = command.map(encodeCommandPart).join("/");
-  const response = await fetch(`${redisURL}/${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${redisToken}`,
-    },
-    cache: "no-store",
-  });
-  const data = (await response.json()) as RedisResponse<T>;
+
+  const path =
+    command.map(encodeCommandPart).join("/");
+
+  const response =
+    await fetch(`${redisURL}/${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${redisToken}`,
+      },
+      cache: "no-store",
+    });
+
+  const contentType =
+    response.headers.get("content-type") ?? "unknown";
+
+  const body =
+    await response.text();
+
+  let data: RedisResponse<T>;
+
+  try {
+    data =
+      JSON.parse(body) as RedisResponse<T>;
+  } catch {
+    const safeContentType =
+      sanitizeRedisDiagnostic(contentType);
+
+    const preview =
+      getRedisResponsePreview(body);
+
+    throw new Error(
+      [
+        "Redis REST returned a non-JSON response.",
+        `HTTP status: ${response.status}.`,
+        `Content-Type: ${safeContentType}.`,
+        `Response preview: ${preview}.`,
+        "Check the configured Redis REST endpoint and service response.",
+      ].join(" "),
+    );
+  }
+
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
+    throw new Error(
+      [
+        "Redis REST returned an invalid JSON response.",
+        `HTTP status: ${response.status}.`,
+        `Content-Type: ${sanitizeRedisDiagnostic(contentType)}.`,
+      ].join(" "),
+    );
+  }
+
   if (!response.ok || data.error) {
-    throw new Error(data.error ?? `Redis request failed: ${response.status}`);
+    const errorMessage =
+      typeof data.error === "string"
+        ? sanitizeRedisDiagnostic(data.error)
+        : `Redis request failed with HTTP ${response.status}.`;
+
+    throw new Error(
+      [
+        "Redis REST request failed.",
+        `HTTP status: ${response.status}.`,
+        errorMessage,
+      ].join(" "),
+    );
   }
+
   return data.result as T;
 }
+
 export interface AtomicMarketResearchUsageResult {
   month: string;
   count: number;
   updatedAt: number;
   reserved: boolean;
 }
+
 const RESERVE_MARKET_RESEARCH_SCRIPT = [
   "local raw = redis.call('GET', KEYS[1])",
   "local record = nil",
@@ -49,6 +157,7 @@ const RESERVE_MARKET_RESEARCH_SCRIPT = [
   "redis.call('SET', KEYS[1], cjson.encode({month=record.month, count=record.count, updatedAt=record.updatedAt}))",
   "return cjson.encode(record)",
 ].join("\n");
+
 const RELEASE_MARKET_RESEARCH_SCRIPT = [
   "local raw = redis.call('GET', KEYS[1])",
   "if not raw then return '0' end",
@@ -59,33 +168,44 @@ const RELEASE_MARKET_RESEARCH_SCRIPT = [
   "redis.call('SET', KEYS[1], cjson.encode(record))",
   "return '1'",
 ].join("\n");
+
 export async function reserveMarketResearchUsageAtomic(
   key: string,
   month: string,
   limit: number | null,
   now: number,
 ): Promise<AtomicMarketResearchUsageResult> {
-  const result = await executeRedis<string>([
-    "EVAL",
-    RESERVE_MARKET_RESEARCH_SCRIPT,
-    "1",
-    key,
-    month,
-    limit === null ? "-1" : String(limit),
-    String(now),
-  ]);
+  const result =
+    await executeRedis<string>([
+      "EVAL",
+      RESERVE_MARKET_RESEARCH_SCRIPT,
+      "1",
+      key,
+      month,
+      limit === null ? "-1" : String(limit),
+      String(now),
+    ]);
+
   if (typeof result !== "string") {
-    throw new Error("Redis returned an invalid atomic usage result.");
+    throw new Error(
+      "Redis returned an invalid atomic usage result.",
+    );
   }
-  const parsed = JSON.parse(result) as Partial<AtomicMarketResearchUsageResult>;
+
+  const parsed =
+    JSON.parse(result) as Partial<AtomicMarketResearchUsageResult>;
+
   if (
     typeof parsed.month !== "string" ||
     typeof parsed.count !== "number" ||
     typeof parsed.updatedAt !== "number" ||
     typeof parsed.reserved !== "boolean"
   ) {
-    throw new Error("Redis returned an invalid atomic usage record.");
+    throw new Error(
+      "Redis returned an invalid atomic usage record.",
+    );
   }
+
   return {
     month: parsed.month,
     count: Math.max(0, Math.floor(parsed.count)),
@@ -93,27 +213,32 @@ export async function reserveMarketResearchUsageAtomic(
     reserved: parsed.reserved,
   };
 }
+
 export async function releaseMarketResearchUsageAtomic(
   key: string,
   month: string,
   now: number,
 ): Promise<boolean> {
-  const result = await executeRedis<string>([
-    "EVAL",
-    RELEASE_MARKET_RESEARCH_SCRIPT,
-    "1",
-    key,
-    month,
-    String(now),
-  ]);
+  const result =
+    await executeRedis<string>([
+      "EVAL",
+      RELEASE_MARKET_RESEARCH_SCRIPT,
+      "1",
+      key,
+      month,
+      String(now),
+    ]);
+
   return result === "1";
 }
+
 export interface AtomicExecutionUsageResult {
   date: string;
   count: number;
   updatedAt: number;
   reserved: boolean;
 }
+
 const RESERVE_EXECUTION_USAGE_SCRIPT = [
   "local raw = redis.call('GET', KEYS[1])",
   "local record = nil",
@@ -127,33 +252,44 @@ const RESERVE_EXECUTION_USAGE_SCRIPT = [
   "redis.call('SET', KEYS[1], cjson.encode({date=record.date, count=record.count, updatedAt=record.updatedAt}))",
   "return cjson.encode(record)",
 ].join("\n");
+
 export async function reserveExecutionUsageAtomic(
   key: string,
   date: string,
   limit: number | null,
   now: number,
 ): Promise<AtomicExecutionUsageResult> {
-  const result = await executeRedis<string>([
-    "EVAL",
-    RESERVE_EXECUTION_USAGE_SCRIPT,
-    "1",
-    key,
-    date,
-    limit === null ? "-1" : String(limit),
-    String(now),
-  ]);
+  const result =
+    await executeRedis<string>([
+      "EVAL",
+      RESERVE_EXECUTION_USAGE_SCRIPT,
+      "1",
+      key,
+      date,
+      limit === null ? "-1" : String(limit),
+      String(now),
+    ]);
+
   if (typeof result !== "string") {
-    throw new Error("Redis returned an invalid atomic execution usage result.");
+    throw new Error(
+      "Redis returned an invalid atomic execution usage result.",
+    );
   }
-  const parsed = JSON.parse(result) as Partial<AtomicExecutionUsageResult>;
+
+  const parsed =
+    JSON.parse(result) as Partial<AtomicExecutionUsageResult>;
+
   if (
     typeof parsed.date !== "string" ||
     typeof parsed.count !== "number" ||
     typeof parsed.updatedAt !== "number" ||
     typeof parsed.reserved !== "boolean"
   ) {
-    throw new Error("Redis returned an invalid atomic execution usage record.");
+    throw new Error(
+      "Redis returned an invalid atomic execution usage record.",
+    );
   }
+
   return {
     date: parsed.date,
     count: Math.max(0, Math.floor(parsed.count)),
@@ -161,28 +297,50 @@ export async function reserveExecutionUsageAtomic(
     reserved: parsed.reserved,
   };
 }
+
 export const redisStorage: StorageAdapter = {
   mode: "redis",
+
   async get<T>(key: string): Promise<T | null> {
-    const result = await executeRedis<string | null>(["get", key]);
+    const result =
+      await executeRedis<string | null>([
+        "get",
+        key,
+      ]);
+
     if (typeof result !== "string") {
       return null;
     }
+
     try {
       return JSON.parse(result) as T;
     } catch {
       return null;
     }
   },
+
   async set<T>(key: string, value: T): Promise<void> {
-    await executeRedis(["set", key, JSON.stringify(value)]);
+    await executeRedis([
+      "set",
+      key,
+      JSON.stringify(value),
+    ]);
   },
+
   async delete(key: string): Promise<void> {
-    await executeRedis(["del", key]);
+    await executeRedis([
+      "del",
+      key,
+    ]);
   },
+
   async health() {
     try {
-      const result = await executeRedis<string>(["ping"]);
+      const result =
+        await executeRedis<string>([
+          "ping",
+        ]);
+
       return {
         success: result === "PONG",
         mode: "redis" as const,
