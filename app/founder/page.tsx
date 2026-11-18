@@ -1729,6 +1729,13 @@ export default function FounderPage() {
             }
           />
 
+         <ActionLink
+           href="/founder/redis-smoke-test"
+           icon="🗄️"
+           title="Redis Smoke Test"
+           detail="Verify production Redis PING, SET, GET, DEL and cleanup"
+         />
+
           <ActionLink
             href="/founder/market/public-intelligence-regression"
             icon="📈"
