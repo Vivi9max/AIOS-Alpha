@@ -17,6 +17,7 @@ import {
   findPersistentActiveAutonomousDevelopmentTask,
   getPersistentAutonomousDevelopmentTask,
   listPersistentAutonomousDevelopmentTasks,
+  persistAutonomousDevelopmentTasks,
 } from "@/lib/github/autonomous-development-control-plane";
 import {
   heartbeatAutonomousDevelopmentExecution,
@@ -639,12 +640,16 @@ export async function POST(
       );
     }
 
-    const githubConnection = readUserGitHubConnection(request);
-    const githubAuth = await resolveGitHubBridgeAuth(
-      githubConnection && githubConnection.accessExpiresAt > Date.now() + 60_000
-        ? request
-        : undefined,
-    );
+    const githubConnection =
+      readUserGitHubConnection(request);
+
+    const githubAuth =
+      await resolveGitHubBridgeAuth(
+        githubConnection &&
+        githubConnection.accessExpiresAt > Date.now() + 60_000
+          ? request
+          : undefined,
+      );
 
     if (!githubAuth.accessToken) {
       return json(
@@ -672,11 +677,50 @@ export async function POST(
      * verifies that the task is still todo, changes it
      * to running, and awaits persistence before the
      * background Agent starts.
+     *
+     * If persistence fails after the in-memory claim,
+     * explicitly block the task before returning the
+     * original error. This prevents an invisible task
+     * from remaining in the running state.
      */
-    const claimedTask =
-      await claimPersistentAutonomousDevelopmentTask(
-        task.id,
-      );
+    let claimedTask: Awaited<
+      ReturnType<
+        typeof claimPersistentAutonomousDevelopmentTask
+      >
+    >;
+
+    try {
+      claimedTask =
+        await claimPersistentAutonomousDevelopmentTask(
+          task.id,
+        );
+    } catch (claimError) {
+      const reason =
+        claimError instanceof Error
+          ? `AUTONOMOUS_DEVELOPMENT_CLAIM_PERSISTENCE_FAILED: ${claimError.message}`
+          : "AUTONOMOUS_DEVELOPMENT_CLAIM_PERSISTENCE_FAILED: task claim failed.";
+
+      try {
+        blockAutonomousDevelopmentTask(
+          task.id,
+          reason,
+        );
+
+        await persistAutonomousDevelopmentTasks();
+      } catch {
+        /*
+         * Keep the original claim error.
+         *
+         * The in-memory task has already been moved
+         * to blocked whenever the blocking operation
+         * succeeded. A failed storage service may
+         * prevent durable persistence, but must not
+         * turn this request into a false RUNNING task.
+         */
+      }
+
+      throw claimError;
+    }
 
     /*
      * The durable running state now exists before the
