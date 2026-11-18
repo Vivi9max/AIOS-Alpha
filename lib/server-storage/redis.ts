@@ -13,10 +13,6 @@ const redisURL =
 const redisToken =
   process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ?? "";
 
-function encodeCommandPart(value: string): string {
-  return encodeURIComponent(value);
-}
-
 function sanitizeRedisDiagnostic(
   value: string,
 ): string {
@@ -63,6 +59,14 @@ function getRedisHostname(): string {
   }
 }
 
+function getRedisEndpointPathLength(): number {
+  try {
+    return new URL(redisURL).pathname.length;
+  } catch {
+    return 0;
+  }
+}
+
 function getRedisOperation(
   command: string[],
 ): string {
@@ -80,17 +84,29 @@ function getRedisOperation(
     : "OTHER";
 }
 
+function getUtf8Bytes(
+  value: string,
+): number {
+  return new TextEncoder().encode(value).length;
+}
+
 function buildRedisRequestDiagnostics(
   command: string[],
   authorization: string,
-  encodedPath: string,
+  commandBody: string,
   durationMs?: number,
 ): string[] {
+  const argumentSizes =
+    command.slice(1).map(getUtf8Bytes);
+
   return [
     `Operation: ${getRedisOperation(command)}.`,
     `Hostname: ${getRedisHostname()}.`,
-    `Authorization header bytes: ${new TextEncoder().encode(authorization).length}.`,
-    `Encoded path length: ${encodedPath.length}.`,
+    `Authorization header bytes: ${getUtf8Bytes(authorization)}.`,
+    `Endpoint path length: ${getRedisEndpointPathLength()}.`,
+    `Command argument count: ${command.length - 1}.`,
+    `Largest command argument bytes: ${Math.max(0, ...argumentSizes)}.`,
+    `Command body bytes: ${getUtf8Bytes(commandBody)}.`,
     ...(typeof durationMs === "number"
       ? [`Request duration: ${durationMs}ms.`]
       : []),
@@ -106,18 +122,14 @@ async function executeRedis<T>(
     );
   }
 
-  const path =
-    command.map(encodeCommandPart).join("/");
+  const endpoint =
+    redisURL.replace(/\/+$/, "");
 
   const authorization =
     `Bearer ${redisToken}`;
 
-  const diagnostics =
-    buildRedisRequestDiagnostics(
-      command,
-      authorization,
-      path,
-    );
+  const commandBody =
+    JSON.stringify(command);
 
   const startedAt =
     Date.now();
@@ -126,11 +138,13 @@ async function executeRedis<T>(
 
   try {
     response =
-      await fetch(`${redisURL}/${path}`, {
+      await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: authorization,
+          "Content-Type": "application/json",
         },
+        body: commandBody,
         cache: "no-store",
       });
   } catch (error) {
@@ -148,7 +162,7 @@ async function executeRedis<T>(
         ...buildRedisRequestDiagnostics(
           command,
           authorization,
-          path,
+          commandBody,
           durationMs,
         ),
         `Fetch error type: ${sanitizeRedisDiagnostic(errorName)}.`,
@@ -183,7 +197,7 @@ async function executeRedis<T>(
         ...buildRedisRequestDiagnostics(
           command,
           authorization,
-          path,
+          commandBody,
           durationMs,
         ),
         `HTTP status: ${response.status}.`,
@@ -204,7 +218,7 @@ async function executeRedis<T>(
         ...buildRedisRequestDiagnostics(
           command,
           authorization,
-          path,
+          commandBody,
           durationMs,
         ),
         `HTTP status: ${response.status}.`,
@@ -225,7 +239,7 @@ async function executeRedis<T>(
         ...buildRedisRequestDiagnostics(
           command,
           authorization,
-          path,
+          commandBody,
           durationMs,
         ),
         `HTTP status: ${response.status}.`,
