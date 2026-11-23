@@ -44,6 +44,18 @@ const PUBLIC_PATHS = [
   "/api/founder/overview",
 
   /**
+   * Founder Redis Smoke Test
+   *
+   * The page and API must bypass the Alpha
+   * cookie gate to reach their destination.
+   *
+   * The API still enforces Founder Access Key
+   * authentication before Redis execution.
+   */
+  "/founder/redis-smoke-test",
+  "/api/founder/redis-smoke-test",
+
+  /**
    * C170.8
    *
    * Autonomous Development API.
